@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import json
 
-from openai_codex import Sandbox
+from agent.backends.base import Access
 
 from agent.prompts import ORCHESTRATOR_INSTRUCTIONS
 from agent.schemas import OrchestratorOutput
@@ -72,7 +72,7 @@ Continue orchestration based on that answer and choose the next action.
         run = backend.run_structured(
             thread_id=thread_id,
             repo_path=state["repo_path"],
-            sandbox=Sandbox.read_only,
+            access=Access.READ_ONLY,
             developer_instructions=ORCHESTRATOR_INSTRUCTIONS,
             prompt=prompt,
             output_model=OrchestratorOutput,

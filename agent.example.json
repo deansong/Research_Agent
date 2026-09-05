@@ -1,0 +1,23 @@
+{
+  "_comment": "Copy to ~/.codex-langgraph-agent/config.json (global) or <repo>/.agent/config.json (per repo), or point at it with --config. Delete the _comment keys; they are only here because JSON has no comments. Only 'codex' is implemented today; the others fail at startup with instructions for filling them in.",
+
+  "default": {
+    "provider": "codex",
+    "model": null
+  },
+
+  "roles": {
+    "_comment": "Anything not listed here inherits 'default'. Merging is per field, so a role can override just the model.",
+
+    "discussor": {
+      "provider": "codex"
+    },
+    "executor": {
+      "provider": "codex",
+      "options": {}
+    }
+  },
+
+  "session": "main",
+  "recursion_limit": 1000
+}

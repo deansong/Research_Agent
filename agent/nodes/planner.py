@@ -10,7 +10,7 @@ Reached ONLY from nodes/human.py via /plan or /replan -- never automatically.
 
 from __future__ import annotations
 
-from openai_codex import Sandbox
+from agent.backends.base import Access
 
 from agent.prompts import PLANNER_INSTRUCTIONS
 from agent.schemas import PlannerOutput
@@ -84,7 +84,7 @@ most appropriate workstream slug, and the first concrete executor task.
         run = backend.run_structured(
             thread_id=thread_id,
             repo_path=state["repo_path"],
-            sandbox=Sandbox.read_only,
+            access=Access.READ_ONLY,
             developer_instructions=PLANNER_INSTRUCTIONS,
             prompt=prompt,
             output_model=PlannerOutput,

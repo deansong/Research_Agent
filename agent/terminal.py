@@ -16,11 +16,11 @@ from typing import Any, Callable
 from langgraph.types import Command
 
 from agent import commands
-from agent.config import DEFAULT_RECURSION_LIMIT
+from agent.config import describe
 from agent.state import create_initial_state
 
 
-def drive_graph(graph, repo_path: Path, session_id: str) -> None:
+def drive_graph(graph, repo_path: Path, cfg) -> None:
     """Run one interactive session against `graph`.
 
     ------------------------------------------------------------------
@@ -50,16 +50,20 @@ def drive_graph(graph, repo_path: Path, session_id: str) -> None:
         # thread_id is what makes a session resumable: the checkpointer keys
         # every saved step by it.  Two --session names = two independent
         # conversations sharing one sqlite file.
-        "configurable": {"thread_id": session_id},
-        "recursion_limit": DEFAULT_RECURSION_LIMIT,
+        "configurable": {"thread_id": cfg.session},
+        # LangGraph raises GraphRecursionError after this many super-steps in
+        # ONE invoke() call. Ours is high because orchestrator -> executor ->
+        # orchestrator is a legitimate long loop.
+        "recursion_limit": cfg.recursion_limit,
     }
+
 
     snapshot = graph.get_state(config)
 
     if snapshot.values and snapshot.next:
         # `snapshot.next` is non-empty when the graph stopped mid-run last
         # time -- i.e. it is parked on an interrupt waiting for an answer.
-        result = _resume_existing(graph, config, snapshot)
+        result = _resume_existing(graph, config, snapshot, cfg)
     else:
         request = input(
             f"\nRepository: {repo_path}\n\nWhat do you want to build/change?\n\nyou> "
@@ -81,7 +85,7 @@ def drive_graph(graph, repo_path: Path, session_id: str) -> None:
             # No interrupt in the result means the graph reached END.
             break
 
-        answer = _ask_user(graph, config, payload)
+        answer = _ask_user(graph, config, payload, cfg)
         result = graph.invoke(Command(resume=answer), config=config)
 
     print("\nAgent session ended.")
@@ -90,7 +94,7 @@ def drive_graph(graph, repo_path: Path, session_id: str) -> None:
         print_usage_table(final_snapshot.values["usage_by_role"])
 
 
-def _resume_existing(graph, config: dict[str, Any], snapshot):
+def _resume_existing(graph, config: dict[str, Any], snapshot, cfg):
     """Pick up a session that was interrupted in a previous process."""
     human = snapshot.values.get("human", {})
     if human.get("question"):
@@ -103,6 +107,7 @@ def _resume_existing(graph, config: dict[str, Any], snapshot):
                 "context": human.get("context", ""),
                 "purpose": human.get("purpose", ""),
             },
+            cfg,
         )
         return graph.invoke(Command(resume=answer), config=config)
 
@@ -131,7 +136,7 @@ def _interrupt_payload(result: dict[str, Any]) -> dict[str, Any] | None:
 # Reading a line from the human
 # ---------------------------------------------------------------------------
 
-def _ask_user(graph, config: dict[str, Any], payload: dict[str, Any]) -> str:
+def _ask_user(graph, config: dict[str, Any], payload: dict[str, Any], cfg) -> str:
     """Show the graph's question and return the human's raw reply.
 
     Terminal-scope commands are handled right here and we loop; they never
@@ -143,7 +148,15 @@ def _ask_user(graph, config: dict[str, Any], payload: dict[str, Any]) -> str:
     _show_prompt(payload)
 
     while True:
-        raw = input("\nyou> ")
+        try:
+            raw = input("\nyou> ")
+        except (EOFError, KeyboardInterrupt):
+            # ctrl-D or ctrl-C. Treat it as /exit rather than dumping a
+            # traceback: the session is already checkpointed, so this is a
+            # perfectly normal way to stop, and --session picks it back up.
+            print("\n(interrupted -- your session is saved)")
+            return "/exit"
+
         parsed = commands.parse(raw, purpose=purpose)
 
         # A rejected command: explain and ask again.  The model never sees it.
@@ -164,7 +177,7 @@ def _ask_user(graph, config: dict[str, Any], payload: dict[str, Any]) -> str:
                 print(f"\n[bug] /{parsed.command.name} has no terminal handler.")
                 continue
             print()
-            handler(graph, config, parsed.text, purpose)
+            handler(graph, config, parsed.text, purpose, cfg)
             continue
 
         # Everything else goes into the graph.  We return the RAW string, not
@@ -193,19 +206,20 @@ def _show_prompt(payload: dict[str, Any]) -> None:
 # These live here, not in commands.py, so that commands.py stays free of
 # LangGraph and IO imports and can be imported from inside a graph node
 # without an import cycle.  Signature is uniform:
-#     handler(graph, config, argument, purpose) -> None
+#     handler(graph, config, argument, purpose, cfg) -> None
+# where `config` is LangGraph's run config and `cfg` is our AgentConfig.
 # ---------------------------------------------------------------------------
 
-def _handle_help(graph, config, argument: str, purpose: str) -> None:
+def _handle_help(graph, config, argument: str, purpose: str, cfg) -> None:
     print(commands.render_help(purpose or None))
 
 
-def _handle_usage(graph, config, argument: str, purpose: str) -> None:
+def _handle_usage(graph, config, argument: str, purpose: str, cfg) -> None:
     snapshot = graph.get_state(config)
     print_usage_table(snapshot.values.get("usage_by_role", {}))
 
 
-def _handle_state(graph, config, argument: str, purpose: str) -> None:
+def _handle_state(graph, config, argument: str, purpose: str, cfg) -> None:
     snapshot = graph.get_state(config)
     values = snapshot.values or {}
     full = argument.strip().lower() == "full"
@@ -236,7 +250,7 @@ def _handle_state(graph, config, argument: str, purpose: str) -> None:
         print(_indent(planning.get("plan", "")))
 
 
-def _handle_transcript(graph, config, argument: str, purpose: str) -> None:
+def _handle_transcript(graph, config, argument: str, purpose: str, cfg) -> None:
     """Print the human <-> discussor conversation.
 
     `transcript` is the one state channel with a reducer (see agent/state.py):
@@ -268,11 +282,17 @@ def _handle_transcript(graph, config, argument: str, purpose: str) -> None:
         print(_indent(entry.get("text", "")))
 
 
+def _handle_config(graph, config, argument: str, purpose: str, cfg) -> None:
+    """Show which backend is serving each role, and where that came from."""
+    print(describe(cfg))
+
+
 TERMINAL_HANDLERS: dict[str, Callable[..., None]] = {
     "help": _handle_help,
     "usage": _handle_usage,
     "state": _handle_state,
     "transcript": _handle_transcript,
+    "config": _handle_config,
 }
 
 

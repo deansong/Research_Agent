@@ -47,6 +47,7 @@ from __future__ import annotations
 
 from langgraph.graph import END, START, StateGraph
 
+from agent import roles
 from agent.nodes import (
     human_input,
     make_discussor,
@@ -57,12 +58,16 @@ from agent.nodes import (
 from agent.state import AgentState
 
 
-def build_graph(backend, checkpointer):
+def build_graph(backends, checkpointer):
     """Assemble and compile the graph.
 
-    `backend` is the provider adapter every LLM node calls.  `checkpointer`
-    is what saves state after every step -- it is the reason you can ctrl-C
-    and pick up where you left off.
+    `backends` maps a ROLE NAME to the provider adapter serving it, e.g.
+        {"discussor": <CodexBackend>, "executor": <ClaudeCodeBackend>, ...}
+    That per-role indirection is requirement 3: each node is handed its own
+    backend, so they can be different providers with different models.
+
+    `checkpointer` saves state after every step -- it is the reason you can
+    ctrl-C and pick up where you left off.
     """
     # StateGraph is the BUILDER.  Note that the thing compile() returns is
     # immutable: you cannot add a node to a running graph.  (That constraint
@@ -71,11 +76,11 @@ def build_graph(backend, checkpointer):
 
     # ---- nodes -----------------------------------------------------------
     # A node is just a function: state in, partial state update out.
-    builder.add_node("discussor", make_discussor(backend))
+    builder.add_node("discussor", make_discussor(backends[roles.DISCUSSOR]))
     builder.add_node("human", human_input)
-    builder.add_node("planner", make_planner(backend))
-    builder.add_node("orchestrator", make_orchestrator(backend))
-    builder.add_node("executor", make_executor(backend))
+    builder.add_node("planner", make_planner(backends[roles.PLANNER]))
+    builder.add_node("orchestrator", make_orchestrator(backends[roles.ORCHESTRATOR]))
+    builder.add_node("executor", make_executor(backends[roles.EXECUTOR]))
 
     # ---- fixed edges: "always go here next" ------------------------------
     builder.add_edge(START, "discussor")

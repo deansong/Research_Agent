@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from openai_codex import Sandbox
+from agent.backends.base import Access
 
 from agent.git_utils import snapshot
 from agent.prompts import EXECUTOR_INSTRUCTIONS
@@ -57,7 +57,7 @@ run appropriate verification.
         run = backend.run_structured(
             thread_id=thread_id,
             repo_path=state["repo_path"],
-            sandbox=Sandbox.workspace_write,
+            access=Access.WRITE,
             developer_instructions=EXECUTOR_INSTRUCTIONS,
             prompt=prompt,
             output_model=ExecutorOutput,

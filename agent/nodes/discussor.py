@@ -13,7 +13,7 @@ on its own -- it can only advise.
 
 from __future__ import annotations
 
-from openai_codex import Sandbox
+from agent.backends.base import Access
 
 from agent.prompts import DISCUSSOR_INSTRUCTIONS
 from agent.schemas import DiscussorOutput
@@ -86,7 +86,7 @@ knowledge from earlier work.
         run = backend.run_structured(
             thread_id=thread_id,
             repo_path=state["repo_path"],
-            sandbox=Sandbox.read_only,
+            access=Access.READ_ONLY,
             developer_instructions=DISCUSSOR_INSTRUCTIONS,
             prompt=prompt,
             output_model=DiscussorOutput,
