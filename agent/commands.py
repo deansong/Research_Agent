@@ -141,7 +141,33 @@ REGISTRY: tuple[SlashCommand, ...] = (
         summary="Show where the graph is and what it is holding",
         argument="[full]",
     ),
+    SlashCommand(
+        name="transcript",
+        scope="terminal",
+        summary="Print the discussion so far",
+        argument="[all]",
+    ),
     # ---- graph scope: forwarded into the graph, handled in nodes/human.py --
+    SlashCommand(
+        name="plan",
+        scope="graph",
+        summary="Stop discussing and turn the discussion into a plan",
+        argument="[extra guidance for the planner]",
+        contexts=("discussion",),
+    ),
+    SlashCommand(
+        name="discuss",
+        scope="graph",
+        summary="Go back to talking things through with the discussor",
+        contexts=("orchestrator", "next_task"),
+    ),
+    SlashCommand(
+        name="replan",
+        scope="graph",
+        summary="Throw out the current plan and make a new one",
+        argument="[what was wrong with it]",
+        contexts=("orchestrator",),
+    ),
     SlashCommand(
         name="exit",
         scope="graph",

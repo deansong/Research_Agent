@@ -2,7 +2,6 @@ from __future__ import annotations
 
 from openai_codex import Sandbox
 
-from agent.codex_backend import CodexBackend
 from agent.git_utils import snapshot
 from agent.prompts import EXECUTOR_INSTRUCTIONS
 from agent.schemas import ExecutorOutput
@@ -11,17 +10,17 @@ from agent.telemetry import record_usage
 
 
 
-def make_executor(backend: CodexBackend):
+def make_executor(backend):
     def executor(state: AgentState):
         execution = dict(state.get("execution", {}))
         planning = dict(state.get("planning", {}))
-        codex_state = dict(state.get("codex", {}))
+        providers = dict(state.get("providers", {}))
 
         workstream = execution.get("workstream", "main").strip() or "main"
         print(f"\n[executor:{workstream}] coding...")
 
-        executor_threads = dict(codex_state.get("executor_threads", {}))
-        seen_generations = dict(codex_state.get("executor_seen_plan_generation", {}))
+        executor_threads = dict(providers.get("executor_threads", {}))
+        seen_generations = dict(providers.get("executor_seen_plan_generation", {}))
 
         thread_id = executor_threads.get(workstream)
         current_generation = int(planning.get("generation", 0))
@@ -65,8 +64,8 @@ run appropriate verification.
         )
 
         executor_threads[workstream] = run.thread_id
-        codex_state["executor_threads"] = executor_threads
-        codex_state["executor_seen_plan_generation"] = seen_generations
+        providers["executor_threads"] = executor_threads
+        providers["executor_seen_plan_generation"] = seen_generations
 
         role = f"executor:{workstream}"
         usage = record_usage(state.get("usage_by_role", {}), role, run.usage)
@@ -83,7 +82,7 @@ run appropriate verification.
             print(git.diff_stat)
 
         return {
-            "codex": codex_state,
+            "providers": providers,
             "usage_by_role": usage,
             "execution": merge_section(
                 execution,

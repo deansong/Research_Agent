@@ -236,10 +236,43 @@ def _handle_state(graph, config, argument: str, purpose: str) -> None:
         print(_indent(planning.get("plan", "")))
 
 
+def _handle_transcript(graph, config, argument: str, purpose: str) -> None:
+    """Print the human <-> discussor conversation.
+
+    `transcript` is the one state channel with a reducer (see agent/state.py):
+    nodes append to it and it is never rewritten, so this is a complete log.
+    Entries are tagged with the task cycle they belong to; by default we show
+    only the current one, and /transcript all shows every cycle.
+    """
+    snapshot = graph.get_state(config)
+    values = snapshot.values or {}
+    entries = values.get("transcript", [])
+    show_all = argument.strip().lower() == "all"
+    current = int(values.get("task_cycle", 1))
+
+    if not show_all:
+        entries = [e for e in entries if e.get("cycle") == current]
+
+    if not entries:
+        print("Nothing discussed yet.")
+        return
+
+    print("DISCUSSION" + ("  (all task cycles)" if show_all else f"  (task #{current})"))
+    print("-" * 78)
+    last_cycle = None
+    for entry in entries:
+        if show_all and entry.get("cycle") != last_cycle:
+            last_cycle = entry.get("cycle")
+            print(f"\n--- task #{last_cycle} ---")
+        print(f"\n{entry.get('role', '?')}:")
+        print(_indent(entry.get("text", "")))
+
+
 TERMINAL_HANDLERS: dict[str, Callable[..., None]] = {
     "help": _handle_help,
     "usage": _handle_usage,
     "state": _handle_state,
+    "transcript": _handle_transcript,
 }
 
 

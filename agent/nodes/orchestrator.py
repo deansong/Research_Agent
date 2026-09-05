@@ -4,7 +4,6 @@ import json
 
 from openai_codex import Sandbox
 
-from agent.codex_backend import CodexBackend
 from agent.prompts import ORCHESTRATOR_INSTRUCTIONS
 from agent.schemas import OrchestratorOutput
 from agent.state import AgentState, merge_section
@@ -12,12 +11,12 @@ from agent.telemetry import record_usage
 
 
 
-def make_orchestrator(backend: CodexBackend):
+def make_orchestrator(backend):
     def orchestrator(state: AgentState):
         print("\n[orchestrator] deciding next action...")
 
-        codex_state = dict(state.get("codex", {}))
-        role_threads = dict(codex_state.get("role_threads", {}))
+        providers = dict(state.get("providers", {}))
+        role_threads = dict(providers.get("role_threads", {}))
         thread_id = role_threads.get("orchestrator")
 
         control = dict(state.get("control", {}))
@@ -63,7 +62,7 @@ Decide the next action. If more coding is required, provide one concrete next ta
             prompt = f"""
 The human answered your question:
 
-{discussion.get('last_human_answer', '')}
+{state.get('human', {}).get('last_answer', '')}
 
 Continue orchestration based on that answer and choose the next action.
 """
@@ -80,16 +79,16 @@ Continue orchestration based on that answer and choose the next action.
         )
 
         role_threads["orchestrator"] = run.thread_id
-        codex_state["role_threads"] = role_threads
+        providers["role_threads"] = role_threads
         usage = record_usage(state.get("usage_by_role", {}), "orchestrator", run.usage)
         action = run.data.action
 
         print(f"\n[orchestrator] action = {action}")
 
+        # Shared by every branch below.
         base = {
-            "codex": codex_state,
+            "providers": providers,
             "usage_by_role": usage,
-            "discussion": merge_section(discussion, last_human_answer=""),
         }
 
         if action == "execute":
