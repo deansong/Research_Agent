@@ -7,6 +7,8 @@ CONCEPT: An adapter.  Read this one first if you want to add a provider; then
 
 from __future__ import annotations
 
+import contextlib
+
 from openai_codex import Codex, Sandbox
 
 from agent.backends.base import Access, BackendError, StructuredRun, Usage, OutputT
@@ -113,3 +115,32 @@ def _to_usage(usage) -> Usage | None:
         reasoning_tokens=getattr(last, "reasoning_output_tokens", 0) or 0,
         context_window=getattr(usage, "model_context_window", None),
     )
+
+
+# ---------------------------------------------------------------------------
+# Client lifecycle. These live here rather than in cli.py so that
+# `from openai_codex import ...` appears in exactly ONE file in the project --
+# which is what "agent/backends/ is the provider boundary" actually means.
+# ---------------------------------------------------------------------------
+
+@contextlib.contextmanager
+def open_client():
+    """Open a Codex client for the life of a session.
+
+    One client is shared by every role configured to use Codex; see
+    build_backends() in agent/backends/__init__.py, which caches backend
+    instances by (provider, model, options).
+    """
+    with Codex() as client:
+        yield client
+
+
+def login_chatgpt() -> None:
+    """Interactive ChatGPT sign-in for Codex."""
+    with Codex() as codex:
+        login = codex.login_chatgpt()
+        print("\nOpen this URL in your browser:")
+        print(login.auth_url)
+        print()
+        login.wait()
+        print("ChatGPT/Codex login successful.")

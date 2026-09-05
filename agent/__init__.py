@@ -1,1 +1,1 @@
-"""LangGraph + Codex coding agent."""
+"""A four-role LangGraph coding agent. Start reading at agent/graph.py."""

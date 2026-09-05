@@ -1,13 +1,24 @@
+"""
+WHAT:  The executor node -- the only thing here that changes your files.
+WHY:   One long-lived provider conversation per WORKSTREAM, so the coding
+       worker keeps its context (and its prompt cache) across many tasks.
+CONCEPT: Provider conversation state vs graph state. The thread id lives in
+       AgentState; the conversation itself lives with the provider.
+
+The generation check below is the interesting part: executor_seen_plan_generation
+records which plan revision this workstream was last told about. If the plan has
+changed since, we resend the whole plan; if not, a two-line "here is the next
+task" is enough. That is a large token saving on a long task.
+"""
+
 from __future__ import annotations
 
 from agent.backends.base import Access
-
 from agent.git_utils import snapshot
 from agent.prompts import EXECUTOR_INSTRUCTIONS
 from agent.schemas import ExecutorOutput
 from agent.state import AgentState, merge_section
 from agent.telemetry import record_usage
-
 
 
 def make_executor(backend):

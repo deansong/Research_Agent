@@ -14,7 +14,6 @@ on its own -- it can only advise.
 from __future__ import annotations
 
 from agent.backends.base import Access
-
 from agent.prompts import DISCUSSOR_INSTRUCTIONS
 from agent.schemas import DiscussorOutput
 from agent.state import AgentState, merge_section

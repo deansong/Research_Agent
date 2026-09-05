@@ -1,3 +1,16 @@
+"""
+WHAT:  The persona for each role -- the standing instructions a role gets, as
+       opposed to the per-turn prompt a node builds from state.
+WHY:   Two kinds of text go to a model and they change at different rates.
+       The persona ("you are the planner, do not modify files") is stable and
+       lives here; the turn prompt ("here is what the human just said") is
+       built inside the node, next to the state it reads.
+CONCEPT: Not LangGraph. But note these are passed to the backend on EVERY
+       turn, including when resuming an existing conversation -- so editing
+       this file takes effect on sessions that already exist. That was a real
+       bug before; see the comment in agent/backends/codex.py::_get_thread.
+"""
+
 DISCUSSOR_INSTRUCTIONS = """
 You are the DISCUSSOR in a software-engineering agent.
 Your job is to understand WHAT the human wants before planning starts.

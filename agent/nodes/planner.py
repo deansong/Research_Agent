@@ -11,7 +11,6 @@ Reached ONLY from nodes/human.py via /plan or /replan -- never automatically.
 from __future__ import annotations
 
 from agent.backends.base import Access
-
 from agent.prompts import PLANNER_INSTRUCTIONS
 from agent.schemas import PlannerOutput
 from agent.state import AgentState, merge_section, transcript_for_cycle

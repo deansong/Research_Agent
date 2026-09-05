@@ -1,5 +1,13 @@
-openai-codex
+# Core -- always needed.
 langgraph
 langgraph-checkpoint-sqlite
 pydantic>=2
 typing-extensions
+
+# The one implemented model provider. Needed unless you only use --backend fake.
+openai-codex
+
+# For the stub backends, once you implement them (see agent/backends/):
+#   anthropic     # agent/backends/api.py, provider="anthropic"
+#   openai        # agent/backends/api.py, provider="openai"
+# agent/backends/claude_code.py shells out to the `claude` CLI -- no package needed.

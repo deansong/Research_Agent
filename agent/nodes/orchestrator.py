@@ -1,14 +1,23 @@
+"""
+WHAT:  The orchestrator node -- decides what happens after every step.
+WHY:   Somebody has to answer "is this done?", "does this need another coding
+       task?", "should we replan?". Splitting that from the planner means the
+       planner is not re-reading the whole repo on every loop.
+CONCEPT: A node that drives a CONDITIONAL EDGE. It writes control.action, and
+       graph.py::_route_after_orchestrator turns that into a destination.
+       Note the split: the node DECIDES, the router only READS. Keeping
+       routers free of logic is what makes the graph readable.
+"""
+
 from __future__ import annotations
 
 import json
 
 from agent.backends.base import Access
-
 from agent.prompts import ORCHESTRATOR_INSTRUCTIONS
 from agent.schemas import OrchestratorOutput
 from agent.state import AgentState, merge_section
 from agent.telemetry import record_usage
-
 
 
 def make_orchestrator(backend):

@@ -13,14 +13,15 @@ Read this file to see how the pieces fit:
 from __future__ import annotations
 
 import argparse
+import contextlib
 from pathlib import Path
 
 from langgraph.checkpoint.sqlite import SqliteSaver
-from openai_codex import Codex
 
+from agent import roles
 from agent.backends import build_backends
 from agent.backends.base import BackendError
-from agent.config import DEFAULT_SESSION, describe, load_config
+from agent.config import DEFAULT_SESSION, backend_for, describe, load_config
 from agent.graph import build_graph
 from agent.storage import database_path
 from agent.terminal import drive_graph
@@ -58,22 +59,32 @@ def main() -> None:
     print(f"\nLangGraph state: {db_path}")
 
     # ---- 2. build the backends ---------------------------------------------
-    # The Codex client is opened here, as a context manager, and shared by
-    # every role configured to use Codex. Roles on other providers ignore it.
-    with Codex() as codex:
+    # ExitStack lets us open the Codex client conditionally but still close it
+    # reliably. Opening it only when some role actually uses Codex is what
+    # makes `--backend fake` work with no login and no network.
+    with contextlib.ExitStack() as stack:
+        codex_client = None
+        if any(backend_for(cfg, role).provider == "codex" for role in roles.ALL_ROLES):
+            from agent.backends.codex import open_client
+
+            codex_client = stack.enter_context(open_client())
+
         try:
-            backends = build_backends(cfg, codex_client=codex)
+            backends = build_backends(cfg, codex_client=codex_client)
         except BackendError as exc:
             # A configuration problem. Stop now, before spending anything.
             raise SystemExit(f"\n{exc}")
 
         # ---- 3. open the checkpointer and build the graph -------------------
-        with SqliteSaver.from_conn_string(str(db_path)) as checkpointer:
-            checkpointer.setup()
-            graph = build_graph(backends, checkpointer)
+        checkpointer = stack.enter_context(SqliteSaver.from_conn_string(str(db_path)))
+        checkpointer.setup()
 
-            # ---- 4. run the interactive loop --------------------------------
-            drive_graph(graph, repo_path, cfg)
+        # compile() happens in here. Passing the checkpointer is what turns a
+        # function pipeline into a resumable, interruptible workflow.
+        graph = build_graph(backends, checkpointer)
+
+        # ---- 4. run the interactive loop ------------------------------------
+        drive_graph(graph, repo_path, cfg)
 
 
 _TOPOLOGY = """GRAPH
@@ -140,13 +151,10 @@ def _parse_args():
 
 
 def _login_chatgpt() -> None:
-    with Codex() as codex:
-        login = codex.login_chatgpt()
-        print("\nOpen this URL in your browser:")
-        print(login.auth_url)
-        print()
-        login.wait()
-        print("ChatGPT/Codex login successful.")
+    # Imported lazily so `--backend fake` never needs the Codex SDK installed.
+    from agent.backends.codex import login_chatgpt
+
+    login_chatgpt()
 
 
 def _validated_repo(value: str) -> Path:
