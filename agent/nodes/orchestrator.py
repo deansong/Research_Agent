@@ -149,7 +149,7 @@ Continue orchestration based on that answer and choose the next action.
             "final_summary": summary,
             "human": merge_section(
                 state.get("human"),
-                question="Enter another request for this project, or type /quit.",
+                question="Enter another request for this project, or /exit to stop.",
                 context=summary,
                 purpose="next_task",
                 return_to="discussor",

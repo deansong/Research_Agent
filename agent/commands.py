@@ -1,0 +1,299 @@
+"""
+WHAT:  The single source of truth for every slash command the human can type.
+WHY:   Command handling used to be split between terminal.py (which matched
+       "/usage" by exact string equality) and nodes/human.py (which matched a
+       set of quit-words).  Help text was hardcoded separately and had already
+       drifted.  One registry + one parser fixes all three problems at once.
+CONCEPT: Not a LangGraph concept -- this is plain data + a parser.  Keeping it
+       free of LangGraph/IO imports is what lets BOTH the terminal loop and a
+       graph node import it without an import cycle.
+
+--------------------------------------------------------------------------
+HOW COMMANDS FLOW THROUGH THE SYSTEM
+--------------------------------------------------------------------------
+
+    you type  ->  terminal.py: _ask_user()
+                        |
+                        +-- commands.parse(raw, purpose=...)
+                        |
+                        +-- scope == "terminal"  -> run it right here,
+                        |                           print, and re-prompt.
+                        |                           The graph never wakes up.
+                        |
+                        +-- kind == "rejected"   -> print the error,
+                        |                           re-prompt.  The model
+                        |                           never sees the typo.
+                        |
+                        +-- otherwise            -> hand the RAW STRING back
+                                                    to drive_graph(), which
+                                                    calls
+                                                    graph.invoke(Command(resume=raw))
+                                                            |
+                                                            v
+                                             nodes/human.py: human_input()
+                                                            |
+                                             commands.parse(raw, purpose=...)
+                                                            |
+                                             dispatch on parsed.command.name
+
+Note that parse() is called TWICE on the same string, once on each side.
+That is deliberate, not an oversight:
+
+  * The value passed to Command(resume=...) is written into the sqlite
+    checkpoint.  A plain `str` is the smallest, most durable thing we can
+    store there -- a structured object would bloat every checkpoint and
+    freeze the parser's dataclass shape into saved sessions forever.
+  * The graph must stay safe when driven by something that is not our
+    terminal (a test, a future web UI).  Re-parsing inside the node means
+    the rules are enforced no matter who resumes the graph.
+
+Because both sides call the SAME function, there is no duplicated logic --
+only a duplicated call.
+"""
+
+from __future__ import annotations
+
+import difflib
+from dataclasses import dataclass
+from typing import Literal
+
+
+# "terminal" commands are answered by the REPL itself and never resume the
+# graph.  "graph" commands are forwarded into the graph, where human_input()
+# interprets them.  Deciding this per-command is what keeps /usage from
+# costing a super-step and what keeps /exit out of terminal.py.
+Scope = Literal["terminal", "graph"]
+
+
+@dataclass(frozen=True)
+class SlashCommand:
+    """One row of the registry below."""
+
+    name: str
+    """Command name WITHOUT the leading slash, e.g. "plan"."""
+
+    scope: Scope
+    """Where this command is executed.  See the Scope alias above."""
+
+    summary: str
+    """One line shown by /help."""
+
+    aliases: tuple[str, ...] = ()
+    """Other names that resolve to this command, also without slashes."""
+
+    argument: str = ""
+    """Placeholder shown in help, e.g. "[guidance]".
+    An empty string means the command takes NO argument, and supplying one
+    is an error (rule 7 in parse())."""
+
+    contexts: tuple[str, ...] | None = None
+    """Which human "purpose" values this command is valid in.
+    None means "valid everywhere".  The purpose comes from state["human"]
+    ["purpose"] -- it is the reason the graph stopped to ask you something,
+    e.g. "discussion" or "orchestrator".  This is what lets /plan exist only
+    while you are talking to the discussor."""
+
+
+@dataclass(frozen=True)
+class ParsedInput:
+    """The result of parsing one line the human typed."""
+
+    kind: Literal["text", "command", "rejected"]
+    """"text"     -> an ordinary answer for the agent
+       "command"  -> a recognised, valid slash command
+       "rejected" -> a slash command we refuse to run; see .error"""
+
+    raw: str
+    """Exactly what the human typed, stripped of surrounding whitespace."""
+
+    text: str = ""
+    """For kind="text": the answer.
+    For kind="command": the command's argument ("" if none was given)."""
+
+    command: SlashCommand | None = None
+    """The registry entry, when kind == "command"."""
+
+    error: str = ""
+    """A ready-to-print explanation, when kind == "rejected"."""
+
+
+# ---------------------------------------------------------------------------
+# The registry.  Adding a command means adding ONE row here plus one handler.
+# /help is generated from this tuple, so help can never drift from behaviour.
+# ---------------------------------------------------------------------------
+
+REGISTRY: tuple[SlashCommand, ...] = (
+    # ---- terminal scope: answered locally, the graph never wakes up --------
+    SlashCommand(
+        name="help",
+        scope="terminal",
+        summary="Show the commands available right now",
+        aliases=("h", "?"),
+    ),
+    SlashCommand(
+        name="usage",
+        scope="terminal",
+        summary="Token and cache usage per role",
+    ),
+    SlashCommand(
+        name="state",
+        scope="terminal",
+        summary="Show where the graph is and what it is holding",
+        argument="[full]",
+    ),
+    # ---- graph scope: forwarded into the graph, handled in nodes/human.py --
+    SlashCommand(
+        name="exit",
+        scope="graph",
+        summary="End the session (your progress is saved)",
+        aliases=("quit", "q"),
+    ),
+    SlashCommand(
+        name="new",
+        scope="graph",
+        summary="Abandon this task and start a new one in the same repo",
+        argument="<what you want next>",
+    ),
+)
+
+
+def lookup(name: str) -> SlashCommand | None:
+    """Find a command by its name or any of its aliases.  Case-insensitive."""
+    wanted = name.strip().lower()
+    for command in REGISTRY:
+        if wanted == command.name or wanted in command.aliases:
+            return command
+    return None
+
+
+def all_names() -> list[str]:
+    """Every name AND alias, for the "did you mean ...?" suggestion."""
+    names: list[str] = []
+    for command in REGISTRY:
+        names.append(command.name)
+        names.extend(command.aliases)
+    return names
+
+
+def available(purpose: str | None) -> list[SlashCommand]:
+    """The commands valid in a given context, in registry order.
+
+    `purpose is None` means "don't filter" -- used when we genuinely do not
+    know the context, e.g. printing help before the graph has started.
+    """
+    if purpose is None:
+        return list(REGISTRY)
+    return [c for c in REGISTRY if c.contexts is None or purpose in c.contexts]
+
+
+def parse(raw: str, *, purpose: str = "") -> ParsedInput:
+    """Turn one typed line into a ParsedInput.
+
+    The rules are applied strictly in order.  Each `if` below is one rule, and
+    the numbering matches the comments so you can follow it top to bottom.
+    """
+    text = raw.strip()
+
+    # Rule 1 -- empty input is not an answer and not a command.  The terminal
+    # re-prompts on this rather than resuming the graph with "".
+    if not text:
+        return ParsedInput(kind="text", raw=text, text="")
+
+    # Rule 2 -- "//foo" is the escape hatch for answering with a literal
+    # leading slash.  Without this you could never tell the agent to look at,
+    # say, "/etc/hosts" as your whole answer.
+    if text.startswith("//"):
+        return ParsedInput(kind="text", raw=text, text=text[1:])
+
+    # Rule 3 -- anything not starting with "/" is an ordinary answer.
+    if not text.startswith("/"):
+        return ParsedInput(kind="text", raw=text, text=text)
+
+    # Rule 4 -- split "/name rest of the line" into name + argument.
+    # split(maxsplit=1) handles any run of whitespace, so "/plan   go" works.
+    body = text[1:]
+    parts = body.split(maxsplit=1)
+    if not parts:
+        # The human typed a bare "/".
+        return ParsedInput(
+            kind="rejected",
+            raw=text,
+            error="Type a command name after the slash, e.g. /help.",
+        )
+    name = parts[0].lower()
+    argument = parts[1].strip() if len(parts) > 1 else ""
+
+    command = lookup(name)
+
+    # Rule 5 -- unknown command.  Never forward it to the model: a typo would
+    # silently become an expensive answer.  Suggest the closest real name.
+    if command is None:
+        suggestion = difflib.get_close_matches(name, all_names(), n=1, cutoff=0.6)
+        hint = f" Did you mean /{suggestion[0]}?" if suggestion else ""
+        return ParsedInput(
+            kind="rejected",
+            raw=text,
+            error=f"Unknown command /{name}.{hint} Type /help for the list.",
+        )
+
+    # Rule 6 -- known command, wrong context.  Say where it IS valid so the
+    # message teaches instead of just refusing.
+    if command.contexts is not None and purpose not in command.contexts:
+        where = ", ".join(command.contexts)
+        return ParsedInput(
+            kind="rejected",
+            raw=text,
+            error=(
+                f"/{command.name} is not available here. "
+                f"It works during: {where}. Type /help to see what is."
+            ),
+        )
+
+    # Rule 7 -- an argument was supplied to a command that takes none.  This
+    # usually means a misunderstanding, so it is better to say so than to
+    # silently drop the text the human typed.
+    if not command.argument and argument:
+        return ParsedInput(
+            kind="rejected",
+            raw=text,
+            error=f"/{command.name} takes no arguments. Usage: /{command.name}",
+        )
+
+    # Rule 8 -- a REQUIRED argument is missing.  By convention the placeholder
+    # is wrapped in <angle brackets> when required and [square brackets] when
+    # optional, so the registry row itself declares which it is.
+    if command.argument.startswith("<") and not argument:
+        return ParsedInput(
+            kind="rejected",
+            raw=text,
+            error=f"/{command.name} needs an argument. Usage: /{command.name} {command.argument}",
+        )
+
+    # Rule 9 -- a valid command.
+    return ParsedInput(kind="command", raw=text, text=argument, command=command)
+
+
+def render_help(purpose: str | None = None) -> str:
+    """Build the /help text from REGISTRY, filtered to the current context."""
+    commands = available(purpose)
+
+    # Pre-compute the left column so the summaries line up.
+    def usage(command: SlashCommand) -> str:
+        line = f"/{command.name}"
+        if command.argument:
+            line += f" {command.argument}"
+        return line
+
+    width = max((len(usage(c)) for c in commands), default=0)
+
+    lines = ["Commands:"]
+    for command in commands:
+        alias_note = ""
+        if command.aliases:
+            alias_note = "  (also " + ", ".join(f"/{a}" for a in command.aliases) + ")"
+        lines.append(f"  {usage(command):<{width}}  {command.summary}{alias_note}")
+
+    lines.append("")
+    lines.append("Anything that does not start with / is sent to the agent as your answer.")
+    lines.append("Start an answer with // if you really need it to begin with a slash.")
+    return "\n".join(lines)
