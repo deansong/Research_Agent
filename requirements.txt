@@ -1,0 +1,5 @@
+openai-codex
+langgraph
+langgraph-checkpoint-sqlite
+pydantic>=2
+typing-extensions
