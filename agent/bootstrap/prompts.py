@@ -3,9 +3,28 @@ WHAT:  Standing instructions for the bootstrap graph's two model nodes.
 WHY:   The designer's instructions are the single most important prose in the
        project: schema problems are an afternoon each, but getting a model to
        write GOOD prompts for nodes it just invented is the real bottleneck.
-CONCEPT: Not LangGraph. Note that DESIGNER_INSTRUCTIONS embeds the shipped
-       default agent VERBATIM, read from disk -- so the worked example the
-       model sees can never drift from the format the loader accepts.
+CONCEPT: Not LangGraph -- but note where each piece is sent, which is not
+       cosmetic.
+
+--------------------------------------------------------------------------
+WHY THE WORKED EXAMPLE IS NOT IN THE INSTRUCTIONS
+--------------------------------------------------------------------------
+It used to be, and it made every designer call hang forever.
+
+Measured against a live provider: developer_instructions above roughly 6 KB
+stop completing -- no error, no slow reply, the turn simply never finishes.
+Ten kilobytes of plain filler prose wedges it exactly as thoroughly as a JSON
+example, so it is SIZE, not content. The per-turn prompt has no such problem:
+an 11.8 KB prompt with 4 KB of instructions returned in 34 seconds.
+
+So the split is deliberate:
+    developer_instructions   the standing rules, kept small          (~4 KB)
+    the turn prompt          the task, plus the bulky worked example (~12 KB)
+
+The example is still read from disk rather than pasted, so what the model is
+shown can never drift from what the loader accepts.
+
+See SAFE_INSTRUCTIONS_CHARS in agent/backends/codex.py for the measurements.
 """
 
 from __future__ import annotations
@@ -115,12 +134,20 @@ JUDGEMENT
 """.strip()
 
 
-def designer_instructions() -> str:
-    """Instructions plus the shipped default agent as a worked example.
+# The standing rules, and nothing else. MUST stay well under
+# codex.SAFE_INSTRUCTIONS_CHARS -- see the module docstring.
+DESIGNER_INSTRUCTIONS = _DESIGNER_PREAMBLE
 
-    Read from disk rather than pasted, so the example the model is shown is
-    literally the folder the loader accepts. If the format changes and the
-    example does not, the tests break -- which is the point.
+
+def worked_example() -> str:
+    """The shipped default agent, for appending to the designer's PROMPT.
+
+    Read from disk so it cannot drift from the format the loader accepts. Sent
+    per-turn rather than as standing instructions because instructions have a
+    size cliff and prompts do not (module docstring).
+
+    Only the first turn needs it: the repair prompt continues the same provider
+    conversation, which already has it.
     """
     from agent.storage import builtin_agents_dir
 
@@ -129,28 +156,15 @@ def designer_instructions() -> str:
     nodes = json.loads((default / "nodes.json").read_text())
 
     return (
-        _DESIGNER_PREAMBLE
-        + "\n\n"
-        + "--------------------------------------------------------------------------\n"
-        + "A COMPLETE WORKED EXAMPLE -- this is a real, working agent\n"
-        + "--------------------------------------------------------------------------\n"
-        + "graph.json:\n"
+        "\n\n"
+        "--------------------------------------------------------------------------\n"
+        "A COMPLETE WORKED EXAMPLE -- this is a real, working agent\n"
+        "--------------------------------------------------------------------------\n"
+        "graph.json:\n"
         + json.dumps(graph, indent=2)
-        + "\n\nnodes.json (instructions and prompts abridged here; write yours in full):\n"
-        + json.dumps(_abridge(nodes), indent=2)
+        + "\n\nnodes.json:\n"
+        + json.dumps(nodes, indent=2)
     )
-
-
-def _abridge(nodes: dict) -> dict:
-    """Shorten the long prose so the example shows STRUCTURE without eating the
-    context window."""
-    out = {}
-    for name, config in nodes.items():
-        entry = dict(config)
-        if isinstance(entry.get("instructions"), str) and len(entry["instructions"]) > 160:
-            entry["instructions"] = entry["instructions"][:160] + " ...(abridged)"
-        out[name] = entry
-    return out
 
 
 REPAIR_PREFIX = """

@@ -23,6 +23,29 @@ from agent.backends.base import (
     Usage,
 )
 
+# --------------------------------------------------------------------------
+# MEASURED: developer_instructions has an effective size limit
+# --------------------------------------------------------------------------
+# Above roughly 6 KB, a Codex turn stops completing. Not an error, not a slow
+# reply -- the notification stream simply never delivers a turn.completed and
+# the call hangs until something else kills it.
+#
+# Measured on this stack, same task and same output schema each time:
+#
+#      3,998 chars  ->   32s  OK
+#      5,918 chars  ->  149s  OK
+#     10,468 chars  ->  STUCK (>240s)
+#     13,806 chars  ->  STUCK (>240s)
+#     13,940 chars  ->  STUCK (>240s)   <- plain prose, no JSON at all
+#
+# The last row is the important one: it is SIZE, not content. Ten kilobytes of
+# harmless filler wedges the call exactly as thoroughly as a JSON example did.
+#
+# So: keep personas short, and put bulky reference material in the per-turn
+# prompt instead. We warn rather than raise, because the real limit is the
+# provider's and may move -- but a warning you can see beats a hang you cannot.
+SAFE_INSTRUCTIONS_CHARS = 6000
+
 # Our provider-neutral Access maps onto Codex's own sandbox levels.
 # NONE has no Codex equivalent (Codex always runs in a working directory), so
 # it is clamped to read_only -- the closest thing to "cannot change anything".
@@ -158,6 +181,16 @@ def _collect(stream, turn_id: str):
     return _collect_turn_result(stream, turn_id=turn_id)
 
     def _get_thread(self, *, thread_id, repo_path, access, developer_instructions):
+        if len(developer_instructions) > SAFE_INSTRUCTIONS_CHARS:
+            print(
+                f"    ! warning: these developer instructions are "
+                f"{len(developer_instructions):,} characters. Past about "
+                f"{SAFE_INSTRUCTIONS_CHARS:,}, Codex turns have been measured to hang "
+                f"instead of replying.\n"
+                f"      Move bulky reference material into the prompt instead. "
+                f"See SAFE_INSTRUCTIONS_CHARS in agent/backends/codex.py."
+            )
+
         common: dict[str, object] = {
             "cwd": repo_path,
             "sandbox": _SANDBOX[access],

@@ -10,7 +10,7 @@ CONCEPT: A node whose OUTPUT is another graph. Note it produces data only; the
 from __future__ import annotations
 
 from agent.backends.base import Access, BackendOutputError
-from agent.bootstrap.prompts import REPAIR_PREFIX, designer_instructions
+from agent.bootstrap.prompts import DESIGNER_INSTRUCTIONS, REPAIR_PREFIX, worked_example
 from agent.bootstrap.schemas import DesignerOutput
 from agent.bootstrap.state import BootstrapState, transcript_text
 from agent.statelib import merge_section
@@ -41,6 +41,10 @@ def make_designer(backend):
                 f"{state.get('human', {}).get('last_answer', '') or '(none)'}\n\n"
                 f"Inspect the repository, then design the agent. Return the task_brief and "
                 f"the complete folder."
+                # The example rides in the PROMPT, not the instructions: over
+                # ~6 KB of developer_instructions a Codex turn never completes.
+                # See agent/bootstrap/prompts.py.
+                + worked_example()
             )
 
         try:
@@ -48,7 +52,7 @@ def make_designer(backend):
                 thread_id=thread_id,
                 repo_path=state["repo_path"],
                 access=Access.READ_ONLY,
-                developer_instructions=designer_instructions(),
+                developer_instructions=DESIGNER_INSTRUCTIONS,
                 prompt=prompt,
                 output_model=DesignerOutput,
             )
