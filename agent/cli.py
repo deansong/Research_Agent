@@ -1,36 +1,35 @@
 """
-WHAT:  The command line entry point and the composition root.
-WHY:   One place where every real object is created and wired together.
+WHAT:  The command line entry point -- argument parsing, and the terminal's
+       half of the conversation.
+WHY:   One place that decides what to SAY. What to BUILD lives next door in
+       agent/runtime.py, because the web UI needs the same objects and none of
+       the same sentences.
 CONCEPT: How the pieces fit --
 
     config  ->  agent folder  ->  backends  ->  compiled graph  ->  terminal
+                \\________________ agent/runtime.py ______________/
 
-The agent itself is now DATA: a folder of JSON describing nodes, prompts and
-topology. This file resolves which folder to use, checks it, builds the
-backends it asks for, compiles it, and hands it to the REPL.
+The agent itself is DATA: a folder of JSON describing nodes, prompts and
+topology. `Runtime` resolves which folder to use, checks it, builds the backends
+it asks for and compiles it; this file decides when to do that, prints what
+happened, and hands the result to the REPL.
+
+If you are reading to learn how a run works, read `runtime.py` first -- it is
+the part with no I/O in it.
 """
 
 from __future__ import annotations
 
 import argparse
-import contextlib
 from pathlib import Path
 
-from langgraph.checkpoint.sqlite import SqliteSaver
-
 from agent import storage
-from agent.agentfolder.load import AgentFolderError, load_agent_folder
 from agent.agentfolder.render import mermaid
-from agent.agentfolder.validate import format_problems, validate_folder
-from agent.backends import build_backends
-from agent.backends.base import Access, BackendError
-from agent.bootstrap.graph import build_bootstrap_graph
-from agent.bootstrap.session import bootstrap_session
+from agent.agentfolder.validate import format_problems
+from agent.backends.base import BackendError
 from agent.config import DEFAULT_SESSION, backend_for, describe, load_config
+from agent.runtime import needed_for, open_runtime
 from agent.terminal import drive, print_usage_table
-from agent.work.compile import backends_needed, compile_agent
-from agent.work.session import work_session
-from agent.work.state import initial_work_state
 
 
 def main() -> None:
@@ -81,23 +80,16 @@ def main() -> None:
     # Both phases share one database. They MUST use different thread ids --
     # measured: two graphs with different schemas on the same thread do not
     # raise, their channels silently merge and one schema's keys turn up in
-    # the other's state.
-    with contextlib.ExitStack() as stack:
-        codex = _LazyCodex(stack)
-
-        checkpointer = stack.enter_context(
-            SqliteSaver.from_conn_string(str(paths.checkpoint))
-        )
-        checkpointer.setup()
+    # the other's state. Runtime owns that rule; see agent/runtime.py.
+    with open_runtime(cfg, paths) as runtime:
 
         # ---- 3. phase 1: design an agent, unless we already have one -------
-        folder_path = None
-        if args.pre_build_agent:
-            folder_path = storage.resolve_agent(args.pre_build_agent, paths)
-            print(f"Skipping the design phase: using {folder_path}")
-        elif paths.has_agent():
-            folder_path = paths.agent_dir
-            print(f"Reusing the agent designed for this session: {folder_path}")
+        folder_path = runtime.resolve_folder(args.pre_build_agent)
+        if folder_path is not None:
+            if args.pre_build_agent:
+                print(f"Skipping the design phase: using {folder_path}")
+            else:
+                print(f"Reusing the agent designed for this session: {folder_path}")
 
         if folder_path is None:
             if args.explain:
@@ -106,27 +98,25 @@ def main() -> None:
                 print("Run without --explain to design one, or pass --pre-build-agent.")
                 return
             print(describe(cfg, paths))
-            if not _bootstrap(cfg, paths, checkpointer, codex, task_brief):
+            if not _bootstrap(runtime, cfg, paths, task_brief):
                 return
-            folder_path = paths.agent_dir if paths.has_agent() else storage.resolve_agent(
-                cfg.default_agent, paths
-            )
+            folder_path = runtime.resolve_folder(None) or runtime.fallback_folder()
 
         # ---- 4. load and check the agent -----------------------------------
-        try:
-            folder = load_agent_folder(folder_path)
-        except AgentFolderError as exc:
-            raise SystemExit(f"\nCould not read the agent at {folder_path}:\n{exc}")
+        loaded = runtime.load_folder(folder_path)
+        if loaded.folder is None:
+            raise SystemExit(
+                f"\nCould not read the agent at {folder_path}:\n{loaded.error}"
+            )
 
-        problems = validate_folder(folder)
-        blocking = [p for p in problems if not p.warning]
-        if problems:
+        folder = loaded.folder
+        if loaded.problems:
             print(f"\nAgent {folder.graph.name!r} validation:")
-            print(format_problems(problems))
-        if blocking:
+            print(format_problems(loaded.problems))
+        if loaded.blocking:
             raise SystemExit("\nThat agent cannot run. Fix the errors above.")
 
-        needed = backends_needed(folder)
+        needed = needed_for(folder)
 
         if args.explain:
             _explain(cfg, folder, paths, needed)
@@ -136,12 +126,12 @@ def main() -> None:
 
         # ---- 5. phase 2: run it --------------------------------------------
         try:
-            backends = build_backends(cfg, needed, codex_client=codex.get(cfg, needed))
+            backends = runtime.backends(needed)
         except BackendError as exc:
             raise SystemExit(f"\n{exc}")
 
         try:
-            _run_work_phase(folder, cfg, paths, backends, checkpointer, task_brief)
+            _run_work_phase(runtime, folder, cfg, paths, backends, task_brief)
         except BackendError as exc:
             # A provider problem, not a bug. The graph checkpoints after every
             # completed node, so whatever finished before this is still there --
@@ -155,72 +145,30 @@ def main() -> None:
             )
 
 
-class _LazyCodex:
-    """Opens the Codex client on first use, and only if something needs it.
+def _bootstrap(runtime, cfg, paths, request) -> bool:
+    """Phase 1, and the terminal's commentary on it.
 
-    It has to be lazy now: the work graph's roles are not known until phase 1
-    has finished designing the agent, so we cannot decide up front whether any
-    of them uses Codex. Being lazy is also what lets --backend fake run with no
-    login and no network.
+    Returns True if an agent is ready to run. Everything about HOW the design
+    graph is built lives in Runtime.bootstrap_session(); what is left here is
+    the two sentences a terminal user wants to see.
     """
-
-    def __init__(self, stack):
-        self._stack = stack
-        self._client = None
-
-    def get(self, cfg, needed):
-        if not any(backend_for(cfg, role).provider == "codex" for role in needed):
-            return self._client
-        if self._client is None:
-            from agent.backends.codex import open_client
-
-            self._client = self._stack.enter_context(open_client())
-        return self._client
-
-
-def _bootstrap(cfg, paths, checkpointer, codex, request) -> bool:
-    """Phase 1. Returns True if an agent is ready to run."""
     if not request:
         print("No task supplied.")
         return False
 
-    needed = {
-        "discussor": Access.READ_ONLY,
-        "planner": Access.READ_ONLY,
-        "designer": Access.READ_ONLY,
-    }
     try:
-        backends = build_backends(cfg, needed, codex_client=codex.get(cfg, needed))
+        session = runtime.bootstrap_session(request)
     except BackendError as exc:
         raise SystemExit(f"\n{exc}")
 
-    graph = build_bootstrap_graph(
-        backends, paths, checkpointer, max_attempts=cfg.max_design_attempts
-    )
-    session = bootstrap_session(
-        graph=graph,
-        # paths.session.name, not cfg.session: cfg.session is None whenever
-        # the name was derived from the task or the folder came from
-        # --session-dir, which used to make every such run share the literal
-        # thread id "None:bootstrap". Harmless today only because each session
-        # gets its own checkpoint file -- and that is far too fragile a reason.
-        thread_id=f"{paths.session.name}:bootstrap",
-        recursion_limit=cfg.recursion_limit,
-        repo_path=str(paths.repo),
-        session_dir=str(paths.session),
-        request=request,
-    )
-
     values = drive(session, cfg)
-    outcome = values.get("outcome")
 
-    if outcome != "ready":
+    if values.get("outcome") != "ready":
         print("\nStopped before an agent was ready.")
         return False
 
-    brief = (values.get("design") or {}).get("task_brief", "").strip()
+    brief = runtime.save_brief(values)
     if brief:
-        paths.brief.write_text(brief + "\n")
         print("\n===== the brief handed to the new agent =====")
         print(brief)
 
@@ -358,7 +306,7 @@ def _warn_if_task_changed(paths, task: str) -> None:
     )
 
 
-def _run_work_phase(folder, cfg, paths, backends, checkpointer, task_brief) -> None:
+def _run_work_phase(runtime, folder, cfg, paths, backends, task_brief) -> None:
     """Run the generated agent, once per task.
 
     The loop exists because /new-style commands end the run with
@@ -367,45 +315,24 @@ def _run_work_phase(folder, cfg, paths, backends, checkpointer, task_brief) -> N
     thread with the new brief, carrying provider conversations over so the
     prompt-cache saving is preserved.
     """
-    from agent.agentfolder.commands import build_registry  # noqa: F401  (docs)
-
     if not task_brief:
         print("No task supplied.")
         return
+
+    _, plan_warning = runtime.load_plan_reporting()
+    if plan_warning:
+        print(f"Warning: {plan_warning}")
 
     threads: dict[str, str] = {}
     run_index = 1
 
     while True:
-        graph = compile_agent(
+        session = runtime.work_session(
             folder,
             backends=backends,
-            checkpointer=checkpointer,
-            registry=__import__(
-                "agent.agentfolder.commands", fromlist=["build_registry"]
-            ).build_registry(folder),
-            artifacts_dir=str(paths.artifacts),
-            session_dir=str(paths.session),
-        )
-
-        # The two phases and each task get their OWN thread id. Measured: two
-        # graphs sharing a thread id do not raise -- their channels silently
-        # merge, and one schema's keys turn up in the other's state.
-        thread_id = f"{paths.session.name}:work" + (f":{run_index}" if run_index > 1 else "")
-
-        session = work_session(
-            folder=folder,
-            graph=graph,
-            thread_id=thread_id,
-            recursion_limit=cfg.work_recursion_limit,
-            initial_state=initial_work_state(
-                repo_path=str(paths.repo),
-                task_brief=task_brief,
-                agent_dir=str(folder.path),
-                artifacts_dir=str(paths.artifacts),
-                plan=_load_plan(paths),
-                threads=threads,
-            ),
+            task_brief=task_brief,
+            run_index=run_index,
+            threads=threads,
         )
 
         try:
@@ -429,35 +356,11 @@ def _run_work_phase(folder, cfg, paths, backends, checkpointer, task_brief) -> N
         threads = dict(values.get("threads", {}))
         task_brief = values["next_request"]
 
-        # This DELIBERATELY reuses one agent for a different task -- the very
-        # thing _warn_if_task_changed() refuses. The difference is consent:
-        # there, a stale session would silently hijack a new task; here you
-        # typed a command asking for exactly this. Both files are updated so
-        # the session's recorded identity matches what it is now doing.
-        paths.request.write_text(task_brief)
-        paths.brief.write_text(task_brief)
+        runtime.adopt_new_task(task_brief)
         run_index += 1
         print(f"\n===== new task, same agent =====\n{task_brief}")
         print("(this agent was designed for the previous task -- /exit and "
               "start a new session if it does not fit)")
-
-
-def _load_plan(paths) -> dict:
-    """Read plan.json, if this session has one.
-
-    Absent under --pre-build-agent, where no planning happened: {my_steps}
-    then renders empty and the node falls back to {task_brief}, which is the
-    same graceful-degradation every placeholder has.
-    """
-    import json
-
-    if not paths.plan.exists():
-        return {}
-    try:
-        return json.loads(paths.plan.read_text())
-    except json.JSONDecodeError as exc:
-        print(f"Warning: {paths.plan} is not valid JSON ({exc}); ignoring it.")
-        return {}
 
 
 def _recoverable(exc: BackendError, paths, folder) -> str:
@@ -480,24 +383,6 @@ def _report(values: dict) -> None:
     print("\nAgent session ended.")
     if values.get("usage"):
         print_usage_table(values["usage"])
-
-
-def _resolve_folder(args, paths, cfg) -> Path:
-    """--pre-build-agent, else this session's own agent, else the default.
-
-    The middle case is what makes a session resumable: once the bootstrap graph
-    has designed an agent and the validator renamed agent.tmp/ to agent/, that
-    folder is the durable record of what this session runs.
-    """
-    if args.pre_build_agent:
-        return storage.resolve_agent(args.pre_build_agent, paths)
-
-    if paths.has_agent():
-        print(f"Using the agent already designed for this session: {paths.agent_dir}")
-        return paths.agent_dir
-
-    # Until the bootstrap graph exists (step 4), fall back to the shipped agent.
-    return storage.resolve_agent(cfg.default_agent, paths)
 
 
 def _explain(cfg, folder, paths, needed) -> None:
