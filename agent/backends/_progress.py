@@ -25,6 +25,20 @@ from typing import Any
 MAX_LINE = 100
 
 
+def _unwrap(item: Any) -> Any:
+    """Get the real item out of the SDK's ThreadItem wrapper.
+
+    ThreadItem is a Pydantic RootModel: every concrete item -- a command
+    execution, a file change, a reasoning summary -- arrives wrapped, and
+    type(item).__name__ is always the literal string "ThreadItem".
+
+    This cost a whole live run to find. The first version of this module
+    matched on the wrapper's name, so it matched nothing at all and printed
+    not one line while the executor was visibly running commands.
+    """
+    return getattr(item, "root", item)
+
+
 def describe(event: Any) -> str | None:
     """One progress line for one stream event, or None to stay quiet.
 
@@ -52,6 +66,7 @@ def _started(item: Any) -> str | None:
     """
     if item is None:
         return None
+    item = _unwrap(item)
     if type(item).__name__ == "CommandExecutionThreadItem":
         return _line("$", getattr(item, "command", ""))
     return None
@@ -60,6 +75,7 @@ def _started(item: Any) -> str | None:
 def _completed(item: Any) -> str | None:
     if item is None:
         return None
+    item = _unwrap(item)
     kind = type(item).__name__
 
     if kind == "CommandExecutionThreadItem":

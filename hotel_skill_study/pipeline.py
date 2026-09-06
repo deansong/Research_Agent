@@ -1,13 +1,17 @@
 from __future__ import annotations
 
 import csv
+import copy
 import hashlib
 import json
 import math
 import os
+import platform
 import random
 import re
 import statistics
+import subprocess
+import sys
 import tempfile
 from collections import Counter, defaultdict
 from datetime import datetime, timezone
@@ -39,6 +43,14 @@ def digest(value: Any) -> str:
 
 def utc_now() -> str:
     return datetime.now(timezone.utc).isoformat()
+
+
+def git_revision() -> str | None:
+    try:
+        return subprocess.run(["git", "rev-parse", "HEAD"], cwd=ROOT, check=True,
+                              capture_output=True, text=True).stdout.strip()
+    except (OSError, subprocess.CalledProcessError):
+        return None
 
 
 def atomic_json(path: Path, value: Any) -> None:
@@ -110,13 +122,33 @@ def render_prompt(study: dict[str, Any], variant: dict[str, Any]) -> str:
     return variant["template"].format(role=role["display_name"], industry=role["industry"])
 
 
-def _record_key(model: dict[str, Any], variant: dict[str, Any], seed: int,
-                study: dict[str, Any]) -> str:
-    return digest({"checkpoint": model["checkpoint"], "revision": model["revision"],
-                   "tokenizer": model["tokenizer_checkpoint"],
-                   "tokenizer_revision": model["tokenizer_revision"],
-                   "prompt": render_prompt(study, variant), "seed": seed,
-                   "generation": study["generation"]})
+def _discovery_identity(model: dict[str, Any], variant: dict[str, Any], seed: int,
+                        study: dict[str, Any], backend: str,
+                        fixture_sha256: str | None) -> dict[str, Any]:
+    return {"schema_version": 2, "backend": backend,
+            "fixture_source_sha256": fixture_sha256,
+            "checkpoint": model["checkpoint"], "revision": model["revision"],
+            "tokenizer_checkpoint": model["tokenizer_checkpoint"],
+            "tokenizer_revision": model["tokenizer_revision"],
+            "architecture": model["architecture"], "prompt_adapter": model["prompt_adapter"],
+            "role": study["role"], "prompt_variant": variant,
+            "rendered_prompt": render_prompt(study, variant), "seed": seed,
+            "generation": study["generation"]}
+
+
+def _run_identity(study: dict[str, Any], manifest: dict[str, Any], backend: str,
+                  fixture_sha256: str | None) -> dict[str, Any]:
+    return {"schema_version": 2, "backend": backend,
+            "study_config_sha256": digest(study), "model_manifest_sha256": digest(manifest),
+            "fixture_source_sha256": fixture_sha256}
+
+
+def _reject_incompatible_run(path: Path, expected_identity: dict[str, Any]) -> None:
+    if not path.exists():
+        return
+    existing = load_json(path)
+    if existing.get("run_identity") != expected_identity:
+        raise ValueError(f"incompatible existing run manifest at {path}; use a new output directory")
 
 
 def _fixture_index(path: Path) -> dict[tuple[str, str, int], dict[str, Any]]:
@@ -167,19 +199,26 @@ def discover(study_path: Path, models_path: Path, run_dir: Path, *, backend: str
     run_dir.mkdir(parents=True, exist_ok=True)
     records_dir = run_dir / "records"
     records_dir.mkdir(exist_ok=True)
+    fixture_sha256 = digest(json_lines(fixtures_path)) if fixtures_path else None
+    run_identity = _run_identity(study, manifest, backend, fixture_sha256)
+    _reject_incompatible_run(run_dir / "run_manifest.json", run_identity)
     fixtures = _fixture_index(fixtures_path) if fixtures_path else {}
     counts = Counter()
     for model in (m for m in manifest["models"] if m["selected"]):
         for variant in study["prompt_variants"]:
             for seed in study["seeds"]:
-                key = _record_key(model, variant, seed, study)
+                identity = _discovery_identity(model, variant, seed, study, backend, fixture_sha256)
+                key = digest(identity)
                 target = records_dir / f"{key}.json"
                 if target.exists():
-                    counts["cached"] += 1
-                    continue
+                    cached = load_json(target)
+                    if cached.get("cache_identity") != identity:
+                        raise ValueError(f"cache identity mismatch in {target}")
+                    counts["cached"] += 1; continue
                 started = utc_now()
                 record: dict[str, Any] = {
-                    "schema_version": 1, "record_id": key, "study_id": study["study_id"],
+                    "schema_version": 2, "record_id": key, "cache_identity": identity,
+                    "study_id": study["study_id"],
                     "role": study["role"], "model_id": model["id"],
                     "checkpoint": model["checkpoint"], "revision": model["revision"],
                     "tokenizer_checkpoint": model["tokenizer_checkpoint"],
@@ -215,7 +254,8 @@ def discover(study_path: Path, models_path: Path, run_dir: Path, *, backend: str
         "schema_version": 1, "study_config": str(study_path), "study_config_sha256": digest(study),
         "model_manifest": str(models_path), "model_manifest_sha256": digest(manifest),
         "backend": backend, "fixture_data": backend == "fixture", "updated_at": utc_now(),
-        "record_counts": dict(counts), "execution_status": "fixture_demo" if backend == "fixture" else "local_inference"
+        "record_counts": dict(counts), "run_identity": run_identity,
+        "execution_status": "fixture_demo" if backend == "fixture" else "local_inference"
     })
     return dict(counts)
 
@@ -367,18 +407,81 @@ def write_taxonomy_review_files(taxonomy: dict[str, Any], output_dir: Path) -> N
     })
 
 
-def approve_taxonomy(taxonomy_path: Path, approval_path: Path, reviewer: str, note: str) -> dict[str, Any]:
+def derive_taxonomy_alternative(taxonomy_path: Path, output_path: Path,
+                                alternative_id: str = "reviewed_splits_v1") -> dict[str, Any]:
+    """Create a versioned sensitivity proposal without mutating the approved taxonomy."""
+    base = load_json(taxonomy_path)
+    claimed = base.get("taxonomy_sha256")
+    check = dict(base); check.pop("taxonomy_sha256", None)
+    if digest(check) != claimed:
+        raise ValueError("base taxonomy content does not match its digest")
+    if alternative_id != "reviewed_splits_v1":
+        raise ValueError(f"unsupported taxonomy alternative {alternative_id!r}")
+    split_labels = {"Conflict resolution": "Conflict resolution", "Cash handling": "Cash handling",
+                    "PMS proficiency": "PMS proficiency",
+                    "Property management systems": "PMS proficiency",
+                    "Accuracy": "Accuracy", "Prioritization": "Prioritization"}
+    mappings = copy.deepcopy(base["mappings"])
+    for mapping in mappings:
+        if mapping["raw_phrase"] in split_labels:
+            mapping["proposed_canonical"] = split_labels[mapping["raw_phrase"]]
+            mapping["sensitivity_transformation"] = "split_from_approved_merge"
+    grouped: dict[str, list[dict[str, Any]]] = defaultdict(list)
+    for mapping in mappings:
+        grouped[mapping["proposed_canonical"]].append(mapping)
+    categories = []
+    for label, evidence in sorted(grouped.items()):
+        model_counts = Counter(x["model_id"] for x in evidence)
+        categories.append({"canonical_id": re.sub(r"[^a-z0-9]+", "_", label.casefold()).strip("_"),
+                           "label": label, "occurrence_count": len(evidence),
+                           "distinct_record_count": len({x["record_id"] for x in evidence}),
+                           "model_counts": dict(sorted(model_counts.items())),
+                           "raw_variants": dict(sorted(Counter(x["raw_phrase"] for x in evidence).items())),
+                           "supporting_examples": [{k: x[k] for k in ("raw_phrase", "model_id", "record_id")}
+                                                   for x in evidence[:5]],
+                           "confidence": min(x["confidence"] for x in evidence),
+                           "review_flags": ["taxonomy_sensitivity_alternative"],
+                           "decision": "proposed_sensitivity_alternative"})
+    body = {"schema_version": 1, "status": "proposed_unapproved",
+            "taxonomy_version": "v1-alt-reviewed-splits-v1",
+            "fixture_data": base.get("fixture_data", False), "created_at": utc_now(),
+            "alternative_id": alternative_id, "alternative_of_sha256": claimed,
+            "method": {"transformation": "Split reviewer-flagged approved merges by exact raw phrase",
+                       "split_labels": split_labels, "non_merge_policy": "All other v1 mappings unchanged"},
+            "source_run": base.get("source_run"), "categories": categories, "mappings": mappings,
+            "failures": copy.deepcopy(base.get("failures", [])),
+            "coverage": {"successful_records": base["coverage"]["successful_records"],
+                         "raw_phrase_occurrences": len(mappings), "mapped_occurrences": len(mappings),
+                         "mapping_coverage": 1.0 if mappings else 0.0}}
+    body["taxonomy_sha256"] = digest(body)
+    atomic_json(output_path, body)
+    return body
+
+
+def approve_taxonomy(taxonomy_path: Path, approval_path: Path, reviewer: str, note: str,
+                     approval_scope: str = "human") -> dict[str, Any]:
     taxonomy = load_json(taxonomy_path)
     if taxonomy.get("status") != "proposed_unapproved":
         raise ValueError("only a proposed_unapproved taxonomy can be approved")
+    if approval_scope not in {"human", "fixture_test"}:
+        raise ValueError("approval_scope must be human or fixture_test")
+    if approval_scope == "fixture_test" and not taxonomy.get("fixture_data"):
+        raise ValueError("fixture_test approval is allowed only for fixture-derived taxonomies")
     approval = {"schema_version": 1, "decision": "approved", "taxonomy_sha256": taxonomy["taxonomy_sha256"],
-                "reviewer": reviewer, "note": note, "approved_at": utc_now()}
+                "taxonomy_version": taxonomy.get("taxonomy_version"),
+                "approval_scope": approval_scope, "reviewer": reviewer, "note": note,
+                "approved_at": utc_now()}
     atomic_json(approval_path, approval)
     return approval
 
 
 def require_approval(taxonomy_path: Path, approval_path: Path) -> tuple[dict[str, Any], dict[str, Any]]:
     taxonomy = load_json(taxonomy_path)
+    claimed_digest = taxonomy.get("taxonomy_sha256")
+    digest_input = dict(taxonomy)
+    digest_input.pop("taxonomy_sha256", None)
+    if not claimed_digest or digest(digest_input) != claimed_digest:
+        raise PermissionError("scoring blocked: taxonomy content does not match its embedded digest")
     if not approval_path.exists():
         raise PermissionError("scoring blocked: taxonomy has no explicit human approval record")
     approval = load_json(approval_path)
@@ -413,9 +516,19 @@ def summarize_scores(rows: Iterable[dict[str, Any]], iterations: int = 2000,
         vals = [float(x["calibrated_yes_probability"]) for x in items]
         lo, hi = bootstrap_interval(vals, iterations=iterations, level=level,
                                     seed=int(digest([model_id, skill])[:8], 16))
-        out.append({"model_id": model_id, "canonical_id": skill, "n": len(vals),
+        fixture_data = all(bool(x.get("fixture_data")) for x in items)
+        backend = items[0].get("backend")
+        warning = ("SYNTHETIC FIXTURE: software verification only; not empirical."
+                   if fixture_data else
+                   "Model-relative elicitation; not a direct labour-market measurement.")
+        out.append({"fixture_data": fixture_data, "backend": backend,
+                    "artifact_warning": warning,
+                    "model_id": model_id, "canonical_id": skill, "n": len(vals),
                     "mean_model_relative_probability": statistics.fmean(vals), "ci_low": lo, "ci_high": hi,
                     "prompt_range": max(vals) - min(vals),
+                    "uncertainty_type": "descriptive_prompt_resampling_interval",
+                    "uncertainty_warning": "Resamples the fixed prompt variants only; not a population confidence interval.",
+                    "effective_prompt_sample_size": len(vals),
                     "measurement_record_ids_json": canonical_json([x["record_id"] for x in items]),
                     "prompt_means_json": canonical_json(dict(sorted(
                         (prompt, statistics.fmean(float(x["calibrated_yes_probability"])
@@ -455,6 +568,23 @@ def _fixture_components(model_id: str, canonical_id: str, prompt_variant: str,
                          "log_probability": value / count, "synthetic_fixture": True}
                         for i in range(count)]}
             for choice, value, count in zip(choices, totals, counts)]
+
+
+def _score_identity(taxonomy: dict[str, Any], model: dict[str, Any], category: dict[str, Any],
+                    variant: dict[str, Any], study: dict[str, Any], backend: str) -> dict[str, Any]:
+    prompt = variant["template"].format(skill=category["label"],
+                                        role=study["role"]["display_name"],
+                                        industry=study["role"]["industry"])
+    return {"schema_version": 3, "backend": backend,
+            "taxonomy_sha256": taxonomy["taxonomy_sha256"],
+            "checkpoint": model["checkpoint"], "revision": model["revision"],
+            "tokenizer_checkpoint": model["tokenizer_checkpoint"],
+            "tokenizer_revision": model["tokenizer_revision"],
+            "architecture": model["architecture"], "prompt_adapter": model["prompt_adapter"],
+            "role": study["role"], "canonical_id": category["canonical_id"],
+            "skill_label": category["label"], "prompt_variant": variant,
+            "rendered_prompt": prompt, "method": study["scoring"]["method"],
+            "choices": study["scoring"]["choices"]}
 
 
 def _assign_ranks(summary: list[dict[str, Any]], field: str = "within_model_rank") -> None:
@@ -514,10 +644,15 @@ def _discovery_prevalence(taxonomy: dict[str, Any], iterations: int,
                                         seed=int(digest(["prevalence", model_id,
                                                          category["canonical_id"]])[:8], 16))
             result.append({"model_id": model_id, "canonical_id": category["canonical_id"],
+                           "fixture_data": taxonomy.get("fixture_data", False),
+                           "backend": "fixture" if taxonomy.get("fixture_data") else "unknown",
+                           "artifact_warning": "SYNTHETIC FIXTURE: not empirical." if taxonomy.get("fixture_data") else "Model elicitation, not labour-market evidence.",
                            "successful_discovery_records": len(values),
                            "records_mentioning_skill": int(sum(values)),
                            "fixture_prevalence": statistics.fmean(values),
                            "ci_low": lo, "ci_high": hi,
+                           "uncertainty_type": "descriptive_discovery_record_resampling_interval",
+                           "uncertainty_warning": "Resamples the fixed prompt-by-seed discovery records; not a population confidence interval.",
                            "source_record_ids_json": canonical_json(ordered),
                            "fixture_warning": "Synthetic fixture prevalence; not an empirical model or labour-market finding."})
     return result
@@ -538,6 +673,14 @@ def score_taxonomy(study_path: Path, models_path: Path, taxonomy_path: Path,
         raise ValueError("invalid configuration:\n- " + "\n- ".join(problems))
     if backend not in {"transformers", "fixture"}:
         raise ValueError(f"unknown scoring backend {backend!r}")
+    if backend == "transformers" and approval.get("approval_scope") == "fixture_test":
+        raise PermissionError("fixture-test approval cannot authorize real checkpoint scoring")
+    score_run_identity = {"schema_version": 2, "backend": backend,
+                          "study_config_sha256": digest(study),
+                          "model_manifest_sha256": digest(manifest),
+                          "taxonomy_sha256": taxonomy["taxonomy_sha256"],
+                          "approval_sha256": digest(approval)}
+    _reject_incompatible_run(output_dir / "score_run_manifest.json", score_run_identity)
     torch = transformers = AutoModelForCausalLM = AutoTokenizer = None
     if backend == "transformers":
         try:
@@ -564,17 +707,24 @@ def score_taxonomy(study_path: Path, models_path: Path, taxonomy_path: Path,
                 prompt = variant["template"].format(skill=category["label"],
                                                      role=study["role"]["display_name"],
                                                      industry=study["role"]["industry"])
-                key_data = {"taxonomy": taxonomy["taxonomy_sha256"], "model": model_cfg["id"],
-                            "revision": model_cfg["revision"], "skill": category["canonical_id"],
-                            "prompt_variant": variant["id"], "choices": study["scoring"]["choices"],
-                            "backend": backend}
-                record_id = digest(key_data); target = records_dir / f"{record_id}.json"
-                if target.exists(): counts["cached"] += 1; continue
-                row = {"schema_version": 1, "record_id": record_id, "taxonomy_sha256": taxonomy["taxonomy_sha256"],
+                identity = _score_identity(taxonomy, model_cfg, category, variant, study, backend)
+                record_id = digest(identity); target = records_dir / f"{record_id}.json"
+                if target.exists():
+                    cached = load_json(target)
+                    if cached.get("cache_identity") != identity:
+                        raise ValueError(f"cache identity mismatch in {target}")
+                    counts["cached"] += 1; continue
+                row = {"schema_version": 3, "record_id": record_id, "cache_identity": identity,
+                       "taxonomy_sha256": taxonomy["taxonomy_sha256"],
                        "approval_sha256": digest(approval), "model_id": model_cfg["id"],
                        "checkpoint": model_cfg["checkpoint"], "revision": model_cfg["revision"],
                        "tokenizer_checkpoint": model_cfg["tokenizer_checkpoint"],
                        "tokenizer_revision": model_cfg["tokenizer_revision"],
+                       "architecture": model_cfg["architecture"],
+                       "prompt_adapter": model_cfg["prompt_adapter"],
+                       "release_date": model_cfg["release_date"],
+                       "release_source": model_cfg["release_source"],
+                       "cutoff": model_cfg["cutoff"],
                        "canonical_id": category["canonical_id"], "skill_label": category["label"],
                        "prompt_variant": variant["id"], "prompt_template": variant["template"],
                        "rendered_prompt": prompt, "method": study["scoring"]["method"],
@@ -641,6 +791,8 @@ def score_taxonomy(study_path: Path, models_path: Path, taxonomy_path: Path,
     _assign_ranks(alternative, "length_normalized_rank")
     alt_index = {(r["model_id"], r["canonical_id"]): r for r in alternative}
     sensitivity = [{"model_id": r["model_id"], "canonical_id": r["canonical_id"],
+                    "fixture_data": r["fixture_data"], "backend": r["backend"],
+                    "artifact_warning": r["artifact_warning"],
                     "sequence_total_rank": r["within_model_rank"],
                     "length_normalized_rank": alt_index[(r["model_id"], r["canonical_id"])]["length_normalized_rank"],
                     "rank_change": alt_index[(r["model_id"], r["canonical_id"])]["length_normalized_rank"] - r["within_model_rank"],
@@ -652,7 +804,8 @@ def score_taxonomy(study_path: Path, models_path: Path, taxonomy_path: Path,
     _write_csv(output_dir / "tables" / "scoring_method_sensitivity.csv", sensitivity)
     write_svg(summary, output_dir / "plots" / "score_uncertainty_and_ranks.svg")
     _bar_svg([(f'{r["model_id"]} · {r["canonical_id"]}', r["prompt_range"]) for r in summary],
-             "Prompt sensitivity (max minus min constrained-choice score)",
+             ("SYNTHETIC FIXTURE — " if backend == "fixture" else "") +
+             "Prompt sensitivity (3 fixed variants; descriptive only)",
              output_dir / "plots" / "prompt_sensitivity.svg")
     prevalence = _discovery_prevalence(taxonomy, study["scoring"]["bootstrap_iterations"],
                                        study["scoring"]["confidence_level"])
@@ -678,7 +831,9 @@ def score_taxonomy(study_path: Path, models_path: Path, taxonomy_path: Path,
         points = sorted((r for r in summary if r["canonical_id"] == category["canonical_id"]),
                         key=lambda r: model_order[r["model_id"]])
         for previous, current in zip(points, points[1:]):
-            trends.append({"canonical_id": category["canonical_id"],
+            trends.append({"fixture_data": current["fixture_data"], "backend": current["backend"],
+                           "artifact_warning": current["artifact_warning"],
+                           "canonical_id": category["canonical_id"],
                            "earlier_model_id": previous["model_id"],
                            "later_model_id": current["model_id"],
                            "earlier_rank": previous["within_model_rank"],
@@ -696,6 +851,12 @@ def score_taxonomy(study_path: Path, models_path: Path, taxonomy_path: Path,
                 "taxonomy_sha256": taxonomy["taxonomy_sha256"], "approval_sha256": digest(approval),
                 "approved_taxonomy_version": approval.get("taxonomy_version"),
                 "backend": backend, "fixture_data": backend == "fixture",
+                "run_identity": score_run_identity,
+                "study_config": str(study_path), "study_config_sha256": digest(study),
+                "model_manifest": str(models_path), "model_manifest_sha256": digest(manifest),
+                "scoring_config": study["scoring"], "git_revision": git_revision(),
+                "environment": {"python": sys.version, "platform": platform.platform(),
+                                "processor": platform.processor()},
                 "counts": dict(counts), "missing_success_cells": len(missing),
                 "metric_scope": "model_relative_constrained_choice",
                 "interpretation_warning": "Model-period differences are not direct labour-market measurements.",
@@ -756,6 +917,75 @@ def validate_score_artifacts(study_path: Path, models_path: Path, taxonomy_path:
     return errors
 
 
+def compare_taxonomy_runs(base_taxonomy_path: Path, base_approval_path: Path,
+                          base_run_dir: Path, alternative_taxonomy_path: Path,
+                          alternative_approval_path: Path, alternative_run_dir: Path,
+                          output_dir: Path) -> dict[str, int]:
+    """Compare two separately approved and scored taxonomy versions."""
+    base_taxonomy, _ = require_approval(base_taxonomy_path, base_approval_path)
+    alt_taxonomy, _ = require_approval(alternative_taxonomy_path, alternative_approval_path)
+    base_manifest = load_json(base_run_dir / "score_run_manifest.json")
+    alt_manifest = load_json(alternative_run_dir / "score_run_manifest.json")
+    if base_manifest.get("backend") != alt_manifest.get("backend"):
+        raise ValueError("taxonomy sensitivity runs must use the same backend")
+    fixture = bool(base_manifest.get("fixture_data") and alt_manifest.get("fixture_data"))
+    warning = ("SYNTHETIC FIXTURE: taxonomy sensitivity software verification only; not empirical."
+               if fixture else "Model-relative taxonomy sensitivity; not labour-market evidence.")
+    base_rows = load_json(base_run_dir / "tables" / "skill_scores.json")
+    alt_rows = load_json(alternative_run_dir / "tables" / "skill_scores.json")
+    base_index = {(r["model_id"], r["canonical_id"]): r for r in base_rows}
+    alt_index = {(r["model_id"], r["canonical_id"]): r for r in alt_rows}
+    keys = sorted(set(base_index) | set(alt_index))
+    rows = []
+    for key in keys:
+        left, right = base_index.get(key), alt_index.get(key)
+        rows.append({"fixture_data": fixture, "backend": base_manifest["backend"],
+                     "artifact_warning": warning, "model_id": key[0], "canonical_id": key[1],
+                     "base_present": left is not None, "alternative_present": right is not None,
+                     "base_rank": left.get("within_model_rank") if left else None,
+                     "alternative_rank": right.get("within_model_rank") if right else None,
+                     "rank_change": (right["within_model_rank"] - left["within_model_rank"])
+                                    if left and right else None,
+                     "base_ci_low": left.get("ci_low") if left else None,
+                     "base_ci_high": left.get("ci_high") if left else None,
+                     "alternative_ci_low": right.get("ci_low") if right else None,
+                     "alternative_ci_high": right.get("ci_high") if right else None,
+                     "base_prompt_range": left.get("prompt_range") if left else None,
+                     "alternative_prompt_range": right.get("prompt_range") if right else None})
+    def directions(run_dir: Path) -> dict[str, int]:
+        path = run_dir / "tables" / "rank_changes_across_model_periods.csv"
+        if not path.exists(): return {}
+        with path.open(newline="", encoding="utf-8") as handle:
+            return {r["canonical_id"]: int(r["rank_change_later_minus_earlier"])
+                    for r in csv.DictReader(handle)}
+    base_direction, alt_direction = directions(base_run_dir), directions(alternative_run_dir)
+    direction_rows = [{"fixture_data": fixture, "backend": base_manifest["backend"],
+                       "artifact_warning": warning, "canonical_id": skill,
+                       "base_rank_direction": base_direction.get(skill),
+                       "alternative_rank_direction": alt_direction.get(skill),
+                       "direction_changed": (base_direction.get(skill) is not None and
+                                             alt_direction.get(skill) is not None and
+                                             (base_direction[skill] > 0) - (base_direction[skill] < 0) !=
+                                             (alt_direction[skill] > 0) - (alt_direction[skill] < 0))}
+                      for skill in sorted(set(base_direction) | set(alt_direction))]
+    output_dir.mkdir(parents=True, exist_ok=True)
+    _write_csv(output_dir / "taxonomy_score_comparison.csv", rows)
+    _write_csv(output_dir / "rank_direction_comparison.csv", direction_rows)
+    manifest = {"schema_version": 1, "status": "completed", "fixture_data": fixture,
+                "backend": base_manifest["backend"], "artifact_warning": warning,
+                "base_taxonomy_sha256": base_taxonomy["taxonomy_sha256"],
+                "alternative_taxonomy_sha256": alt_taxonomy["taxonomy_sha256"],
+                "base_category_count": len(base_taxonomy["categories"]),
+                "alternative_category_count": len(alt_taxonomy["categories"]),
+                "base_mapping_coverage": base_taxonomy["coverage"]["mapping_coverage"],
+                "alternative_mapping_coverage": alt_taxonomy["coverage"]["mapping_coverage"],
+                "comparison_rows": len(rows), "direction_rows": len(direction_rows),
+                "compared_quantities": ["coverage", "ranks", "rank directions", "intervals", "prompt ranges"],
+                "updated_at": utc_now()}
+    atomic_json(output_dir / "comparison_manifest.json", manifest)
+    return {"comparison_rows": len(rows), "direction_rows": len(direction_rows)}
+
+
 def write_summary_tables(summary: list[dict[str, Any]], output_dir: Path) -> None:
     output_dir.mkdir(parents=True, exist_ok=True)
     if not summary:
@@ -764,11 +994,20 @@ def write_summary_tables(summary: list[dict[str, Any]], output_dir: Path) -> Non
         writer = csv.DictWriter(handle, fieldnames=list(summary[0]))
         writer.writeheader(); writer.writerows(summary)
     _write_csv(output_dir / "prompt_sensitivity.csv", [
-        {"model_id": r["model_id"], "canonical_id": r["canonical_id"],
-         "prompt_range": r["prompt_range"], "n_prompt_measurements": r["n"]} for r in summary])
+        {"fixture_data": r["fixture_data"], "backend": r["backend"],
+         "artifact_warning": r["artifact_warning"], "model_id": r["model_id"],
+         "canonical_id": r["canonical_id"], "prompt_range": r["prompt_range"],
+         "n_prompt_measurements": r["n"],
+         "uncertainty_warning": r["uncertainty_warning"]} for r in summary])
     _write_csv(output_dir / "within_model_rank_trends.csv", [
-        {"model_id": r["model_id"], "canonical_id": r["canonical_id"],
+        {"fixture_data": r["fixture_data"], "backend": r["backend"],
+         "artifact_warning": r["artifact_warning"], "model_id": r["model_id"],
+         "canonical_id": r["canonical_id"],
          "within_model_rank": r["within_model_rank"],
+         "bootstrap_rank_low": r["bootstrap_rank_low"],
+         "bootstrap_rank_high": r["bootstrap_rank_high"],
+         "effective_prompt_sample_size": r["effective_prompt_sample_size"],
+         "uncertainty_warning": r["uncertainty_warning"],
          "mean_model_relative_probability": r["mean_model_relative_probability"]} for r in summary])
 
 
@@ -779,9 +1018,10 @@ def write_svg(summary: list[dict[str, Any]], path: Path) -> None:
     rows = sorted(summary, key=lambda x: (x["model_id"], x["within_model_rank"]))
     width, left, row_h = 920, 330, 24
     height = 70 + row_h * len(rows)
+    prefix = "SYNTHETIC FIXTURE — " if all(r.get("fixture_data") for r in summary) else ""
     parts = [f'<svg xmlns="http://www.w3.org/2000/svg" width="{width}" height="{height}" viewBox="0 0 {width} {height}">',
              '<style>text{font:12px sans-serif}.title{font:bold 15px sans-serif}.axis{stroke:#999}.ci{stroke:#567}.dot{fill:#174a7e}</style>',
-             '<text class="title" x="10" y="22">Model-relative constrained-choice skill scores (95% bootstrap intervals)</text>',
+             f'<text class="title" x="10" y="22">{prefix}model-relative scores (descriptive prompt-resampling intervals; n=3)</text>',
              f'<line class="axis" x1="{left}" y1="40" x2="{width-25}" y2="40"/>']
     scale = width - left - 25
     for tick in range(6):
@@ -811,9 +1051,10 @@ def write_rank_trend_svg(summary: list[dict[str, Any]], model_ids: list[str], pa
     max_rank = max(r["within_model_rank"] for r in summary)
     xs = {model: left + i * (width - left - right) / (len(model_ids) - 1)
           for i, model in enumerate(model_ids)}
+    prefix = "SYNTHETIC FIXTURE — " if all(r.get("fixture_data") for r in summary) else ""
     parts = [f'<svg xmlns="http://www.w3.org/2000/svg" width="{width}" height="{height}">',
              '<style>text{font:12px sans-serif}.title{font:bold 15px sans-serif}.line{stroke:#2878b5;fill:none}.dot{fill:#174a7e}</style>',
-             '<text class="title" x="10" y="22">Within-model rank trends across documented model periods</text>']
+             f'<text class="title" x="10" y="22">{prefix}within-model rank trends across documented model periods</text>']
     for model, x in xs.items():
         parts.append(f'<text x="{x - 45:.1f}" y="42">{model}</text>')
     for i, skill in enumerate(skills):

@@ -1,5 +1,5 @@
 {
-  "schema_version": 1,
+  "schema_version": 2,
   "record_id": "15068921b4b9844c2cc28d9fdbc2be17b7e42a09aa1a05df97b16cef9c9270b6",
   "taxonomy_sha256": "d5270d9bd619f1316fcfb599145c51919f1d0e6110f1a6eb8cddb8c20eeecdab",
   "approval_sha256": "675eae917cac7cb31cea47c18798ca4fb053a9d48b3266c41474d70b26e83ca8",
@@ -8,6 +8,19 @@
   "revision": "607a30d783dfa663caf39e06633721c8d4cfcd7e",
   "tokenizer_checkpoint": "openai-community/gpt2",
   "tokenizer_revision": "607a30d783dfa663caf39e06633721c8d4cfcd7e",
+  "architecture": "base_causal_lm",
+  "prompt_adapter": "plain_text",
+  "release_date": "2019-02-14",
+  "release_source": "https://openai.com/index/better-language-models/",
+  "cutoff": {
+    "status": "documented_period",
+    "value": "Reddit outbound links used to construct WebText were collected from posts before December 2017",
+    "latest_date": "2017-11-30",
+    "scope": "pretraining corpus collection rule; not a claim that every linked page predates this date",
+    "sources": [
+      "https://cdn.openai.com/better-language-models/language_models_are_unsupervised_multitask_learners.pdf"
+    ]
+  },
   "canonical_id": "multitasking",
   "skill_label": "Multitasking",
   "prompt_variant": "required",
@@ -20,7 +33,7 @@
   ],
   "backend": "fixture",
   "fixture_data": true,
-  "started_at": "2026-09-06T11:58:42.903729+00:00",
+  "started_at": "2026-09-06T12:01:21.660612+00:00",
   "status": "success",
   "components": [
     {
@@ -67,5 +80,5 @@
     "fixture_version": 1,
     "warning": "Deterministic mock scores; no checkpoint was loaded or queried."
   },
-  "finished_at": "2026-09-06T11:58:42.903748+00:00"
+  "finished_at": "2026-09-06T12:01:21.660632+00:00"
 }

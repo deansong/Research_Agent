@@ -90,6 +90,70 @@ def test_stub_backends_fail_loudly_at_construction():
     print("PASS  api / claude_code / antigravity refuse at construction with real guidance")
 
 
+def test_progress_unwraps_the_threaditem_wrapper():
+    """The regression that printed nothing at all during a live run.
+
+    Concrete items arrive wrapped in a ThreadItem RootModel, so
+    type(item).__name__ is always the literal "ThreadItem". The first version
+    of _progress matched on that name, matched nothing, and stayed silent
+    while the executor was visibly running commands and writing files.
+
+    Built from the REAL SDK types rather than hand-made stubs, so the test
+    fails if the SDK changes the wrapper -- which is the thing worth knowing.
+    """
+    from openai_codex.generated.v2_all import (
+        CommandExecutionThreadItem,
+        ItemCompletedNotification,
+        ItemStartedNotification,
+        ThreadItem,
+    )
+
+    from agent.backends._progress import describe
+
+    command = CommandExecutionThreadItem.model_construct(
+        id="c1", command="python -m pytest -q", exit_code=0,
+    )
+    wrapped = ThreadItem.model_construct(root=command)
+
+    class Event:
+        def __init__(self, payload):
+            self.payload = payload
+
+    started = Event(ItemStartedNotification.model_construct(
+        item=wrapped, thread_id="t", turn_id="u", started_at_ms=0))
+    line = describe(started)
+    assert line and "pytest" in line, f"a started command produced {line!r}"
+    assert line.strip().startswith("$"), line
+
+    # A command that succeeded was already announced when it started, so
+    # completion should stay quiet rather than printing it twice.
+    finished = Event(ItemCompletedNotification.model_construct(
+        item=wrapped, thread_id="t", turn_id="u", completed_at_ms=1))
+    assert describe(finished) is None, "a clean command should not print twice"
+
+    # A failure must speak up.
+    failed = ThreadItem.model_construct(
+        root=CommandExecutionThreadItem.model_construct(
+            id="c2", command="pytest", exit_code=1))
+    line = describe(Event(ItemCompletedNotification.model_construct(
+        item=failed, thread_id="t", turn_id="u", completed_at_ms=1)))
+    assert line and "exited 1" in line, f"a failed command produced {line!r}"
+
+    print("PASS  progress unwraps ThreadItem and reports commands (and failures)")
+
+
+def test_progress_never_raises():
+    """Reporting must not be able to break the turn it is describing."""
+    from agent.backends._progress import describe
+
+    class Weird:
+        payload = object()
+
+    for event in (None, object(), Weird(), "not an event"):
+        describe(event)   # must not raise
+    print("PASS  describe() tolerates anything the stream throws at it")
+
+
 if __name__ == "__main__":
     for name, fn in sorted(globals().items()):
         if name.startswith("test_"):

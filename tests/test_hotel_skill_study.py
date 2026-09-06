@@ -83,6 +83,20 @@ def test_approved_fixture_scoring_is_complete_traceable_and_resumable():
         assert second == {"cached": len(records)}
 
 
+def test_approval_gate_detects_taxonomy_content_tampering():
+    with tempfile.TemporaryDirectory() as tmp:
+        changed_path = pathlib.Path(tmp) / "changed.json"
+        changed = load_json(ROOT / "artifacts/taxonomy/proposal.json")
+        changed["categories"][0]["label"] = "Silently changed"
+        changed_path.write_text(json.dumps(changed))
+        try:
+            require_approval(changed_path, ROOT / "artifacts/taxonomy/approval.json")
+        except PermissionError as exc:
+            assert "embedded digest" in str(exc)
+        else:
+            raise AssertionError("approval gate accepted modified taxonomy content")
+
+
 if __name__ == "__main__":
     for name, fn in sorted(globals().items()):
         if name.startswith("test_"):

@@ -1,5 +1,5 @@
 {
-  "schema_version": 1,
+  "schema_version": 2,
   "record_id": "6342c271ba3a8e087a040b8633b5f0ed4672068cc57635953fab540230b12495",
   "taxonomy_sha256": "d5270d9bd619f1316fcfb599145c51919f1d0e6110f1a6eb8cddb8c20eeecdab",
   "approval_sha256": "675eae917cac7cb31cea47c18798ca4fb053a9d48b3266c41474d70b26e83ca8",
@@ -8,6 +8,19 @@
   "revision": "8afb486c1db24fe5011ec46dfbe5b5dccdb575c2",
   "tokenizer_checkpoint": "meta-llama/Meta-Llama-3-8B-Instruct",
   "tokenizer_revision": "8afb486c1db24fe5011ec46dfbe5b5dccdb575c2",
+  "architecture": "instruction_tuned_causal_lm",
+  "prompt_adapter": "chat_template",
+  "release_date": "2024-04-18",
+  "release_source": "https://github.com/meta-llama/llama3/blob/main/MODEL_CARD.md",
+  "cutoff": {
+    "status": "documented_cutoff",
+    "value": "March 2023",
+    "latest_date": "2023-03-31",
+    "scope": "pretraining data for the 8B model; fine-tuning freshness is not fully dated",
+    "sources": [
+      "https://github.com/meta-llama/llama3/blob/main/MODEL_CARD.md"
+    ]
+  },
   "canonical_id": "ai_literacy",
   "skill_label": "AI literacy",
   "prompt_variant": "hiring",
@@ -20,7 +33,7 @@
   ],
   "backend": "fixture",
   "fixture_data": true,
-  "started_at": "2026-09-06T11:58:42.911206+00:00",
+  "started_at": "2026-09-06T12:01:21.671066+00:00",
   "status": "success",
   "components": [
     {
@@ -67,5 +80,5 @@
     "fixture_version": 1,
     "warning": "Deterministic mock scores; no checkpoint was loaded or queried."
   },
-  "finished_at": "2026-09-06T11:58:42.911225+00:00"
+  "finished_at": "2026-09-06T12:01:21.671086+00:00"
 }

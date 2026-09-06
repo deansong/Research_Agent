@@ -4,8 +4,9 @@ import argparse
 import json
 from pathlib import Path
 
-from .pipeline import (approve_taxonomy, discover, load_json, propose_taxonomy, score_taxonomy,
-                       require_approval, validate_manifest, validate_score_artifacts, validate_study)
+from .pipeline import (approve_taxonomy, compare_taxonomy_runs, derive_taxonomy_alternative,
+                       discover, load_json, propose_taxonomy, score_taxonomy, require_approval,
+                       validate_manifest, validate_score_artifacts, validate_study)
 
 
 def parser() -> argparse.ArgumentParser:
@@ -28,6 +29,11 @@ def parser() -> argparse.ArgumentParser:
     a.add_argument("--taxonomy", type=Path, required=True)
     a.add_argument("--approval", type=Path, required=True)
     a.add_argument("--reviewer", required=True); a.add_argument("--note", required=True)
+    a.add_argument("--scope", choices=("human", "fixture_test"), default="human")
+    ta = sub.add_parser("taxonomy-alternative")
+    ta.add_argument("--taxonomy", type=Path, required=True)
+    ta.add_argument("--output", type=Path, required=True)
+    ta.add_argument("--alternative-id", default="reviewed_splits_v1")
     s = sub.add_parser("score")
     s.add_argument("--taxonomy", type=Path, required=True)
     s.add_argument("--approval", type=Path, required=True)
@@ -41,6 +47,14 @@ def parser() -> argparse.ArgumentParser:
     av.add_argument("--study", type=Path, default=Path("configs/hotel_skill_study.json"))
     av.add_argument("--models", type=Path, default=Path("configs/models.json"))
     av.add_argument("--output-dir", type=Path, required=True)
+    tc = sub.add_parser("compare-taxonomies")
+    tc.add_argument("--base-taxonomy", type=Path, required=True)
+    tc.add_argument("--base-approval", type=Path, required=True)
+    tc.add_argument("--base-run-dir", type=Path, required=True)
+    tc.add_argument("--alternative-taxonomy", type=Path, required=True)
+    tc.add_argument("--alternative-approval", type=Path, required=True)
+    tc.add_argument("--alternative-run-dir", type=Path, required=True)
+    tc.add_argument("--output-dir", type=Path, required=True)
     return p
 
 
@@ -59,7 +73,13 @@ def main(argv: list[str] | None = None) -> int:
         print(json.dumps({"status": doc["status"], "categories": len(doc["categories"]),
                           "mappings": len(doc["mappings"]), "taxonomy_sha256": doc["taxonomy_sha256"]}, indent=2)); return 0
     if args.command == "approve":
-        print(json.dumps(approve_taxonomy(args.taxonomy, args.approval, args.reviewer, args.note), indent=2)); return 0
+        print(json.dumps(approve_taxonomy(args.taxonomy, args.approval, args.reviewer, args.note,
+                                         args.scope), indent=2)); return 0
+    if args.command == "taxonomy-alternative":
+        doc = derive_taxonomy_alternative(args.taxonomy, args.output, args.alternative_id)
+        print(json.dumps({"status": doc["status"], "taxonomy_version": doc["taxonomy_version"],
+                          "categories": len(doc["categories"]),
+                          "taxonomy_sha256": doc["taxonomy_sha256"]}, indent=2)); return 0
     if args.command == "score":
         try:
             require_approval(args.taxonomy, args.approval)
@@ -74,6 +94,11 @@ def main(argv: list[str] | None = None) -> int:
         if problems:
             print("\n".join(f"ERROR {x}" for x in problems)); return 1
         print("Scoring artifacts valid"); return 0
+    if args.command == "compare-taxonomies":
+        print(json.dumps(compare_taxonomy_runs(args.base_taxonomy, args.base_approval,
+                                               args.base_run_dir, args.alternative_taxonomy,
+                                               args.alternative_approval, args.alternative_run_dir,
+                                               args.output_dir), indent=2)); return 0
     raise AssertionError(args.command)
 
 

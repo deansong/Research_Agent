@@ -1,5 +1,5 @@
 {
-  "schema_version": 1,
+  "schema_version": 2,
   "record_id": "c1a4325c5c3b5a6de9aef3aabdd3eda8fa7c48a5fa2936e5815fcb3950c3d553",
   "taxonomy_sha256": "d5270d9bd619f1316fcfb599145c51919f1d0e6110f1a6eb8cddb8c20eeecdab",
   "approval_sha256": "675eae917cac7cb31cea47c18798ca4fb053a9d48b3266c41474d70b26e83ca8",
@@ -8,6 +8,19 @@
   "revision": "8afb486c1db24fe5011ec46dfbe5b5dccdb575c2",
   "tokenizer_checkpoint": "meta-llama/Meta-Llama-3-8B-Instruct",
   "tokenizer_revision": "8afb486c1db24fe5011ec46dfbe5b5dccdb575c2",
+  "architecture": "instruction_tuned_causal_lm",
+  "prompt_adapter": "chat_template",
+  "release_date": "2024-04-18",
+  "release_source": "https://github.com/meta-llama/llama3/blob/main/MODEL_CARD.md",
+  "cutoff": {
+    "status": "documented_cutoff",
+    "value": "March 2023",
+    "latest_date": "2023-03-31",
+    "scope": "pretraining data for the 8B model; fine-tuning freshness is not fully dated",
+    "sources": [
+      "https://github.com/meta-llama/llama3/blob/main/MODEL_CARD.md"
+    ]
+  },
   "canonical_id": "data_privacy",
   "skill_label": "Data privacy",
   "prompt_variant": "important",
@@ -20,7 +33,7 @@
   ],
   "backend": "fixture",
   "fixture_data": true,
-  "started_at": "2026-09-06T11:58:42.914580+00:00",
+  "started_at": "2026-09-06T12:01:21.675738+00:00",
   "status": "success",
   "components": [
     {
@@ -67,5 +80,5 @@
     "fixture_version": 1,
     "warning": "Deterministic mock scores; no checkpoint was loaded or queried."
   },
-  "finished_at": "2026-09-06T11:58:42.914599+00:00"
+  "finished_at": "2026-09-06T12:01:21.675774+00:00"
 }
