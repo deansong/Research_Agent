@@ -1,7 +1,0 @@
-{
-  "fixture_data": true,
-  "backend": "fixture",
-  "artifact_warning": "SYNTHETIC FIXTURE: not empirical.",
-  "missing_count": 0,
-  "rows": []
-}

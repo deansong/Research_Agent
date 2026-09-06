@@ -1,2 +1,0 @@
-fixture_data,backend,artifact_warning,model_id,canonical_id,prompt_variant,reason
-True,fixture,SYNTHETIC FIXTURE: not empirical.,,,,no_missing_cells
