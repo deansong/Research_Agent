@@ -32,7 +32,7 @@
       "ask": {
         "purpose": "discussion",
         "resume_to": "discussor",
-        "question": "{out.discussor.question}",
+        "question": "{out.discussor.question}\n\nAnything to add? Type /plan when you want a plan.",
         "context": "{out.discussor.requirements}"
       }
     },

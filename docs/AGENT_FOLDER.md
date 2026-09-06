@@ -187,6 +187,13 @@ These, and nothing else:
 | `{var.<name>}` | a value set by a human command |
 | `{argument}` | only inside a command's `record` or `sets` |
 
+> **Idiom worth knowing.** An `ask.question` made up of nothing but a
+> placeholder renders blank whenever that field is empty, and the human gets a
+> generic "Your input is required." Always append a static sentence:
+> `"{out.discussor.question}\n\nAnything to add? Type /plan when ready."`
+> The shipped `default/` agent does exactly this, after a live run where it
+> did not.
+
 A placeholder that cannot resolve yet renders as **empty**, not an error —
 `{out.executor.summary}` legitimately has no value before the executor has
 run. The cost is that a semantically wrong prompt validates clean, so use

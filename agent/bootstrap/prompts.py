@@ -127,6 +127,10 @@ JUDGEMENT
 - Include a human node only where a person must genuinely decide something, or
   to let them stop the agent. Always give them a way to exit.
 - Only give a node "write" access if it must change files.
+- An `ask.question` that is ONLY a placeholder renders BLANK whenever that
+  field happens to be empty, and the human sees a useless generic prompt.
+  Always append a static sentence telling them what they can do, e.g.
+      "{out.reviewer.question}\n\nAnything to add? /approve or /revise."
 - The `task_brief` you write is the ONLY thing the new agent knows about the
   job. It never sees this conversation. Write it self-contained: no "as we
   discussed", no "the user mentioned". State the goal, the constraints, and
