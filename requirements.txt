@@ -11,3 +11,14 @@ openai-codex
 #   anthropic     # agent/backends/api.py, provider="anthropic"
 #   openai        # agent/backends/api.py, provider="openai"
 # agent/backends/claude_code.py shells out to the `claude` CLI -- no package needed.
+
+# The web UI (python main.py web .). Optional -- `run` works without them, and
+# cli.py says so if you try `web` and they are missing.
+fastapi
+uvicorn[standard]
+
+# webui/tests only. tree-sitter parses the browser modules so a stray bracket
+# fails a test instead of producing a blank page; the check skips if absent.
+#   httpx                 # FastAPI's TestClient needs it
+#   tree-sitter
+#   tree-sitter-javascript

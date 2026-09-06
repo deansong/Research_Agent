@@ -1,0 +1,170 @@
+<!doctype html>
+<!--
+  WHAT:  The whole page. One file, no build step, no framework.
+  WHY:   You should be able to read this top to bottom and know what is on
+         screen. A bundler would hide that behind a hundred node_modules.
+  CONCEPT: A three-column shell -- chat, canvas, inspector -- filled in by the
+         ES modules loaded at the bottom.
+
+  Every <script> is type="module", so imports work natively in the browser and
+  nothing needs compiling. Vendored libraries go in vendor/ as plain <script>
+  tags, because they predate modules.
+-->
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Agent designer</title>
+  <link rel="stylesheet" href="/css/app.css">
+</head>
+<body>
+
+<header class="topbar">
+  <div class="brand">
+    <span class="dot"></span>
+    <strong>agent designer</strong>
+  </div>
+
+  <div class="session-bar">
+    <span id="session-name" class="session-name">no session</span>
+    <span id="session-phase" class="pill phase-idle">idle</span>
+    <span id="session-agent" class="muted"></span>
+  </div>
+
+  <div class="topbar-actions">
+    <button id="btn-new" class="btn">New session</button>
+    <button id="btn-open" class="btn ghost">Open&hellip;</button>
+  </div>
+</header>
+
+<main class="shell" id="shell">
+
+  <!-- LEFT: the conversation. This is the whole of step 1. -->
+  <section class="panel panel-chat" id="panel-chat">
+    <div class="panel-head">
+      <h2>Conversation</h2>
+      <button id="btn-scroll" class="btn tiny ghost" title="Jump to the newest">&darr;</button>
+    </div>
+
+    <div class="chat-log" id="chat-log">
+      <div class="empty-state" id="chat-empty">
+        <p>Start a session to begin.</p>
+        <p class="muted">
+          The design phase interviews you first, then writes a plan, then
+          designs an agent from it.
+        </p>
+      </div>
+    </div>
+
+    <div class="chat-question" id="chat-question" hidden>
+      <div class="question-purpose" id="question-purpose"></div>
+      <div class="question-text" id="question-text"></div>
+      <details class="question-context" id="question-context" hidden>
+        <summary>context</summary>
+        <pre id="question-context-body"></pre>
+      </details>
+    </div>
+
+    <div class="commands" id="commands" hidden></div>
+
+    <form class="composer" id="composer">
+      <textarea id="composer-input" rows="3"
+                placeholder="Type a reply, or a /command. Enter sends, Shift+Enter for a newline."></textarea>
+      <div class="composer-row">
+        <span class="composer-hint" id="composer-hint"></span>
+        <button type="submit" class="btn primary" id="btn-send" disabled>Send</button>
+      </div>
+    </form>
+  </section>
+
+  <div class="divider" data-resize="chat"></div>
+
+  <!-- CENTRE: plan and graph. Steps 2 and 3 fill these in. -->
+  <section class="panel panel-canvas" id="panel-canvas">
+    <div class="panel-head tabs" id="canvas-tabs">
+      <button class="tab active" data-tab="graph">Graph</button>
+      <button class="tab" data-tab="plan">Plan</button>
+    </div>
+    <div class="tab-body active" id="tab-graph">
+      <div class="empty-state">
+        <p class="muted">No agent yet. It appears once the design phase finishes.</p>
+      </div>
+    </div>
+    <div class="tab-body" id="tab-plan">
+      <div class="empty-state">
+        <p class="muted">No plan yet. Type <code>/plan</code> when you have finished discussing.</p>
+      </div>
+    </div>
+  </section>
+
+  <div class="divider" data-resize="canvas"></div>
+
+  <!-- RIGHT: the inspector. Steps 4 and 6 fill this in. -->
+  <section class="panel panel-inspector" id="panel-inspector">
+    <div class="panel-head tabs" id="inspector-tabs">
+      <button class="tab active" data-tab="run">Run</button>
+      <button class="tab" data-tab="configure">Configure</button>
+      <button class="tab" data-tab="context">Context</button>
+      <button class="tab" data-tab="problems">Problems <span class="badge" id="problem-count" hidden>0</span></button>
+    </div>
+    <div class="tab-body active" id="tab-run">
+      <dl class="facts" id="run-facts"></dl>
+      <h3>Activity</h3>
+      <div class="log" id="activity-log"></div>
+    </div>
+    <div class="tab-body" id="tab-configure">
+      <div class="empty-state"><p class="muted">Select a node to configure it.</p></div>
+    </div>
+    <div class="tab-body" id="tab-context">
+      <div class="empty-state">
+        <p class="muted">Select a node to see the prompt it will actually receive.</p>
+      </div>
+    </div>
+    <div class="tab-body" id="tab-problems">
+      <div class="empty-state"><p class="muted">No problems.</p></div>
+    </div>
+  </section>
+</main>
+
+<dialog id="dialog-new">
+  <form method="dialog" id="form-new">
+    <h2>New session</h2>
+    <label>
+      Repository
+      <input name="repo" id="new-repo" value="." spellcheck="false">
+    </label>
+    <label>
+      What do you want to build or change?
+      <textarea name="task" id="new-task" rows="5"
+                placeholder="Add pytest coverage for parser.py, error paths only."></textarea>
+    </label>
+    <label>
+      Session folder <span class="muted">(optional &mdash; otherwise derived from the task)</span>
+      <input name="session_dir" id="new-session-dir" spellcheck="false"
+             placeholder="~/experiments/parser-tests">
+    </label>
+    <label>
+      Pre-built agent <span class="muted">(optional &mdash; skips the design phase)</span>
+      <input name="pre_build_agent" id="new-prebuilt" spellcheck="false" placeholder="default">
+    </label>
+    <p class="dialog-error" id="new-error" hidden></p>
+    <menu>
+      <button type="button" class="btn ghost" id="new-cancel">Cancel</button>
+      <button type="submit" class="btn primary" id="new-ok">Start</button>
+    </menu>
+  </form>
+</dialog>
+
+<dialog id="dialog-open">
+  <div class="dialog-inner">
+    <h2>Open a session</h2>
+    <div class="session-list" id="session-list"></div>
+    <menu>
+      <button type="button" class="btn ghost" id="open-cancel">Cancel</button>
+    </menu>
+  </div>
+</dialog>
+
+<script type="module" src="/js/app.js"></script>
+</body>
+</html>

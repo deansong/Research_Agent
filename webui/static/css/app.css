@@ -1,0 +1,603 @@
+/*
+  WHAT:  All the styling, written to be read.
+  WHY:   The reference project we drew on kept 25 KB of hand-minified CSS on
+         ~90 enormous lines. It is unmaintainable, and it is the single easiest
+         mistake to avoid: normal multi-line CSS costs nothing.
+  CONCEPT: CSS custom properties for the theme, CSS grid for the shell.
+
+  Layout in one sentence: a fixed-height topbar over a three-column grid whose
+  column widths live in --col-chat and --col-inspector, so the dividers only
+  have to change two variables.
+*/
+
+:root {
+  --bg:            #0b0f17;
+  --bg-panel:      #111725;
+  --bg-raised:     #18202f;
+  --bg-input:      #0d131e;
+  --line:          #232d40;
+  --line-bright:   #33415c;
+
+  --text:          #dce3ee;
+  --text-dim:      #8b98ae;
+  --text-faint:    #5d6a80;
+
+  --accent:        #35d6c4;
+  --accent-dim:    #1d7d73;
+  --human:         #d99b4a;
+  --danger:        #e56b6b;
+  --warn:          #d9b84a;
+  --ok:            #6bce8a;
+
+  --col-chat:      330px;
+  --col-inspector: 360px;
+
+  --radius:        7px;
+  --mono: ui-monospace, "SF Mono", "JetBrains Mono", Menlo, Consolas, monospace;
+  --sans: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+}
+
+* { box-sizing: border-box; }
+
+html, body {
+  height: 100%;
+  margin: 0;
+}
+
+body {
+  background: var(--bg);
+  color: var(--text);
+  font: 13px/1.55 var(--sans);
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+/* ---------- topbar ---------- */
+
+.topbar {
+  height: 50px;
+  flex: 0 0 auto;
+  display: grid;
+  grid-template-columns: 210px 1fr auto;
+  align-items: center;
+  gap: 16px;
+  padding: 0 14px;
+  background: var(--bg-panel);
+  border-bottom: 1px solid var(--line);
+}
+
+.brand {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  letter-spacing: .02em;
+}
+
+.brand .dot {
+  width: 9px;
+  height: 9px;
+  border-radius: 50%;
+  background: var(--accent);
+  box-shadow: 0 0 10px var(--accent-dim);
+}
+
+.session-bar {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-width: 0;
+}
+
+.session-name {
+  font-family: var(--mono);
+  font-size: 12px;
+  color: var(--text-dim);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.topbar-actions { display: flex; gap: 8px; }
+
+/* ---------- the three-column shell ---------- */
+
+.shell {
+  flex: 1 1 auto;
+  min-height: 0;
+  display: grid;
+  grid-template-columns: var(--col-chat) 4px 1fr 4px var(--col-inspector);
+}
+
+.panel {
+  min-width: 0;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  background: var(--bg-panel);
+  overflow: hidden;
+}
+
+.panel-canvas { background: var(--bg); }
+
+.panel-head {
+  flex: 0 0 auto;
+  height: 34px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0 10px;
+  border-bottom: 1px solid var(--line);
+}
+
+.panel-head h2 {
+  margin: 0;
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: .09em;
+  text-transform: uppercase;
+  color: var(--text-faint);
+}
+
+/* The divider is a drag handle. Four pixels wide, with a wider invisible
+   hit area, because a 4px target is genuinely hard to grab. */
+.divider {
+  position: relative;
+  background: var(--line);
+  cursor: col-resize;
+}
+
+.divider::after {
+  content: "";
+  position: absolute;
+  inset: 0 -4px;
+}
+
+.divider:hover,
+.divider.dragging { background: var(--line-bright); }
+
+/* ---------- tabs ---------- */
+
+.tabs { gap: 2px; justify-content: flex-start; }
+
+.tab {
+  appearance: none;
+  border: 0;
+  background: none;
+  color: var(--text-faint);
+  font: inherit;
+  font-size: 12px;
+  padding: 7px 10px;
+  cursor: pointer;
+  border-bottom: 2px solid transparent;
+}
+
+.tab:hover { color: var(--text-dim); }
+
+.tab.active {
+  color: var(--text);
+  border-bottom-color: var(--accent);
+}
+
+.tab-body {
+  display: none;
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow: auto;
+  padding: 12px;
+}
+
+.tab-body.active { display: block; }
+
+/* ---------- chat ---------- */
+
+.chat-log {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow-y: auto;
+  padding: 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.msg {
+  padding: 8px 10px;
+  border-radius: var(--radius);
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+.msg.human {
+  background: var(--bg-raised);
+  border-left: 2px solid var(--human);
+  align-self: stretch;
+}
+
+.msg.agent {
+  background: #131a28;
+  border-left: 2px solid var(--accent-dim);
+}
+
+.msg-role {
+  display: block;
+  font-size: 10px;
+  letter-spacing: .08em;
+  text-transform: uppercase;
+  color: var(--text-faint);
+  margin-bottom: 3px;
+}
+
+/* Log lines from inside a node: the executor's commands, the token counts.
+   Monospace and dim, so they read as a machine log rather than speech. */
+.logline {
+  font-family: var(--mono);
+  font-size: 11.5px;
+  color: var(--text-dim);
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  padding-left: 2px;
+}
+
+.logline.node   { color: var(--accent); }
+.logline.tokens { color: var(--text-faint); }
+.logline.error  { color: var(--danger); }
+
+.chat-question {
+  flex: 0 0 auto;
+  margin: 0 12px;
+  padding: 10px;
+  background: var(--bg-raised);
+  border: 1px solid var(--line-bright);
+  border-radius: var(--radius);
+}
+
+.question-purpose {
+  font-size: 10px;
+  letter-spacing: .08em;
+  text-transform: uppercase;
+  color: var(--human);
+  margin-bottom: 4px;
+}
+
+.question-text { white-space: pre-wrap; }
+
+.question-context summary {
+  cursor: pointer;
+  color: var(--text-faint);
+  font-size: 11px;
+  margin-top: 6px;
+}
+
+.question-context pre {
+  margin: 6px 0 0;
+  max-height: 220px;
+  overflow: auto;
+  font-family: var(--mono);
+  font-size: 11.5px;
+  color: var(--text-dim);
+  white-space: pre-wrap;
+}
+
+.commands {
+  flex: 0 0 auto;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 5px;
+  padding: 8px 12px 0;
+}
+
+.cmd {
+  appearance: none;
+  border: 1px solid var(--line-bright);
+  background: transparent;
+  color: var(--text-dim);
+  font: 11.5px var(--mono);
+  padding: 2px 7px;
+  border-radius: 11px;
+  cursor: pointer;
+}
+
+.cmd:hover {
+  color: var(--accent);
+  border-color: var(--accent-dim);
+}
+
+.composer {
+  flex: 0 0 auto;
+  padding: 10px 12px 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.composer textarea {
+  width: 100%;
+  resize: vertical;
+  min-height: 56px;
+  background: var(--bg-input);
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  color: var(--text);
+  font: 13px/1.5 var(--sans);
+  padding: 8px;
+}
+
+.composer textarea:focus {
+  outline: none;
+  border-color: var(--accent-dim);
+}
+
+.composer textarea:disabled { opacity: .5; }
+
+.composer-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.composer-hint {
+  font-size: 11px;
+  color: var(--text-faint);
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* ---------- inspector: facts and activity ---------- */
+
+.facts {
+  display: grid;
+  grid-template-columns: 92px 1fr;
+  gap: 4px 10px;
+  margin: 0 0 16px;
+  font-size: 12px;
+}
+
+.facts dt { color: var(--text-faint); }
+
+.facts dd {
+  margin: 0;
+  font-family: var(--mono);
+  font-size: 11.5px;
+  overflow-wrap: anywhere;
+}
+
+.tab-body h3 {
+  margin: 14px 0 6px;
+  font-size: 11px;
+  letter-spacing: .09em;
+  text-transform: uppercase;
+  color: var(--text-faint);
+}
+
+.log {
+  font-family: var(--mono);
+  font-size: 11px;
+  color: var(--text-dim);
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.log div {
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+/* ---------- problems ---------- */
+
+.problem {
+  display: block;
+  width: 100%;
+  text-align: left;
+  border: 1px solid var(--line);
+  border-left: 2px solid var(--danger);
+  border-radius: var(--radius);
+  background: var(--bg-raised);
+  color: var(--text);
+  font: inherit;
+  padding: 7px 9px;
+  margin-bottom: 6px;
+  cursor: pointer;
+}
+
+.problem.warning { border-left-color: var(--warn); }
+.problem:hover { border-color: var(--line-bright); }
+
+.problem code {
+  font-size: 10.5px;
+  color: var(--text-faint);
+}
+
+.problem .where {
+  font-family: var(--mono);
+  font-size: 11px;
+  color: var(--text-dim);
+}
+
+/* ---------- bits and pieces ---------- */
+
+.btn {
+  appearance: none;
+  border: 1px solid var(--line-bright);
+  background: var(--bg-raised);
+  color: var(--text);
+  font: inherit;
+  font-size: 12px;
+  padding: 5px 11px;
+  border-radius: var(--radius);
+  cursor: pointer;
+}
+
+.btn:hover:not(:disabled) { border-color: var(--accent-dim); }
+.btn:disabled { opacity: .4; cursor: default; }
+
+.btn.primary {
+  background: var(--accent-dim);
+  border-color: var(--accent-dim);
+  color: #04120f;
+  font-weight: 600;
+}
+
+.btn.primary:hover:not(:disabled) { background: var(--accent); }
+
+.btn.ghost { background: transparent; }
+
+.btn.tiny { padding: 2px 7px; font-size: 11px; }
+
+.pill {
+  font-size: 10.5px;
+  letter-spacing: .06em;
+  text-transform: uppercase;
+  padding: 2px 8px;
+  border-radius: 10px;
+  border: 1px solid var(--line-bright);
+  color: var(--text-dim);
+  white-space: nowrap;
+}
+
+.phase-designing { color: var(--human);  border-color: var(--human); }
+.phase-running   { color: var(--accent); border-color: var(--accent-dim); }
+.phase-finished  { color: var(--ok);     border-color: var(--ok); }
+.phase-error     { color: var(--danger); border-color: var(--danger); }
+
+.badge {
+  display: inline-block;
+  min-width: 16px;
+  padding: 0 4px;
+  border-radius: 8px;
+  background: var(--danger);
+  color: #1a0808;
+  font-size: 10px;
+  font-weight: 700;
+  text-align: center;
+}
+
+.muted { color: var(--text-faint); font-size: 11.5px; }
+
+.empty-state {
+  padding: 24px 12px;
+  text-align: center;
+  color: var(--text-dim);
+}
+
+.empty-state p { margin: 0 0 6px; }
+
+code {
+  font-family: var(--mono);
+  font-size: 11.5px;
+  background: var(--bg-input);
+  padding: 1px 4px;
+  border-radius: 3px;
+}
+
+/* ---------- dialogs ---------- */
+
+dialog {
+  border: 1px solid var(--line-bright);
+  border-radius: 10px;
+  background: var(--bg-panel);
+  color: var(--text);
+  padding: 0;
+  width: min(560px, 92vw);
+}
+
+dialog::backdrop { background: rgba(4, 8, 16, .72); }
+
+dialog form,
+dialog .dialog-inner { padding: 18px 20px 14px; }
+
+dialog h2 {
+  margin: 0 0 14px;
+  font-size: 15px;
+}
+
+dialog label {
+  display: block;
+  margin-bottom: 12px;
+  font-size: 12px;
+  color: var(--text-dim);
+}
+
+dialog input,
+dialog textarea {
+  display: block;
+  width: 100%;
+  margin-top: 4px;
+  background: var(--bg-input);
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  color: var(--text);
+  font: 13px/1.5 var(--sans);
+  padding: 7px 8px;
+}
+
+dialog input:focus,
+dialog textarea:focus {
+  outline: none;
+  border-color: var(--accent-dim);
+}
+
+dialog menu {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+  margin: 6px 0 0;
+  padding: 0;
+}
+
+.dialog-error {
+  color: var(--danger);
+  font-size: 12px;
+  margin: 0 0 10px;
+}
+
+.session-list {
+  max-height: 50vh;
+  overflow-y: auto;
+  margin-bottom: 12px;
+}
+
+.session-row {
+  display: block;
+  width: 100%;
+  text-align: left;
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  background: var(--bg-raised);
+  color: var(--text);
+  font: inherit;
+  padding: 8px 10px;
+  margin-bottom: 6px;
+  cursor: pointer;
+}
+
+.session-row:hover { border-color: var(--accent-dim); }
+
+.session-row .name {
+  font-family: var(--mono);
+  font-size: 12px;
+}
+
+.session-row .task {
+  display: block;
+  color: var(--text-faint);
+  font-size: 11.5px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* ---------- narrow screens ---------- */
+
+@media (max-width: 1100px) {
+  .shell {
+    grid-template-columns: 1fr;
+    grid-template-rows: 1fr 1fr 1fr;
+    overflow-y: auto;
+  }
+  .divider { display: none; }
+}

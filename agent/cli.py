@@ -43,6 +43,20 @@ def main() -> None:
 
     repo_path = _validated_repo(args.repo)
 
+    if args.command == "web":
+        # Imported here, not at module scope: fastapi and uvicorn are optional
+        # extras, and `run` must keep working for someone who never installed
+        # them. See requirements.txt.
+        try:
+            from webui.server import serve
+        except ImportError as exc:
+            raise SystemExit(
+                f"\nThe web UI needs its extra dependencies ({exc.name}).\n"
+                f"Install them with:  pip install fastapi 'uvicorn[standard]'"
+            )
+        serve(repo_path, host=args.host, port=args.port, cli_args=args)
+        return
+
     if args.command == "sessions":
         rows = storage.list_sessions(repo_path)
         if not rows:
@@ -422,6 +436,7 @@ def _parse_args():
             "  python main.py run ./repo --backend fake            # no API calls\n"
             "  python main.py run ./repo --pre-build-agent default --task 'add tests'\n"
             "  python main.py run ./repo --session-dir ~/exp/run1  # session folder of your choosing\n"
+            "  python main.py web ./repo                           # the browser UI\n"
             "  python main.py run ./repo --explain                 # show everything, spend nothing\n"
             "  python main.py promote ./repo my-reviewer           # keep this session's agent\n"
         ),
@@ -458,6 +473,18 @@ def _parse_args():
                      help="Override one role, e.g. executor=codex:gpt-5.4. Repeatable.")
     run.add_argument("--explain", action="store_true",
                      help="Print the resolved config and the agent, then exit")
+
+    web = subparsers.add_parser("web", help="Serve the browser UI")
+    web.add_argument("repo", help="Path to the repository")
+    web.add_argument("--host", default="127.0.0.1")
+    web.add_argument("--port", type=int, default=8420)
+    # The same backend flags `run` takes, so `web . --backend fake` means what
+    # you would expect. They become the defaults for every session the UI opens.
+    web.add_argument("--config", help="Path to a config JSON file")
+    web.add_argument("--backend", help="Provider for every role, e.g. codex, fake")
+    web.add_argument("--model", help="Model for every role")
+    web.add_argument("--backend-role", action="append", metavar="ROLE=PROVIDER[:MODEL]",
+                     help="Override one role. Repeatable.")
 
     sessions = subparsers.add_parser("sessions", help="List this repo's sessions")
     sessions.add_argument("repo", help="Path to the repository")
