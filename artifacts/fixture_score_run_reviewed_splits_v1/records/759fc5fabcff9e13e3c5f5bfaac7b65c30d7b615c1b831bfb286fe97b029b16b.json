@@ -1,0 +1,112 @@
+{
+  "schema_version": 3,
+  "record_id": "759fc5fabcff9e13e3c5f5bfaac7b65c30d7b615c1b831bfb286fe97b029b16b",
+  "cache_identity": {
+    "schema_version": 3,
+    "backend": "fixture",
+    "taxonomy_sha256": "3efd7767a7ecd24098cb51c14bc5b312fc5399e777876d5d371f17a5fae37639",
+    "checkpoint": "openai-community/gpt2",
+    "revision": "607a30d783dfa663caf39e06633721c8d4cfcd7e",
+    "tokenizer_checkpoint": "openai-community/gpt2",
+    "tokenizer_revision": "607a30d783dfa663caf39e06633721c8d4cfcd7e",
+    "architecture": "base_causal_lm",
+    "prompt_adapter": "plain_text",
+    "role": {
+      "id": "front_desk_employee",
+      "display_name": "front-desk employee",
+      "industry": "hotel"
+    },
+    "canonical_id": "record_keeping",
+    "skill_label": "Record keeping",
+    "prompt_variant": {
+      "id": "important",
+      "template": "Is {skill} an important skill for a {role} in a {industry}? Answer only Yes or No."
+    },
+    "rendered_prompt": "Is Record keeping an important skill for a front-desk employee in a hotel? Answer only Yes or No.",
+    "method": "teacher_forced_binary_sequence",
+    "choices": [
+      " Yes",
+      " No"
+    ]
+  },
+  "taxonomy_sha256": "3efd7767a7ecd24098cb51c14bc5b312fc5399e777876d5d371f17a5fae37639",
+  "approval_sha256": "53ec8fd2d63521f18df764879205301ae01960fc53509bc49f699a640828e516",
+  "model_id": "gpt2_2017",
+  "checkpoint": "openai-community/gpt2",
+  "revision": "607a30d783dfa663caf39e06633721c8d4cfcd7e",
+  "tokenizer_checkpoint": "openai-community/gpt2",
+  "tokenizer_revision": "607a30d783dfa663caf39e06633721c8d4cfcd7e",
+  "architecture": "base_causal_lm",
+  "prompt_adapter": "plain_text",
+  "release_date": "2019-02-14",
+  "release_source": "https://openai.com/index/better-language-models/",
+  "cutoff": {
+    "status": "documented_period",
+    "value": "Reddit outbound links used to construct WebText were collected from posts before December 2017",
+    "latest_date": "2017-11-30",
+    "scope": "pretraining corpus collection rule; not a claim that every linked page predates this date",
+    "sources": [
+      "https://cdn.openai.com/better-language-models/language_models_are_unsupervised_multitask_learners.pdf"
+    ]
+  },
+  "canonical_id": "record_keeping",
+  "skill_label": "Record keeping",
+  "prompt_variant": "important",
+  "prompt_template": "Is {skill} an important skill for a {role} in a {industry}? Answer only Yes or No.",
+  "rendered_prompt": "Is Record keeping an important skill for a front-desk employee in a hotel? Answer only Yes or No.",
+  "method": "teacher_forced_binary_sequence",
+  "choices": [
+    " Yes",
+    " No"
+  ],
+  "backend": "fixture",
+  "fixture_data": true,
+  "started_at": "2026-09-06T12:12:35.932039+00:00",
+  "status": "success",
+  "components": [
+    {
+      "choice": " Yes",
+      "sequence_log_probability": -1.1078593614448047,
+      "mean_token_log_probability": -1.1078593614448047,
+      "token_count": 1,
+      "tokens": [
+        {
+          "token_id": null,
+          "token_text": "fixture_token_1",
+          "log_probability": -1.1078593614448047,
+          "synthetic_fixture": true
+        }
+      ]
+    },
+    {
+      "choice": " No",
+      "sequence_log_probability": -1.8921406385551953,
+      "mean_token_log_probability": -0.9460703192775977,
+      "token_count": 2,
+      "tokens": [
+        {
+          "token_id": null,
+          "token_text": "fixture_token_1",
+          "log_probability": -0.9460703192775977,
+          "synthetic_fixture": true
+        },
+        {
+          "token_id": null,
+          "token_text": "fixture_token_2",
+          "log_probability": -0.9460703192775977,
+          "synthetic_fixture": true
+        }
+      ]
+    }
+  ],
+  "calibrated_yes_probability": 0.6866020928430374,
+  "length_normalized_yes_probability": 0.4596407370523768,
+  "calibration": "softmax restricted to the exact Yes/No answer sequences",
+  "metric_scope": "model_relative_constrained_choice",
+  "runtime": {
+    "synthetic_fixture": true,
+    "fixture_version": 1,
+    "warning": "Deterministic mock scores; no checkpoint was loaded or queried."
+  },
+  "finished_at": "2026-09-06T12:12:35.932058+00:00"
+}

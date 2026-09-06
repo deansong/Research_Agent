@@ -102,7 +102,10 @@ def _instantiate(spec, *, role: str, codex_client):
                     "The codex backend needs a Codex client. This is a wiring bug "
                     "in cli.py, not a configuration problem."
                 )
-            return cls(codex_client, model=spec.model)
+            # **spec.options matters: without it, `timeout` (and anything
+            # else configured for this role) was silently dropped, so the
+            # advice in BackendTimeout's own message did nothing.
+            return cls(codex_client, model=spec.model, **spec.options)
 
         return cls(model=spec.model, **spec.options)
 

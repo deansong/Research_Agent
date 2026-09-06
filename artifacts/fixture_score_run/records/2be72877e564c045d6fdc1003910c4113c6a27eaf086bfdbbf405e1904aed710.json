@@ -1,0 +1,112 @@
+{
+  "schema_version": 3,
+  "record_id": "2be72877e564c045d6fdc1003910c4113c6a27eaf086bfdbbf405e1904aed710",
+  "cache_identity": {
+    "schema_version": 3,
+    "backend": "fixture",
+    "taxonomy_sha256": "d5270d9bd619f1316fcfb599145c51919f1d0e6110f1a6eb8cddb8c20eeecdab",
+    "checkpoint": "openai-community/gpt2",
+    "revision": "607a30d783dfa663caf39e06633721c8d4cfcd7e",
+    "tokenizer_checkpoint": "openai-community/gpt2",
+    "tokenizer_revision": "607a30d783dfa663caf39e06633721c8d4cfcd7e",
+    "architecture": "base_causal_lm",
+    "prompt_adapter": "plain_text",
+    "role": {
+      "id": "front_desk_employee",
+      "display_name": "front-desk employee",
+      "industry": "hotel"
+    },
+    "canonical_id": "local_knowledge",
+    "skill_label": "Local knowledge",
+    "prompt_variant": {
+      "id": "important",
+      "template": "Is {skill} an important skill for a {role} in a {industry}? Answer only Yes or No."
+    },
+    "rendered_prompt": "Is Local knowledge an important skill for a front-desk employee in a hotel? Answer only Yes or No.",
+    "method": "teacher_forced_binary_sequence",
+    "choices": [
+      " Yes",
+      " No"
+    ]
+  },
+  "taxonomy_sha256": "d5270d9bd619f1316fcfb599145c51919f1d0e6110f1a6eb8cddb8c20eeecdab",
+  "approval_sha256": "675eae917cac7cb31cea47c18798ca4fb053a9d48b3266c41474d70b26e83ca8",
+  "model_id": "gpt2_2017",
+  "checkpoint": "openai-community/gpt2",
+  "revision": "607a30d783dfa663caf39e06633721c8d4cfcd7e",
+  "tokenizer_checkpoint": "openai-community/gpt2",
+  "tokenizer_revision": "607a30d783dfa663caf39e06633721c8d4cfcd7e",
+  "architecture": "base_causal_lm",
+  "prompt_adapter": "plain_text",
+  "release_date": "2019-02-14",
+  "release_source": "https://openai.com/index/better-language-models/",
+  "cutoff": {
+    "status": "documented_period",
+    "value": "Reddit outbound links used to construct WebText were collected from posts before December 2017",
+    "latest_date": "2017-11-30",
+    "scope": "pretraining corpus collection rule; not a claim that every linked page predates this date",
+    "sources": [
+      "https://cdn.openai.com/better-language-models/language_models_are_unsupervised_multitask_learners.pdf"
+    ]
+  },
+  "canonical_id": "local_knowledge",
+  "skill_label": "Local knowledge",
+  "prompt_variant": "important",
+  "prompt_template": "Is {skill} an important skill for a {role} in a {industry}? Answer only Yes or No.",
+  "rendered_prompt": "Is Local knowledge an important skill for a front-desk employee in a hotel? Answer only Yes or No.",
+  "method": "teacher_forced_binary_sequence",
+  "choices": [
+    " Yes",
+    " No"
+  ],
+  "backend": "fixture",
+  "fixture_data": true,
+  "started_at": "2026-09-06T12:12:17.994754+00:00",
+  "status": "success",
+  "components": [
+    {
+      "choice": " Yes",
+      "sequence_log_probability": -2.1869148520161295,
+      "mean_token_log_probability": -2.1869148520161295,
+      "token_count": 1,
+      "tokens": [
+        {
+          "token_id": null,
+          "token_text": "fixture_token_1",
+          "log_probability": -2.1869148520161295,
+          "synthetic_fixture": true
+        }
+      ]
+    },
+    {
+      "choice": " No",
+      "sequence_log_probability": -0.8130851479838708,
+      "mean_token_log_probability": -0.4065425739919354,
+      "token_count": 2,
+      "tokens": [
+        {
+          "token_id": null,
+          "token_text": "fixture_token_1",
+          "log_probability": -0.4065425739919354,
+          "synthetic_fixture": true
+        },
+        {
+          "token_id": null,
+          "token_text": "fixture_token_2",
+          "log_probability": -0.4065425739919354,
+          "synthetic_fixture": true
+        }
+      ]
+    }
+  ],
+  "calibrated_yes_probability": 0.20200180475907223,
+  "length_normalized_yes_probability": 0.1442571713838654,
+  "calibration": "softmax restricted to the exact Yes/No answer sequences",
+  "metric_scope": "model_relative_constrained_choice",
+  "runtime": {
+    "synthetic_fixture": true,
+    "fixture_version": 1,
+    "warning": "Deterministic mock scores; no checkpoint was loaded or queried."
+  },
+  "finished_at": "2026-09-06T12:12:17.994791+00:00"
+}

@@ -1,0 +1,88 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="900" height="699">
+<style>text{font:12px sans-serif}.title{font:bold 15px sans-serif}.bar{fill:#2878b5}</style>
+<text class="title" x="10" y="21">Synthetic fixture discovery prevalence (not empirical)</text>
+<text x="10" y="53">qwen1_5_0_5b_chat_2024 · ai_literacy</text>
+<rect class="bar" x="310" y="42" width="0.0" height="14"/>
+<text x="315.0" y="53">0</text>
+<text x="10" y="76">qwen1_5_0_5b_chat_2024 · attention_to_detail</text>
+<rect class="bar" x="310" y="65" width="435.6" height="14"/>
+<text x="750.6" y="76">0.777778</text>
+<text x="10" y="99">qwen1_5_0_5b_chat_2024 · complaint_handling</text>
+<rect class="bar" x="310" y="88" width="373.3" height="14"/>
+<text x="688.3" y="99">0.666667</text>
+<text x="10" y="122">qwen1_5_0_5b_chat_2024 · customer_service</text>
+<rect class="bar" x="310" y="111" width="560.0" height="14"/>
+<text x="875.0" y="122">1</text>
+<text x="10" y="145">qwen1_5_0_5b_chat_2024 · data_privacy</text>
+<rect class="bar" x="310" y="134" width="0.0" height="14"/>
+<text x="315.0" y="145">0</text>
+<text x="10" y="168">qwen1_5_0_5b_chat_2024 · guest_communication</text>
+<rect class="bar" x="310" y="157" width="560.0" height="14"/>
+<text x="875.0" y="168">1</text>
+<text x="10" y="191">qwen1_5_0_5b_chat_2024 · local_knowledge</text>
+<rect class="bar" x="310" y="180" width="311.1" height="14"/>
+<text x="626.1" y="191">0.555556</text>
+<text x="10" y="214">qwen1_5_0_5b_chat_2024 · multitasking</text>
+<rect class="bar" x="310" y="203" width="373.3" height="14"/>
+<text x="688.3" y="214">0.666667</text>
+<text x="10" y="237">qwen1_5_0_5b_chat_2024 · payment_processing</text>
+<rect class="bar" x="310" y="226" width="373.3" height="14"/>
+<text x="688.3" y="237">0.666667</text>
+<text x="10" y="260">qwen1_5_0_5b_chat_2024 · problem_solving</text>
+<rect class="bar" x="310" y="249" width="186.7" height="14"/>
+<text x="501.7" y="260">0.333333</text>
+<text x="10" y="283">qwen1_5_0_5b_chat_2024 · record_keeping</text>
+<rect class="bar" x="310" y="272" width="186.7" height="14"/>
+<text x="501.7" y="283">0.333333</text>
+<text x="10" y="306">qwen1_5_0_5b_chat_2024 · reservation_systems</text>
+<rect class="bar" x="310" y="295" width="373.3" height="14"/>
+<text x="688.3" y="306">0.666667</text>
+<text x="10" y="329">qwen1_5_0_5b_chat_2024 · teamwork</text>
+<rect class="bar" x="310" y="318" width="560.0" height="14"/>
+<text x="875.0" y="329">1</text>
+<text x="10" y="352">qwen1_5_0_5b_chat_2024 · time_management</text>
+<rect class="bar" x="310" y="341" width="186.7" height="14"/>
+<text x="501.7" y="352">0.333333</text>
+<text x="10" y="375">qwen3_5_0_8b_2026 · ai_literacy</text>
+<rect class="bar" x="310" y="364" width="373.3" height="14"/>
+<text x="688.3" y="375">0.666667</text>
+<text x="10" y="398">qwen3_5_0_8b_2026 · attention_to_detail</text>
+<rect class="bar" x="310" y="387" width="435.6" height="14"/>
+<text x="750.6" y="398">0.777778</text>
+<text x="10" y="421">qwen3_5_0_8b_2026 · complaint_handling</text>
+<rect class="bar" x="310" y="410" width="311.1" height="14"/>
+<text x="626.1" y="421">0.555556</text>
+<text x="10" y="444">qwen3_5_0_8b_2026 · customer_service</text>
+<rect class="bar" x="310" y="433" width="373.3" height="14"/>
+<text x="688.3" y="444">0.666667</text>
+<text x="10" y="467">qwen3_5_0_8b_2026 · data_privacy</text>
+<rect class="bar" x="310" y="456" width="560.0" height="14"/>
+<text x="875.0" y="467">1</text>
+<text x="10" y="490">qwen3_5_0_8b_2026 · guest_communication</text>
+<rect class="bar" x="310" y="479" width="560.0" height="14"/>
+<text x="875.0" y="490">1</text>
+<text x="10" y="513">qwen3_5_0_8b_2026 · local_knowledge</text>
+<rect class="bar" x="310" y="502" width="0.0" height="14"/>
+<text x="315.0" y="513">0</text>
+<text x="10" y="536">qwen3_5_0_8b_2026 · multitasking</text>
+<rect class="bar" x="310" y="525" width="373.3" height="14"/>
+<text x="688.3" y="536">0.666667</text>
+<text x="10" y="559">qwen3_5_0_8b_2026 · payment_processing</text>
+<rect class="bar" x="310" y="548" width="186.7" height="14"/>
+<text x="501.7" y="559">0.333333</text>
+<text x="10" y="582">qwen3_5_0_8b_2026 · problem_solving</text>
+<rect class="bar" x="310" y="571" width="248.9" height="14"/>
+<text x="563.9" y="582">0.444444</text>
+<text x="10" y="605">qwen3_5_0_8b_2026 · record_keeping</text>
+<rect class="bar" x="310" y="594" width="0.0" height="14"/>
+<text x="315.0" y="605">0</text>
+<text x="10" y="628">qwen3_5_0_8b_2026 · reservation_systems</text>
+<rect class="bar" x="310" y="617" width="560.0" height="14"/>
+<text x="875.0" y="628">1</text>
+<text x="10" y="651">qwen3_5_0_8b_2026 · teamwork</text>
+<rect class="bar" x="310" y="640" width="373.3" height="14"/>
+<text x="688.3" y="651">0.666667</text>
+<text x="10" y="674">qwen3_5_0_8b_2026 · time_management</text>
+<rect class="bar" x="310" y="663" width="124.4" height="14"/>
+<text x="439.4" y="674">0.222222</text>
+</svg>

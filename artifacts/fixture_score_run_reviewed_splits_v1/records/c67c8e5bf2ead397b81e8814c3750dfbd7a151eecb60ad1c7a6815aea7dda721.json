@@ -1,0 +1,112 @@
+{
+  "schema_version": 3,
+  "record_id": "c67c8e5bf2ead397b81e8814c3750dfbd7a151eecb60ad1c7a6815aea7dda721",
+  "cache_identity": {
+    "schema_version": 3,
+    "backend": "fixture",
+    "taxonomy_sha256": "3efd7767a7ecd24098cb51c14bc5b312fc5399e777876d5d371f17a5fae37639",
+    "checkpoint": "meta-llama/Meta-Llama-3-8B-Instruct",
+    "revision": "8afb486c1db24fe5011ec46dfbe5b5dccdb575c2",
+    "tokenizer_checkpoint": "meta-llama/Meta-Llama-3-8B-Instruct",
+    "tokenizer_revision": "8afb486c1db24fe5011ec46dfbe5b5dccdb575c2",
+    "architecture": "instruction_tuned_causal_lm",
+    "prompt_adapter": "chat_template",
+    "role": {
+      "id": "front_desk_employee",
+      "display_name": "front-desk employee",
+      "industry": "hotel"
+    },
+    "canonical_id": "record_keeping",
+    "skill_label": "Record keeping",
+    "prompt_variant": {
+      "id": "important",
+      "template": "Is {skill} an important skill for a {role} in a {industry}? Answer only Yes or No."
+    },
+    "rendered_prompt": "Is Record keeping an important skill for a front-desk employee in a hotel? Answer only Yes or No.",
+    "method": "teacher_forced_binary_sequence",
+    "choices": [
+      " Yes",
+      " No"
+    ]
+  },
+  "taxonomy_sha256": "3efd7767a7ecd24098cb51c14bc5b312fc5399e777876d5d371f17a5fae37639",
+  "approval_sha256": "53ec8fd2d63521f18df764879205301ae01960fc53509bc49f699a640828e516",
+  "model_id": "llama3_8b_instruct_2023",
+  "checkpoint": "meta-llama/Meta-Llama-3-8B-Instruct",
+  "revision": "8afb486c1db24fe5011ec46dfbe5b5dccdb575c2",
+  "tokenizer_checkpoint": "meta-llama/Meta-Llama-3-8B-Instruct",
+  "tokenizer_revision": "8afb486c1db24fe5011ec46dfbe5b5dccdb575c2",
+  "architecture": "instruction_tuned_causal_lm",
+  "prompt_adapter": "chat_template",
+  "release_date": "2024-04-18",
+  "release_source": "https://github.com/meta-llama/llama3/blob/main/MODEL_CARD.md",
+  "cutoff": {
+    "status": "documented_cutoff",
+    "value": "March 2023",
+    "latest_date": "2023-03-31",
+    "scope": "pretraining data for the 8B model; fine-tuning freshness is not fully dated",
+    "sources": [
+      "https://github.com/meta-llama/llama3/blob/main/MODEL_CARD.md"
+    ]
+  },
+  "canonical_id": "record_keeping",
+  "skill_label": "Record keeping",
+  "prompt_variant": "important",
+  "prompt_template": "Is {skill} an important skill for a {role} in a {industry}? Answer only Yes or No.",
+  "rendered_prompt": "Is Record keeping an important skill for a front-desk employee in a hotel? Answer only Yes or No.",
+  "method": "teacher_forced_binary_sequence",
+  "choices": [
+    " Yes",
+    " No"
+  ],
+  "backend": "fixture",
+  "fixture_data": true,
+  "started_at": "2026-09-06T12:12:35.953361+00:00",
+  "status": "success",
+  "components": [
+    {
+      "choice": " Yes",
+      "sequence_log_probability": -1.038125283467979,
+      "mean_token_log_probability": -1.038125283467979,
+      "token_count": 1,
+      "tokens": [
+        {
+          "token_id": null,
+          "token_text": "fixture_token_1",
+          "log_probability": -1.038125283467979,
+          "synthetic_fixture": true
+        }
+      ]
+    },
+    {
+      "choice": " No",
+      "sequence_log_probability": -1.961874716532021,
+      "mean_token_log_probability": -0.9809373582660105,
+      "token_count": 2,
+      "tokens": [
+        {
+          "token_id": null,
+          "token_text": "fixture_token_1",
+          "log_probability": -0.9809373582660105,
+          "synthetic_fixture": true
+        },
+        {
+          "token_id": null,
+          "token_text": "fixture_token_2",
+          "log_probability": -0.9809373582660105,
+          "synthetic_fixture": true
+        }
+      ]
+    }
+  ],
+  "calibrated_yes_probability": 0.715805462153895,
+  "length_normalized_yes_probability": 0.48570691389961607,
+  "calibration": "softmax restricted to the exact Yes/No answer sequences",
+  "metric_scope": "model_relative_constrained_choice",
+  "runtime": {
+    "synthetic_fixture": true,
+    "fixture_version": 1,
+    "warning": "Deterministic mock scores; no checkpoint was loaded or queried."
+  },
+  "finished_at": "2026-09-06T12:12:35.953380+00:00"
+}

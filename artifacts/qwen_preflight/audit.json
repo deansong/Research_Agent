@@ -1,0 +1,48 @@
+{
+  "schema_version": 1,
+  "audited_at": "2026-09-06",
+  "status": "taxonomy_proposed_unapproved",
+  "hardware": {
+    "cpu": "2 x AMD EPYC 7313, 64 logical CPUs",
+    "memory_total_gib": 503,
+    "memory_available_gib_at_probe": 217,
+    "gpu_probe": "nvidia-smi failed: unable to communicate with NVIDIA driver",
+    "gpu_inference_ready": false
+  },
+  "storage": {
+    "workspace_free_gib_at_probe": 394,
+    "tmp_free_gib_at_probe": 2.2,
+    "tmp_status": "100% full by filesystem accounting",
+    "required_checkpoint_weight_bytes": 2986115952,
+    "cache_requirement": "Use a workspace-local Hugging Face cache, not /tmp."
+  },
+  "dependencies": {
+    "python": "3.11.15",
+    "torch": "2.5.1+cu121",
+    "transformers": "5.5.0",
+    "huggingface_hub": "1.8.0",
+    "accelerate": "1.13.0"
+  },
+  "tokenizer_and_config_downloads_executed": true,
+  "checkpoint_weight_downloads_executed": false,
+  "empirical_inference_executed": false,
+  "human_taxonomy_approval_present": false,
+  "fixture_scoring": {
+    "executed": true,
+    "approval_scope": "fixture_test",
+    "approval": "artifacts/qwen_taxonomy/fixture_test_approval.json",
+    "successful_cells": 84,
+    "missing_cells": 0,
+    "validation": "passed",
+    "output": "artifacts/qwen_fixture_score_run",
+    "empirical_authorization": false
+  },
+  "invalidated_history": {
+    "unsupported_human_approval": "artifacts/qwen_invalidated/unsupported_human_approval.json",
+    "excluded_derived_fixture_run": "artifacts/qwen_invalidated/qwen_fixture_score_run_invalid_human_approval"
+  },
+  "blocking_conditions": [
+    "Exact taxonomy digest requires genuine human approval before empirical scoring."
+  ],
+  "interpretation_warning": "This is a model release-generation comparison, not evidence of hotel-skill or labour-market change."
+}

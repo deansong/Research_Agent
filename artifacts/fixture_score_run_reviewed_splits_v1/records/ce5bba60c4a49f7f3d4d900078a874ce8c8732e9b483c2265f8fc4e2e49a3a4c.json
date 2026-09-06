@@ -1,0 +1,112 @@
+{
+  "schema_version": 3,
+  "record_id": "ce5bba60c4a49f7f3d4d900078a874ce8c8732e9b483c2265f8fc4e2e49a3a4c",
+  "cache_identity": {
+    "schema_version": 3,
+    "backend": "fixture",
+    "taxonomy_sha256": "3efd7767a7ecd24098cb51c14bc5b312fc5399e777876d5d371f17a5fae37639",
+    "checkpoint": "meta-llama/Meta-Llama-3-8B-Instruct",
+    "revision": "8afb486c1db24fe5011ec46dfbe5b5dccdb575c2",
+    "tokenizer_checkpoint": "meta-llama/Meta-Llama-3-8B-Instruct",
+    "tokenizer_revision": "8afb486c1db24fe5011ec46dfbe5b5dccdb575c2",
+    "architecture": "instruction_tuned_causal_lm",
+    "prompt_adapter": "chat_template",
+    "role": {
+      "id": "front_desk_employee",
+      "display_name": "front-desk employee",
+      "industry": "hotel"
+    },
+    "canonical_id": "conflict_resolution",
+    "skill_label": "Conflict resolution",
+    "prompt_variant": {
+      "id": "important",
+      "template": "Is {skill} an important skill for a {role} in a {industry}? Answer only Yes or No."
+    },
+    "rendered_prompt": "Is Conflict resolution an important skill for a front-desk employee in a hotel? Answer only Yes or No.",
+    "method": "teacher_forced_binary_sequence",
+    "choices": [
+      " Yes",
+      " No"
+    ]
+  },
+  "taxonomy_sha256": "3efd7767a7ecd24098cb51c14bc5b312fc5399e777876d5d371f17a5fae37639",
+  "approval_sha256": "53ec8fd2d63521f18df764879205301ae01960fc53509bc49f699a640828e516",
+  "model_id": "llama3_8b_instruct_2023",
+  "checkpoint": "meta-llama/Meta-Llama-3-8B-Instruct",
+  "revision": "8afb486c1db24fe5011ec46dfbe5b5dccdb575c2",
+  "tokenizer_checkpoint": "meta-llama/Meta-Llama-3-8B-Instruct",
+  "tokenizer_revision": "8afb486c1db24fe5011ec46dfbe5b5dccdb575c2",
+  "architecture": "instruction_tuned_causal_lm",
+  "prompt_adapter": "chat_template",
+  "release_date": "2024-04-18",
+  "release_source": "https://github.com/meta-llama/llama3/blob/main/MODEL_CARD.md",
+  "cutoff": {
+    "status": "documented_cutoff",
+    "value": "March 2023",
+    "latest_date": "2023-03-31",
+    "scope": "pretraining data for the 8B model; fine-tuning freshness is not fully dated",
+    "sources": [
+      "https://github.com/meta-llama/llama3/blob/main/MODEL_CARD.md"
+    ]
+  },
+  "canonical_id": "conflict_resolution",
+  "skill_label": "Conflict resolution",
+  "prompt_variant": "important",
+  "prompt_template": "Is {skill} an important skill for a {role} in a {industry}? Answer only Yes or No.",
+  "rendered_prompt": "Is Conflict resolution an important skill for a front-desk employee in a hotel? Answer only Yes or No.",
+  "method": "teacher_forced_binary_sequence",
+  "choices": [
+    " Yes",
+    " No"
+  ],
+  "backend": "fixture",
+  "fixture_data": true,
+  "started_at": "2026-09-06T12:12:35.942119+00:00",
+  "status": "success",
+  "components": [
+    {
+      "choice": " Yes",
+      "sequence_log_probability": -1.2256982937275493,
+      "mean_token_log_probability": -1.2256982937275493,
+      "token_count": 1,
+      "tokens": [
+        {
+          "token_id": null,
+          "token_text": "fixture_token_1",
+          "log_probability": -1.2256982937275493,
+          "synthetic_fixture": true
+        }
+      ]
+    },
+    {
+      "choice": " No",
+      "sequence_log_probability": -1.7743017062724507,
+      "mean_token_log_probability": -0.8871508531362253,
+      "token_count": 2,
+      "tokens": [
+        {
+          "token_id": null,
+          "token_text": "fixture_token_1",
+          "log_probability": -0.8871508531362253,
+          "synthetic_fixture": true
+        },
+        {
+          "token_id": null,
+          "token_text": "fixture_token_2",
+          "log_probability": -0.8871508531362253,
+          "synthetic_fixture": true
+        }
+      ]
+    }
+  ],
+  "calibrated_yes_probability": 0.6338115113889512,
+  "length_normalized_yes_probability": 0.41616236420467323,
+  "calibration": "softmax restricted to the exact Yes/No answer sequences",
+  "metric_scope": "model_relative_constrained_choice",
+  "runtime": {
+    "synthetic_fixture": true,
+    "fixture_version": 1,
+    "warning": "Deterministic mock scores; no checkpoint was loaded or queried."
+  },
+  "finished_at": "2026-09-06T12:12:35.942138+00:00"
+}

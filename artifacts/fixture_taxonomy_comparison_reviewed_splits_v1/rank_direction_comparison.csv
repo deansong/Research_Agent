@@ -1,0 +1,20 @@
+fixture_data,backend,artifact_warning,canonical_id,base_rank_direction,alternative_rank_direction,direction_changed
+True,fixture,SYNTHETIC FIXTURE: taxonomy sensitivity software verification only; not empirical.,accuracy,,-11,False
+True,fixture,SYNTHETIC FIXTURE: taxonomy sensitivity software verification only; not empirical.,ai_literacy,6,9,False
+True,fixture,SYNTHETIC FIXTURE: taxonomy sensitivity software verification only; not empirical.,attention_to_detail,-3,-4,False
+True,fixture,SYNTHETIC FIXTURE: taxonomy sensitivity software verification only; not empirical.,cash_handling,,0,False
+True,fixture,SYNTHETIC FIXTURE: taxonomy sensitivity software verification only; not empirical.,complaint_handling,-4,-6,False
+True,fixture,SYNTHETIC FIXTURE: taxonomy sensitivity software verification only; not empirical.,conflict_resolution,,12,False
+True,fixture,SYNTHETIC FIXTURE: taxonomy sensitivity software verification only; not empirical.,customer_service,-4,-7,False
+True,fixture,SYNTHETIC FIXTURE: taxonomy sensitivity software verification only; not empirical.,data_privacy,-2,-3,False
+True,fixture,SYNTHETIC FIXTURE: taxonomy sensitivity software verification only; not empirical.,guest_communication,-11,-16,False
+True,fixture,SYNTHETIC FIXTURE: taxonomy sensitivity software verification only; not empirical.,local_knowledge,-5,-8,False
+True,fixture,SYNTHETIC FIXTURE: taxonomy sensitivity software verification only; not empirical.,multitasking,9,11,False
+True,fixture,SYNTHETIC FIXTURE: taxonomy sensitivity software verification only; not empirical.,payment_processing,2,1,False
+True,fixture,SYNTHETIC FIXTURE: taxonomy sensitivity software verification only; not empirical.,pms_proficiency,,16,False
+True,fixture,SYNTHETIC FIXTURE: taxonomy sensitivity software verification only; not empirical.,prioritization,,-1,False
+True,fixture,SYNTHETIC FIXTURE: taxonomy sensitivity software verification only; not empirical.,problem_solving,-9,-13,False
+True,fixture,SYNTHETIC FIXTURE: taxonomy sensitivity software verification only; not empirical.,record_keeping,5,5,False
+True,fixture,SYNTHETIC FIXTURE: taxonomy sensitivity software verification only; not empirical.,reservation_systems,8,9,False
+True,fixture,SYNTHETIC FIXTURE: taxonomy sensitivity software verification only; not empirical.,teamwork,9,9,False
+True,fixture,SYNTHETIC FIXTURE: taxonomy sensitivity software verification only; not empirical.,time_management,-1,-3,False

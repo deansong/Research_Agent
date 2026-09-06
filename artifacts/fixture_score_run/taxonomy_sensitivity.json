@@ -1,8 +1,11 @@
 {
+  "fixture_data": true,
+  "backend": "fixture",
+  "artifact_warning": "SYNTHETIC FIXTURE: not empirical.",
   "taxonomy_sha256": "d5270d9bd619f1316fcfb599145c51919f1d0e6110f1a6eb8cddb8c20eeecdab",
   "approved_taxonomy_version": "v1",
-  "status": "counterfactual_taxonomies_not_scored",
-  "reason": "Changing approved merges creates a new taxonomy requiring a new digest and human approval. Canonical scores cannot identify split-category scores.",
+  "status": "base_run_scored",
+  "reason": "Alternatives require separate versioned proposals, approvals, score runs, and compare-taxonomies.",
   "approved_categories_scored": 14,
   "planned_alternatives": [
     {

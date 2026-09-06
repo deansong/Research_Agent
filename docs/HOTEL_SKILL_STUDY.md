@@ -68,10 +68,13 @@ python -m hotel_skill_study.cli taxonomy --run-dir artifacts/demo_run \
 For real generation, replace `fixture` with `transformers` and use a new run
 directory. Generation covers the Cartesian product of selected models, three
 prompt variants, and three seeds. Every attempt becomes one atomic JSON record,
-including failures. The content-addressed filename incorporates checkpoint and
-tokenizer revisions, exact prompt, seed, and generation parameters. Reruns skip
-existing records, so interruption is safe and configuration changes create new
-cache keys rather than overwriting evidence. A run manifest hashes both configs.
+including failures. The content-addressed filename incorporates backend,
+fixture-source digest (when applicable), checkpoint and tokenizer identities,
+architecture/adapter, complete role and prompt variant, rendered prompt, seed,
+and generation parameters. Reruns skip only records whose embedded identity is
+an exact match. Reusing a directory with a different backend, config, role,
+prompt, or tokenizer is rejected before inference; use a new directory. A run
+manifest preserves the complete run identity.
 
 Fixture strings are hand-authored software-test data. Every record and the
 taxonomy say `fixture: true`; they are not represented as outputs of GPT-2 or
@@ -144,11 +147,15 @@ teacher-forced sequence log probability for the exact answer strings ` Yes` and
 two-choice softmax is a constrained, within-model calibration. It is explicitly
 labelled `model_relative_constrained_choice`; raw next-token probabilities are
 never compared as if tokenizers shared a scale. Summaries include prompt range,
-seeded bootstrap intervals over prompt measurements, bootstrapped rank ranges,
-point-rank stability, and within-model ranks. Discovery prevalence separately
+descriptive prompt-resampling intervals, bootstrapped rank ranges, point-rank
+stability, and within-model ranks. These intervals resample only three fixed
+prompt variants (`n=3`), are not population confidence intervals, and do not
+quantify model-training or labour-market sampling uncertainty. Discovery prevalence separately
 bootstraps repeated prompt/seed records. The score cache key includes the exact
-approved taxonomy, revision, skill, prompt variant, answer choices, and backend.
-Reruns skip complete cells.
+approved taxonomy, backend, checkpoint and tokenizer identifiers/revisions,
+architecture/adapter, role/industry, skill label and ID, full prompt variant and
+rendered prompt, scoring method, and answer choices. The output-directory run
+identity is also checked before checkpoint loading. Reruns skip only exact cells.
 As a scoring sensitivity check, the pipeline also recomputes ranks using mean
 token log probability rather than total sequence log probability and writes the
 rank changes to `scoring_method_sensitivity.csv`.
@@ -156,15 +163,33 @@ The rank/interval SVG and CSV are reproducible from record JSON. Failed model
 loads and scoring cells are retained, excluded from numeric summaries, and
 counted in the score-run manifest.
 
-Sensitivity checks must be reported from parallel, versioned proposals: (1)
-the conservative aliases as shipped, (2) split every merge below confidence
-0.85, and (3) reviewer-requested alternative merges. Compare category coverage,
-within-model ranks, rank direction, bootstrap intervals, and prompt ranges.
-Because splitting an approved category cannot recover component scores, the
-pipeline records unexecuted counterfactuals in `taxonomy_sensitivity.json`
-instead of fabricating them. Each alternative needs a new digest and approval,
-then a separate score run. Do not pool missing cells; state which models/skills
-are absent. An effect is robust
+The implemented `reviewed_splits_v1` alternative separates conflict resolution,
+cash handling, PMS proficiency, accuracy, and prioritization while leaving every
+other approved-v1 mapping unchanged. It is always a new proposal and digest:
+
+```bash
+python -m hotel_skill_study.cli taxonomy-alternative \
+  --taxonomy artifacts/taxonomy/proposal.json \
+  --output artifacts/taxonomy_alternatives/reviewed_splits_v1/proposal.json
+# Human reviews the new artifact, then runs `approve --scope human`.
+python -m hotel_skill_study.cli score --backend transformers \
+  --taxonomy artifacts/taxonomy_alternatives/reviewed_splits_v1/proposal.json \
+  --approval artifacts/taxonomy_alternatives/reviewed_splits_v1/approval.json \
+  --output-dir artifacts/score_run_reviewed_splits_v1
+python -m hotel_skill_study.cli compare-taxonomies \
+  --base-taxonomy artifacts/taxonomy/proposal.json \
+  --base-approval artifacts/taxonomy/approval.json --base-run-dir artifacts/score_run \
+  --alternative-taxonomy artifacts/taxonomy_alternatives/reviewed_splits_v1/proposal.json \
+  --alternative-approval artifacts/taxonomy_alternatives/reviewed_splits_v1/approval.json \
+  --alternative-run-dir artifacts/score_run_reviewed_splits_v1 \
+  --output-dir artifacts/taxonomy_comparison_reviewed_splits_v1
+```
+
+For automated no-model tests only, `approve --scope fixture_test` authorizes a
+fixture-derived alternative for `--backend fixture`; it is explicitly rejected
+for real checkpoint scoring. The comparison reports category/mapping coverage,
+ranks, rank direction, descriptive intervals, and prompt ranges, including
+categories present in only one version. Do not pool missing cells. An effect is robust
 only if its qualitative conclusion survives prompt and reasonable taxonomy
 choices. This workflow supplies traceable inputs for such analysis; it does not
 pre-author a conclusion.
@@ -176,8 +201,10 @@ run manifest/config hashes. Scoring adds taxonomy and approval hashes, checkpoin
 and tokenizer revisions, prompt, exact choices, component log probabilities,
 runtime versions, summary row, and plot. Summary JSON/CSV retain component
 record IDs; explicit missing-cell JSON is emitted even when empty. The artifact
-validator checks exact counts, approval/taxonomy hashes, token component
-integrity, calibrated-score bounds, fixture labelling, and required outputs.
+validator recomputes expected cell identities and record keys; checks prompts,
+configs, component sums/means, both calibrated scores, summaries and record
+references, missing-cell consistency, manifest config hashes, intrinsic fixture
+labels, and derived table/plot hashes.
 Git commit and hardware/driver metadata should be captured alongside any
 publication run.
 
@@ -208,6 +235,9 @@ Executed in this repository on 2026-09-06:
 - discovery/taxonomy focused tests using 18 labelled fixture records;
 - post-approval synthetic scoring for 2 configured models × 14 approved skills
   × 3 scoring prompts = 84 successful fixture cells;
+- fixture-only sensitivity scoring for 19 alternative categories × 2 model
+  labels × 3 prompts = 114 successful cells, followed by 38 base/alternative
+  score comparisons and 19 rank-direction comparisons;
 - output validation with zero missing successful cells.
 
 Not executed: checkpoint download, GPT-2 generation/scoring, Llama 3

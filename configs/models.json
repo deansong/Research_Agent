@@ -18,6 +18,7 @@
       },
       "architecture": "base_causal_lm",
       "prompt_adapter": "plain_text",
+      "auto_model_class": "AutoModelForCausalLM",
       "selected": true,
       "access": "ungated; MIT checkpoint mirror",
       "notes": "Base rather than instruction-tuned. Treat prompt-following differences as a major comparability limitation."
@@ -39,6 +40,7 @@
       },
       "architecture": "instruction_tuned_causal_lm",
       "prompt_adapter": "chat_template",
+      "auto_model_class": "AutoModelForCausalLM",
       "selected": true,
       "access": "gated; accept the Meta Llama 3 license and authenticate with Hugging Face",
       "notes": "Instruction tuning is a confound relative to GPT-2 and must remain visible in analysis."

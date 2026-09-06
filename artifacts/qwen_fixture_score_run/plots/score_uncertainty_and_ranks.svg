@@ -1,0 +1,95 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="920" height="742" viewBox="0 0 920 742">
+<style>text{font:12px sans-serif}.title{font:bold 15px sans-serif}.axis{stroke:#999}.ci{stroke:#567}.dot{fill:#174a7e}</style>
+<text class="title" x="10" y="22">SYNTHETIC FIXTURE — model-relative scores (descriptive prompt-resampling intervals; n=3)</text>
+<line class="axis" x1="330" y1="40" x2="895" y2="40"/>
+<text x="322.0" y="36">0.0</text>
+<text x="435.0" y="36">0.2</text>
+<text x="548.0" y="36">0.4</text>
+<text x="661.0" y="36">0.6</text>
+<text x="774.0" y="36">0.8</text>
+<text x="887.0" y="36">1.0</text>
+<text x="10" y="64">qwen1_5_0_5b_chat_2024 · data_privacy · rank 1</text>
+<line class="ci" x1="748.7" y1="60" x2="821.2" y2="60"/>
+<circle class="dot" cx="794.0" cy="60" r="4"/>
+<text x="10" y="88">qwen1_5_0_5b_chat_2024 · record_keeping · rank 2</text>
+<line class="ci" x1="691.2" y1="84" x2="807.2" y2="84"/>
+<circle class="dot" cx="767.9" cy="84" r="4"/>
+<text x="10" y="112">qwen1_5_0_5b_chat_2024 · ai_literacy · rank 3</text>
+<line class="ci" x1="706.9" y1="108" x2="805.8" y2="108"/>
+<circle class="dot" cx="752.5" cy="108" r="4"/>
+<text x="10" y="136">qwen1_5_0_5b_chat_2024 · attention_to_detail · rank 4</text>
+<line class="ci" x1="519.2" y1="132" x2="822.1" y2="132"/>
+<circle class="dot" cx="694.8" cy="132" r="4"/>
+<text x="10" y="160">qwen1_5_0_5b_chat_2024 · guest_communication · rank 5</text>
+<line class="ci" x1="508.0" y1="156" x2="799.6" y2="156"/>
+<circle class="dot" cx="683.9" cy="156" r="4"/>
+<text x="10" y="184">qwen1_5_0_5b_chat_2024 · reservation_systems · rank 6</text>
+<line class="ci" x1="437.9" y1="180" x2="794.1" y2="180"/>
+<circle class="dot" cx="659.1" cy="180" r="4"/>
+<text x="10" y="208">qwen1_5_0_5b_chat_2024 · multitasking · rank 7</text>
+<line class="ci" x1="547.7" y1="204" x2="760.6" y2="204"/>
+<circle class="dot" cx="641.4" cy="204" r="4"/>
+<text x="10" y="232">qwen1_5_0_5b_chat_2024 · complaint_handling · rank 8</text>
+<line class="ci" x1="407.2" y1="228" x2="748.2" y2="228"/>
+<circle class="dot" cx="630.9" cy="228" r="4"/>
+<text x="10" y="256">qwen1_5_0_5b_chat_2024 · payment_processing · rank 9</text>
+<line class="ci" x1="428.0" y1="252" x2="815.1" y2="252"/>
+<circle class="dot" cx="598.4" cy="252" r="4"/>
+<text x="10" y="280">qwen1_5_0_5b_chat_2024 · local_knowledge · rank 10</text>
+<line class="ci" x1="471.8" y1="276" x2="734.2" y2="276"/>
+<circle class="dot" cx="569.3" cy="276" r="4"/>
+<text x="10" y="304">qwen1_5_0_5b_chat_2024 · customer_service · rank 11</text>
+<line class="ci" x1="423.3" y1="300" x2="728.1" y2="300"/>
+<circle class="dot" cx="540.2" cy="300" r="4"/>
+<text x="10" y="328">qwen1_5_0_5b_chat_2024 · teamwork · rank 12</text>
+<line class="ci" x1="402.4" y1="324" x2="586.3" y2="324"/>
+<circle class="dot" cx="494.5" cy="324" r="4"/>
+<text x="10" y="352">qwen1_5_0_5b_chat_2024 · problem_solving · rank 13</text>
+<line class="ci" x1="464.9" y1="348" x2="514.6" y2="348"/>
+<circle class="dot" cx="493.5" cy="348" r="4"/>
+<text x="10" y="376">qwen1_5_0_5b_chat_2024 · time_management · rank 14</text>
+<line class="ci" x1="399.0" y1="372" x2="580.5" y2="372"/>
+<circle class="dot" cx="466.2" cy="372" r="4"/>
+<text x="10" y="400">qwen3_5_0_8b_2026 · guest_communication · rank 1</text>
+<line class="ci" x1="759.5" y1="396" x2="798.2" y2="396"/>
+<circle class="dot" cx="784.3" cy="396" r="4"/>
+<text x="10" y="424">qwen3_5_0_8b_2026 · multitasking · rank 2</text>
+<line class="ci" x1="696.6" y1="420" x2="793.9" y2="420"/>
+<circle class="dot" cx="760.6" cy="420" r="4"/>
+<text x="10" y="448">qwen3_5_0_8b_2026 · attention_to_detail · rank 3</text>
+<line class="ci" x1="632.8" y1="444" x2="791.4" y2="444"/>
+<circle class="dot" cx="721.8" cy="444" r="4"/>
+<text x="10" y="472">qwen3_5_0_8b_2026 · reservation_systems · rank 4</text>
+<line class="ci" x1="602.4" y1="468" x2="776.6" y2="468"/>
+<circle class="dot" cx="695.5" cy="468" r="4"/>
+<text x="10" y="496">qwen3_5_0_8b_2026 · customer_service · rank 5</text>
+<line class="ci" x1="511.0" y1="492" x2="808.0" y2="492"/>
+<circle class="dot" cx="669.7" cy="492" r="4"/>
+<text x="10" y="520">qwen3_5_0_8b_2026 · data_privacy · rank 6</text>
+<line class="ci" x1="567.9" y1="516" x2="687.9" y2="516"/>
+<circle class="dot" cx="613.7" cy="516" r="4"/>
+<text x="10" y="544">qwen3_5_0_8b_2026 · teamwork · rank 7</text>
+<line class="ci" x1="437.1" y1="540" x2="747.9" y2="540"/>
+<circle class="dot" cx="595.5" cy="540" r="4"/>
+<text x="10" y="568">qwen3_5_0_8b_2026 · complaint_handling · rank 8</text>
+<line class="ci" x1="454.5" y1="564" x2="636.6" y2="564"/>
+<circle class="dot" cx="556.1" cy="564" r="4"/>
+<text x="10" y="592">qwen3_5_0_8b_2026 · payment_processing · rank 9</text>
+<line class="ci" x1="454.5" y1="588" x2="646.7" y2="588"/>
+<circle class="dot" cx="550.5" cy="588" r="4"/>
+<text x="10" y="616">qwen3_5_0_8b_2026 · record_keeping · rank 10</text>
+<line class="ci" x1="510.2" y1="612" x2="606.1" y2="612"/>
+<circle class="dot" cx="543.9" cy="612" r="4"/>
+<text x="10" y="640">qwen3_5_0_8b_2026 · time_management · rank 11</text>
+<line class="ci" x1="402.0" y1="636" x2="700.5" y2="636"/>
+<circle class="dot" cx="539.2" cy="636" r="4"/>
+<text x="10" y="664">qwen3_5_0_8b_2026 · problem_solving · rank 12</text>
+<line class="ci" x1="404.9" y1="660" x2="776.9" y2="660"/>
+<circle class="dot" cx="529.6" cy="660" r="4"/>
+<text x="10" y="688">qwen3_5_0_8b_2026 · ai_literacy · rank 13</text>
+<line class="ci" x1="422.4" y1="684" x2="654.5" y2="684"/>
+<circle class="dot" cx="528.3" cy="684" r="4"/>
+<text x="10" y="712">qwen3_5_0_8b_2026 · local_knowledge · rank 14</text>
+<line class="ci" x1="413.3" y1="708" x2="559.3" y2="708"/>
+<circle class="dot" cx="463.4" cy="708" r="4"/>
+</svg>

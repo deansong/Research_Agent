@@ -226,6 +226,26 @@ Every problem is reported **together**, so one repair round can fix them all.
 
 ---
 
+## When a node times out
+
+A node that is asked to implement a lot in one turn can legitimately run for a
+long time. The default budget is 600 seconds per turn; a write-heavy node
+building something substantial will exceed that.
+
+Give a role longer in `<repo>/.agent/config.json`:
+
+```json
+{ "roles": { "executor": { "options": { "timeout": 3600 } } } }
+```
+
+The key is the **role name the node declares as its `backend`**, which for a
+generated agent is whatever the designer chose — check `nodes.json`.
+
+If it still times out, the design is usually the problem rather than the
+budget: one node has been asked to do a whole project. Split the work across
+more nodes so each turn is a step rather than the entire job. `/graph` shows
+you the shape you actually got.
+
 ## Working with folders
 
 ```bash

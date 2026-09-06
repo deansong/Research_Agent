@@ -1,0 +1,2674 @@
+{
+  "schema_version": 1,
+  "status": "proposed_unapproved",
+  "fixture_data": true,
+  "created_at": "2026-09-06T16:37:54.412859+00:00",
+  "method": {
+    "normalization": "casefold, punctuation removal, whitespace collapse",
+    "clustering": "exact normalized alias lookup from versioned conservative synonym file",
+    "non_merge_policy": "unlisted phrases remain separate and are flagged; no embedding/fuzzy auto-merge"
+  },
+  "source_run": "artifacts/qwen_fixture_demo",
+  "source_run_manifest_sha256": "4146dcfebb035449b3d9ac2d4b11e50fe006ff65f9444d17e3d45c38b8962514",
+  "synonym_config": "configs/synonyms.json",
+  "synonym_config_sha256": "5848d00528d730179f9ae83c6085c65c5c2cecbeeb6891c46003843d2b5ef900",
+  "categories": [
+    {
+      "canonical_id": "ai_literacy",
+      "label": "AI literacy",
+      "occurrence_count": 6,
+      "distinct_record_count": 6,
+      "model_counts": {
+        "qwen3_5_0_8b_2026": 6
+      },
+      "raw_variants": {
+        "AI literacy": 2,
+        "Artificial intelligence literacy": 2,
+        "Using AI assistants": 2
+      },
+      "supporting_examples": [
+        {
+          "raw_phrase": "AI literacy",
+          "model_id": "qwen3_5_0_8b_2026",
+          "record_id": "1088ac30225eec10b7751bdf50f03b678e4146664df4cc51663ca6d14825dfdc"
+        },
+        {
+          "raw_phrase": "Artificial intelligence literacy",
+          "model_id": "qwen3_5_0_8b_2026",
+          "record_id": "3e4dff9137d4bca74f75841f65c5ea50d198bfe095c8d788d66fe60d9e83b173"
+        },
+        {
+          "raw_phrase": "Artificial intelligence literacy",
+          "model_id": "qwen3_5_0_8b_2026",
+          "record_id": "5000ba7fdbbc591c11220ea180fcbb06dd6cf8dc194feb0a2158e401919e6738"
+        },
+        {
+          "raw_phrase": "AI literacy",
+          "model_id": "qwen3_5_0_8b_2026",
+          "record_id": "66f963fb0b7febe3aa6efc5313ce1cdb2da271c21ece7180e05f63d3e82cafde"
+        },
+        {
+          "raw_phrase": "Using AI assistants",
+          "model_id": "qwen3_5_0_8b_2026",
+          "record_id": "ed64932e965398ccd79683144372fcef5d70faba404e2f8cd6b7c6d652427878"
+        }
+      ],
+      "confidence": 0.91,
+      "review_flags": [
+        "model_specific_in_fixture",
+        "potentially_emergent_review"
+      ],
+      "decision": "proposed"
+    },
+    {
+      "canonical_id": "attention_to_detail",
+      "label": "Attention to detail",
+      "occurrence_count": 14,
+      "distinct_record_count": 14,
+      "model_counts": {
+        "qwen1_5_0_5b_chat_2024": 7,
+        "qwen3_5_0_8b_2026": 7
+      },
+      "raw_variants": {
+        "Accuracy": 5,
+        "Attention to detail": 9
+      },
+      "supporting_examples": [
+        {
+          "raw_phrase": "Attention to detail",
+          "model_id": "qwen1_5_0_5b_chat_2024",
+          "record_id": "0bb26c511c3221145df7c781479c903da3b5d977f30a4f3f7cdd642b6b1bb627"
+        },
+        {
+          "raw_phrase": "Attention to detail",
+          "model_id": "qwen3_5_0_8b_2026",
+          "record_id": "3e4dff9137d4bca74f75841f65c5ea50d198bfe095c8d788d66fe60d9e83b173"
+        },
+        {
+          "raw_phrase": "Accuracy",
+          "model_id": "qwen1_5_0_5b_chat_2024",
+          "record_id": "4b0cebe1bfd1ccd0d4a52b2c2c2e683bc22f0a44c64f5e172d365531e6a7ac39"
+        },
+        {
+          "raw_phrase": "Attention to detail",
+          "model_id": "qwen3_5_0_8b_2026",
+          "record_id": "5000ba7fdbbc591c11220ea180fcbb06dd6cf8dc194feb0a2158e401919e6738"
+        },
+        {
+          "raw_phrase": "Attention to detail",
+          "model_id": "qwen1_5_0_5b_chat_2024",
+          "record_id": "6163ab8f09c6a29087c5890c59c332885f9dbdccb7228749a805795d9dd7d11e"
+        }
+      ],
+      "confidence": 0.84,
+      "review_flags": [],
+      "decision": "proposed"
+    },
+    {
+      "canonical_id": "complaint_handling",
+      "label": "Complaint handling",
+      "occurrence_count": 11,
+      "distinct_record_count": 11,
+      "model_counts": {
+        "qwen1_5_0_5b_chat_2024": 6,
+        "qwen3_5_0_8b_2026": 5
+      },
+      "raw_variants": {
+        "Complaint handling": 5,
+        "Conflict resolution": 3,
+        "Handling guest complaints": 3
+      },
+      "supporting_examples": [
+        {
+          "raw_phrase": "Complaint handling",
+          "model_id": "qwen1_5_0_5b_chat_2024",
+          "record_id": "0bb26c511c3221145df7c781479c903da3b5d977f30a4f3f7cdd642b6b1bb627"
+        },
+        {
+          "raw_phrase": "Handling guest complaints",
+          "model_id": "qwen1_5_0_5b_chat_2024",
+          "record_id": "21f8cfbecfc1896d9c771750618ee831522a1d11d641c3b95dbabdf35f65bfef"
+        },
+        {
+          "raw_phrase": "Handling guest complaints",
+          "model_id": "qwen1_5_0_5b_chat_2024",
+          "record_id": "30ab9e856eb3198da52ec7c3d970ff26370d98ff7c90f05030d3b4173b3ca514"
+        },
+        {
+          "raw_phrase": "Conflict resolution",
+          "model_id": "qwen3_5_0_8b_2026",
+          "record_id": "3e4dff9137d4bca74f75841f65c5ea50d198bfe095c8d788d66fe60d9e83b173"
+        },
+        {
+          "raw_phrase": "Conflict resolution",
+          "model_id": "qwen1_5_0_5b_chat_2024",
+          "record_id": "4b0cebe1bfd1ccd0d4a52b2c2c2e683bc22f0a44c64f5e172d365531e6a7ac39"
+        }
+      ],
+      "confidence": 0.86,
+      "review_flags": [],
+      "decision": "proposed"
+    },
+    {
+      "canonical_id": "customer_service",
+      "label": "Customer service",
+      "occurrence_count": 15,
+      "distinct_record_count": 15,
+      "model_counts": {
+        "qwen1_5_0_5b_chat_2024": 9,
+        "qwen3_5_0_8b_2026": 6
+      },
+      "raw_variants": {
+        "Customer service": 7,
+        "Guest service": 4,
+        "Hospitality service": 4
+      },
+      "supporting_examples": [
+        {
+          "raw_phrase": "Hospitality service",
+          "model_id": "qwen1_5_0_5b_chat_2024",
+          "record_id": "0bb26c511c3221145df7c781479c903da3b5d977f30a4f3f7cdd642b6b1bb627"
+        },
+        {
+          "raw_phrase": "Guest service",
+          "model_id": "qwen3_5_0_8b_2026",
+          "record_id": "1088ac30225eec10b7751bdf50f03b678e4146664df4cc51663ca6d14825dfdc"
+        },
+        {
+          "raw_phrase": "Customer service",
+          "model_id": "qwen1_5_0_5b_chat_2024",
+          "record_id": "21f8cfbecfc1896d9c771750618ee831522a1d11d641c3b95dbabdf35f65bfef"
+        },
+        {
+          "raw_phrase": "Guest service",
+          "model_id": "qwen1_5_0_5b_chat_2024",
+          "record_id": "30ab9e856eb3198da52ec7c3d970ff26370d98ff7c90f05030d3b4173b3ca514"
+        },
+        {
+          "raw_phrase": "Customer service",
+          "model_id": "qwen3_5_0_8b_2026",
+          "record_id": "3e4dff9137d4bca74f75841f65c5ea50d198bfe095c8d788d66fe60d9e83b173"
+        }
+      ],
+      "confidence": 0.92,
+      "review_flags": [],
+      "decision": "proposed"
+    },
+    {
+      "canonical_id": "data_privacy",
+      "label": "Data privacy",
+      "occurrence_count": 9,
+      "distinct_record_count": 9,
+      "model_counts": {
+        "qwen3_5_0_8b_2026": 9
+      },
+      "raw_variants": {
+        "Data privacy": 3,
+        "Guest data protection": 3,
+        "Privacy awareness": 3
+      },
+      "supporting_examples": [
+        {
+          "raw_phrase": "Guest data protection",
+          "model_id": "qwen3_5_0_8b_2026",
+          "record_id": "1088ac30225eec10b7751bdf50f03b678e4146664df4cc51663ca6d14825dfdc"
+        },
+        {
+          "raw_phrase": "Privacy awareness",
+          "model_id": "qwen3_5_0_8b_2026",
+          "record_id": "3e4dff9137d4bca74f75841f65c5ea50d198bfe095c8d788d66fe60d9e83b173"
+        },
+        {
+          "raw_phrase": "Guest data protection",
+          "model_id": "qwen3_5_0_8b_2026",
+          "record_id": "5000ba7fdbbc591c11220ea180fcbb06dd6cf8dc194feb0a2158e401919e6738"
+        },
+        {
+          "raw_phrase": "Data privacy",
+          "model_id": "qwen3_5_0_8b_2026",
+          "record_id": "66f963fb0b7febe3aa6efc5313ce1cdb2da271c21ece7180e05f63d3e82cafde"
+        },
+        {
+          "raw_phrase": "Privacy awareness",
+          "model_id": "qwen3_5_0_8b_2026",
+          "record_id": "e49d60d214a335a9bc0c523449feaf6898d5fc50df57098f3fcd402b2c079268"
+        }
+      ],
+      "confidence": 0.88,
+      "review_flags": [
+        "model_specific_in_fixture"
+      ],
+      "decision": "proposed"
+    },
+    {
+      "canonical_id": "guest_communication",
+      "label": "Guest communication",
+      "occurrence_count": 18,
+      "distinct_record_count": 18,
+      "model_counts": {
+        "qwen1_5_0_5b_chat_2024": 9,
+        "qwen3_5_0_8b_2026": 9
+      },
+      "raw_variants": {
+        "Communication": 4,
+        "Communication skills": 3,
+        "Guest communication": 6,
+        "Verbal communication": 5
+      },
+      "supporting_examples": [
+        {
+          "raw_phrase": "Guest communication",
+          "model_id": "qwen1_5_0_5b_chat_2024",
+          "record_id": "0bb26c511c3221145df7c781479c903da3b5d977f30a4f3f7cdd642b6b1bb627"
+        },
+        {
+          "raw_phrase": "Communication",
+          "model_id": "qwen3_5_0_8b_2026",
+          "record_id": "1088ac30225eec10b7751bdf50f03b678e4146664df4cc51663ca6d14825dfdc"
+        },
+        {
+          "raw_phrase": "Verbal communication",
+          "model_id": "qwen1_5_0_5b_chat_2024",
+          "record_id": "21f8cfbecfc1896d9c771750618ee831522a1d11d641c3b95dbabdf35f65bfef"
+        },
+        {
+          "raw_phrase": "Verbal communication",
+          "model_id": "qwen1_5_0_5b_chat_2024",
+          "record_id": "30ab9e856eb3198da52ec7c3d970ff26370d98ff7c90f05030d3b4173b3ca514"
+        },
+        {
+          "raw_phrase": "Verbal communication",
+          "model_id": "qwen3_5_0_8b_2026",
+          "record_id": "3e4dff9137d4bca74f75841f65c5ea50d198bfe095c8d788d66fe60d9e83b173"
+        }
+      ],
+      "confidence": 0.94,
+      "review_flags": [],
+      "decision": "proposed"
+    },
+    {
+      "canonical_id": "local_knowledge",
+      "label": "Local knowledge",
+      "occurrence_count": 5,
+      "distinct_record_count": 5,
+      "model_counts": {
+        "qwen1_5_0_5b_chat_2024": 5
+      },
+      "raw_variants": {
+        "Local area knowledge": 2,
+        "Local knowledge": 3
+      },
+      "supporting_examples": [
+        {
+          "raw_phrase": "Local knowledge",
+          "model_id": "qwen1_5_0_5b_chat_2024",
+          "record_id": "21f8cfbecfc1896d9c771750618ee831522a1d11d641c3b95dbabdf35f65bfef"
+        },
+        {
+          "raw_phrase": "Local knowledge",
+          "model_id": "qwen1_5_0_5b_chat_2024",
+          "record_id": "30ab9e856eb3198da52ec7c3d970ff26370d98ff7c90f05030d3b4173b3ca514"
+        },
+        {
+          "raw_phrase": "Local area knowledge",
+          "model_id": "qwen1_5_0_5b_chat_2024",
+          "record_id": "6163ab8f09c6a29087c5890c59c332885f9dbdccb7228749a805795d9dd7d11e"
+        },
+        {
+          "raw_phrase": "Local area knowledge",
+          "model_id": "qwen1_5_0_5b_chat_2024",
+          "record_id": "6e92e1d8e32f68309acb4091b3b5a4ae1ddd80e81c6eb2a8ae8cd6b34e271870"
+        },
+        {
+          "raw_phrase": "Local knowledge",
+          "model_id": "qwen1_5_0_5b_chat_2024",
+          "record_id": "967304ee5e87e9835bedd85ed582450b6132ceba0d71275aed71bee3c6489884"
+        }
+      ],
+      "confidence": 0.91,
+      "review_flags": [
+        "model_specific_in_fixture"
+      ],
+      "decision": "proposed"
+    },
+    {
+      "canonical_id": "multitasking",
+      "label": "Multitasking",
+      "occurrence_count": 12,
+      "distinct_record_count": 12,
+      "model_counts": {
+        "qwen1_5_0_5b_chat_2024": 6,
+        "qwen3_5_0_8b_2026": 6
+      },
+      "raw_variants": {
+        "Multi-tasking": 3,
+        "Multitasking": 9
+      },
+      "supporting_examples": [
+        {
+          "raw_phrase": "Multitasking",
+          "model_id": "qwen1_5_0_5b_chat_2024",
+          "record_id": "0bb26c511c3221145df7c781479c903da3b5d977f30a4f3f7cdd642b6b1bb627"
+        },
+        {
+          "raw_phrase": "Multitasking",
+          "model_id": "qwen1_5_0_5b_chat_2024",
+          "record_id": "21f8cfbecfc1896d9c771750618ee831522a1d11d641c3b95dbabdf35f65bfef"
+        },
+        {
+          "raw_phrase": "Multitasking",
+          "model_id": "qwen1_5_0_5b_chat_2024",
+          "record_id": "30ab9e856eb3198da52ec7c3d970ff26370d98ff7c90f05030d3b4173b3ca514"
+        },
+        {
+          "raw_phrase": "Multitasking",
+          "model_id": "qwen3_5_0_8b_2026",
+          "record_id": "5000ba7fdbbc591c11220ea180fcbb06dd6cf8dc194feb0a2158e401919e6738"
+        },
+        {
+          "raw_phrase": "Multitasking",
+          "model_id": "qwen1_5_0_5b_chat_2024",
+          "record_id": "6163ab8f09c6a29087c5890c59c332885f9dbdccb7228749a805795d9dd7d11e"
+        }
+      ],
+      "confidence": 0.97,
+      "review_flags": [],
+      "decision": "proposed"
+    },
+    {
+      "canonical_id": "payment_processing",
+      "label": "Payment processing",
+      "occurrence_count": 9,
+      "distinct_record_count": 9,
+      "model_counts": {
+        "qwen1_5_0_5b_chat_2024": 6,
+        "qwen3_5_0_8b_2026": 3
+      },
+      "raw_variants": {
+        "Cash handling": 4,
+        "Payment processing": 5
+      },
+      "supporting_examples": [
+        {
+          "raw_phrase": "Payment processing",
+          "model_id": "qwen1_5_0_5b_chat_2024",
+          "record_id": "0bb26c511c3221145df7c781479c903da3b5d977f30a4f3f7cdd642b6b1bb627"
+        },
+        {
+          "raw_phrase": "Cash handling",
+          "model_id": "qwen1_5_0_5b_chat_2024",
+          "record_id": "30ab9e856eb3198da52ec7c3d970ff26370d98ff7c90f05030d3b4173b3ca514"
+        },
+        {
+          "raw_phrase": "Payment processing",
+          "model_id": "qwen3_5_0_8b_2026",
+          "record_id": "5000ba7fdbbc591c11220ea180fcbb06dd6cf8dc194feb0a2158e401919e6738"
+        },
+        {
+          "raw_phrase": "Cash handling",
+          "model_id": "qwen1_5_0_5b_chat_2024",
+          "record_id": "6163ab8f09c6a29087c5890c59c332885f9dbdccb7228749a805795d9dd7d11e"
+        },
+        {
+          "raw_phrase": "Cash handling",
+          "model_id": "qwen3_5_0_8b_2026",
+          "record_id": "66f963fb0b7febe3aa6efc5313ce1cdb2da271c21ece7180e05f63d3e82cafde"
+        }
+      ],
+      "confidence": 0.78,
+      "review_flags": [],
+      "decision": "proposed"
+    },
+    {
+      "canonical_id": "problem_solving",
+      "label": "Problem solving",
+      "occurrence_count": 7,
+      "distinct_record_count": 7,
+      "model_counts": {
+        "qwen1_5_0_5b_chat_2024": 3,
+        "qwen3_5_0_8b_2026": 4
+      },
+      "raw_variants": {
+        "Issue resolution": 3,
+        "Problem solving": 2,
+        "Problem-solving": 2
+      },
+      "supporting_examples": [
+        {
+          "raw_phrase": "Issue resolution",
+          "model_id": "qwen3_5_0_8b_2026",
+          "record_id": "1088ac30225eec10b7751bdf50f03b678e4146664df4cc51663ca6d14825dfdc"
+        },
+        {
+          "raw_phrase": "Problem solving",
+          "model_id": "qwen1_5_0_5b_chat_2024",
+          "record_id": "6163ab8f09c6a29087c5890c59c332885f9dbdccb7228749a805795d9dd7d11e"
+        },
+        {
+          "raw_phrase": "Problem-solving",
+          "model_id": "qwen1_5_0_5b_chat_2024",
+          "record_id": "967304ee5e87e9835bedd85ed582450b6132ceba0d71275aed71bee3c6489884"
+        },
+        {
+          "raw_phrase": "Issue resolution",
+          "model_id": "qwen1_5_0_5b_chat_2024",
+          "record_id": "b7474be2cbdd4170ad92735e005667546fb87008291b03ea34591dfc0d1f02de"
+        },
+        {
+          "raw_phrase": "Problem-solving",
+          "model_id": "qwen3_5_0_8b_2026",
+          "record_id": "f0ffa7c33f7feca300fbbcffa14328a605feab891635f48f050a42dc12bc325c"
+        }
+      ],
+      "confidence": 0.94,
+      "review_flags": [],
+      "decision": "proposed"
+    },
+    {
+      "canonical_id": "record_keeping",
+      "label": "Record keeping",
+      "occurrence_count": 3,
+      "distinct_record_count": 3,
+      "model_counts": {
+        "qwen1_5_0_5b_chat_2024": 3
+      },
+      "raw_variants": {
+        "Record keeping": 3
+      },
+      "supporting_examples": [
+        {
+          "raw_phrase": "Record keeping",
+          "model_id": "qwen1_5_0_5b_chat_2024",
+          "record_id": "21f8cfbecfc1896d9c771750618ee831522a1d11d641c3b95dbabdf35f65bfef"
+        },
+        {
+          "raw_phrase": "Record keeping",
+          "model_id": "qwen1_5_0_5b_chat_2024",
+          "record_id": "4b0cebe1bfd1ccd0d4a52b2c2c2e683bc22f0a44c64f5e172d365531e6a7ac39"
+        },
+        {
+          "raw_phrase": "Record keeping",
+          "model_id": "qwen1_5_0_5b_chat_2024",
+          "record_id": "b7474be2cbdd4170ad92735e005667546fb87008291b03ea34591dfc0d1f02de"
+        }
+      ],
+      "confidence": 0.55,
+      "review_flags": [
+        "human_review_required",
+        "model_specific_in_fixture",
+        "unclustered"
+      ],
+      "decision": "proposed"
+    },
+    {
+      "canonical_id": "reservation_systems",
+      "label": "Reservation systems",
+      "occurrence_count": 15,
+      "distinct_record_count": 15,
+      "model_counts": {
+        "qwen1_5_0_5b_chat_2024": 6,
+        "qwen3_5_0_8b_2026": 9
+      },
+      "raw_variants": {
+        "Booking systems": 3,
+        "PMS proficiency": 2,
+        "Property management systems": 4,
+        "Reservation systems": 6
+      },
+      "supporting_examples": [
+        {
+          "raw_phrase": "Reservation systems",
+          "model_id": "qwen1_5_0_5b_chat_2024",
+          "record_id": "0bb26c511c3221145df7c781479c903da3b5d977f30a4f3f7cdd642b6b1bb627"
+        },
+        {
+          "raw_phrase": "Property management systems",
+          "model_id": "qwen3_5_0_8b_2026",
+          "record_id": "1088ac30225eec10b7751bdf50f03b678e4146664df4cc51663ca6d14825dfdc"
+        },
+        {
+          "raw_phrase": "Reservation systems",
+          "model_id": "qwen1_5_0_5b_chat_2024",
+          "record_id": "21f8cfbecfc1896d9c771750618ee831522a1d11d641c3b95dbabdf35f65bfef"
+        },
+        {
+          "raw_phrase": "Booking systems",
+          "model_id": "qwen1_5_0_5b_chat_2024",
+          "record_id": "30ab9e856eb3198da52ec7c3d970ff26370d98ff7c90f05030d3b4173b3ca514"
+        },
+        {
+          "raw_phrase": "Booking systems",
+          "model_id": "qwen3_5_0_8b_2026",
+          "record_id": "3e4dff9137d4bca74f75841f65c5ea50d198bfe095c8d788d66fe60d9e83b173"
+        }
+      ],
+      "confidence": 0.85,
+      "review_flags": [],
+      "decision": "proposed"
+    },
+    {
+      "canonical_id": "teamwork",
+      "label": "Teamwork",
+      "occurrence_count": 15,
+      "distinct_record_count": 15,
+      "model_counts": {
+        "qwen1_5_0_5b_chat_2024": 9,
+        "qwen3_5_0_8b_2026": 6
+      },
+      "raw_variants": {
+        "Collaboration": 5,
+        "Team collaboration": 3,
+        "Teamwork": 7
+      },
+      "supporting_examples": [
+        {
+          "raw_phrase": "Collaboration",
+          "model_id": "qwen1_5_0_5b_chat_2024",
+          "record_id": "0bb26c511c3221145df7c781479c903da3b5d977f30a4f3f7cdd642b6b1bb627"
+        },
+        {
+          "raw_phrase": "Teamwork",
+          "model_id": "qwen3_5_0_8b_2026",
+          "record_id": "1088ac30225eec10b7751bdf50f03b678e4146664df4cc51663ca6d14825dfdc"
+        },
+        {
+          "raw_phrase": "Teamwork",
+          "model_id": "qwen1_5_0_5b_chat_2024",
+          "record_id": "21f8cfbecfc1896d9c771750618ee831522a1d11d641c3b95dbabdf35f65bfef"
+        },
+        {
+          "raw_phrase": "Team collaboration",
+          "model_id": "qwen1_5_0_5b_chat_2024",
+          "record_id": "30ab9e856eb3198da52ec7c3d970ff26370d98ff7c90f05030d3b4173b3ca514"
+        },
+        {
+          "raw_phrase": "Collaboration",
+          "model_id": "qwen3_5_0_8b_2026",
+          "record_id": "3e4dff9137d4bca74f75841f65c5ea50d198bfe095c8d788d66fe60d9e83b173"
+        }
+      ],
+      "confidence": 0.91,
+      "review_flags": [],
+      "decision": "proposed"
+    },
+    {
+      "canonical_id": "time_management",
+      "label": "Time management",
+      "occurrence_count": 5,
+      "distinct_record_count": 5,
+      "model_counts": {
+        "qwen1_5_0_5b_chat_2024": 3,
+        "qwen3_5_0_8b_2026": 2
+      },
+      "raw_variants": {
+        "Prioritization": 2,
+        "Time management": 3
+      },
+      "supporting_examples": [
+        {
+          "raw_phrase": "Prioritization",
+          "model_id": "qwen3_5_0_8b_2026",
+          "record_id": "1088ac30225eec10b7751bdf50f03b678e4146664df4cc51663ca6d14825dfdc"
+        },
+        {
+          "raw_phrase": "Prioritization",
+          "model_id": "qwen1_5_0_5b_chat_2024",
+          "record_id": "4b0cebe1bfd1ccd0d4a52b2c2c2e683bc22f0a44c64f5e172d365531e6a7ac39"
+        },
+        {
+          "raw_phrase": "Time management",
+          "model_id": "qwen1_5_0_5b_chat_2024",
+          "record_id": "6e92e1d8e32f68309acb4091b3b5a4ae1ddd80e81c6eb2a8ae8cd6b34e271870"
+        },
+        {
+          "raw_phrase": "Time management",
+          "model_id": "qwen1_5_0_5b_chat_2024",
+          "record_id": "f10a7d7d8e141c88e7a1ff1e72ab6e50e7227aae0de88d759c43ae5442898f02"
+        },
+        {
+          "raw_phrase": "Time management",
+          "model_id": "qwen3_5_0_8b_2026",
+          "record_id": "fb07843c788aac74f75216970c9a9d328ad6e812d7fb6bd9d56b0b5a3965eaaa"
+        }
+      ],
+      "confidence": 0.82,
+      "review_flags": [],
+      "decision": "proposed"
+    }
+  ],
+  "mappings": [
+    {
+      "mapping_id": "2dc9443d580c6842ca807e1490d17853380f1e98caf4a13680e175a906ec7d19",
+      "record_id": "0bb26c511c3221145df7c781479c903da3b5d977f30a4f3f7cdd642b6b1bb627",
+      "model_id": "qwen1_5_0_5b_chat_2024",
+      "prompt_variant": "task_anchored",
+      "seed": 202,
+      "line_number": 1,
+      "raw_phrase": "Guest communication",
+      "normalized_phrase": "guest communication",
+      "proposed_canonical": "Guest communication",
+      "confidence": 0.94,
+      "review_flags": [],
+      "fixture": true
+    },
+    {
+      "mapping_id": "f5d6be71ed87dced6de1ea227c17b35d89637a39dcba3b72a56a88cad4b40c63",
+      "record_id": "0bb26c511c3221145df7c781479c903da3b5d977f30a4f3f7cdd642b6b1bb627",
+      "model_id": "qwen1_5_0_5b_chat_2024",
+      "prompt_variant": "task_anchored",
+      "seed": 202,
+      "line_number": 2,
+      "raw_phrase": "Hospitality service",
+      "normalized_phrase": "hospitality service",
+      "proposed_canonical": "Customer service",
+      "confidence": 0.92,
+      "review_flags": [],
+      "fixture": true
+    },
+    {
+      "mapping_id": "e434b716902a24af3f44854f119accc25987eb1890cbbafe9589f283978b217c",
+      "record_id": "0bb26c511c3221145df7c781479c903da3b5d977f30a4f3f7cdd642b6b1bb627",
+      "model_id": "qwen1_5_0_5b_chat_2024",
+      "prompt_variant": "task_anchored",
+      "seed": 202,
+      "line_number": 3,
+      "raw_phrase": "Complaint handling",
+      "normalized_phrase": "complaint handling",
+      "proposed_canonical": "Complaint handling",
+      "confidence": 0.86,
+      "review_flags": [],
+      "fixture": true
+    },
+    {
+      "mapping_id": "261625606ee4e54ffec68c554078defdfde1761507fd5f6cff7df1978c4d792d",
+      "record_id": "0bb26c511c3221145df7c781479c903da3b5d977f30a4f3f7cdd642b6b1bb627",
+      "model_id": "qwen1_5_0_5b_chat_2024",
+      "prompt_variant": "task_anchored",
+      "seed": 202,
+      "line_number": 4,
+      "raw_phrase": "Reservation systems",
+      "normalized_phrase": "reservation systems",
+      "proposed_canonical": "Reservation systems",
+      "confidence": 0.85,
+      "review_flags": [],
+      "fixture": true
+    },
+    {
+      "mapping_id": "a260c62b584f38f838e2e6a1797378b9785c26930efef53a0b46e0f235ba3284",
+      "record_id": "0bb26c511c3221145df7c781479c903da3b5d977f30a4f3f7cdd642b6b1bb627",
+      "model_id": "qwen1_5_0_5b_chat_2024",
+      "prompt_variant": "task_anchored",
+      "seed": 202,
+      "line_number": 5,
+      "raw_phrase": "Attention to detail",
+      "normalized_phrase": "attention to detail",
+      "proposed_canonical": "Attention to detail",
+      "confidence": 0.84,
+      "review_flags": [],
+      "fixture": true
+    },
+    {
+      "mapping_id": "23cd383da1e690b669444ddb6063b32ced36202ca9e428cbff789195923b9df9",
+      "record_id": "0bb26c511c3221145df7c781479c903da3b5d977f30a4f3f7cdd642b6b1bb627",
+      "model_id": "qwen1_5_0_5b_chat_2024",
+      "prompt_variant": "task_anchored",
+      "seed": 202,
+      "line_number": 6,
+      "raw_phrase": "Multitasking",
+      "normalized_phrase": "multitasking",
+      "proposed_canonical": "Multitasking",
+      "confidence": 0.97,
+      "review_flags": [],
+      "fixture": true
+    },
+    {
+      "mapping_id": "378cb6ced417560f23ea9968b1cc8f92c4595033d455ec0338beda2e488112f1",
+      "record_id": "0bb26c511c3221145df7c781479c903da3b5d977f30a4f3f7cdd642b6b1bb627",
+      "model_id": "qwen1_5_0_5b_chat_2024",
+      "prompt_variant": "task_anchored",
+      "seed": 202,
+      "line_number": 7,
+      "raw_phrase": "Collaboration",
+      "normalized_phrase": "collaboration",
+      "proposed_canonical": "Teamwork",
+      "confidence": 0.91,
+      "review_flags": [],
+      "fixture": true
+    },
+    {
+      "mapping_id": "2bf78b16f5f6aecd49978a3ff4c18baff6a7f569e6078f488dfa397295581d2c",
+      "record_id": "0bb26c511c3221145df7c781479c903da3b5d977f30a4f3f7cdd642b6b1bb627",
+      "model_id": "qwen1_5_0_5b_chat_2024",
+      "prompt_variant": "task_anchored",
+      "seed": 202,
+      "line_number": 8,
+      "raw_phrase": "Payment processing",
+      "normalized_phrase": "payment processing",
+      "proposed_canonical": "Payment processing",
+      "confidence": 0.78,
+      "review_flags": [],
+      "fixture": true
+    },
+    {
+      "mapping_id": "c9369e2c4c681cf71beb37486ca97d5ca0a5fd0457043be05bdfdc3eb4e4b579",
+      "record_id": "1088ac30225eec10b7751bdf50f03b678e4146664df4cc51663ca6d14825dfdc",
+      "model_id": "qwen3_5_0_8b_2026",
+      "prompt_variant": "scenario",
+      "seed": 202,
+      "line_number": 1,
+      "raw_phrase": "Communication",
+      "normalized_phrase": "communication",
+      "proposed_canonical": "Guest communication",
+      "confidence": 0.94,
+      "review_flags": [],
+      "fixture": true
+    },
+    {
+      "mapping_id": "9a7384d745c1b3282b69675de872d41d59ff4b6025117ce6479ddf89301c6487",
+      "record_id": "1088ac30225eec10b7751bdf50f03b678e4146664df4cc51663ca6d14825dfdc",
+      "model_id": "qwen3_5_0_8b_2026",
+      "prompt_variant": "scenario",
+      "seed": 202,
+      "line_number": 2,
+      "raw_phrase": "Guest service",
+      "normalized_phrase": "guest service",
+      "proposed_canonical": "Customer service",
+      "confidence": 0.92,
+      "review_flags": [],
+      "fixture": true
+    },
+    {
+      "mapping_id": "2b28134c68e8381c08e22299546f91408739dc1b0dee3b1fafde76f6fe94e618",
+      "record_id": "1088ac30225eec10b7751bdf50f03b678e4146664df4cc51663ca6d14825dfdc",
+      "model_id": "qwen3_5_0_8b_2026",
+      "prompt_variant": "scenario",
+      "seed": 202,
+      "line_number": 3,
+      "raw_phrase": "Issue resolution",
+      "normalized_phrase": "issue resolution",
+      "proposed_canonical": "Problem solving",
+      "confidence": 0.94,
+      "review_flags": [],
+      "fixture": true
+    },
+    {
+      "mapping_id": "48560e0c704360669cb8417e9f9fd269a98453c423e81538af8d0f541640efcc",
+      "record_id": "1088ac30225eec10b7751bdf50f03b678e4146664df4cc51663ca6d14825dfdc",
+      "model_id": "qwen3_5_0_8b_2026",
+      "prompt_variant": "scenario",
+      "seed": 202,
+      "line_number": 4,
+      "raw_phrase": "Property management systems",
+      "normalized_phrase": "property management systems",
+      "proposed_canonical": "Reservation systems",
+      "confidence": 0.85,
+      "review_flags": [],
+      "fixture": true
+    },
+    {
+      "mapping_id": "e438639214c5c25b3d52e42912f889ea39c87de9a6ed06f7f5c10e647f5f8394",
+      "record_id": "1088ac30225eec10b7751bdf50f03b678e4146664df4cc51663ca6d14825dfdc",
+      "model_id": "qwen3_5_0_8b_2026",
+      "prompt_variant": "scenario",
+      "seed": 202,
+      "line_number": 5,
+      "raw_phrase": "Prioritization",
+      "normalized_phrase": "prioritization",
+      "proposed_canonical": "Time management",
+      "confidence": 0.82,
+      "review_flags": [],
+      "fixture": true
+    },
+    {
+      "mapping_id": "c42db8d88d75cf6c25ee9b2ed2efd729221723fd1050fdf8a32142caccce9932",
+      "record_id": "1088ac30225eec10b7751bdf50f03b678e4146664df4cc51663ca6d14825dfdc",
+      "model_id": "qwen3_5_0_8b_2026",
+      "prompt_variant": "scenario",
+      "seed": 202,
+      "line_number": 6,
+      "raw_phrase": "Teamwork",
+      "normalized_phrase": "teamwork",
+      "proposed_canonical": "Teamwork",
+      "confidence": 0.91,
+      "review_flags": [],
+      "fixture": true
+    },
+    {
+      "mapping_id": "d7b29e390c3a9d4be8ceb602a01720fccf4f786c76a148f49d1fdcf2d37c8339",
+      "record_id": "1088ac30225eec10b7751bdf50f03b678e4146664df4cc51663ca6d14825dfdc",
+      "model_id": "qwen3_5_0_8b_2026",
+      "prompt_variant": "scenario",
+      "seed": 202,
+      "line_number": 7,
+      "raw_phrase": "Guest data protection",
+      "normalized_phrase": "guest data protection",
+      "proposed_canonical": "Data privacy",
+      "confidence": 0.88,
+      "review_flags": [],
+      "fixture": true
+    },
+    {
+      "mapping_id": "008e1267b03a32df2ecae74096469c8b6c9545123c5426acaec8c64f72e723b5",
+      "record_id": "1088ac30225eec10b7751bdf50f03b678e4146664df4cc51663ca6d14825dfdc",
+      "model_id": "qwen3_5_0_8b_2026",
+      "prompt_variant": "scenario",
+      "seed": 202,
+      "line_number": 8,
+      "raw_phrase": "AI literacy",
+      "normalized_phrase": "ai literacy",
+      "proposed_canonical": "AI literacy",
+      "confidence": 0.91,
+      "review_flags": [],
+      "fixture": true
+    },
+    {
+      "mapping_id": "c5b854b24b9509ba3019a1da2ba070168219348853094ec8a1b2ba206d329638",
+      "record_id": "21f8cfbecfc1896d9c771750618ee831522a1d11d641c3b95dbabdf35f65bfef",
+      "model_id": "qwen1_5_0_5b_chat_2024",
+      "prompt_variant": "task_anchored",
+      "seed": 303,
+      "line_number": 1,
+      "raw_phrase": "Verbal communication",
+      "normalized_phrase": "verbal communication",
+      "proposed_canonical": "Guest communication",
+      "confidence": 0.94,
+      "review_flags": [],
+      "fixture": true
+    },
+    {
+      "mapping_id": "6d8f93158f0644cae765c5ccd360fc977d814f6cad3116d8af9edb59eb6d453c",
+      "record_id": "21f8cfbecfc1896d9c771750618ee831522a1d11d641c3b95dbabdf35f65bfef",
+      "model_id": "qwen1_5_0_5b_chat_2024",
+      "prompt_variant": "task_anchored",
+      "seed": 303,
+      "line_number": 2,
+      "raw_phrase": "Customer service",
+      "normalized_phrase": "customer service",
+      "proposed_canonical": "Customer service",
+      "confidence": 0.92,
+      "review_flags": [],
+      "fixture": true
+    },
+    {
+      "mapping_id": "9028fe5ef143a017426454baebbb42c7ec2f11801efa08da7cb1801c71ae479f",
+      "record_id": "21f8cfbecfc1896d9c771750618ee831522a1d11d641c3b95dbabdf35f65bfef",
+      "model_id": "qwen1_5_0_5b_chat_2024",
+      "prompt_variant": "task_anchored",
+      "seed": 303,
+      "line_number": 3,
+      "raw_phrase": "Handling guest complaints",
+      "normalized_phrase": "handling guest complaints",
+      "proposed_canonical": "Complaint handling",
+      "confidence": 0.86,
+      "review_flags": [],
+      "fixture": true
+    },
+    {
+      "mapping_id": "5f36adc60f467e01cb20a7672ca8d9e8c855cef830b23115497ec62fe9d78db7",
+      "record_id": "21f8cfbecfc1896d9c771750618ee831522a1d11d641c3b95dbabdf35f65bfef",
+      "model_id": "qwen1_5_0_5b_chat_2024",
+      "prompt_variant": "task_anchored",
+      "seed": 303,
+      "line_number": 4,
+      "raw_phrase": "Reservation systems",
+      "normalized_phrase": "reservation systems",
+      "proposed_canonical": "Reservation systems",
+      "confidence": 0.85,
+      "review_flags": [],
+      "fixture": true
+    },
+    {
+      "mapping_id": "230bf939b7d34f6e986c33a68d35ee7a89eff7a4b435e3ef152c7258a42d8f96",
+      "record_id": "21f8cfbecfc1896d9c771750618ee831522a1d11d641c3b95dbabdf35f65bfef",
+      "model_id": "qwen1_5_0_5b_chat_2024",
+      "prompt_variant": "task_anchored",
+      "seed": 303,
+      "line_number": 5,
+      "raw_phrase": "Multitasking",
+      "normalized_phrase": "multitasking",
+      "proposed_canonical": "Multitasking",
+      "confidence": 0.97,
+      "review_flags": [],
+      "fixture": true
+    },
+    {
+      "mapping_id": "50ccf9f27e1fc1ac9e5e02832512955ad40d1df1749097e3d34bbe4f88a1b2f0",
+      "record_id": "21f8cfbecfc1896d9c771750618ee831522a1d11d641c3b95dbabdf35f65bfef",
+      "model_id": "qwen1_5_0_5b_chat_2024",
+      "prompt_variant": "task_anchored",
+      "seed": 303,
+      "line_number": 6,
+      "raw_phrase": "Teamwork",
+      "normalized_phrase": "teamwork",
+      "proposed_canonical": "Teamwork",
+      "confidence": 0.91,
+      "review_flags": [],
+      "fixture": true
+    },
+    {
+      "mapping_id": "fc6ef7de4dad63204929b1d17a971e1d292f01539a73cf91db18fe80c03e7942",
+      "record_id": "21f8cfbecfc1896d9c771750618ee831522a1d11d641c3b95dbabdf35f65bfef",
+      "model_id": "qwen1_5_0_5b_chat_2024",
+      "prompt_variant": "task_anchored",
+      "seed": 303,
+      "line_number": 7,
+      "raw_phrase": "Record keeping",
+      "normalized_phrase": "record keeping",
+      "proposed_canonical": "Record keeping",
+      "confidence": 0.55,
+      "review_flags": [
+        "unclustered",
+        "human_review_required"
+      ],
+      "fixture": true
+    },
+    {
+      "mapping_id": "5294ab7a5a43a16c69089072329a511dfb17e7462e4e05e62ec0260aff50c2c6",
+      "record_id": "21f8cfbecfc1896d9c771750618ee831522a1d11d641c3b95dbabdf35f65bfef",
+      "model_id": "qwen1_5_0_5b_chat_2024",
+      "prompt_variant": "task_anchored",
+      "seed": 303,
+      "line_number": 8,
+      "raw_phrase": "Local knowledge",
+      "normalized_phrase": "local knowledge",
+      "proposed_canonical": "Local knowledge",
+      "confidence": 0.91,
+      "review_flags": [],
+      "fixture": true
+    },
+    {
+      "mapping_id": "e5344cdb1573d8996343762509fd091ef24b8d6ff102c2cc0f812dbe038b6f92",
+      "record_id": "30ab9e856eb3198da52ec7c3d970ff26370d98ff7c90f05030d3b4173b3ca514",
+      "model_id": "qwen1_5_0_5b_chat_2024",
+      "prompt_variant": "scenario",
+      "seed": 303,
+      "line_number": 1,
+      "raw_phrase": "Verbal communication",
+      "normalized_phrase": "verbal communication",
+      "proposed_canonical": "Guest communication",
+      "confidence": 0.94,
+      "review_flags": [],
+      "fixture": true
+    },
+    {
+      "mapping_id": "bc8e16363f4afe8f6252bc8fcb16ed6d37519f46e73b2b011909dd237f3fb4ef",
+      "record_id": "30ab9e856eb3198da52ec7c3d970ff26370d98ff7c90f05030d3b4173b3ca514",
+      "model_id": "qwen1_5_0_5b_chat_2024",
+      "prompt_variant": "scenario",
+      "seed": 303,
+      "line_number": 2,
+      "raw_phrase": "Guest service",
+      "normalized_phrase": "guest service",
+      "proposed_canonical": "Customer service",
+      "confidence": 0.92,
+      "review_flags": [],
+      "fixture": true
+    },
+    {
+      "mapping_id": "2164dfc47729b0a8e72c95c171e965f20aa1f9ffbb53f1a616e5b410f8c7bf7f",
+      "record_id": "30ab9e856eb3198da52ec7c3d970ff26370d98ff7c90f05030d3b4173b3ca514",
+      "model_id": "qwen1_5_0_5b_chat_2024",
+      "prompt_variant": "scenario",
+      "seed": 303,
+      "line_number": 3,
+      "raw_phrase": "Handling guest complaints",
+      "normalized_phrase": "handling guest complaints",
+      "proposed_canonical": "Complaint handling",
+      "confidence": 0.86,
+      "review_flags": [],
+      "fixture": true
+    },
+    {
+      "mapping_id": "4d74ca6dc4fdfee822712b5ab728c8bcf716e8e130958d7701086ac613be0da5",
+      "record_id": "30ab9e856eb3198da52ec7c3d970ff26370d98ff7c90f05030d3b4173b3ca514",
+      "model_id": "qwen1_5_0_5b_chat_2024",
+      "prompt_variant": "scenario",
+      "seed": 303,
+      "line_number": 4,
+      "raw_phrase": "Booking systems",
+      "normalized_phrase": "booking systems",
+      "proposed_canonical": "Reservation systems",
+      "confidence": 0.85,
+      "review_flags": [],
+      "fixture": true
+    },
+    {
+      "mapping_id": "0858569478a21263aedf80e1fe3357656409e35595355f4bb800c3941fc635b1",
+      "record_id": "30ab9e856eb3198da52ec7c3d970ff26370d98ff7c90f05030d3b4173b3ca514",
+      "model_id": "qwen1_5_0_5b_chat_2024",
+      "prompt_variant": "scenario",
+      "seed": 303,
+      "line_number": 5,
+      "raw_phrase": "Multitasking",
+      "normalized_phrase": "multitasking",
+      "proposed_canonical": "Multitasking",
+      "confidence": 0.97,
+      "review_flags": [],
+      "fixture": true
+    },
+    {
+      "mapping_id": "a045470313bbfbd83ac8e359bb8a5e94f0066b74f9a217fbe7b5d0ef8a0d17a6",
+      "record_id": "30ab9e856eb3198da52ec7c3d970ff26370d98ff7c90f05030d3b4173b3ca514",
+      "model_id": "qwen1_5_0_5b_chat_2024",
+      "prompt_variant": "scenario",
+      "seed": 303,
+      "line_number": 6,
+      "raw_phrase": "Team collaboration",
+      "normalized_phrase": "team collaboration",
+      "proposed_canonical": "Teamwork",
+      "confidence": 0.91,
+      "review_flags": [],
+      "fixture": true
+    },
+    {
+      "mapping_id": "0eaf1336bc29ca29d32504e7ff405bc19191e7c4d5723314a373dc613acf5d7d",
+      "record_id": "30ab9e856eb3198da52ec7c3d970ff26370d98ff7c90f05030d3b4173b3ca514",
+      "model_id": "qwen1_5_0_5b_chat_2024",
+      "prompt_variant": "scenario",
+      "seed": 303,
+      "line_number": 7,
+      "raw_phrase": "Cash handling",
+      "normalized_phrase": "cash handling",
+      "proposed_canonical": "Payment processing",
+      "confidence": 0.78,
+      "review_flags": [],
+      "fixture": true
+    },
+    {
+      "mapping_id": "646e850a386ea92fd97c14f691ecc6bd192e0fc4e1cf1180bcb1e3f174e9b18a",
+      "record_id": "30ab9e856eb3198da52ec7c3d970ff26370d98ff7c90f05030d3b4173b3ca514",
+      "model_id": "qwen1_5_0_5b_chat_2024",
+      "prompt_variant": "scenario",
+      "seed": 303,
+      "line_number": 8,
+      "raw_phrase": "Local knowledge",
+      "normalized_phrase": "local knowledge",
+      "proposed_canonical": "Local knowledge",
+      "confidence": 0.91,
+      "review_flags": [],
+      "fixture": true
+    },
+    {
+      "mapping_id": "b72a5ff3817ffc4a0db9c4eb2d5c3471b40cc57a49856b937104d0f3a9968b1a",
+      "record_id": "3e4dff9137d4bca74f75841f65c5ea50d198bfe095c8d788d66fe60d9e83b173",
+      "model_id": "qwen3_5_0_8b_2026",
+      "prompt_variant": "scenario",
+      "seed": 303,
+      "line_number": 1,
+      "raw_phrase": "Verbal communication",
+      "normalized_phrase": "verbal communication",
+      "proposed_canonical": "Guest communication",
+      "confidence": 0.94,
+      "review_flags": [],
+      "fixture": true
+    },
+    {
+      "mapping_id": "c4bb46a98a389f99a92aedddf969a06a56468c590ef80a57bfa73f42ea37238c",
+      "record_id": "3e4dff9137d4bca74f75841f65c5ea50d198bfe095c8d788d66fe60d9e83b173",
+      "model_id": "qwen3_5_0_8b_2026",
+      "prompt_variant": "scenario",
+      "seed": 303,
+      "line_number": 2,
+      "raw_phrase": "Customer service",
+      "normalized_phrase": "customer service",
+      "proposed_canonical": "Customer service",
+      "confidence": 0.92,
+      "review_flags": [],
+      "fixture": true
+    },
+    {
+      "mapping_id": "300623a23be68f888b445760e41dee2e5f4edc221fcbc10c3fdb72ff0b079917",
+      "record_id": "3e4dff9137d4bca74f75841f65c5ea50d198bfe095c8d788d66fe60d9e83b173",
+      "model_id": "qwen3_5_0_8b_2026",
+      "prompt_variant": "scenario",
+      "seed": 303,
+      "line_number": 3,
+      "raw_phrase": "Conflict resolution",
+      "normalized_phrase": "conflict resolution",
+      "proposed_canonical": "Complaint handling",
+      "confidence": 0.86,
+      "review_flags": [],
+      "fixture": true
+    },
+    {
+      "mapping_id": "9ef5f08037890d10831210626dd83af077b3c622f387f6429475ea793288269e",
+      "record_id": "3e4dff9137d4bca74f75841f65c5ea50d198bfe095c8d788d66fe60d9e83b173",
+      "model_id": "qwen3_5_0_8b_2026",
+      "prompt_variant": "scenario",
+      "seed": 303,
+      "line_number": 4,
+      "raw_phrase": "Booking systems",
+      "normalized_phrase": "booking systems",
+      "proposed_canonical": "Reservation systems",
+      "confidence": 0.85,
+      "review_flags": [],
+      "fixture": true
+    },
+    {
+      "mapping_id": "aad0d6066b56c56193045f9ddd2621b84ea3648a1014e3da7b247437ded06ea5",
+      "record_id": "3e4dff9137d4bca74f75841f65c5ea50d198bfe095c8d788d66fe60d9e83b173",
+      "model_id": "qwen3_5_0_8b_2026",
+      "prompt_variant": "scenario",
+      "seed": 303,
+      "line_number": 5,
+      "raw_phrase": "Attention to detail",
+      "normalized_phrase": "attention to detail",
+      "proposed_canonical": "Attention to detail",
+      "confidence": 0.84,
+      "review_flags": [],
+      "fixture": true
+    },
+    {
+      "mapping_id": "c00737a24775680c73446bb4fc83d361801384bdb3a32a62cc347d86a60406ed",
+      "record_id": "3e4dff9137d4bca74f75841f65c5ea50d198bfe095c8d788d66fe60d9e83b173",
+      "model_id": "qwen3_5_0_8b_2026",
+      "prompt_variant": "scenario",
+      "seed": 303,
+      "line_number": 6,
+      "raw_phrase": "Collaboration",
+      "normalized_phrase": "collaboration",
+      "proposed_canonical": "Teamwork",
+      "confidence": 0.91,
+      "review_flags": [],
+      "fixture": true
+    },
+    {
+      "mapping_id": "75cde9eb169f1212073ba18a743f49fc9d7c9673051a176643e68c22d44d32e8",
+      "record_id": "3e4dff9137d4bca74f75841f65c5ea50d198bfe095c8d788d66fe60d9e83b173",
+      "model_id": "qwen3_5_0_8b_2026",
+      "prompt_variant": "scenario",
+      "seed": 303,
+      "line_number": 7,
+      "raw_phrase": "Privacy awareness",
+      "normalized_phrase": "privacy awareness",
+      "proposed_canonical": "Data privacy",
+      "confidence": 0.88,
+      "review_flags": [],
+      "fixture": true
+    },
+    {
+      "mapping_id": "26caedc5facb2f3157894c42b02f88381c18603c3ea3da1af8c19c69a0f1d15f",
+      "record_id": "3e4dff9137d4bca74f75841f65c5ea50d198bfe095c8d788d66fe60d9e83b173",
+      "model_id": "qwen3_5_0_8b_2026",
+      "prompt_variant": "scenario",
+      "seed": 303,
+      "line_number": 8,
+      "raw_phrase": "Artificial intelligence literacy",
+      "normalized_phrase": "artificial intelligence literacy",
+      "proposed_canonical": "AI literacy",
+      "confidence": 0.91,
+      "review_flags": [],
+      "fixture": true
+    },
+    {
+      "mapping_id": "ec62a0bdaa483ee89b205f1ec9ca7e2b1310f7785b5d0525c63f8034e11fc35d",
+      "record_id": "4b0cebe1bfd1ccd0d4a52b2c2c2e683bc22f0a44c64f5e172d365531e6a7ac39",
+      "model_id": "qwen1_5_0_5b_chat_2024",
+      "prompt_variant": "task_anchored",
+      "seed": 101,
+      "line_number": 1,
+      "raw_phrase": "Communication",
+      "normalized_phrase": "communication",
+      "proposed_canonical": "Guest communication",
+      "confidence": 0.94,
+      "review_flags": [],
+      "fixture": true
+    },
+    {
+      "mapping_id": "d2e694e9e49f4c49a21ba15f02a307721e7fccf00fb8218b7961d18a67bdfb11",
+      "record_id": "4b0cebe1bfd1ccd0d4a52b2c2c2e683bc22f0a44c64f5e172d365531e6a7ac39",
+      "model_id": "qwen1_5_0_5b_chat_2024",
+      "prompt_variant": "task_anchored",
+      "seed": 101,
+      "line_number": 2,
+      "raw_phrase": "Customer service",
+      "normalized_phrase": "customer service",
+      "proposed_canonical": "Customer service",
+      "confidence": 0.92,
+      "review_flags": [],
+      "fixture": true
+    },
+    {
+      "mapping_id": "1dc66696b43395dc77e7ee0479c30b65918d3e69bbdd80d824b967c432da5fad",
+      "record_id": "4b0cebe1bfd1ccd0d4a52b2c2c2e683bc22f0a44c64f5e172d365531e6a7ac39",
+      "model_id": "qwen1_5_0_5b_chat_2024",
+      "prompt_variant": "task_anchored",
+      "seed": 101,
+      "line_number": 3,
+      "raw_phrase": "Conflict resolution",
+      "normalized_phrase": "conflict resolution",
+      "proposed_canonical": "Complaint handling",
+      "confidence": 0.86,
+      "review_flags": [],
+      "fixture": true
+    },
+    {
+      "mapping_id": "d3cd17b18b0e75ee02ff62763293836222c8693927c4ba0678908b196de9267e",
+      "record_id": "4b0cebe1bfd1ccd0d4a52b2c2c2e683bc22f0a44c64f5e172d365531e6a7ac39",
+      "model_id": "qwen1_5_0_5b_chat_2024",
+      "prompt_variant": "task_anchored",
+      "seed": 101,
+      "line_number": 4,
+      "raw_phrase": "Property management systems",
+      "normalized_phrase": "property management systems",
+      "proposed_canonical": "Reservation systems",
+      "confidence": 0.85,
+      "review_flags": [],
+      "fixture": true
+    },
+    {
+      "mapping_id": "5f85d94470ee268ca422409b40ef61a707b10ab064957280d5813e16d05c4bdc",
+      "record_id": "4b0cebe1bfd1ccd0d4a52b2c2c2e683bc22f0a44c64f5e172d365531e6a7ac39",
+      "model_id": "qwen1_5_0_5b_chat_2024",
+      "prompt_variant": "task_anchored",
+      "seed": 101,
+      "line_number": 5,
+      "raw_phrase": "Accuracy",
+      "normalized_phrase": "accuracy",
+      "proposed_canonical": "Attention to detail",
+      "confidence": 0.84,
+      "review_flags": [],
+      "fixture": true
+    },
+    {
+      "mapping_id": "b23c49301e47accda5c10251992fc1eb0916b7b003b179660a7fa494d5411ee4",
+      "record_id": "4b0cebe1bfd1ccd0d4a52b2c2c2e683bc22f0a44c64f5e172d365531e6a7ac39",
+      "model_id": "qwen1_5_0_5b_chat_2024",
+      "prompt_variant": "task_anchored",
+      "seed": 101,
+      "line_number": 6,
+      "raw_phrase": "Prioritization",
+      "normalized_phrase": "prioritization",
+      "proposed_canonical": "Time management",
+      "confidence": 0.82,
+      "review_flags": [],
+      "fixture": true
+    },
+    {
+      "mapping_id": "6fe00051f6cba4eb42d2d5954b01dce905f2da2ea63875258bd4c221d15b87ac",
+      "record_id": "4b0cebe1bfd1ccd0d4a52b2c2c2e683bc22f0a44c64f5e172d365531e6a7ac39",
+      "model_id": "qwen1_5_0_5b_chat_2024",
+      "prompt_variant": "task_anchored",
+      "seed": 101,
+      "line_number": 7,
+      "raw_phrase": "Teamwork",
+      "normalized_phrase": "teamwork",
+      "proposed_canonical": "Teamwork",
+      "confidence": 0.91,
+      "review_flags": [],
+      "fixture": true
+    },
+    {
+      "mapping_id": "3ded66726388f9e45fa900aa69c8fcb208654ebe8c2503ba4f700fdbdba3e158",
+      "record_id": "4b0cebe1bfd1ccd0d4a52b2c2c2e683bc22f0a44c64f5e172d365531e6a7ac39",
+      "model_id": "qwen1_5_0_5b_chat_2024",
+      "prompt_variant": "task_anchored",
+      "seed": 101,
+      "line_number": 8,
+      "raw_phrase": "Record keeping",
+      "normalized_phrase": "record keeping",
+      "proposed_canonical": "Record keeping",
+      "confidence": 0.55,
+      "review_flags": [
+        "unclustered",
+        "human_review_required"
+      ],
+      "fixture": true
+    },
+    {
+      "mapping_id": "6ebf86e3d84014150e140f29ad04d1d61636f99865357fc154b18d6d4b51de3b",
+      "record_id": "5000ba7fdbbc591c11220ea180fcbb06dd6cf8dc194feb0a2158e401919e6738",
+      "model_id": "qwen3_5_0_8b_2026",
+      "prompt_variant": "task_anchored",
+      "seed": 202,
+      "line_number": 1,
+      "raw_phrase": "Guest communication",
+      "normalized_phrase": "guest communication",
+      "proposed_canonical": "Guest communication",
+      "confidence": 0.94,
+      "review_flags": [],
+      "fixture": true
+    },
+    {
+      "mapping_id": "02c2387b6ad257f502de3d48ed57ce47b320c46d125e9c203869a355413bf688",
+      "record_id": "5000ba7fdbbc591c11220ea180fcbb06dd6cf8dc194feb0a2158e401919e6738",
+      "model_id": "qwen3_5_0_8b_2026",
+      "prompt_variant": "task_anchored",
+      "seed": 202,
+      "line_number": 2,
+      "raw_phrase": "Handling guest complaints",
+      "normalized_phrase": "handling guest complaints",
+      "proposed_canonical": "Complaint handling",
+      "confidence": 0.86,
+      "review_flags": [],
+      "fixture": true
+    },
+    {
+      "mapping_id": "e9cb62b53c40055288c75fe7082288dda01d96e2892f517caf86f2f9f097c3a3",
+      "record_id": "5000ba7fdbbc591c11220ea180fcbb06dd6cf8dc194feb0a2158e401919e6738",
+      "model_id": "qwen3_5_0_8b_2026",
+      "prompt_variant": "task_anchored",
+      "seed": 202,
+      "line_number": 3,
+      "raw_phrase": "Property management systems",
+      "normalized_phrase": "property management systems",
+      "proposed_canonical": "Reservation systems",
+      "confidence": 0.85,
+      "review_flags": [],
+      "fixture": true
+    },
+    {
+      "mapping_id": "e195b8d1ce773ded656db9bc97038f0256157683875f2d7c7fc70d8995afb076",
+      "record_id": "5000ba7fdbbc591c11220ea180fcbb06dd6cf8dc194feb0a2158e401919e6738",
+      "model_id": "qwen3_5_0_8b_2026",
+      "prompt_variant": "task_anchored",
+      "seed": 202,
+      "line_number": 4,
+      "raw_phrase": "Payment processing",
+      "normalized_phrase": "payment processing",
+      "proposed_canonical": "Payment processing",
+      "confidence": 0.78,
+      "review_flags": [],
+      "fixture": true
+    },
+    {
+      "mapping_id": "7570a8333f8c91063f60df44b5c54af799f680081efeb5672e81d2e1055d36e1",
+      "record_id": "5000ba7fdbbc591c11220ea180fcbb06dd6cf8dc194feb0a2158e401919e6738",
+      "model_id": "qwen3_5_0_8b_2026",
+      "prompt_variant": "task_anchored",
+      "seed": 202,
+      "line_number": 5,
+      "raw_phrase": "Attention to detail",
+      "normalized_phrase": "attention to detail",
+      "proposed_canonical": "Attention to detail",
+      "confidence": 0.84,
+      "review_flags": [],
+      "fixture": true
+    },
+    {
+      "mapping_id": "753dccd9a22a68457b2b4f1a4c05387417f48ddbccbb5e6f769f98d088750e58",
+      "record_id": "5000ba7fdbbc591c11220ea180fcbb06dd6cf8dc194feb0a2158e401919e6738",
+      "model_id": "qwen3_5_0_8b_2026",
+      "prompt_variant": "task_anchored",
+      "seed": 202,
+      "line_number": 6,
+      "raw_phrase": "Multitasking",
+      "normalized_phrase": "multitasking",
+      "proposed_canonical": "Multitasking",
+      "confidence": 0.97,
+      "review_flags": [],
+      "fixture": true
+    },
+    {
+      "mapping_id": "278494aa6a61dee668d716710cb1c0a4e8bcefa3dde2d353da8a4e5e38e82e82",
+      "record_id": "5000ba7fdbbc591c11220ea180fcbb06dd6cf8dc194feb0a2158e401919e6738",
+      "model_id": "qwen3_5_0_8b_2026",
+      "prompt_variant": "task_anchored",
+      "seed": 202,
+      "line_number": 7,
+      "raw_phrase": "Guest data protection",
+      "normalized_phrase": "guest data protection",
+      "proposed_canonical": "Data privacy",
+      "confidence": 0.88,
+      "review_flags": [],
+      "fixture": true
+    },
+    {
+      "mapping_id": "70157fb392caca2a08b0db1a6021649dc6bc1e30e95b9c7bdd1e6076ad4d41be",
+      "record_id": "5000ba7fdbbc591c11220ea180fcbb06dd6cf8dc194feb0a2158e401919e6738",
+      "model_id": "qwen3_5_0_8b_2026",
+      "prompt_variant": "task_anchored",
+      "seed": 202,
+      "line_number": 8,
+      "raw_phrase": "Artificial intelligence literacy",
+      "normalized_phrase": "artificial intelligence literacy",
+      "proposed_canonical": "AI literacy",
+      "confidence": 0.91,
+      "review_flags": [],
+      "fixture": true
+    },
+    {
+      "mapping_id": "db592a5abe862f62e374f04d02f6a50bdcd4e8592507232ad72f84df2ef6d677",
+      "record_id": "6163ab8f09c6a29087c5890c59c332885f9dbdccb7228749a805795d9dd7d11e",
+      "model_id": "qwen1_5_0_5b_chat_2024",
+      "prompt_variant": "direct",
+      "seed": 101,
+      "line_number": 1,
+      "raw_phrase": "Communication skills",
+      "normalized_phrase": "communication skills",
+      "proposed_canonical": "Guest communication",
+      "confidence": 0.94,
+      "review_flags": [],
+      "fixture": true
+    },
+    {
+      "mapping_id": "51689299d29a8100c847905b0a2781e3bf10fcf6a3d286e6dd4c48d13ea7560f",
+      "record_id": "6163ab8f09c6a29087c5890c59c332885f9dbdccb7228749a805795d9dd7d11e",
+      "model_id": "qwen1_5_0_5b_chat_2024",
+      "prompt_variant": "direct",
+      "seed": 101,
+      "line_number": 2,
+      "raw_phrase": "Customer service",
+      "normalized_phrase": "customer service",
+      "proposed_canonical": "Customer service",
+      "confidence": 0.92,
+      "review_flags": [],
+      "fixture": true
+    },
+    {
+      "mapping_id": "6cb9a5ddd27ac717f5a5a025adc5cc3719550c27813e97801189aa898bac1443",
+      "record_id": "6163ab8f09c6a29087c5890c59c332885f9dbdccb7228749a805795d9dd7d11e",
+      "model_id": "qwen1_5_0_5b_chat_2024",
+      "prompt_variant": "direct",
+      "seed": 101,
+      "line_number": 3,
+      "raw_phrase": "Problem solving",
+      "normalized_phrase": "problem solving",
+      "proposed_canonical": "Problem solving",
+      "confidence": 0.94,
+      "review_flags": [],
+      "fixture": true
+    },
+    {
+      "mapping_id": "a2cf826baaa450a446589d36bfa0e1b1ab4f035202098d3af203a897532ee5c6",
+      "record_id": "6163ab8f09c6a29087c5890c59c332885f9dbdccb7228749a805795d9dd7d11e",
+      "model_id": "qwen1_5_0_5b_chat_2024",
+      "prompt_variant": "direct",
+      "seed": 101,
+      "line_number": 4,
+      "raw_phrase": "Attention to detail",
+      "normalized_phrase": "attention to detail",
+      "proposed_canonical": "Attention to detail",
+      "confidence": 0.84,
+      "review_flags": [],
+      "fixture": true
+    },
+    {
+      "mapping_id": "39226b07a38bb27e054dc193db35fa6c8cda82795eaeaa6fd78b9db961a2b65d",
+      "record_id": "6163ab8f09c6a29087c5890c59c332885f9dbdccb7228749a805795d9dd7d11e",
+      "model_id": "qwen1_5_0_5b_chat_2024",
+      "prompt_variant": "direct",
+      "seed": 101,
+      "line_number": 5,
+      "raw_phrase": "Multitasking",
+      "normalized_phrase": "multitasking",
+      "proposed_canonical": "Multitasking",
+      "confidence": 0.97,
+      "review_flags": [],
+      "fixture": true
+    },
+    {
+      "mapping_id": "e42057337d8539039d044cb341c23bd9f70a2b7c37158542b6b5e4a0bd54262a",
+      "record_id": "6163ab8f09c6a29087c5890c59c332885f9dbdccb7228749a805795d9dd7d11e",
+      "model_id": "qwen1_5_0_5b_chat_2024",
+      "prompt_variant": "direct",
+      "seed": 101,
+      "line_number": 6,
+      "raw_phrase": "Teamwork",
+      "normalized_phrase": "teamwork",
+      "proposed_canonical": "Teamwork",
+      "confidence": 0.91,
+      "review_flags": [],
+      "fixture": true
+    },
+    {
+      "mapping_id": "d10ac98710bfcea4cdb8dad2df4a268ab6d91e9cb901d91e8b81531c2d451988",
+      "record_id": "6163ab8f09c6a29087c5890c59c332885f9dbdccb7228749a805795d9dd7d11e",
+      "model_id": "qwen1_5_0_5b_chat_2024",
+      "prompt_variant": "direct",
+      "seed": 101,
+      "line_number": 7,
+      "raw_phrase": "Cash handling",
+      "normalized_phrase": "cash handling",
+      "proposed_canonical": "Payment processing",
+      "confidence": 0.78,
+      "review_flags": [],
+      "fixture": true
+    },
+    {
+      "mapping_id": "f7eed64464fb44339def9bc000ddd0583a32bbeb2f0ff33f9418108d14d95928",
+      "record_id": "6163ab8f09c6a29087c5890c59c332885f9dbdccb7228749a805795d9dd7d11e",
+      "model_id": "qwen1_5_0_5b_chat_2024",
+      "prompt_variant": "direct",
+      "seed": 101,
+      "line_number": 8,
+      "raw_phrase": "Local area knowledge",
+      "normalized_phrase": "local area knowledge",
+      "proposed_canonical": "Local knowledge",
+      "confidence": 0.91,
+      "review_flags": [],
+      "fixture": true
+    },
+    {
+      "mapping_id": "a8ccbe122df00b254208ba40fdee7d8cbef00ff94042d704534422141026b985",
+      "record_id": "66f963fb0b7febe3aa6efc5313ce1cdb2da271c21ece7180e05f63d3e82cafde",
+      "model_id": "qwen3_5_0_8b_2026",
+      "prompt_variant": "task_anchored",
+      "seed": 101,
+      "line_number": 1,
+      "raw_phrase": "Communication skills",
+      "normalized_phrase": "communication skills",
+      "proposed_canonical": "Guest communication",
+      "confidence": 0.94,
+      "review_flags": [],
+      "fixture": true
+    },
+    {
+      "mapping_id": "9eafb3c57c6d84d40c7ea725f4011a67748a44e414e74575a952e600ba15a705",
+      "record_id": "66f963fb0b7febe3aa6efc5313ce1cdb2da271c21ece7180e05f63d3e82cafde",
+      "model_id": "qwen3_5_0_8b_2026",
+      "prompt_variant": "task_anchored",
+      "seed": 101,
+      "line_number": 2,
+      "raw_phrase": "Complaint handling",
+      "normalized_phrase": "complaint handling",
+      "proposed_canonical": "Complaint handling",
+      "confidence": 0.86,
+      "review_flags": [],
+      "fixture": true
+    },
+    {
+      "mapping_id": "32b3e9d36ea8c838dce6a0feffb16655148e672a4fa67909a11a1811d88e8290",
+      "record_id": "66f963fb0b7febe3aa6efc5313ce1cdb2da271c21ece7180e05f63d3e82cafde",
+      "model_id": "qwen3_5_0_8b_2026",
+      "prompt_variant": "task_anchored",
+      "seed": 101,
+      "line_number": 3,
+      "raw_phrase": "Reservation systems",
+      "normalized_phrase": "reservation systems",
+      "proposed_canonical": "Reservation systems",
+      "confidence": 0.85,
+      "review_flags": [],
+      "fixture": true
+    },
+    {
+      "mapping_id": "22a87f4a1d6de62aad98043243dffd5740998303e1ce976fbdcaa34bea6b9428",
+      "record_id": "66f963fb0b7febe3aa6efc5313ce1cdb2da271c21ece7180e05f63d3e82cafde",
+      "model_id": "qwen3_5_0_8b_2026",
+      "prompt_variant": "task_anchored",
+      "seed": 101,
+      "line_number": 4,
+      "raw_phrase": "Cash handling",
+      "normalized_phrase": "cash handling",
+      "proposed_canonical": "Payment processing",
+      "confidence": 0.78,
+      "review_flags": [],
+      "fixture": true
+    },
+    {
+      "mapping_id": "0c8986b9b5bf6c23cf74745fbb59929d3fb9321bb8df32a871f124bb0dbcc210",
+      "record_id": "66f963fb0b7febe3aa6efc5313ce1cdb2da271c21ece7180e05f63d3e82cafde",
+      "model_id": "qwen3_5_0_8b_2026",
+      "prompt_variant": "task_anchored",
+      "seed": 101,
+      "line_number": 5,
+      "raw_phrase": "Accuracy",
+      "normalized_phrase": "accuracy",
+      "proposed_canonical": "Attention to detail",
+      "confidence": 0.84,
+      "review_flags": [],
+      "fixture": true
+    },
+    {
+      "mapping_id": "478e122df50e148623b5f876e39f678fe3487aa98c91cb701363db918099cda6",
+      "record_id": "66f963fb0b7febe3aa6efc5313ce1cdb2da271c21ece7180e05f63d3e82cafde",
+      "model_id": "qwen3_5_0_8b_2026",
+      "prompt_variant": "task_anchored",
+      "seed": 101,
+      "line_number": 6,
+      "raw_phrase": "Multi-tasking",
+      "normalized_phrase": "multi tasking",
+      "proposed_canonical": "Multitasking",
+      "confidence": 0.97,
+      "review_flags": [],
+      "fixture": true
+    },
+    {
+      "mapping_id": "0a470d87342ba0b275bbfb9daebd31942167829aa7543be3081f9e9b582550eb",
+      "record_id": "66f963fb0b7febe3aa6efc5313ce1cdb2da271c21ece7180e05f63d3e82cafde",
+      "model_id": "qwen3_5_0_8b_2026",
+      "prompt_variant": "task_anchored",
+      "seed": 101,
+      "line_number": 7,
+      "raw_phrase": "Data privacy",
+      "normalized_phrase": "data privacy",
+      "proposed_canonical": "Data privacy",
+      "confidence": 0.88,
+      "review_flags": [],
+      "fixture": true
+    },
+    {
+      "mapping_id": "49c99514ecf958fcbb105543c306b26f20a120f7b4b4ee053bf7e60e0365b4bb",
+      "record_id": "66f963fb0b7febe3aa6efc5313ce1cdb2da271c21ece7180e05f63d3e82cafde",
+      "model_id": "qwen3_5_0_8b_2026",
+      "prompt_variant": "task_anchored",
+      "seed": 101,
+      "line_number": 8,
+      "raw_phrase": "AI literacy",
+      "normalized_phrase": "ai literacy",
+      "proposed_canonical": "AI literacy",
+      "confidence": 0.91,
+      "review_flags": [],
+      "fixture": true
+    },
+    {
+      "mapping_id": "44bc8544988a62b54a6967a093ceb944d22a5fb37b5a2797a0e7284e78b666e5",
+      "record_id": "6e92e1d8e32f68309acb4091b3b5a4ae1ddd80e81c6eb2a8ae8cd6b34e271870",
+      "model_id": "qwen1_5_0_5b_chat_2024",
+      "prompt_variant": "scenario",
+      "seed": 101,
+      "line_number": 1,
+      "raw_phrase": "Communication skills",
+      "normalized_phrase": "communication skills",
+      "proposed_canonical": "Guest communication",
+      "confidence": 0.94,
+      "review_flags": [],
+      "fixture": true
+    },
+    {
+      "mapping_id": "f8ab550eaeb6c734fe673a50bfcd658710b4f830b975b8e1ea459a43d46c251a",
+      "record_id": "6e92e1d8e32f68309acb4091b3b5a4ae1ddd80e81c6eb2a8ae8cd6b34e271870",
+      "model_id": "qwen1_5_0_5b_chat_2024",
+      "prompt_variant": "scenario",
+      "seed": 101,
+      "line_number": 2,
+      "raw_phrase": "Customer service",
+      "normalized_phrase": "customer service",
+      "proposed_canonical": "Customer service",
+      "confidence": 0.92,
+      "review_flags": [],
+      "fixture": true
+    },
+    {
+      "mapping_id": "cfad4a317a55d5ae311687a9b31e6fe5411ba6d4716e112d5d9b37e2b6fa8ae8",
+      "record_id": "6e92e1d8e32f68309acb4091b3b5a4ae1ddd80e81c6eb2a8ae8cd6b34e271870",
+      "model_id": "qwen1_5_0_5b_chat_2024",
+      "prompt_variant": "scenario",
+      "seed": 101,
+      "line_number": 3,
+      "raw_phrase": "Complaint handling",
+      "normalized_phrase": "complaint handling",
+      "proposed_canonical": "Complaint handling",
+      "confidence": 0.86,
+      "review_flags": [],
+      "fixture": true
+    },
+    {
+      "mapping_id": "34ec3324be7ee23f8277a8cb85c8cf6ed1b5164ee4edc26885820b17b93b5d9f",
+      "record_id": "6e92e1d8e32f68309acb4091b3b5a4ae1ddd80e81c6eb2a8ae8cd6b34e271870",
+      "model_id": "qwen1_5_0_5b_chat_2024",
+      "prompt_variant": "scenario",
+      "seed": 101,
+      "line_number": 4,
+      "raw_phrase": "Reservation systems",
+      "normalized_phrase": "reservation systems",
+      "proposed_canonical": "Reservation systems",
+      "confidence": 0.85,
+      "review_flags": [],
+      "fixture": true
+    },
+    {
+      "mapping_id": "c119d860d8405b49a4e2bf74fe4e52dae0e7d4567fb34ec8f9f0f3f84c3f93a3",
+      "record_id": "6e92e1d8e32f68309acb4091b3b5a4ae1ddd80e81c6eb2a8ae8cd6b34e271870",
+      "model_id": "qwen1_5_0_5b_chat_2024",
+      "prompt_variant": "scenario",
+      "seed": 101,
+      "line_number": 5,
+      "raw_phrase": "Attention to detail",
+      "normalized_phrase": "attention to detail",
+      "proposed_canonical": "Attention to detail",
+      "confidence": 0.84,
+      "review_flags": [],
+      "fixture": true
+    },
+    {
+      "mapping_id": "109ebf0f261bdc16f7f9b417180fae81911aab63828f879edaf417c0b62fe437",
+      "record_id": "6e92e1d8e32f68309acb4091b3b5a4ae1ddd80e81c6eb2a8ae8cd6b34e271870",
+      "model_id": "qwen1_5_0_5b_chat_2024",
+      "prompt_variant": "scenario",
+      "seed": 101,
+      "line_number": 6,
+      "raw_phrase": "Time management",
+      "normalized_phrase": "time management",
+      "proposed_canonical": "Time management",
+      "confidence": 0.82,
+      "review_flags": [],
+      "fixture": true
+    },
+    {
+      "mapping_id": "f6b548d3a84a1ae2f6dac718dc7bffdb1d08ce4b9a57c9da0521796d71713df5",
+      "record_id": "6e92e1d8e32f68309acb4091b3b5a4ae1ddd80e81c6eb2a8ae8cd6b34e271870",
+      "model_id": "qwen1_5_0_5b_chat_2024",
+      "prompt_variant": "scenario",
+      "seed": 101,
+      "line_number": 7,
+      "raw_phrase": "Teamwork",
+      "normalized_phrase": "teamwork",
+      "proposed_canonical": "Teamwork",
+      "confidence": 0.91,
+      "review_flags": [],
+      "fixture": true
+    },
+    {
+      "mapping_id": "e5e7d4529322b5c590ba1e23b6b45cd0dd808a2f645374703c3a83c3555cf685",
+      "record_id": "6e92e1d8e32f68309acb4091b3b5a4ae1ddd80e81c6eb2a8ae8cd6b34e271870",
+      "model_id": "qwen1_5_0_5b_chat_2024",
+      "prompt_variant": "scenario",
+      "seed": 101,
+      "line_number": 8,
+      "raw_phrase": "Local area knowledge",
+      "normalized_phrase": "local area knowledge",
+      "proposed_canonical": "Local knowledge",
+      "confidence": 0.91,
+      "review_flags": [],
+      "fixture": true
+    },
+    {
+      "mapping_id": "8e3b88ceca82b8bd3f65b243579985560b723df99ae1cc7915c246d18e1ab6ed",
+      "record_id": "967304ee5e87e9835bedd85ed582450b6132ceba0d71275aed71bee3c6489884",
+      "model_id": "qwen1_5_0_5b_chat_2024",
+      "prompt_variant": "direct",
+      "seed": 202,
+      "line_number": 1,
+      "raw_phrase": "Verbal communication",
+      "normalized_phrase": "verbal communication",
+      "proposed_canonical": "Guest communication",
+      "confidence": 0.94,
+      "review_flags": [],
+      "fixture": true
+    },
+    {
+      "mapping_id": "9041e742574e8cc92245a205cf6ae749080f77f6e6a60590fe3cad41bb4d7b3a",
+      "record_id": "967304ee5e87e9835bedd85ed582450b6132ceba0d71275aed71bee3c6489884",
+      "model_id": "qwen1_5_0_5b_chat_2024",
+      "prompt_variant": "direct",
+      "seed": 202,
+      "line_number": 2,
+      "raw_phrase": "Guest service",
+      "normalized_phrase": "guest service",
+      "proposed_canonical": "Customer service",
+      "confidence": 0.92,
+      "review_flags": [],
+      "fixture": true
+    },
+    {
+      "mapping_id": "4d04fb28a7f57858920db34e0aabbd2a35717f07cdd69d13b7a8a02fc8eb974d",
+      "record_id": "967304ee5e87e9835bedd85ed582450b6132ceba0d71275aed71bee3c6489884",
+      "model_id": "qwen1_5_0_5b_chat_2024",
+      "prompt_variant": "direct",
+      "seed": 202,
+      "line_number": 3,
+      "raw_phrase": "Problem-solving",
+      "normalized_phrase": "problem solving",
+      "proposed_canonical": "Problem solving",
+      "confidence": 0.94,
+      "review_flags": [],
+      "fixture": true
+    },
+    {
+      "mapping_id": "f1d142948f7e32a62017b7bb1a5bc84a63336afc0a0e4add32e1bf6a91cb3318",
+      "record_id": "967304ee5e87e9835bedd85ed582450b6132ceba0d71275aed71bee3c6489884",
+      "model_id": "qwen1_5_0_5b_chat_2024",
+      "prompt_variant": "direct",
+      "seed": 202,
+      "line_number": 4,
+      "raw_phrase": "Accuracy",
+      "normalized_phrase": "accuracy",
+      "proposed_canonical": "Attention to detail",
+      "confidence": 0.84,
+      "review_flags": [],
+      "fixture": true
+    },
+    {
+      "mapping_id": "66a55910bb8657540eaec1a489aa152a3dcc62619fce5912108d12061dc06b83",
+      "record_id": "967304ee5e87e9835bedd85ed582450b6132ceba0d71275aed71bee3c6489884",
+      "model_id": "qwen1_5_0_5b_chat_2024",
+      "prompt_variant": "direct",
+      "seed": 202,
+      "line_number": 5,
+      "raw_phrase": "Multi-tasking",
+      "normalized_phrase": "multi tasking",
+      "proposed_canonical": "Multitasking",
+      "confidence": 0.97,
+      "review_flags": [],
+      "fixture": true
+    },
+    {
+      "mapping_id": "6cfda8c6963e919e0e8c6c5a6709864f5f8502d91c889182a8bc8dfdb9cd39a5",
+      "record_id": "967304ee5e87e9835bedd85ed582450b6132ceba0d71275aed71bee3c6489884",
+      "model_id": "qwen1_5_0_5b_chat_2024",
+      "prompt_variant": "direct",
+      "seed": 202,
+      "line_number": 6,
+      "raw_phrase": "Collaboration",
+      "normalized_phrase": "collaboration",
+      "proposed_canonical": "Teamwork",
+      "confidence": 0.91,
+      "review_flags": [],
+      "fixture": true
+    },
+    {
+      "mapping_id": "679b1fac58f0bfa7b1d3261d5c806f10f2cb636e0fee803e4dbdab93f64a4e3e",
+      "record_id": "967304ee5e87e9835bedd85ed582450b6132ceba0d71275aed71bee3c6489884",
+      "model_id": "qwen1_5_0_5b_chat_2024",
+      "prompt_variant": "direct",
+      "seed": 202,
+      "line_number": 7,
+      "raw_phrase": "Payment processing",
+      "normalized_phrase": "payment processing",
+      "proposed_canonical": "Payment processing",
+      "confidence": 0.78,
+      "review_flags": [],
+      "fixture": true
+    },
+    {
+      "mapping_id": "5068dafca473e3bb1358185a3e7445a97e59133634e655daa4e87c9b982ab459",
+      "record_id": "967304ee5e87e9835bedd85ed582450b6132ceba0d71275aed71bee3c6489884",
+      "model_id": "qwen1_5_0_5b_chat_2024",
+      "prompt_variant": "direct",
+      "seed": 202,
+      "line_number": 8,
+      "raw_phrase": "Local knowledge",
+      "normalized_phrase": "local knowledge",
+      "proposed_canonical": "Local knowledge",
+      "confidence": 0.91,
+      "review_flags": [],
+      "fixture": true
+    },
+    {
+      "mapping_id": "90f0b70e556f1da1d0719594d74abba956236ebae214e09385a86f9dd99b3457",
+      "record_id": "b7474be2cbdd4170ad92735e005667546fb87008291b03ea34591dfc0d1f02de",
+      "model_id": "qwen1_5_0_5b_chat_2024",
+      "prompt_variant": "direct",
+      "seed": 303,
+      "line_number": 1,
+      "raw_phrase": "Communication",
+      "normalized_phrase": "communication",
+      "proposed_canonical": "Guest communication",
+      "confidence": 0.94,
+      "review_flags": [],
+      "fixture": true
+    },
+    {
+      "mapping_id": "9f66c023f184681326f2d35fc0200005b3b6dcc87743025510e542fdd86ed397",
+      "record_id": "b7474be2cbdd4170ad92735e005667546fb87008291b03ea34591dfc0d1f02de",
+      "model_id": "qwen1_5_0_5b_chat_2024",
+      "prompt_variant": "direct",
+      "seed": 303,
+      "line_number": 2,
+      "raw_phrase": "Hospitality service",
+      "normalized_phrase": "hospitality service",
+      "proposed_canonical": "Customer service",
+      "confidence": 0.92,
+      "review_flags": [],
+      "fixture": true
+    },
+    {
+      "mapping_id": "b5d14df885b51c24dadc61ca2268fcd2ba9d1d0a25d0aab44607c39482f68cd4",
+      "record_id": "b7474be2cbdd4170ad92735e005667546fb87008291b03ea34591dfc0d1f02de",
+      "model_id": "qwen1_5_0_5b_chat_2024",
+      "prompt_variant": "direct",
+      "seed": 303,
+      "line_number": 3,
+      "raw_phrase": "Issue resolution",
+      "normalized_phrase": "issue resolution",
+      "proposed_canonical": "Problem solving",
+      "confidence": 0.94,
+      "review_flags": [],
+      "fixture": true
+    },
+    {
+      "mapping_id": "5e590ed01d39deb69e986adf5ae411c069563b90eb256df0906ca62a38fb16ba",
+      "record_id": "b7474be2cbdd4170ad92735e005667546fb87008291b03ea34591dfc0d1f02de",
+      "model_id": "qwen1_5_0_5b_chat_2024",
+      "prompt_variant": "direct",
+      "seed": 303,
+      "line_number": 4,
+      "raw_phrase": "Attention to detail",
+      "normalized_phrase": "attention to detail",
+      "proposed_canonical": "Attention to detail",
+      "confidence": 0.84,
+      "review_flags": [],
+      "fixture": true
+    },
+    {
+      "mapping_id": "fe9129867506b19518d833936e3d3f4808989a72e51bdf51b528f96788b9d866",
+      "record_id": "b7474be2cbdd4170ad92735e005667546fb87008291b03ea34591dfc0d1f02de",
+      "model_id": "qwen1_5_0_5b_chat_2024",
+      "prompt_variant": "direct",
+      "seed": 303,
+      "line_number": 5,
+      "raw_phrase": "Multitasking",
+      "normalized_phrase": "multitasking",
+      "proposed_canonical": "Multitasking",
+      "confidence": 0.97,
+      "review_flags": [],
+      "fixture": true
+    },
+    {
+      "mapping_id": "21031a7ed97a3e2a77e65aee5e11d34e915e237f0681547006b423c9c5f484f0",
+      "record_id": "b7474be2cbdd4170ad92735e005667546fb87008291b03ea34591dfc0d1f02de",
+      "model_id": "qwen1_5_0_5b_chat_2024",
+      "prompt_variant": "direct",
+      "seed": 303,
+      "line_number": 6,
+      "raw_phrase": "Teamwork",
+      "normalized_phrase": "teamwork",
+      "proposed_canonical": "Teamwork",
+      "confidence": 0.91,
+      "review_flags": [],
+      "fixture": true
+    },
+    {
+      "mapping_id": "d441614555ebf395f527dc2a34af96750027bf76d7b312cd0530dc6226886bd1",
+      "record_id": "b7474be2cbdd4170ad92735e005667546fb87008291b03ea34591dfc0d1f02de",
+      "model_id": "qwen1_5_0_5b_chat_2024",
+      "prompt_variant": "direct",
+      "seed": 303,
+      "line_number": 7,
+      "raw_phrase": "Cash handling",
+      "normalized_phrase": "cash handling",
+      "proposed_canonical": "Payment processing",
+      "confidence": 0.78,
+      "review_flags": [],
+      "fixture": true
+    },
+    {
+      "mapping_id": "d61b1f9183a1d8e90aaf291e0c1af0702b5ec80d65516d955826ee53be9407db",
+      "record_id": "b7474be2cbdd4170ad92735e005667546fb87008291b03ea34591dfc0d1f02de",
+      "model_id": "qwen1_5_0_5b_chat_2024",
+      "prompt_variant": "direct",
+      "seed": 303,
+      "line_number": 8,
+      "raw_phrase": "Record keeping",
+      "normalized_phrase": "record keeping",
+      "proposed_canonical": "Record keeping",
+      "confidence": 0.55,
+      "review_flags": [
+        "unclustered",
+        "human_review_required"
+      ],
+      "fixture": true
+    },
+    {
+      "mapping_id": "7780446c40c992538b61b0366b1f5a96f8b1f20e6d3fed5f8556b3a7a04d5e46",
+      "record_id": "e49d60d214a335a9bc0c523449feaf6898d5fc50df57098f3fcd402b2c079268",
+      "model_id": "qwen3_5_0_8b_2026",
+      "prompt_variant": "direct",
+      "seed": 303,
+      "line_number": 1,
+      "raw_phrase": "Verbal communication",
+      "normalized_phrase": "verbal communication",
+      "proposed_canonical": "Guest communication",
+      "confidence": 0.94,
+      "review_flags": [],
+      "fixture": true
+    },
+    {
+      "mapping_id": "db6ed776f35436d5d9b22da99334a9eeed539515b16fbb1b9d81ba9357ccf4b2",
+      "record_id": "e49d60d214a335a9bc0c523449feaf6898d5fc50df57098f3fcd402b2c079268",
+      "model_id": "qwen3_5_0_8b_2026",
+      "prompt_variant": "direct",
+      "seed": 303,
+      "line_number": 2,
+      "raw_phrase": "Customer service",
+      "normalized_phrase": "customer service",
+      "proposed_canonical": "Customer service",
+      "confidence": 0.92,
+      "review_flags": [],
+      "fixture": true
+    },
+    {
+      "mapping_id": "9fd4f2d47ed4cbb42c61f5fb710e2855179c14476ac23cb5da6eb6f4fcd49991",
+      "record_id": "e49d60d214a335a9bc0c523449feaf6898d5fc50df57098f3fcd402b2c079268",
+      "model_id": "qwen3_5_0_8b_2026",
+      "prompt_variant": "direct",
+      "seed": 303,
+      "line_number": 3,
+      "raw_phrase": "Complaint handling",
+      "normalized_phrase": "complaint handling",
+      "proposed_canonical": "Complaint handling",
+      "confidence": 0.86,
+      "review_flags": [],
+      "fixture": true
+    },
+    {
+      "mapping_id": "d38c3ffdb0328fd1f7e4580636f3a39e566a3636cceb74c7fbbba352885f2d29",
+      "record_id": "e49d60d214a335a9bc0c523449feaf6898d5fc50df57098f3fcd402b2c079268",
+      "model_id": "qwen3_5_0_8b_2026",
+      "prompt_variant": "direct",
+      "seed": 303,
+      "line_number": 4,
+      "raw_phrase": "Attention to detail",
+      "normalized_phrase": "attention to detail",
+      "proposed_canonical": "Attention to detail",
+      "confidence": 0.84,
+      "review_flags": [],
+      "fixture": true
+    },
+    {
+      "mapping_id": "bdb520ddd911299d5d6c83454faf51a1b31e38693c65920d475e9653242cf73e",
+      "record_id": "e49d60d214a335a9bc0c523449feaf6898d5fc50df57098f3fcd402b2c079268",
+      "model_id": "qwen3_5_0_8b_2026",
+      "prompt_variant": "direct",
+      "seed": 303,
+      "line_number": 5,
+      "raw_phrase": "Multitasking",
+      "normalized_phrase": "multitasking",
+      "proposed_canonical": "Multitasking",
+      "confidence": 0.97,
+      "review_flags": [],
+      "fixture": true
+    },
+    {
+      "mapping_id": "af96e1c1fc7fda8ccccee3c725b9e58357568220861507c49406b1c78546efe5",
+      "record_id": "e49d60d214a335a9bc0c523449feaf6898d5fc50df57098f3fcd402b2c079268",
+      "model_id": "qwen3_5_0_8b_2026",
+      "prompt_variant": "direct",
+      "seed": 303,
+      "line_number": 6,
+      "raw_phrase": "Collaboration",
+      "normalized_phrase": "collaboration",
+      "proposed_canonical": "Teamwork",
+      "confidence": 0.91,
+      "review_flags": [],
+      "fixture": true
+    },
+    {
+      "mapping_id": "bf9f7c573fa217b4b2a91a01fb63e4e44cfdce7289715fe43ef6c07142fd4b82",
+      "record_id": "e49d60d214a335a9bc0c523449feaf6898d5fc50df57098f3fcd402b2c079268",
+      "model_id": "qwen3_5_0_8b_2026",
+      "prompt_variant": "direct",
+      "seed": 303,
+      "line_number": 7,
+      "raw_phrase": "Reservation systems",
+      "normalized_phrase": "reservation systems",
+      "proposed_canonical": "Reservation systems",
+      "confidence": 0.85,
+      "review_flags": [],
+      "fixture": true
+    },
+    {
+      "mapping_id": "2b4f1c7f97f73835533c85620a3930d086afe25c47364f01f6fb02fcf344c163",
+      "record_id": "e49d60d214a335a9bc0c523449feaf6898d5fc50df57098f3fcd402b2c079268",
+      "model_id": "qwen3_5_0_8b_2026",
+      "prompt_variant": "direct",
+      "seed": 303,
+      "line_number": 8,
+      "raw_phrase": "Privacy awareness",
+      "normalized_phrase": "privacy awareness",
+      "proposed_canonical": "Data privacy",
+      "confidence": 0.88,
+      "review_flags": [],
+      "fixture": true
+    },
+    {
+      "mapping_id": "fa1b72fe1bd44972e17fbb414ed6188d93040edbeedf43e896c76a0dfee1f241",
+      "record_id": "ed64932e965398ccd79683144372fcef5d70faba404e2f8cd6b7c6d652427878",
+      "model_id": "qwen3_5_0_8b_2026",
+      "prompt_variant": "task_anchored",
+      "seed": 303,
+      "line_number": 1,
+      "raw_phrase": "Guest communication",
+      "normalized_phrase": "guest communication",
+      "proposed_canonical": "Guest communication",
+      "confidence": 0.94,
+      "review_flags": [],
+      "fixture": true
+    },
+    {
+      "mapping_id": "772eece629966fa9aa012cf6d49434c528ea7ed228e5c4b4e2423e0f684a2253",
+      "record_id": "ed64932e965398ccd79683144372fcef5d70faba404e2f8cd6b7c6d652427878",
+      "model_id": "qwen3_5_0_8b_2026",
+      "prompt_variant": "task_anchored",
+      "seed": 303,
+      "line_number": 2,
+      "raw_phrase": "Complaint handling",
+      "normalized_phrase": "complaint handling",
+      "proposed_canonical": "Complaint handling",
+      "confidence": 0.86,
+      "review_flags": [],
+      "fixture": true
+    },
+    {
+      "mapping_id": "b3eec040d2dae711077800fe6ac01ba2cbc3a229bf18e1b9e84ea940a07d3942",
+      "record_id": "ed64932e965398ccd79683144372fcef5d70faba404e2f8cd6b7c6d652427878",
+      "model_id": "qwen3_5_0_8b_2026",
+      "prompt_variant": "task_anchored",
+      "seed": 303,
+      "line_number": 3,
+      "raw_phrase": "Reservation systems",
+      "normalized_phrase": "reservation systems",
+      "proposed_canonical": "Reservation systems",
+      "confidence": 0.85,
+      "review_flags": [],
+      "fixture": true
+    },
+    {
+      "mapping_id": "dbf6e26845c38f61bc6732d8be60b1f17d5ffceecae370fb91eccc9c279249c7",
+      "record_id": "ed64932e965398ccd79683144372fcef5d70faba404e2f8cd6b7c6d652427878",
+      "model_id": "qwen3_5_0_8b_2026",
+      "prompt_variant": "task_anchored",
+      "seed": 303,
+      "line_number": 4,
+      "raw_phrase": "Payment processing",
+      "normalized_phrase": "payment processing",
+      "proposed_canonical": "Payment processing",
+      "confidence": 0.78,
+      "review_flags": [],
+      "fixture": true
+    },
+    {
+      "mapping_id": "9c55c86fb987877205262996abe7158fb2bbe1f3c7c4adbe2022d23ed3a854a8",
+      "record_id": "ed64932e965398ccd79683144372fcef5d70faba404e2f8cd6b7c6d652427878",
+      "model_id": "qwen3_5_0_8b_2026",
+      "prompt_variant": "task_anchored",
+      "seed": 303,
+      "line_number": 5,
+      "raw_phrase": "Attention to detail",
+      "normalized_phrase": "attention to detail",
+      "proposed_canonical": "Attention to detail",
+      "confidence": 0.84,
+      "review_flags": [],
+      "fixture": true
+    },
+    {
+      "mapping_id": "9e1629afc130525bdb05f635aa9ce8dfbde8bceace071b31c2017a13db62e8b0",
+      "record_id": "ed64932e965398ccd79683144372fcef5d70faba404e2f8cd6b7c6d652427878",
+      "model_id": "qwen3_5_0_8b_2026",
+      "prompt_variant": "task_anchored",
+      "seed": 303,
+      "line_number": 6,
+      "raw_phrase": "Multitasking",
+      "normalized_phrase": "multitasking",
+      "proposed_canonical": "Multitasking",
+      "confidence": 0.97,
+      "review_flags": [],
+      "fixture": true
+    },
+    {
+      "mapping_id": "b6c4d2a4f121dafb9a7200bb2bcba8fd2e208bc03e9ecb1f872d24704707ee1a",
+      "record_id": "ed64932e965398ccd79683144372fcef5d70faba404e2f8cd6b7c6d652427878",
+      "model_id": "qwen3_5_0_8b_2026",
+      "prompt_variant": "task_anchored",
+      "seed": 303,
+      "line_number": 7,
+      "raw_phrase": "Privacy awareness",
+      "normalized_phrase": "privacy awareness",
+      "proposed_canonical": "Data privacy",
+      "confidence": 0.88,
+      "review_flags": [],
+      "fixture": true
+    },
+    {
+      "mapping_id": "470fb69e3507b019f0f8b2fc50bcde265f743a3647dfd63877394a53740dba41",
+      "record_id": "ed64932e965398ccd79683144372fcef5d70faba404e2f8cd6b7c6d652427878",
+      "model_id": "qwen3_5_0_8b_2026",
+      "prompt_variant": "task_anchored",
+      "seed": 303,
+      "line_number": 8,
+      "raw_phrase": "Using AI assistants",
+      "normalized_phrase": "using ai assistants",
+      "proposed_canonical": "AI literacy",
+      "confidence": 0.91,
+      "review_flags": [],
+      "fixture": true
+    },
+    {
+      "mapping_id": "5bbd116df1b0e964c886d79ae4ef961a81b4c0626b24f56be15e157a904c6682",
+      "record_id": "f0ffa7c33f7feca300fbbcffa14328a605feab891635f48f050a42dc12bc325c",
+      "model_id": "qwen3_5_0_8b_2026",
+      "prompt_variant": "direct",
+      "seed": 101,
+      "line_number": 1,
+      "raw_phrase": "Guest communication",
+      "normalized_phrase": "guest communication",
+      "proposed_canonical": "Guest communication",
+      "confidence": 0.94,
+      "review_flags": [],
+      "fixture": true
+    },
+    {
+      "mapping_id": "12112f3867eb0e028b57a0effb9e0205d2bd290ab7ef998443c39aba1f3da812",
+      "record_id": "f0ffa7c33f7feca300fbbcffa14328a605feab891635f48f050a42dc12bc325c",
+      "model_id": "qwen3_5_0_8b_2026",
+      "prompt_variant": "direct",
+      "seed": 101,
+      "line_number": 2,
+      "raw_phrase": "Customer service",
+      "normalized_phrase": "customer service",
+      "proposed_canonical": "Customer service",
+      "confidence": 0.92,
+      "review_flags": [],
+      "fixture": true
+    },
+    {
+      "mapping_id": "c7028c14c2de68109cede401a5c244ba3b705e2afd95844048d24c8486dd072d",
+      "record_id": "f0ffa7c33f7feca300fbbcffa14328a605feab891635f48f050a42dc12bc325c",
+      "model_id": "qwen3_5_0_8b_2026",
+      "prompt_variant": "direct",
+      "seed": 101,
+      "line_number": 3,
+      "raw_phrase": "Problem-solving",
+      "normalized_phrase": "problem solving",
+      "proposed_canonical": "Problem solving",
+      "confidence": 0.94,
+      "review_flags": [],
+      "fixture": true
+    },
+    {
+      "mapping_id": "e36e0f35203598a3c0c2437413e917b9e054138f676305d27be5938c0b307c6c",
+      "record_id": "f0ffa7c33f7feca300fbbcffa14328a605feab891635f48f050a42dc12bc325c",
+      "model_id": "qwen3_5_0_8b_2026",
+      "prompt_variant": "direct",
+      "seed": 101,
+      "line_number": 4,
+      "raw_phrase": "Attention to detail",
+      "normalized_phrase": "attention to detail",
+      "proposed_canonical": "Attention to detail",
+      "confidence": 0.84,
+      "review_flags": [],
+      "fixture": true
+    },
+    {
+      "mapping_id": "a40e64503f0292ebe30dec55c2b7aba4b58574f84b492ff529b24c72921a5be0",
+      "record_id": "f0ffa7c33f7feca300fbbcffa14328a605feab891635f48f050a42dc12bc325c",
+      "model_id": "qwen3_5_0_8b_2026",
+      "prompt_variant": "direct",
+      "seed": 101,
+      "line_number": 5,
+      "raw_phrase": "Multitasking",
+      "normalized_phrase": "multitasking",
+      "proposed_canonical": "Multitasking",
+      "confidence": 0.97,
+      "review_flags": [],
+      "fixture": true
+    },
+    {
+      "mapping_id": "5487cc3d2b83003d765b87fc528c8af8825b86e5d0940f8ea54d48da97bc68e5",
+      "record_id": "f0ffa7c33f7feca300fbbcffa14328a605feab891635f48f050a42dc12bc325c",
+      "model_id": "qwen3_5_0_8b_2026",
+      "prompt_variant": "direct",
+      "seed": 101,
+      "line_number": 6,
+      "raw_phrase": "Team collaboration",
+      "normalized_phrase": "team collaboration",
+      "proposed_canonical": "Teamwork",
+      "confidence": 0.91,
+      "review_flags": [],
+      "fixture": true
+    },
+    {
+      "mapping_id": "7c8769ba3881515031117af9379e2ae4e3d1fd738a978c1d25034c96c2dd7d70",
+      "record_id": "f0ffa7c33f7feca300fbbcffa14328a605feab891635f48f050a42dc12bc325c",
+      "model_id": "qwen3_5_0_8b_2026",
+      "prompt_variant": "direct",
+      "seed": 101,
+      "line_number": 7,
+      "raw_phrase": "PMS proficiency",
+      "normalized_phrase": "pms proficiency",
+      "proposed_canonical": "Reservation systems",
+      "confidence": 0.85,
+      "review_flags": [],
+      "fixture": true
+    },
+    {
+      "mapping_id": "81d953994f2b3c118231f5c745e904ed3405ae527d0212441088954db12717a0",
+      "record_id": "f0ffa7c33f7feca300fbbcffa14328a605feab891635f48f050a42dc12bc325c",
+      "model_id": "qwen3_5_0_8b_2026",
+      "prompt_variant": "direct",
+      "seed": 101,
+      "line_number": 8,
+      "raw_phrase": "Data privacy",
+      "normalized_phrase": "data privacy",
+      "proposed_canonical": "Data privacy",
+      "confidence": 0.88,
+      "review_flags": [],
+      "fixture": true
+    },
+    {
+      "mapping_id": "609c63b7adbc10380c8f5283c5b6f2e67eeffa889adee6edd04c8d4bfdd02cb9",
+      "record_id": "f10a7d7d8e141c88e7a1ff1e72ab6e50e7227aae0de88d759c43ae5442898f02",
+      "model_id": "qwen1_5_0_5b_chat_2024",
+      "prompt_variant": "scenario",
+      "seed": 202,
+      "line_number": 1,
+      "raw_phrase": "Guest communication",
+      "normalized_phrase": "guest communication",
+      "proposed_canonical": "Guest communication",
+      "confidence": 0.94,
+      "review_flags": [],
+      "fixture": true
+    },
+    {
+      "mapping_id": "98bcc73cda642888d63a76337507be84753689569abcdf2651d6957b1ce22d6e",
+      "record_id": "f10a7d7d8e141c88e7a1ff1e72ab6e50e7227aae0de88d759c43ae5442898f02",
+      "model_id": "qwen1_5_0_5b_chat_2024",
+      "prompt_variant": "scenario",
+      "seed": 202,
+      "line_number": 2,
+      "raw_phrase": "Hospitality service",
+      "normalized_phrase": "hospitality service",
+      "proposed_canonical": "Customer service",
+      "confidence": 0.92,
+      "review_flags": [],
+      "fixture": true
+    },
+    {
+      "mapping_id": "f25895e99cd83aebb2a83bb203aced18385ae527a858f2fd2b14fb11e5efd4e6",
+      "record_id": "f10a7d7d8e141c88e7a1ff1e72ab6e50e7227aae0de88d759c43ae5442898f02",
+      "model_id": "qwen1_5_0_5b_chat_2024",
+      "prompt_variant": "scenario",
+      "seed": 202,
+      "line_number": 3,
+      "raw_phrase": "Conflict resolution",
+      "normalized_phrase": "conflict resolution",
+      "proposed_canonical": "Complaint handling",
+      "confidence": 0.86,
+      "review_flags": [],
+      "fixture": true
+    },
+    {
+      "mapping_id": "78d90598be5e3e644160d34188d64c372c7263b80c4de21b72edc6f8efba0d24",
+      "record_id": "f10a7d7d8e141c88e7a1ff1e72ab6e50e7227aae0de88d759c43ae5442898f02",
+      "model_id": "qwen1_5_0_5b_chat_2024",
+      "prompt_variant": "scenario",
+      "seed": 202,
+      "line_number": 4,
+      "raw_phrase": "Booking systems",
+      "normalized_phrase": "booking systems",
+      "proposed_canonical": "Reservation systems",
+      "confidence": 0.85,
+      "review_flags": [],
+      "fixture": true
+    },
+    {
+      "mapping_id": "d39959a7f8311230acceae796b191c05fbd4b80953f9097fef955459cf71502e",
+      "record_id": "f10a7d7d8e141c88e7a1ff1e72ab6e50e7227aae0de88d759c43ae5442898f02",
+      "model_id": "qwen1_5_0_5b_chat_2024",
+      "prompt_variant": "scenario",
+      "seed": 202,
+      "line_number": 5,
+      "raw_phrase": "Accuracy",
+      "normalized_phrase": "accuracy",
+      "proposed_canonical": "Attention to detail",
+      "confidence": 0.84,
+      "review_flags": [],
+      "fixture": true
+    },
+    {
+      "mapping_id": "5ef6297e75705afa38861deaebe2fceb80e55ba6ecddd78a8ebf115761d111e1",
+      "record_id": "f10a7d7d8e141c88e7a1ff1e72ab6e50e7227aae0de88d759c43ae5442898f02",
+      "model_id": "qwen1_5_0_5b_chat_2024",
+      "prompt_variant": "scenario",
+      "seed": 202,
+      "line_number": 6,
+      "raw_phrase": "Time management",
+      "normalized_phrase": "time management",
+      "proposed_canonical": "Time management",
+      "confidence": 0.82,
+      "review_flags": [],
+      "fixture": true
+    },
+    {
+      "mapping_id": "db97158a8f2c7b3606eec967109333e710f6433f1d81f2a92eb0c4ac54c350ea",
+      "record_id": "f10a7d7d8e141c88e7a1ff1e72ab6e50e7227aae0de88d759c43ae5442898f02",
+      "model_id": "qwen1_5_0_5b_chat_2024",
+      "prompt_variant": "scenario",
+      "seed": 202,
+      "line_number": 7,
+      "raw_phrase": "Collaboration",
+      "normalized_phrase": "collaboration",
+      "proposed_canonical": "Teamwork",
+      "confidence": 0.91,
+      "review_flags": [],
+      "fixture": true
+    },
+    {
+      "mapping_id": "4e62732214c81f89b6acbb9f84064aa4e55078aee5143aa1087552aabe898c56",
+      "record_id": "f10a7d7d8e141c88e7a1ff1e72ab6e50e7227aae0de88d759c43ae5442898f02",
+      "model_id": "qwen1_5_0_5b_chat_2024",
+      "prompt_variant": "scenario",
+      "seed": 202,
+      "line_number": 8,
+      "raw_phrase": "Payment processing",
+      "normalized_phrase": "payment processing",
+      "proposed_canonical": "Payment processing",
+      "confidence": 0.78,
+      "review_flags": [],
+      "fixture": true
+    },
+    {
+      "mapping_id": "56ac4481cec336d5f8a3ae8973ba6ad7d2b87df39ea5082907d37e7ebc0d5d04",
+      "record_id": "fb07843c788aac74f75216970c9a9d328ad6e812d7fb6bd9d56b0b5a3965eaaa",
+      "model_id": "qwen3_5_0_8b_2026",
+      "prompt_variant": "scenario",
+      "seed": 101,
+      "line_number": 1,
+      "raw_phrase": "Guest communication",
+      "normalized_phrase": "guest communication",
+      "proposed_canonical": "Guest communication",
+      "confidence": 0.94,
+      "review_flags": [],
+      "fixture": true
+    },
+    {
+      "mapping_id": "7725b926413e133a0cda52d78baf46586374d656602abf2b706458cd6ad5ef27",
+      "record_id": "fb07843c788aac74f75216970c9a9d328ad6e812d7fb6bd9d56b0b5a3965eaaa",
+      "model_id": "qwen3_5_0_8b_2026",
+      "prompt_variant": "scenario",
+      "seed": 101,
+      "line_number": 2,
+      "raw_phrase": "Hospitality service",
+      "normalized_phrase": "hospitality service",
+      "proposed_canonical": "Customer service",
+      "confidence": 0.92,
+      "review_flags": [],
+      "fixture": true
+    },
+    {
+      "mapping_id": "50f29810ba96ebe8fcc62048d4ec502aa9578343113c8c004028aff6fd94ba38",
+      "record_id": "fb07843c788aac74f75216970c9a9d328ad6e812d7fb6bd9d56b0b5a3965eaaa",
+      "model_id": "qwen3_5_0_8b_2026",
+      "prompt_variant": "scenario",
+      "seed": 101,
+      "line_number": 3,
+      "raw_phrase": "Problem solving",
+      "normalized_phrase": "problem solving",
+      "proposed_canonical": "Problem solving",
+      "confidence": 0.94,
+      "review_flags": [],
+      "fixture": true
+    },
+    {
+      "mapping_id": "6efa8cd93f7034bdc0a2d39385a8ca58ab4335241fdcddeb309a6042e18018af",
+      "record_id": "fb07843c788aac74f75216970c9a9d328ad6e812d7fb6bd9d56b0b5a3965eaaa",
+      "model_id": "qwen3_5_0_8b_2026",
+      "prompt_variant": "scenario",
+      "seed": 101,
+      "line_number": 4,
+      "raw_phrase": "PMS proficiency",
+      "normalized_phrase": "pms proficiency",
+      "proposed_canonical": "Reservation systems",
+      "confidence": 0.85,
+      "review_flags": [],
+      "fixture": true
+    },
+    {
+      "mapping_id": "bf365f688a18514d85fb3c3725377b176bf3fc7f76308b7085aeaa8700f268b8",
+      "record_id": "fb07843c788aac74f75216970c9a9d328ad6e812d7fb6bd9d56b0b5a3965eaaa",
+      "model_id": "qwen3_5_0_8b_2026",
+      "prompt_variant": "scenario",
+      "seed": 101,
+      "line_number": 5,
+      "raw_phrase": "Time management",
+      "normalized_phrase": "time management",
+      "proposed_canonical": "Time management",
+      "confidence": 0.82,
+      "review_flags": [],
+      "fixture": true
+    },
+    {
+      "mapping_id": "0faf8f045eed6bbec2b5a5bdb6c31caa28fded6eb44eac6db56fab5de44b90b8",
+      "record_id": "fb07843c788aac74f75216970c9a9d328ad6e812d7fb6bd9d56b0b5a3965eaaa",
+      "model_id": "qwen3_5_0_8b_2026",
+      "prompt_variant": "scenario",
+      "seed": 101,
+      "line_number": 6,
+      "raw_phrase": "Team collaboration",
+      "normalized_phrase": "team collaboration",
+      "proposed_canonical": "Teamwork",
+      "confidence": 0.91,
+      "review_flags": [],
+      "fixture": true
+    },
+    {
+      "mapping_id": "307a14d69a82c7b4c9dd90194269000ca381016ae5023668f77be60308c9ef27",
+      "record_id": "fb07843c788aac74f75216970c9a9d328ad6e812d7fb6bd9d56b0b5a3965eaaa",
+      "model_id": "qwen3_5_0_8b_2026",
+      "prompt_variant": "scenario",
+      "seed": 101,
+      "line_number": 7,
+      "raw_phrase": "Data privacy",
+      "normalized_phrase": "data privacy",
+      "proposed_canonical": "Data privacy",
+      "confidence": 0.88,
+      "review_flags": [],
+      "fixture": true
+    },
+    {
+      "mapping_id": "01abe46518fc9becee8d7268dd8e652bb75eea9ac09a54b00f8e63f4899c7f6b",
+      "record_id": "fb07843c788aac74f75216970c9a9d328ad6e812d7fb6bd9d56b0b5a3965eaaa",
+      "model_id": "qwen3_5_0_8b_2026",
+      "prompt_variant": "scenario",
+      "seed": 101,
+      "line_number": 8,
+      "raw_phrase": "Using AI assistants",
+      "normalized_phrase": "using ai assistants",
+      "proposed_canonical": "AI literacy",
+      "confidence": 0.91,
+      "review_flags": [],
+      "fixture": true
+    },
+    {
+      "mapping_id": "f713425dc2af731abf7002d732c9e01a633fa83db2dab64ef5379520363b2d3e",
+      "record_id": "ff7cb2c7b4ff70d9fa037e262b6eb18f32a3f359f44d67b7052b3575629b3613",
+      "model_id": "qwen3_5_0_8b_2026",
+      "prompt_variant": "direct",
+      "seed": 202,
+      "line_number": 1,
+      "raw_phrase": "Communication",
+      "normalized_phrase": "communication",
+      "proposed_canonical": "Guest communication",
+      "confidence": 0.94,
+      "review_flags": [],
+      "fixture": true
+    },
+    {
+      "mapping_id": "ffdf2c657450e8aab2452b04721db588d8a9387230ac1c03eafd2252ab33cbf9",
+      "record_id": "ff7cb2c7b4ff70d9fa037e262b6eb18f32a3f359f44d67b7052b3575629b3613",
+      "model_id": "qwen3_5_0_8b_2026",
+      "prompt_variant": "direct",
+      "seed": 202,
+      "line_number": 2,
+      "raw_phrase": "Guest service",
+      "normalized_phrase": "guest service",
+      "proposed_canonical": "Customer service",
+      "confidence": 0.92,
+      "review_flags": [],
+      "fixture": true
+    },
+    {
+      "mapping_id": "884badd6696a2ab26b9f1d6b72b0169316f9f6c9458198ab6b8833b4d806107d",
+      "record_id": "ff7cb2c7b4ff70d9fa037e262b6eb18f32a3f359f44d67b7052b3575629b3613",
+      "model_id": "qwen3_5_0_8b_2026",
+      "prompt_variant": "direct",
+      "seed": 202,
+      "line_number": 3,
+      "raw_phrase": "Issue resolution",
+      "normalized_phrase": "issue resolution",
+      "proposed_canonical": "Problem solving",
+      "confidence": 0.94,
+      "review_flags": [],
+      "fixture": true
+    },
+    {
+      "mapping_id": "896b304f76a8c820081a7ecdce54d6f9c8bc3249afe6344e414cd8d09f3b2d3b",
+      "record_id": "ff7cb2c7b4ff70d9fa037e262b6eb18f32a3f359f44d67b7052b3575629b3613",
+      "model_id": "qwen3_5_0_8b_2026",
+      "prompt_variant": "direct",
+      "seed": 202,
+      "line_number": 4,
+      "raw_phrase": "Accuracy",
+      "normalized_phrase": "accuracy",
+      "proposed_canonical": "Attention to detail",
+      "confidence": 0.84,
+      "review_flags": [],
+      "fixture": true
+    },
+    {
+      "mapping_id": "c1a739cd7f0e5777680d6265b6b81bffe5538f87e747b689c844a3ac5c04808a",
+      "record_id": "ff7cb2c7b4ff70d9fa037e262b6eb18f32a3f359f44d67b7052b3575629b3613",
+      "model_id": "qwen3_5_0_8b_2026",
+      "prompt_variant": "direct",
+      "seed": 202,
+      "line_number": 5,
+      "raw_phrase": "Multi-tasking",
+      "normalized_phrase": "multi tasking",
+      "proposed_canonical": "Multitasking",
+      "confidence": 0.97,
+      "review_flags": [],
+      "fixture": true
+    },
+    {
+      "mapping_id": "34927d06b790205966c88090cbf453601fdf42ec8d0fc332641912d624ff5a14",
+      "record_id": "ff7cb2c7b4ff70d9fa037e262b6eb18f32a3f359f44d67b7052b3575629b3613",
+      "model_id": "qwen3_5_0_8b_2026",
+      "prompt_variant": "direct",
+      "seed": 202,
+      "line_number": 6,
+      "raw_phrase": "Teamwork",
+      "normalized_phrase": "teamwork",
+      "proposed_canonical": "Teamwork",
+      "confidence": 0.91,
+      "review_flags": [],
+      "fixture": true
+    },
+    {
+      "mapping_id": "0223785b3bf8a6124d757957e8f0cd7f06b3a2b2c38b28cc8a0764be4d01106f",
+      "record_id": "ff7cb2c7b4ff70d9fa037e262b6eb18f32a3f359f44d67b7052b3575629b3613",
+      "model_id": "qwen3_5_0_8b_2026",
+      "prompt_variant": "direct",
+      "seed": 202,
+      "line_number": 7,
+      "raw_phrase": "Property management systems",
+      "normalized_phrase": "property management systems",
+      "proposed_canonical": "Reservation systems",
+      "confidence": 0.85,
+      "review_flags": [],
+      "fixture": true
+    },
+    {
+      "mapping_id": "03b57550505cf96f34d461b49d7a2fca6d2b75ab63fa925653d09e589e6a204f",
+      "record_id": "ff7cb2c7b4ff70d9fa037e262b6eb18f32a3f359f44d67b7052b3575629b3613",
+      "model_id": "qwen3_5_0_8b_2026",
+      "prompt_variant": "direct",
+      "seed": 202,
+      "line_number": 8,
+      "raw_phrase": "Guest data protection",
+      "normalized_phrase": "guest data protection",
+      "proposed_canonical": "Data privacy",
+      "confidence": 0.88,
+      "review_flags": [],
+      "fixture": true
+    }
+  ],
+  "failures": [],
+  "coverage": {
+    "successful_records": 18,
+    "raw_phrase_occurrences": 144,
+    "mapped_occurrences": 144,
+    "mapping_coverage": 1.0
+  },
+  "taxonomy_sha256": "3095201c9ad6c3243f2a60a63dc4959e4d3252a54a4f8b7af3f6305a55ca03cc"
+}

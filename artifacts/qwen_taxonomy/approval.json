@@ -1,0 +1,14 @@
+{
+  "schema_version": 1,
+  "decision": "approved",
+  "taxonomy_sha256": "3095201c9ad6c3243f2a60a63dc4959e4d3252a54a4f8b7af3f6305a55ca03cc",
+  "taxonomy_version": null,
+  "approval_scope": "human",
+  "reviewer": "human reviewer via explicit /approve response",
+  "note": "",
+  "human_notes": "",
+  "human_command": "/approve",
+  "fixture_test_note": null,
+  "approval_source": "explicit_human_review_decision",
+  "approved_at": "2026-09-06T17:29:11.825513+00:00"
+}

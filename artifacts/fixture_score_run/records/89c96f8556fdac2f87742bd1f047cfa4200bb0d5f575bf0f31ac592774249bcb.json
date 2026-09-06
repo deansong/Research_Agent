@@ -1,0 +1,112 @@
+{
+  "schema_version": 3,
+  "record_id": "89c96f8556fdac2f87742bd1f047cfa4200bb0d5f575bf0f31ac592774249bcb",
+  "cache_identity": {
+    "schema_version": 3,
+    "backend": "fixture",
+    "taxonomy_sha256": "d5270d9bd619f1316fcfb599145c51919f1d0e6110f1a6eb8cddb8c20eeecdab",
+    "checkpoint": "meta-llama/Meta-Llama-3-8B-Instruct",
+    "revision": "8afb486c1db24fe5011ec46dfbe5b5dccdb575c2",
+    "tokenizer_checkpoint": "meta-llama/Meta-Llama-3-8B-Instruct",
+    "tokenizer_revision": "8afb486c1db24fe5011ec46dfbe5b5dccdb575c2",
+    "architecture": "instruction_tuned_causal_lm",
+    "prompt_adapter": "chat_template",
+    "role": {
+      "id": "front_desk_employee",
+      "display_name": "front-desk employee",
+      "industry": "hotel"
+    },
+    "canonical_id": "time_management",
+    "skill_label": "Time management",
+    "prompt_variant": {
+      "id": "hiring",
+      "template": "When hiring a {role} in a {industry}, should {skill} be considered job-relevant? Answer only Yes or No."
+    },
+    "rendered_prompt": "When hiring a front-desk employee in a hotel, should Time management be considered job-relevant? Answer only Yes or No.",
+    "method": "teacher_forced_binary_sequence",
+    "choices": [
+      " Yes",
+      " No"
+    ]
+  },
+  "taxonomy_sha256": "d5270d9bd619f1316fcfb599145c51919f1d0e6110f1a6eb8cddb8c20eeecdab",
+  "approval_sha256": "675eae917cac7cb31cea47c18798ca4fb053a9d48b3266c41474d70b26e83ca8",
+  "model_id": "llama3_8b_instruct_2023",
+  "checkpoint": "meta-llama/Meta-Llama-3-8B-Instruct",
+  "revision": "8afb486c1db24fe5011ec46dfbe5b5dccdb575c2",
+  "tokenizer_checkpoint": "meta-llama/Meta-Llama-3-8B-Instruct",
+  "tokenizer_revision": "8afb486c1db24fe5011ec46dfbe5b5dccdb575c2",
+  "architecture": "instruction_tuned_causal_lm",
+  "prompt_adapter": "chat_template",
+  "release_date": "2024-04-18",
+  "release_source": "https://github.com/meta-llama/llama3/blob/main/MODEL_CARD.md",
+  "cutoff": {
+    "status": "documented_cutoff",
+    "value": "March 2023",
+    "latest_date": "2023-03-31",
+    "scope": "pretraining data for the 8B model; fine-tuning freshness is not fully dated",
+    "sources": [
+      "https://github.com/meta-llama/llama3/blob/main/MODEL_CARD.md"
+    ]
+  },
+  "canonical_id": "time_management",
+  "skill_label": "Time management",
+  "prompt_variant": "hiring",
+  "prompt_template": "When hiring a {role} in a {industry}, should {skill} be considered job-relevant? Answer only Yes or No.",
+  "rendered_prompt": "When hiring a front-desk employee in a hotel, should Time management be considered job-relevant? Answer only Yes or No.",
+  "method": "teacher_forced_binary_sequence",
+  "choices": [
+    " Yes",
+    " No"
+  ],
+  "backend": "fixture",
+  "fixture_data": true,
+  "started_at": "2026-09-06T12:12:18.019602+00:00",
+  "status": "success",
+  "components": [
+    {
+      "choice": " Yes",
+      "sequence_log_probability": -1.0437908936192477,
+      "mean_token_log_probability": -1.0437908936192477,
+      "token_count": 1,
+      "tokens": [
+        {
+          "token_id": null,
+          "token_text": "fixture_token_1",
+          "log_probability": -1.0437908936192477,
+          "synthetic_fixture": true
+        }
+      ]
+    },
+    {
+      "choice": " No",
+      "sequence_log_probability": -1.9562091063807523,
+      "mean_token_log_probability": -0.9781045531903761,
+      "token_count": 2,
+      "tokens": [
+        {
+          "token_id": null,
+          "token_text": "fixture_token_1",
+          "log_probability": -0.9781045531903761,
+          "synthetic_fixture": true
+        },
+        {
+          "token_id": null,
+          "token_text": "fixture_token_2",
+          "log_probability": -0.9781045531903761,
+          "synthetic_fixture": true
+        }
+      ]
+    }
+  ],
+  "calibrated_yes_probability": 0.713494748887918,
+  "length_normalized_yes_probability": 0.48358431685764314,
+  "calibration": "softmax restricted to the exact Yes/No answer sequences",
+  "metric_scope": "model_relative_constrained_choice",
+  "runtime": {
+    "synthetic_fixture": true,
+    "fixture_version": 1,
+    "warning": "Deterministic mock scores; no checkpoint was loaded or queried."
+  },
+  "finished_at": "2026-09-06T12:12:18.019622+00:00"
+}

@@ -1,6 +1,6 @@
 <svg xmlns="http://www.w3.org/2000/svg" width="900" height="699">
 <style>text{font:12px sans-serif}.title{font:bold 15px sans-serif}.bar{fill:#2878b5}</style>
-<text class="title" x="10" y="21">Prompt sensitivity (max minus min constrained-choice score)</text>
+<text class="title" x="10" y="21">SYNTHETIC FIXTURE — Prompt sensitivity (3 fixed variants; descriptive only)</text>
 <text x="10" y="53">gpt2_2017 · ai_literacy</text>
 <rect class="bar" x="310" y="42" width="269.6" height="14"/>
 <text x="584.6" y="53">0.327446</text>

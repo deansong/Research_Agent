@@ -21,6 +21,7 @@ from typing import Any, Iterable
 
 ROOT = Path(__file__).resolve().parents[1]
 VALID_CUTOFF = {"documented_cutoff", "documented_period", "inferred", "unknown"}
+VALID_COMPARISON_AXIS = {"training_period", "model_release_generation"}
 
 
 def load_json(path: Path) -> Any:
@@ -39,6 +40,10 @@ def canonical_json(value: Any) -> str:
 
 def digest(value: Any) -> str:
     return hashlib.sha256(canonical_json(value).encode()).hexdigest()
+
+
+def file_sha256(path: Path) -> str:
+    return hashlib.sha256(path.read_bytes()).hexdigest()
 
 
 def utc_now() -> str:
@@ -70,6 +75,9 @@ def validate_manifest(doc: dict[str, Any]) -> list[str]:
     errors: list[str] = []
     ids: set[str] = set()
     selected_dates: list[str] = []
+    comparison_axis = doc.get("comparison_axis", "training_period")
+    if comparison_axis not in VALID_COMPARISON_AXIS:
+        errors.append(f"comparison_axis: must be one of {sorted(VALID_COMPARISON_AXIS)}")
     for i, model in enumerate(doc.get("models", [])):
         where = f"models[{i}]"
         required = ("id", "checkpoint", "release_date", "release_source", "cutoff", "selected")
@@ -90,14 +98,38 @@ def validate_manifest(doc: dict[str, Any]) -> list[str]:
         if cutoff.get("latest_date") == model.get("release_date") and status.startswith("documented"):
             errors.append(f"{where}: cutoff equals release date; verify this is evidence, not substitution")
         if model.get("selected"):
-            if status not in {"documented_cutoff", "documented_period"}:
+            if comparison_axis == "training_period" and status not in {"documented_cutoff", "documented_period"}:
                 errors.append(f"{where}: selected models require documented cutoff/period")
             if not model.get("revision") or not model.get("tokenizer_revision"):
                 errors.append(f"{where}: selected checkpoints and tokenizers must be revision-pinned")
-            selected_dates.append(cutoff.get("latest_date", ""))
+            if not model.get("auto_model_class"):
+                errors.append(f"{where}: selected models require an explicit auto_model_class adapter")
+            selected_dates.append(cutoff.get("latest_date", "") if comparison_axis == "training_period"
+                                  else model.get("release_date", ""))
     if len(selected_dates) < 2 or len(set(selected_dates)) < 2:
-        errors.append("at least two selected models with distinct documented periods are required")
+        qualifier = "documented periods" if comparison_axis == "training_period" else "release dates"
+        errors.append(f"at least two selected models with distinct {qualifier} are required")
     return errors
+
+
+def _auto_model_class(transformers: Any, model_cfg: dict[str, Any]) -> Any:
+    name = model_cfg.get("auto_model_class")
+    allowed = {
+        "AutoModelForCausalLM": "AutoModelForCausalLM",
+        "AutoModelForImageTextToText": "AutoModelForImageTextToText",
+    }
+    if name not in allowed:
+        raise ValueError(f"unsupported auto_model_class {name!r}")
+    return getattr(transformers, allowed[name])
+
+
+def _chat_input_ids(tokenizer: Any, prompt: str, model_cfg: dict[str, Any]) -> Any:
+    encoded = tokenizer.apply_chat_template(
+        [{"role": "user", "content": prompt}], add_generation_prompt=True,
+        return_tensors="pt", **model_cfg.get("chat_template_kwargs", {}))
+    # Transformers 5 returns BatchEncoding here while older supported versions
+    # returned a tensor. The scoring code deliberately needs only input_ids.
+    return encoded["input_ids"] if hasattr(encoded, "keys") else encoded
 
 
 def validate_study(doc: dict[str, Any]) -> list[str]:
@@ -131,6 +163,9 @@ def _discovery_identity(model: dict[str, Any], variant: dict[str, Any], seed: in
             "tokenizer_checkpoint": model["tokenizer_checkpoint"],
             "tokenizer_revision": model["tokenizer_revision"],
             "architecture": model["architecture"], "prompt_adapter": model["prompt_adapter"],
+            "auto_model_class": model["auto_model_class"],
+            "chat_template_kwargs": model.get("chat_template_kwargs", {}),
+            "dtype": model.get("dtype", "auto"),
             "role": study["role"], "prompt_variant": variant,
             "rendered_prompt": render_prompt(study, variant), "seed": seed,
             "generation": study["generation"]}
@@ -145,6 +180,9 @@ def _run_identity(study: dict[str, Any], manifest: dict[str, Any], backend: str,
 
 def _reject_incompatible_run(path: Path, expected_identity: dict[str, Any]) -> None:
     if not path.exists():
+        records_dir = path.parent / "records"
+        if records_dir.exists() and any(records_dir.glob("*.json")):
+            raise ValueError(f"records exist without a compatible run manifest at {path}; use a new output directory")
         return
     existing = load_json(path)
     if existing.get("run_identity") != expected_identity:
@@ -160,7 +198,7 @@ def _transformers_generate(model_cfg: dict[str, Any], prompt: str, seed: int,
     try:
         import torch
         import transformers
-        from transformers import AutoModelForCausalLM, AutoTokenizer
+        from transformers import AutoTokenizer
     except ImportError as exc:
         raise RuntimeError("install optional inference dependencies: pip install torch transformers accelerate") from exc
     torch.manual_seed(seed)
@@ -168,11 +206,11 @@ def _transformers_generate(model_cfg: dict[str, Any], prompt: str, seed: int,
         torch.cuda.manual_seed_all(seed)
     tokenizer = AutoTokenizer.from_pretrained(model_cfg["tokenizer_checkpoint"],
                                               revision=model_cfg["tokenizer_revision"])
-    model = AutoModelForCausalLM.from_pretrained(model_cfg["checkpoint"],
-                                                 revision=model_cfg["revision"], device_map="auto")
+    model_class = _auto_model_class(transformers, model_cfg)
+    model = model_class.from_pretrained(model_cfg["checkpoint"], revision=model_cfg["revision"],
+                                        device_map="auto", dtype=model_cfg.get("dtype", "auto"))
     if model_cfg["prompt_adapter"] == "chat_template":
-        encoded = tokenizer.apply_chat_template([{"role": "user", "content": prompt}],
-                                                add_generation_prompt=True, return_tensors="pt")
+        encoded = _chat_input_ids(tokenizer, prompt, model_cfg)
     else:
         encoded = tokenizer(prompt, return_tensors="pt")["input_ids"]
     encoded = encoded.to(model.device)
@@ -185,7 +223,8 @@ def _transformers_generate(model_cfg: dict[str, Any], prompt: str, seed: int,
                "resolved_model_name_or_path": model.name_or_path,
                "resolved_tokenizer_name_or_path": tokenizer.name_or_path,
                "tokenizer_class": tokenizer.__class__.__name__,
-               "model_class": model.__class__.__name__, "device": str(model.device),
+               "model_class": model.__class__.__name__, "auto_model_class": model_cfg["auto_model_class"],
+               "requested_dtype": model_cfg.get("dtype", "auto"), "device": str(model.device),
                "determinism_note": "seed set for CPU and CUDA; kernels may still be nondeterministic"}
     return text, details
 
@@ -202,6 +241,9 @@ def discover(study_path: Path, models_path: Path, run_dir: Path, *, backend: str
     fixture_sha256 = digest(json_lines(fixtures_path)) if fixtures_path else None
     run_identity = _run_identity(study, manifest, backend, fixture_sha256)
     _reject_incompatible_run(run_dir / "run_manifest.json", run_identity)
+    atomic_json(run_dir / "run_manifest.json", {"schema_version": 2, "status": "running",
+                "run_identity": run_identity, "backend": backend,
+                "fixture_data": backend == "fixture", "updated_at": utc_now()})
     fixtures = _fixture_index(fixtures_path) if fixtures_path else {}
     counts = Counter()
     for model in (m for m in manifest["models"] if m["selected"]):
@@ -224,6 +266,9 @@ def discover(study_path: Path, models_path: Path, run_dir: Path, *, backend: str
                     "tokenizer_checkpoint": model["tokenizer_checkpoint"],
                     "tokenizer_revision": model["tokenizer_revision"],
                     "architecture": model["architecture"], "prompt_adapter": model["prompt_adapter"],
+                    "auto_model_class": model["auto_model_class"],
+                    "chat_template_kwargs": model.get("chat_template_kwargs", {}),
+                    "requested_dtype": model.get("dtype", "auto"),
                     "cutoff": model["cutoff"], "prompt_variant": variant["id"],
                     "prompt_template": variant["template"], "rendered_prompt": render_prompt(study, variant),
                     "seed": seed, "generation": study["generation"], "backend": backend,
@@ -350,7 +395,7 @@ def _write_csv(path: Path, rows: list[dict[str, Any]]) -> None:
         return
     path.parent.mkdir(parents=True, exist_ok=True)
     with path.open("w", newline="", encoding="utf-8") as handle:
-        writer = csv.DictWriter(handle, fieldnames=list(rows[0]))
+        writer = csv.DictWriter(handle, fieldnames=list(rows[0]), lineterminator="\n")
         writer.writeheader()
         writer.writerows(rows)
 
@@ -459,7 +504,7 @@ def derive_taxonomy_alternative(taxonomy_path: Path, output_path: Path,
 
 
 def approve_taxonomy(taxonomy_path: Path, approval_path: Path, reviewer: str, note: str,
-                     approval_scope: str = "human") -> dict[str, Any]:
+                     approval_scope: str = "human", review_command: str | None = None) -> dict[str, Any]:
     taxonomy = load_json(taxonomy_path)
     if taxonomy.get("status") != "proposed_unapproved":
         raise ValueError("only a proposed_unapproved taxonomy can be approved")
@@ -467,9 +512,17 @@ def approve_taxonomy(taxonomy_path: Path, approval_path: Path, reviewer: str, no
         raise ValueError("approval_scope must be human or fixture_test")
     if approval_scope == "fixture_test" and not taxonomy.get("fixture_data"):
         raise ValueError("fixture_test approval is allowed only for fixture-derived taxonomies")
+    if approval_scope == "fixture_test" and review_command is not None:
+        raise ValueError("fixture_test approval cannot record a human review command")
     approval = {"schema_version": 1, "decision": "approved", "taxonomy_sha256": taxonomy["taxonomy_sha256"],
                 "taxonomy_version": taxonomy.get("taxonomy_version"),
                 "approval_scope": approval_scope, "reviewer": reviewer, "note": note,
+                "human_notes": note if approval_scope == "human" else None,
+                "human_command": review_command if approval_scope == "human" else None,
+                "fixture_test_note": note if approval_scope == "fixture_test" else None,
+                "approval_source": ("automated_fixture_test_authorization" if approval_scope == "fixture_test"
+                                    else "explicit_human_review_decision" if review_command
+                                    else "human_cli_or_function_invocation"),
                 "approved_at": utc_now()}
     atomic_json(approval_path, approval)
     return approval
@@ -547,8 +600,13 @@ def _choice_logprob(model: Any, torch: Any, prompt_ids: Any, tokenizer: Any,
     start = prompt_ids.shape[1] - 1
     token_rows, total = [], 0.0
     for offset, token_id in enumerate(choice_ids[0].tolist()):
-        value = float(torch.log_softmax(logits[start + offset], dim=-1)[token_id].item())
+        position_logits = logits[start + offset].float()
+        target_logit = float(position_logits[token_id].item())
+        logsumexp = float(torch.logsumexp(position_logits, dim=-1).item())
+        value = target_logit - logsumexp
         token_rows.append({"token_id": token_id, "token_text": tokenizer.decode([token_id]),
+                           "target_logit": target_logit, "logsumexp_all_vocabulary_logits": logsumexp,
+                           "normalization_identity": "log_probability = target_logit - logsumexp_all_vocabulary_logits",
                            "log_probability": value})
         total += value
     return total, token_rows
@@ -581,6 +639,9 @@ def _score_identity(taxonomy: dict[str, Any], model: dict[str, Any], category: d
             "tokenizer_checkpoint": model["tokenizer_checkpoint"],
             "tokenizer_revision": model["tokenizer_revision"],
             "architecture": model["architecture"], "prompt_adapter": model["prompt_adapter"],
+            "auto_model_class": model["auto_model_class"],
+            "chat_template_kwargs": model.get("chat_template_kwargs", {}),
+            "dtype": model.get("dtype", "auto"),
             "role": study["role"], "canonical_id": category["canonical_id"],
             "skill_label": category["label"], "prompt_variant": variant,
             "rendered_prompt": prompt, "method": study["scoring"]["method"],
@@ -681,12 +742,15 @@ def score_taxonomy(study_path: Path, models_path: Path, taxonomy_path: Path,
                           "taxonomy_sha256": taxonomy["taxonomy_sha256"],
                           "approval_sha256": digest(approval)}
     _reject_incompatible_run(output_dir / "score_run_manifest.json", score_run_identity)
-    torch = transformers = AutoModelForCausalLM = AutoTokenizer = None
+    atomic_json(output_dir / "score_run_manifest.json", {"schema_version": 2, "status": "running",
+                "run_identity": score_run_identity, "backend": backend,
+                "fixture_data": backend == "fixture", "updated_at": utc_now()})
+    torch = transformers = AutoTokenizer = None
     if backend == "transformers":
         try:
             import torch
             import transformers
-            from transformers import AutoModelForCausalLM, AutoTokenizer
+            from transformers import AutoTokenizer
         except ImportError as exc:
             raise RuntimeError("scoring requires: pip install torch transformers accelerate") from exc
     records_dir = output_dir / "records"; records_dir.mkdir(parents=True, exist_ok=True)
@@ -697,8 +761,10 @@ def score_taxonomy(study_path: Path, models_path: Path, taxonomy_path: Path,
             try:
                 tokenizer = AutoTokenizer.from_pretrained(model_cfg["tokenizer_checkpoint"],
                                                           revision=model_cfg["tokenizer_revision"])
-                model = AutoModelForCausalLM.from_pretrained(model_cfg["checkpoint"],
-                                                             revision=model_cfg["revision"], device_map="auto")
+                model_class = _auto_model_class(transformers, model_cfg)
+                model = model_class.from_pretrained(model_cfg["checkpoint"],
+                                                     revision=model_cfg["revision"], device_map="auto",
+                                                     dtype=model_cfg.get("dtype", "auto"))
                 model.eval()
             except Exception as exc:
                 load_error = exc
@@ -722,6 +788,9 @@ def score_taxonomy(study_path: Path, models_path: Path, taxonomy_path: Path,
                        "tokenizer_revision": model_cfg["tokenizer_revision"],
                        "architecture": model_cfg["architecture"],
                        "prompt_adapter": model_cfg["prompt_adapter"],
+                       "auto_model_class": model_cfg["auto_model_class"],
+                       "chat_template_kwargs": model_cfg.get("chat_template_kwargs", {}),
+                       "requested_dtype": model_cfg.get("dtype", "auto"),
                        "release_date": model_cfg["release_date"],
                        "release_source": model_cfg["release_source"],
                        "cutoff": model_cfg["cutoff"],
@@ -738,9 +807,7 @@ def score_taxonomy(study_path: Path, models_path: Path, taxonomy_path: Path,
                         runtime = {"synthetic_fixture": True, "fixture_version": 1,
                                    "warning": "Deterministic mock scores; no checkpoint was loaded or queried."}
                     elif model_cfg["prompt_adapter"] == "chat_template":
-                        prompt_ids = tokenizer.apply_chat_template([{"role": "user", "content": prompt}],
-                                                                  add_generation_prompt=True,
-                                                                  return_tensors="pt").to(model.device)
+                        prompt_ids = _chat_input_ids(tokenizer, prompt, model_cfg).to(model.device)
                     else:
                         prompt_ids = tokenizer(prompt, return_tensors="pt")["input_ids"].to(model.device)
                     if backend == "transformers":
@@ -754,6 +821,8 @@ def score_taxonomy(study_path: Path, models_path: Path, taxonomy_path: Path,
                                    "torch_version": torch.__version__,
                                    "tokenizer_class": tokenizer.__class__.__name__,
                                    "model_class": model.__class__.__name__,
+                                   "auto_model_class": model_cfg["auto_model_class"],
+                                   "requested_dtype": model_cfg.get("dtype", "auto"),
                                    "device": str(model.device)}
                     yes, no = components[0]["sequence_log_probability"], components[1]["sequence_log_probability"]
                     yes_mean = components[0]["mean_token_log_probability"]
@@ -773,6 +842,7 @@ def score_taxonomy(study_path: Path, models_path: Path, taxonomy_path: Path,
             del model, tokenizer
             if torch.cuda.is_available(): torch.cuda.empty_cache()
     rows = [load_json(p) for p in sorted(records_dir.glob("*.json"))]
+    outcome_counts = Counter(r.get("status", "unknown") for r in rows)
     summary = summarize_scores(rows, iterations=study["scoring"]["bootstrap_iterations"],
                                level=study["scoring"]["confidence_level"])
     # Within each model, ranks avoid pretending numeric scales are shared.
@@ -814,17 +884,28 @@ def score_taxonomy(study_path: Path, models_path: Path, taxonomy_path: Path,
               for r in prevalence], "Synthetic fixture discovery prevalence (not empirical)",
              output_dir / "plots" / "fixture_discovery_prevalence.svg")
     selected = [m for m in manifest["models"] if m["selected"]]
-    ordered_models = [m["id"] for m in sorted(selected, key=lambda x: x["cutoff"]["latest_date"])]
-    write_rank_trend_svg(summary, ordered_models, output_dir / "plots" / "rank_trends.svg")
+    axis = manifest.get("comparison_axis", "training_period")
+    order_key = (lambda x: x["cutoff"]["latest_date"]) if axis == "training_period" else (lambda x: x["release_date"])
+    ordered_models = [m["id"] for m in sorted(selected, key=order_key)]
+    axis_label = "documented training periods" if axis == "training_period" else "model release generations"
+    write_rank_trend_svg(summary, ordered_models, output_dir / "plots" / "rank_trends.svg", axis_label)
     observed = {(r["model_id"], r["canonical_id"], r["prompt_variant"])
                 for r in rows if r.get("status") == "success"}
     expected = [(m["id"], c["canonical_id"], v["id"]) for m in selected
                 for c in taxonomy["categories"] for v in study["scoring"]["prompt_variants"]]
-    missing = [{"model_id": m, "canonical_id": c, "prompt_variant": v,
+    missing = [{"fixture_data": backend == "fixture", "backend": backend,
+                "artifact_warning": "SYNTHETIC FIXTURE: not empirical." if backend == "fixture" else "Model elicitation, not labour-market evidence.",
+                "model_id": m, "canonical_id": c, "prompt_variant": v,
                 "reason": "missing_or_failed_scoring_cell"}
                for m, c, v in expected if (m, c, v) not in observed]
-    atomic_json(output_dir / "tables" / "missing_cells.json", missing)
-    _write_csv(output_dir / "tables" / "missing_cells.csv", missing)
+    missing_meta = {"fixture_data": backend == "fixture", "backend": backend,
+                    "artifact_warning": "SYNTHETIC FIXTURE: not empirical." if backend == "fixture" else "Model elicitation, not labour-market evidence.",
+                    "missing_count": len(missing), "rows": missing}
+    atomic_json(output_dir / "tables" / "missing_cells.json", missing_meta)
+    _write_csv(output_dir / "tables" / "missing_cells.csv", missing or [{
+        "fixture_data": backend == "fixture", "backend": backend,
+        "artifact_warning": missing_meta["artifact_warning"], "model_id": "",
+        "canonical_id": "", "prompt_variant": "", "reason": "no_missing_cells"}])
     model_order = {model_id: i for i, model_id in enumerate(ordered_models)}
     trends = []
     for category in taxonomy["categories"]:
@@ -839,15 +920,24 @@ def score_taxonomy(study_path: Path, models_path: Path, taxonomy_path: Path,
                            "earlier_rank": previous["within_model_rank"],
                            "later_rank": current["within_model_rank"],
                            "rank_change_later_minus_earlier": current["within_model_rank"] - previous["within_model_rank"],
-                           "interpretation_warning": "Model-period rank change; not historical labour-market demand."})
+                           "comparison_axis": axis,
+                           "interpretation_warning": "Model-order rank change; not historical labour-market demand."})
     _write_csv(output_dir / "tables" / "rank_changes_across_model_periods.csv", trends)
+    plan_path = taxonomy_path.parent / "taxonomy_sensitivity_plan.json"
+    planned_alternatives = (load_json(plan_path).get("alternatives_requiring_separate_review_and_approval", [])
+                            if plan_path.exists() else [])
     atomic_json(output_dir / "taxonomy_sensitivity.json", {
+        "fixture_data": backend == "fixture", "backend": backend,
+        "artifact_warning": "SYNTHETIC FIXTURE: not empirical." if backend == "fixture" else "Model elicitation, not labour-market evidence.",
         "taxonomy_sha256": taxonomy["taxonomy_sha256"], "approved_taxonomy_version": approval.get("taxonomy_version"),
-        "status": "counterfactual_taxonomies_not_scored",
-        "reason": "Changing approved merges creates a new taxonomy requiring a new digest and human approval. Canonical scores cannot identify split-category scores.",
+        "status": "alternative_run_scored" if taxonomy.get("alternative_of_sha256") else "base_run_scored",
+        "reason": "Alternatives require separate versioned proposals, approvals, score runs, and compare-taxonomies.",
         "approved_categories_scored": len(taxonomy["categories"]),
-        "planned_alternatives": load_json(taxonomy_path.parent / "taxonomy_sensitivity_plan.json")["alternatives_requiring_separate_review_and_approval"]})
-    atomic_json(output_dir / "score_run_manifest.json", {"schema_version": 1, "status": "completed_with_failures" if counts["failure"] else "completed",
+        "planned_alternatives": planned_alternatives})
+    derived_paths = sorted(p for folder in (output_dir / "tables", output_dir / "plots")
+                           for p in folder.glob("*") if p.is_file()) + [output_dir / "taxonomy_sensitivity.json"]
+    derived_hashes = {str(p.relative_to(output_dir)): file_sha256(p) for p in derived_paths}
+    atomic_json(output_dir / "score_run_manifest.json", {"schema_version": 1, "status": "completed_with_failures" if outcome_counts["failure"] else "completed",
                 "taxonomy_sha256": taxonomy["taxonomy_sha256"], "approval_sha256": digest(approval),
                 "approved_taxonomy_version": approval.get("taxonomy_version"),
                 "backend": backend, "fixture_data": backend == "fixture",
@@ -855,9 +945,13 @@ def score_taxonomy(study_path: Path, models_path: Path, taxonomy_path: Path,
                 "study_config": str(study_path), "study_config_sha256": digest(study),
                 "model_manifest": str(models_path), "model_manifest_sha256": digest(manifest),
                 "scoring_config": study["scoring"], "git_revision": git_revision(),
+                "comparison_axis": axis,
+                "comparison_axis_warning": manifest.get("comparison_axis_warning"),
                 "environment": {"python": sys.version, "platform": platform.platform(),
                                 "processor": platform.processor()},
-                "counts": dict(counts), "missing_success_cells": len(missing),
+                "derived_artifact_sha256": derived_hashes,
+                "counts": dict(outcome_counts), "invocation_counts": dict(counts),
+                "missing_success_cells": len(missing),
                 "metric_scope": "model_relative_constrained_choice",
                 "interpretation_warning": "Model-period differences are not direct labour-market measurements.",
                 "updated_at": utc_now()})
@@ -866,23 +960,55 @@ def score_taxonomy(study_path: Path, models_path: Path, taxonomy_path: Path,
 
 def validate_score_artifacts(study_path: Path, models_path: Path, taxonomy_path: Path,
                              approval_path: Path, output_dir: Path) -> list[str]:
-    """Validate traceability and completeness without loading any checkpoint."""
+    """Recompute identities and derived quantities without loading a checkpoint."""
     errors: list[str] = []
     try:
         taxonomy, approval = require_approval(taxonomy_path, approval_path)
     except (PermissionError, ValueError) as exc:
         return [str(exc)]
-    study, manifest = load_json(study_path), load_json(models_path)
+    study, model_manifest = load_json(study_path), load_json(models_path)
+    manifest_path = output_dir / "score_run_manifest.json"
+    if not manifest_path.exists():
+        return ["missing artifact: score_run_manifest.json"]
+    run_manifest = load_json(manifest_path)
+    backend = run_manifest.get("backend")
+    expected_run_identity = {"schema_version": 2, "backend": backend,
+                             "study_config_sha256": digest(study),
+                             "model_manifest_sha256": digest(model_manifest),
+                             "taxonomy_sha256": taxonomy["taxonomy_sha256"],
+                             "approval_sha256": digest(approval)}
+    if run_manifest.get("run_identity") != expected_run_identity:
+        errors.append("score run identity does not match current configs/taxonomy/approval")
+    if run_manifest.get("study_config_sha256") != digest(study):
+        errors.append("score run manifest study config hash mismatch")
+    if run_manifest.get("model_manifest_sha256") != digest(model_manifest):
+        errors.append("score run manifest model config hash mismatch")
     records = [load_json(p) for p in sorted((output_dir / "records").glob("*.json"))]
-    expected = len([m for m in manifest["models"] if m["selected"]]) * len(taxonomy["categories"]) * len(study["scoring"]["prompt_variants"])
-    if len(records) != expected:
-        errors.append(f"expected {expected} scoring records, found {len(records)}")
+    models = {m["id"]: m for m in model_manifest["models"] if m["selected"]}
+    categories = {c["canonical_id"]: c for c in taxonomy["categories"]}
+    variants = {v["id"]: v for v in study["scoring"]["prompt_variants"]}
+    expected_cells = {(m, c, v) for m in models for c in categories for v in variants}
+    if len(records) != len(expected_cells):
+        errors.append(f"expected {len(expected_cells)} scoring records, found {len(records)}")
     ids: set[str] = set()
+    actual_cells: set[tuple[str, str, str]] = set()
     for row in records:
         rid = row.get("record_id")
         if rid in ids:
             errors.append(f"duplicate record_id {rid}")
         ids.add(rid)
+        cell = (row.get("model_id"), row.get("canonical_id"), row.get("prompt_variant"))
+        actual_cells.add(cell)
+        if cell not in expected_cells:
+            errors.append(f"{rid}: unexpected scoring cell {cell}")
+            continue
+        identity = _score_identity(taxonomy, models[cell[0]], categories[cell[1]],
+                                   variants[cell[2]], study, backend)
+        if row.get("cache_identity") != identity or rid != digest(identity):
+            errors.append(f"{rid}: record cache identity mismatch")
+        expected_prompt = identity["rendered_prompt"]
+        if row.get("rendered_prompt") != expected_prompt or row.get("prompt_template") != variants[cell[2]]["template"]:
+            errors.append(f"{rid}: prompt/configuration mismatch")
         if row.get("taxonomy_sha256") != taxonomy["taxonomy_sha256"]:
             errors.append(f"{rid}: taxonomy digest mismatch")
         if row.get("approval_sha256") != digest(approval):
@@ -893,27 +1019,102 @@ def validate_score_artifacts(study_path: Path, models_path: Path, taxonomy_path:
             for component in row.get("components", []):
                 if component.get("token_count") != len(component.get("tokens", [])):
                     errors.append(f"{rid}: token component count mismatch")
+                token_sum = sum(float(t["log_probability"]) for t in component.get("tokens", []))
+                for token in component.get("tokens", []):
+                    if "target_logit" in token or "logsumexp_all_vocabulary_logits" in token:
+                        if not math.isclose(float(token.get("target_logit", math.nan)) -
+                                            float(token.get("logsumexp_all_vocabulary_logits", math.nan)),
+                                            float(token["log_probability"]), rel_tol=1e-7, abs_tol=1e-7):
+                            errors.append(f"{rid}: target-logit normalization mismatch")
+                if not math.isclose(token_sum, float(component.get("sequence_log_probability", math.nan)), rel_tol=1e-10, abs_tol=1e-10):
+                    errors.append(f"{rid}: component log-probability sum mismatch")
+                expected_mean = token_sum / max(1, len(component.get("tokens", [])))
+                if not math.isclose(expected_mean, float(component.get("mean_token_log_probability", math.nan)), rel_tol=1e-10, abs_tol=1e-10):
+                    errors.append(f"{rid}: component mean log probability mismatch")
             value = row.get("calibrated_yes_probability")
             if not isinstance(value, (int, float)) or not 0 <= value <= 1:
                 errors.append(f"{rid}: invalid calibrated probability")
+            if len(row.get("components", [])) == 2:
+                components = row["components"]
+                recalibrated = choice_probability(components[0]["sequence_log_probability"],
+                                                  components[1]["sequence_log_probability"])
+                relength = choice_probability(components[0]["mean_token_log_probability"],
+                                               components[1]["mean_token_log_probability"])
+                if not math.isclose(recalibrated, float(value), rel_tol=1e-12, abs_tol=1e-12):
+                    errors.append(f"{rid}: calibrated probability mismatch")
+                if not math.isclose(relength, float(row.get("length_normalized_yes_probability", math.nan)), rel_tol=1e-12, abs_tol=1e-12):
+                    errors.append(f"{rid}: length-normalized probability mismatch")
         elif "failure" not in row:
             errors.append(f"{rid}: non-success lacks failure details")
+    if actual_cells != expected_cells:
+        errors.append("record cell identities do not equal configured Cartesian product")
     required = ["score_run_manifest.json", "tables/skill_scores.csv", "tables/skill_scores.json",
                 "tables/scoring_method_sensitivity.csv", "tables/prompt_sensitivity.csv",
                 "tables/within_model_rank_trends.csv", "tables/rank_changes_across_model_periods.csv",
-                "tables/missing_cells.json", "taxonomy_sensitivity.json",
+                "tables/fixture_discovery_prevalence.csv", "tables/missing_cells.json",
+                "tables/missing_cells.csv", "taxonomy_sensitivity.json",
                 "plots/score_uncertainty_and_ranks.svg", "plots/prompt_sensitivity.svg",
-                "plots/rank_trends.svg"]
+                "plots/rank_trends.svg", "plots/fixture_discovery_prevalence.svg"]
     for relative in required:
         if not (output_dir / relative).exists():
             errors.append(f"missing artifact: {relative}")
-    manifest_path = output_dir / "score_run_manifest.json"
-    if manifest_path.exists():
-        run_manifest = load_json(manifest_path)
-        if run_manifest.get("taxonomy_sha256") != taxonomy["taxonomy_sha256"]:
-            errors.append("score run manifest taxonomy digest mismatch")
-        if run_manifest.get("fixture_data") and any(not r.get("fixture_data") for r in records):
-            errors.append("fixture score run contains an unlabelled record")
+    if run_manifest.get("taxonomy_sha256") != taxonomy["taxonomy_sha256"]:
+        errors.append("score run manifest taxonomy digest mismatch")
+    if run_manifest.get("fixture_data") and any(not r.get("fixture_data") for r in records):
+        errors.append("fixture score run contains an unlabelled record")
+    successful = [r for r in records if r.get("status") == "success"]
+    actual_outcomes = dict(Counter(r.get("status", "unknown") for r in records))
+    if run_manifest.get("counts") != actual_outcomes:
+        errors.append("manifest outcome counts mismatch")
+    recomputed = summarize_scores(successful, iterations=study["scoring"]["bootstrap_iterations"],
+                                  level=study["scoring"]["confidence_level"])
+    _assign_ranks(recomputed)
+    _add_rank_uncertainty(recomputed, successful, study["scoring"]["bootstrap_iterations"],
+                          study["scoring"]["confidence_level"])
+    summary_path = output_dir / "tables" / "skill_scores.json"
+    if summary_path.exists():
+        stored = load_json(summary_path)
+        stored_index = {(r["model_id"], r["canonical_id"]): r for r in stored}
+        for expected_row in recomputed:
+            key = (expected_row["model_id"], expected_row["canonical_id"])
+            actual = stored_index.get(key)
+            if not actual:
+                errors.append(f"missing summary row {key}"); continue
+            for field in ("n", "mean_model_relative_probability", "ci_low", "ci_high",
+                          "prompt_range", "within_model_rank", "bootstrap_rank_low",
+                          "bootstrap_rank_high", "measurement_record_ids_json"):
+                if actual.get(field) != expected_row.get(field):
+                    errors.append(f"summary {key}: {field} mismatch")
+    missing_expected = sorted(expected_cells - {cell for row, cell in
+                              ((r, (r.get("model_id"), r.get("canonical_id"), r.get("prompt_variant"))) for r in records)
+                              if row.get("status") == "success"})
+    missing_path = output_dir / "tables" / "missing_cells.json"
+    if missing_path.exists():
+        missing_doc = load_json(missing_path)
+        stored_missing = sorted((r["model_id"], r["canonical_id"], r["prompt_variant"])
+                                for r in missing_doc.get("rows", []))
+        if stored_missing != missing_expected or missing_doc.get("missing_count") != len(missing_expected):
+            errors.append("missing-cell artifact is inconsistent with scoring records")
+        if run_manifest.get("missing_success_cells") != len(missing_expected):
+            errors.append("manifest missing-success count mismatch")
+    if run_manifest.get("fixture_data"):
+        for relative in required:
+            path = output_dir / relative
+            if not path.exists(): continue
+            if path.suffix == ".svg" and "synthetic fixture" not in path.read_text(encoding="utf-8").casefold():
+                errors.append(f"fixture plot lacks visible synthetic label: {relative}")
+            elif path.suffix == ".csv":
+                with path.open(newline="", encoding="utf-8") as handle:
+                    rows = list(csv.DictReader(handle))
+                if not rows or any(r.get("fixture_data") not in {"True", "true"} or
+                                   "SYNTHETIC FIXTURE" not in r.get("artifact_warning", "") for r in rows):
+                    errors.append(f"fixture table lacks intrinsic synthetic provenance: {relative}")
+    stored_hashes = run_manifest.get("derived_artifact_sha256", {})
+    for relative in required:
+        if relative == "score_run_manifest.json": continue
+        path = output_dir / relative
+        if path.exists() and stored_hashes.get(relative) != file_sha256(path):
+            errors.append(f"derived artifact provenance hash mismatch: {relative}")
     return errors
 
 
@@ -991,7 +1192,7 @@ def write_summary_tables(summary: list[dict[str, Any]], output_dir: Path) -> Non
     if not summary:
         return
     with (output_dir / "skill_scores.csv").open("w", newline="", encoding="utf-8") as handle:
-        writer = csv.DictWriter(handle, fieldnames=list(summary[0]))
+        writer = csv.DictWriter(handle, fieldnames=list(summary[0]), lineterminator="\n")
         writer.writeheader(); writer.writerows(summary)
     _write_csv(output_dir / "prompt_sensitivity.csv", [
         {"fixture_data": r["fixture_data"], "backend": r["backend"],
@@ -1040,7 +1241,8 @@ def write_svg(summary: list[dict[str, Any]], path: Path) -> None:
     path.write_text("\n".join(parts) + "\n", encoding="utf-8")
 
 
-def write_rank_trend_svg(summary: list[dict[str, Any]], model_ids: list[str], path: Path) -> None:
+def write_rank_trend_svg(summary: list[dict[str, Any]], model_ids: list[str], path: Path,
+                         axis_label: str = "documented training periods") -> None:
     """Draw within-model rank movement; ranks, not raw scales, share an axis."""
     if len(model_ids) < 2 or not summary:
         return
@@ -1054,7 +1256,7 @@ def write_rank_trend_svg(summary: list[dict[str, Any]], model_ids: list[str], pa
     prefix = "SYNTHETIC FIXTURE — " if all(r.get("fixture_data") for r in summary) else ""
     parts = [f'<svg xmlns="http://www.w3.org/2000/svg" width="{width}" height="{height}">',
              '<style>text{font:12px sans-serif}.title{font:bold 15px sans-serif}.line{stroke:#2878b5;fill:none}.dot{fill:#174a7e}</style>',
-             f'<text class="title" x="10" y="22">{prefix}within-model rank trends across documented model periods</text>']
+             f'<text class="title" x="10" y="22">{prefix}within-model rank trends across {axis_label}</text>']
     for model, x in xs.items():
         parts.append(f'<text x="{x - 45:.1f}" y="42">{model}</text>')
     for i, skill in enumerate(skills):

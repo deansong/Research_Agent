@@ -30,6 +30,7 @@ def parser() -> argparse.ArgumentParser:
     a.add_argument("--approval", type=Path, required=True)
     a.add_argument("--reviewer", required=True); a.add_argument("--note", required=True)
     a.add_argument("--scope", choices=("human", "fixture_test"), default="human")
+    a.add_argument("--review-command", help="Verbatim human approval decision retained as provenance")
     ta = sub.add_parser("taxonomy-alternative")
     ta.add_argument("--taxonomy", type=Path, required=True)
     ta.add_argument("--output", type=Path, required=True)
@@ -74,7 +75,7 @@ def main(argv: list[str] | None = None) -> int:
                           "mappings": len(doc["mappings"]), "taxonomy_sha256": doc["taxonomy_sha256"]}, indent=2)); return 0
     if args.command == "approve":
         print(json.dumps(approve_taxonomy(args.taxonomy, args.approval, args.reviewer, args.note,
-                                         args.scope), indent=2)); return 0
+                                         args.scope, args.review_command), indent=2)); return 0
     if args.command == "taxonomy-alternative":
         doc = derive_taxonomy_alternative(args.taxonomy, args.output, args.alternative_id)
         print(json.dumps({"status": doc["status"], "taxonomy_version": doc["taxonomy_version"],

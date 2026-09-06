@@ -1,0 +1,10 @@
+{
+  "schema_version": 1,
+  "decision": "approved",
+  "taxonomy_sha256": "3efd7767a7ecd24098cb51c14bc5b312fc5399e777876d5d371f17a5fae37639",
+  "taxonomy_version": "v1-alt-reviewed-splits-v1",
+  "approval_scope": "fixture_test",
+  "reviewer": "automated fixture test harness",
+  "note": "Fixture-only authorization to exercise taxonomy sensitivity; not human approval for empirical scoring.",
+  "approved_at": "2026-09-06T12:12:35.860502+00:00"
+}

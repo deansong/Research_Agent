@@ -5,4 +5,5 @@ venv/
 *.sqlite
 *.sqlite-*
 .agent/config.json
+hotel_skill_study/.model_cache/
 *.swp

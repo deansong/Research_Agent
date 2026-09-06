@@ -1,0 +1,118 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="900" height="929">
+<style>text{font:12px sans-serif}.title{font:bold 15px sans-serif}.bar{fill:#2878b5}</style>
+<text class="title" x="10" y="21">Synthetic fixture discovery prevalence (not empirical)</text>
+<text x="10" y="53">gpt2_2017 · ai_literacy</text>
+<rect class="bar" x="310" y="42" width="0.0" height="14"/>
+<text x="315.0" y="53">0</text>
+<text x="10" y="76">gpt2_2017 · accuracy</text>
+<rect class="bar" x="310" y="65" width="186.7" height="14"/>
+<text x="501.7" y="76">0.333333</text>
+<text x="10" y="99">gpt2_2017 · attention_to_detail</text>
+<rect class="bar" x="310" y="88" width="248.9" height="14"/>
+<text x="563.9" y="99">0.444444</text>
+<text x="10" y="122">gpt2_2017 · cash_handling</text>
+<rect class="bar" x="310" y="111" width="186.7" height="14"/>
+<text x="501.7" y="122">0.333333</text>
+<text x="10" y="145">gpt2_2017 · complaint_handling</text>
+<rect class="bar" x="310" y="134" width="248.9" height="14"/>
+<text x="563.9" y="145">0.444444</text>
+<text x="10" y="168">gpt2_2017 · conflict_resolution</text>
+<rect class="bar" x="310" y="157" width="124.4" height="14"/>
+<text x="439.4" y="168">0.222222</text>
+<text x="10" y="191">gpt2_2017 · customer_service</text>
+<rect class="bar" x="310" y="180" width="560.0" height="14"/>
+<text x="875.0" y="191">1</text>
+<text x="10" y="214">gpt2_2017 · data_privacy</text>
+<rect class="bar" x="310" y="203" width="0.0" height="14"/>
+<text x="315.0" y="214">0</text>
+<text x="10" y="237">gpt2_2017 · guest_communication</text>
+<rect class="bar" x="310" y="226" width="560.0" height="14"/>
+<text x="875.0" y="237">1</text>
+<text x="10" y="260">gpt2_2017 · local_knowledge</text>
+<rect class="bar" x="310" y="249" width="311.1" height="14"/>
+<text x="626.1" y="260">0.555556</text>
+<text x="10" y="283">gpt2_2017 · multitasking</text>
+<rect class="bar" x="310" y="272" width="373.3" height="14"/>
+<text x="688.3" y="283">0.666667</text>
+<text x="10" y="306">gpt2_2017 · pms_proficiency</text>
+<rect class="bar" x="310" y="295" width="62.2" height="14"/>
+<text x="377.2" y="306">0.111111</text>
+<text x="10" y="329">gpt2_2017 · payment_processing</text>
+<rect class="bar" x="310" y="318" width="186.7" height="14"/>
+<text x="501.7" y="329">0.333333</text>
+<text x="10" y="352">gpt2_2017 · prioritization</text>
+<rect class="bar" x="310" y="341" width="62.2" height="14"/>
+<text x="377.2" y="352">0.111111</text>
+<text x="10" y="375">gpt2_2017 · problem_solving</text>
+<rect class="bar" x="310" y="364" width="186.7" height="14"/>
+<text x="501.7" y="375">0.333333</text>
+<text x="10" y="398">gpt2_2017 · record_keeping</text>
+<rect class="bar" x="310" y="387" width="186.7" height="14"/>
+<text x="501.7" y="398">0.333333</text>
+<text x="10" y="421">gpt2_2017 · reservation_systems</text>
+<rect class="bar" x="310" y="410" width="311.1" height="14"/>
+<text x="626.1" y="421">0.555556</text>
+<text x="10" y="444">gpt2_2017 · teamwork</text>
+<rect class="bar" x="310" y="433" width="560.0" height="14"/>
+<text x="875.0" y="444">1</text>
+<text x="10" y="467">gpt2_2017 · time_management</text>
+<rect class="bar" x="310" y="456" width="124.4" height="14"/>
+<text x="439.4" y="467">0.222222</text>
+<text x="10" y="490">llama3_8b_instruct_2023 · ai_literacy</text>
+<rect class="bar" x="310" y="479" width="373.3" height="14"/>
+<text x="688.3" y="490">0.666667</text>
+<text x="10" y="513">llama3_8b_instruct_2023 · accuracy</text>
+<rect class="bar" x="310" y="502" width="124.4" height="14"/>
+<text x="439.4" y="513">0.222222</text>
+<text x="10" y="536">llama3_8b_instruct_2023 · attention_to_detail</text>
+<rect class="bar" x="310" y="525" width="311.1" height="14"/>
+<text x="626.1" y="536">0.555556</text>
+<text x="10" y="559">llama3_8b_instruct_2023 · cash_handling</text>
+<rect class="bar" x="310" y="548" width="62.2" height="14"/>
+<text x="377.2" y="559">0.111111</text>
+<text x="10" y="582">llama3_8b_instruct_2023 · complaint_handling</text>
+<rect class="bar" x="310" y="571" width="248.9" height="14"/>
+<text x="563.9" y="582">0.444444</text>
+<text x="10" y="605">llama3_8b_instruct_2023 · conflict_resolution</text>
+<rect class="bar" x="310" y="594" width="62.2" height="14"/>
+<text x="377.2" y="605">0.111111</text>
+<text x="10" y="628">llama3_8b_instruct_2023 · customer_service</text>
+<rect class="bar" x="310" y="617" width="373.3" height="14"/>
+<text x="688.3" y="628">0.666667</text>
+<text x="10" y="651">llama3_8b_instruct_2023 · data_privacy</text>
+<rect class="bar" x="310" y="640" width="560.0" height="14"/>
+<text x="875.0" y="651">1</text>
+<text x="10" y="674">llama3_8b_instruct_2023 · guest_communication</text>
+<rect class="bar" x="310" y="663" width="560.0" height="14"/>
+<text x="875.0" y="674">1</text>
+<text x="10" y="697">llama3_8b_instruct_2023 · local_knowledge</text>
+<rect class="bar" x="310" y="686" width="0.0" height="14"/>
+<text x="315.0" y="697">0</text>
+<text x="10" y="720">llama3_8b_instruct_2023 · multitasking</text>
+<rect class="bar" x="310" y="709" width="373.3" height="14"/>
+<text x="688.3" y="720">0.666667</text>
+<text x="10" y="743">llama3_8b_instruct_2023 · pms_proficiency</text>
+<rect class="bar" x="310" y="732" width="311.1" height="14"/>
+<text x="626.1" y="743">0.555556</text>
+<text x="10" y="766">llama3_8b_instruct_2023 · payment_processing</text>
+<rect class="bar" x="310" y="755" width="124.4" height="14"/>
+<text x="439.4" y="766">0.222222</text>
+<text x="10" y="789">llama3_8b_instruct_2023 · prioritization</text>
+<rect class="bar" x="310" y="778" width="62.2" height="14"/>
+<text x="377.2" y="789">0.111111</text>
+<text x="10" y="812">llama3_8b_instruct_2023 · problem_solving</text>
+<rect class="bar" x="310" y="801" width="248.9" height="14"/>
+<text x="563.9" y="812">0.444444</text>
+<text x="10" y="835">llama3_8b_instruct_2023 · record_keeping</text>
+<rect class="bar" x="310" y="824" width="0.0" height="14"/>
+<text x="315.0" y="835">0</text>
+<text x="10" y="858">llama3_8b_instruct_2023 · reservation_systems</text>
+<rect class="bar" x="310" y="847" width="248.9" height="14"/>
+<text x="563.9" y="858">0.444444</text>
+<text x="10" y="881">llama3_8b_instruct_2023 · teamwork</text>
+<rect class="bar" x="310" y="870" width="373.3" height="14"/>
+<text x="688.3" y="881">0.666667</text>
+<text x="10" y="904">llama3_8b_instruct_2023 · time_management</text>
+<rect class="bar" x="310" y="893" width="62.2" height="14"/>
+<text x="377.2" y="904">0.111111</text>
+</svg>

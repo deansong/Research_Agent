@@ -1,0 +1,30 @@
+{
+  "schema_version": 1,
+  "probe_type": "pinned_tokenizer_and_chat_template_only",
+  "weights_loaded": false,
+  "prompt": "Is guest communication an important skill for a front-desk employee in a hotel? Answer only Yes or No.",
+  "models": [
+    {
+      "model_id": "qwen1_5_0_5b_chat_2024",
+      "revision": "4d14e384a4b037942bb3f3016665157c8bcb70ea",
+      "tokenizer_class": "Qwen2Tokenizer",
+      "vocabulary_size": 151646,
+      "prompt_token_count": 41,
+      "rendered_prompt": "<|im_start|>system\nYou are a helpful assistant.<|im_end|>\n<|im_start|>user\nIs guest communication an important skill for a front-desk employee in a hotel? Answer only Yes or No.<|im_end|>\n<|im_start|>assistant\n",
+      "yes_token_ids": [7414],
+      "no_token_ids": [2308]
+    },
+    {
+      "model_id": "qwen3_5_0_8b_2026",
+      "revision": "2fc06364715b967f1860aea9cf38778875588b17",
+      "tokenizer_class": "Qwen2Tokenizer",
+      "vocabulary_size": 248077,
+      "prompt_token_count": 34,
+      "chat_template_kwargs": {"enable_thinking": false},
+      "rendered_prompt": "<|im_start|>user\nIs guest communication an important skill for a front-desk employee in a hotel? Answer only Yes or No.<|im_end|>\n<|im_start|>assistant\n<think>\n\n</think>\n\n",
+      "yes_token_ids": [7179],
+      "no_token_ids": [2233]
+    }
+  ],
+  "finding": "Semantic prompt and exact answer strings are constant; each checkpoint's own template and tokenizer are retained. Raw token IDs are not compared across vocabularies."
+}

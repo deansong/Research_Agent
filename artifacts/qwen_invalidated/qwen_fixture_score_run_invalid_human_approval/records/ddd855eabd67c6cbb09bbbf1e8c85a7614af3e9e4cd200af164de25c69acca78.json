@@ -1,0 +1,123 @@
+{
+  "schema_version": 3,
+  "record_id": "ddd855eabd67c6cbb09bbbf1e8c85a7614af3e9e4cd200af164de25c69acca78",
+  "cache_identity": {
+    "schema_version": 3,
+    "backend": "fixture",
+    "taxonomy_sha256": "3095201c9ad6c3243f2a60a63dc4959e4d3252a54a4f8b7af3f6305a55ca03cc",
+    "checkpoint": "Qwen/Qwen3.5-0.8B",
+    "revision": "2fc06364715b967f1860aea9cf38778875588b17",
+    "tokenizer_checkpoint": "Qwen/Qwen3.5-0.8B",
+    "tokenizer_revision": "2fc06364715b967f1860aea9cf38778875588b17",
+    "architecture": "qwen3_5_native_multimodal_instruction_model_text_only",
+    "prompt_adapter": "chat_template",
+    "auto_model_class": "AutoModelForImageTextToText",
+    "chat_template_kwargs": {
+      "enable_thinking": false
+    },
+    "dtype": "bfloat16",
+    "role": {
+      "id": "front_desk_employee",
+      "display_name": "front-desk employee",
+      "industry": "hotel"
+    },
+    "canonical_id": "reservation_systems",
+    "skill_label": "Reservation systems",
+    "prompt_variant": {
+      "id": "hiring",
+      "template": "When hiring a {role} in a {industry}, should {skill} be considered job-relevant? Answer only Yes or No."
+    },
+    "rendered_prompt": "When hiring a front-desk employee in a hotel, should Reservation systems be considered job-relevant? Answer only Yes or No.",
+    "method": "teacher_forced_binary_sequence",
+    "choices": [
+      " Yes",
+      " No"
+    ]
+  },
+  "taxonomy_sha256": "3095201c9ad6c3243f2a60a63dc4959e4d3252a54a4f8b7af3f6305a55ca03cc",
+  "approval_sha256": "6e6d24a0109ec6598f8c2e7039c9a618b17c2a4d514463f15e6e1a9ff34bc714",
+  "model_id": "qwen3_5_0_8b_2026",
+  "checkpoint": "Qwen/Qwen3.5-0.8B",
+  "revision": "2fc06364715b967f1860aea9cf38778875588b17",
+  "tokenizer_checkpoint": "Qwen/Qwen3.5-0.8B",
+  "tokenizer_revision": "2fc06364715b967f1860aea9cf38778875588b17",
+  "architecture": "qwen3_5_native_multimodal_instruction_model_text_only",
+  "prompt_adapter": "chat_template",
+  "auto_model_class": "AutoModelForImageTextToText",
+  "chat_template_kwargs": {
+    "enable_thinking": false
+  },
+  "requested_dtype": "bfloat16",
+  "release_date": "2026-03-02",
+  "release_source": "https://qwen.ai/blog?id=qwen3.5",
+  "cutoff": {
+    "status": "unknown",
+    "value": null,
+    "latest_date": null,
+    "scope": "The official release describes training and architecture but does not publish a defensible latest training-data date for this checkpoint.",
+    "sources": [
+      "https://huggingface.co/Qwen/Qwen3.5-0.8B",
+      "https://qwen.ai/blog?id=qwen3.5"
+    ]
+  },
+  "canonical_id": "reservation_systems",
+  "skill_label": "Reservation systems",
+  "prompt_variant": "hiring",
+  "prompt_template": "When hiring a {role} in a {industry}, should {skill} be considered job-relevant? Answer only Yes or No.",
+  "rendered_prompt": "When hiring a front-desk employee in a hotel, should Reservation systems be considered job-relevant? Answer only Yes or No.",
+  "method": "teacher_forced_binary_sequence",
+  "choices": [
+    " Yes",
+    " No"
+  ],
+  "backend": "fixture",
+  "fixture_data": true,
+  "started_at": "2026-09-06T16:51:35.702535+00:00",
+  "status": "success",
+  "components": [
+    {
+      "choice": " Yes",
+      "sequence_log_probability": -0.8363002984258696,
+      "mean_token_log_probability": -0.8363002984258696,
+      "token_count": 1,
+      "tokens": [
+        {
+          "token_id": null,
+          "token_text": "fixture_token_1",
+          "log_probability": -0.8363002984258696,
+          "synthetic_fixture": true
+        }
+      ]
+    },
+    {
+      "choice": " No",
+      "sequence_log_probability": -2.1636997015741306,
+      "mean_token_log_probability": -1.0818498507870653,
+      "token_count": 2,
+      "tokens": [
+        {
+          "token_id": null,
+          "token_text": "fixture_token_1",
+          "log_probability": -1.0818498507870653,
+          "synthetic_fixture": true
+        },
+        {
+          "token_id": null,
+          "token_text": "fixture_token_2",
+          "log_probability": -1.0818498507870653,
+          "synthetic_fixture": true
+        }
+      ]
+    }
+  ],
+  "calibrated_yes_probability": 0.7904101402093254,
+  "length_normalized_yes_probability": 0.5610807926499597,
+  "calibration": "softmax restricted to the exact Yes/No answer sequences",
+  "metric_scope": "model_relative_constrained_choice",
+  "runtime": {
+    "synthetic_fixture": true,
+    "fixture_version": 1,
+    "warning": "Deterministic mock scores; no checkpoint was loaded or queried."
+  },
+  "finished_at": "2026-09-06T16:51:35.702554+00:00"
+}

@@ -1,6 +1,6 @@
 <svg xmlns="http://www.w3.org/2000/svg" width="920" height="742" viewBox="0 0 920 742">
 <style>text{font:12px sans-serif}.title{font:bold 15px sans-serif}.axis{stroke:#999}.ci{stroke:#567}.dot{fill:#174a7e}</style>
-<text class="title" x="10" y="22">Model-relative constrained-choice skill scores (95% bootstrap intervals)</text>
+<text class="title" x="10" y="22">SYNTHETIC FIXTURE — model-relative scores (descriptive prompt-resampling intervals; n=3)</text>
 <line class="axis" x1="330" y1="40" x2="895" y2="40"/>
 <text x="322.0" y="36">0.0</text>
 <text x="435.0" y="36">0.2</text>

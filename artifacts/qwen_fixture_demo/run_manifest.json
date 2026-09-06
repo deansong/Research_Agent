@@ -1,0 +1,21 @@
+{
+  "schema_version": 1,
+  "study_config": "configs/hotel_skill_study.json",
+  "study_config_sha256": "5a234a131894aa5c73f2cbb48d6842c19c794cb32349acec25d36db69176dd53",
+  "model_manifest": "configs/qwen_models.json",
+  "model_manifest_sha256": "9fbc12480ed2a981ca039ed9c31b46e11cf817e1be3f8d6a1f0d53c6ed714555",
+  "backend": "fixture",
+  "fixture_data": true,
+  "updated_at": "2026-09-06T16:37:54.359414+00:00",
+  "record_counts": {
+    "success": 18
+  },
+  "run_identity": {
+    "schema_version": 2,
+    "backend": "fixture",
+    "study_config_sha256": "5a234a131894aa5c73f2cbb48d6842c19c794cb32349acec25d36db69176dd53",
+    "model_manifest_sha256": "9fbc12480ed2a981ca039ed9c31b46e11cf817e1be3f8d6a1f0d53c6ed714555",
+    "fixture_source_sha256": "e8d359cf2a70e85642461fc958faa91c09c85338f11472a3e7f20282b0564a35"
+  },
+  "execution_status": "fixture_demo"
+}

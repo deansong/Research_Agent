@@ -1,0 +1,63 @@
+{
+  "schema_version": 2,
+  "comparison_axis": "model_release_generation",
+  "comparison_axis_warning": "Publisher-documented training cutoffs are unavailable. Ordering is by official model release date only; results cannot identify historical skill or labour-market change.",
+  "metadata_verified_at": "2026-09-06",
+  "metadata_verification_method": "Official Qwen release pages plus Hugging Face Hub model_info for immutable repository SHA and file metadata.",
+  "models": [
+    {
+      "id": "qwen1_5_0_5b_chat_2024",
+      "checkpoint": "Qwen/Qwen1.5-0.5B-Chat",
+      "revision": "4d14e384a4b037942bb3f3016665157c8bcb70ea",
+      "tokenizer_checkpoint": "Qwen/Qwen1.5-0.5B-Chat",
+      "tokenizer_revision": "4d14e384a4b037942bb3f3016665157c8bcb70ea",
+      "release_date": "2024-02-04",
+      "release_source": "https://qwenlm.github.io/blog/qwen1.5/",
+      "repository_source": "https://huggingface.co/Qwen/Qwen1.5-0.5B-Chat",
+      "repository_last_modified_at_verification": "2024-04-30T07:19:52Z",
+      "weight_bytes_at_revision": 1239173352,
+      "cutoff": {
+        "status": "unknown",
+        "value": null,
+        "latest_date": null,
+        "scope": "Qwen documents data scale and composition but does not publish a defensible latest training-data date for this checkpoint.",
+        "sources": ["https://huggingface.co/Qwen/Qwen1.5-0.5B-Chat", "https://qwenlm.github.io/blog/qwen1.5/"]
+      },
+      "architecture": "qwen2_instruction_tuned_causal_lm",
+      "prompt_adapter": "chat_template",
+      "chat_template_kwargs": {},
+      "auto_model_class": "AutoModelForCausalLM",
+      "dtype": "bfloat16",
+      "selected": true,
+      "access": "ungated; Tongyi Qianwen Research License",
+      "notes": "Early reproducible Qwen-family chat checkpoint. It is Qwen1.5, not the now-unavailable Qwen-1.8B-Chat API endpoint."
+    },
+    {
+      "id": "qwen3_5_0_8b_2026",
+      "checkpoint": "Qwen/Qwen3.5-0.8B",
+      "revision": "2fc06364715b967f1860aea9cf38778875588b17",
+      "tokenizer_checkpoint": "Qwen/Qwen3.5-0.8B",
+      "tokenizer_revision": "2fc06364715b967f1860aea9cf38778875588b17",
+      "release_date": "2026-03-02",
+      "release_source": "https://qwen.ai/blog?id=qwen3.5",
+      "repository_source": "https://huggingface.co/Qwen/Qwen3.5-0.8B",
+      "repository_last_modified_at_verification": "2026-03-02T11:26:58Z",
+      "weight_bytes_at_revision": 1746942600,
+      "cutoff": {
+        "status": "unknown",
+        "value": null,
+        "latest_date": null,
+        "scope": "The official release describes training and architecture but does not publish a defensible latest training-data date for this checkpoint.",
+        "sources": ["https://huggingface.co/Qwen/Qwen3.5-0.8B", "https://qwen.ai/blog?id=qwen3.5"]
+      },
+      "architecture": "qwen3_5_native_multimodal_instruction_model_text_only",
+      "prompt_adapter": "chat_template",
+      "chat_template_kwargs": {"enable_thinking": false},
+      "auto_model_class": "AutoModelForImageTextToText",
+      "dtype": "bfloat16",
+      "selected": true,
+      "access": "ungated; Apache-2.0",
+      "notes": "Text-only prompts are passed through the checkpoint's own chat template. Thinking is disabled consistently for direct constrained-answer scoring."
+    }
+  ]
+}

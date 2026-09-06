@@ -1,15 +1,15 @@
-canonical_id,earlier_model_id,later_model_id,earlier_rank,later_rank,rank_change_later_minus_earlier,interpretation_warning
-ai_literacy,gpt2_2017,llama3_8b_instruct_2023,1,7,6,Model-period rank change; not historical labour-market demand.
-attention_to_detail,gpt2_2017,llama3_8b_instruct_2023,14,11,-3,Model-period rank change; not historical labour-market demand.
-complaint_handling,gpt2_2017,llama3_8b_instruct_2023,10,6,-4,Model-period rank change; not historical labour-market demand.
-customer_service,gpt2_2017,llama3_8b_instruct_2023,6,2,-4,Model-period rank change; not historical labour-market demand.
-data_privacy,gpt2_2017,llama3_8b_instruct_2023,7,5,-2,Model-period rank change; not historical labour-market demand.
-guest_communication,gpt2_2017,llama3_8b_instruct_2023,12,1,-11,Model-period rank change; not historical labour-market demand.
-local_knowledge,gpt2_2017,llama3_8b_instruct_2023,8,3,-5,Model-period rank change; not historical labour-market demand.
-multitasking,gpt2_2017,llama3_8b_instruct_2023,3,12,9,Model-period rank change; not historical labour-market demand.
-payment_processing,gpt2_2017,llama3_8b_instruct_2023,11,13,2,Model-period rank change; not historical labour-market demand.
-problem_solving,gpt2_2017,llama3_8b_instruct_2023,13,4,-9,Model-period rank change; not historical labour-market demand.
-record_keeping,gpt2_2017,llama3_8b_instruct_2023,4,9,5,Model-period rank change; not historical labour-market demand.
-reservation_systems,gpt2_2017,llama3_8b_instruct_2023,2,10,8,Model-period rank change; not historical labour-market demand.
-teamwork,gpt2_2017,llama3_8b_instruct_2023,5,14,9,Model-period rank change; not historical labour-market demand.
-time_management,gpt2_2017,llama3_8b_instruct_2023,9,8,-1,Model-period rank change; not historical labour-market demand.
+fixture_data,backend,artifact_warning,canonical_id,earlier_model_id,later_model_id,earlier_rank,later_rank,rank_change_later_minus_earlier,interpretation_warning
+True,fixture,SYNTHETIC FIXTURE: software verification only; not empirical.,ai_literacy,gpt2_2017,llama3_8b_instruct_2023,1,7,6,Model-period rank change; not historical labour-market demand.
+True,fixture,SYNTHETIC FIXTURE: software verification only; not empirical.,attention_to_detail,gpt2_2017,llama3_8b_instruct_2023,14,11,-3,Model-period rank change; not historical labour-market demand.
+True,fixture,SYNTHETIC FIXTURE: software verification only; not empirical.,complaint_handling,gpt2_2017,llama3_8b_instruct_2023,10,6,-4,Model-period rank change; not historical labour-market demand.
+True,fixture,SYNTHETIC FIXTURE: software verification only; not empirical.,customer_service,gpt2_2017,llama3_8b_instruct_2023,6,2,-4,Model-period rank change; not historical labour-market demand.
+True,fixture,SYNTHETIC FIXTURE: software verification only; not empirical.,data_privacy,gpt2_2017,llama3_8b_instruct_2023,7,5,-2,Model-period rank change; not historical labour-market demand.
+True,fixture,SYNTHETIC FIXTURE: software verification only; not empirical.,guest_communication,gpt2_2017,llama3_8b_instruct_2023,12,1,-11,Model-period rank change; not historical labour-market demand.
+True,fixture,SYNTHETIC FIXTURE: software verification only; not empirical.,local_knowledge,gpt2_2017,llama3_8b_instruct_2023,8,3,-5,Model-period rank change; not historical labour-market demand.
+True,fixture,SYNTHETIC FIXTURE: software verification only; not empirical.,multitasking,gpt2_2017,llama3_8b_instruct_2023,3,12,9,Model-period rank change; not historical labour-market demand.
+True,fixture,SYNTHETIC FIXTURE: software verification only; not empirical.,payment_processing,gpt2_2017,llama3_8b_instruct_2023,11,13,2,Model-period rank change; not historical labour-market demand.
+True,fixture,SYNTHETIC FIXTURE: software verification only; not empirical.,problem_solving,gpt2_2017,llama3_8b_instruct_2023,13,4,-9,Model-period rank change; not historical labour-market demand.
+True,fixture,SYNTHETIC FIXTURE: software verification only; not empirical.,record_keeping,gpt2_2017,llama3_8b_instruct_2023,4,9,5,Model-period rank change; not historical labour-market demand.
+True,fixture,SYNTHETIC FIXTURE: software verification only; not empirical.,reservation_systems,gpt2_2017,llama3_8b_instruct_2023,2,10,8,Model-period rank change; not historical labour-market demand.
+True,fixture,SYNTHETIC FIXTURE: software verification only; not empirical.,teamwork,gpt2_2017,llama3_8b_instruct_2023,5,14,9,Model-period rank change; not historical labour-market demand.
+True,fixture,SYNTHETIC FIXTURE: software verification only; not empirical.,time_management,gpt2_2017,llama3_8b_instruct_2023,9,8,-1,Model-period rank change; not historical labour-market demand.

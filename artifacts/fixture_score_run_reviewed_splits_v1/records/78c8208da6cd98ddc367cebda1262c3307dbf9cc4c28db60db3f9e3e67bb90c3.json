@@ -1,0 +1,112 @@
+{
+  "schema_version": 3,
+  "record_id": "78c8208da6cd98ddc367cebda1262c3307dbf9cc4c28db60db3f9e3e67bb90c3",
+  "cache_identity": {
+    "schema_version": 3,
+    "backend": "fixture",
+    "taxonomy_sha256": "3efd7767a7ecd24098cb51c14bc5b312fc5399e777876d5d371f17a5fae37639",
+    "checkpoint": "openai-community/gpt2",
+    "revision": "607a30d783dfa663caf39e06633721c8d4cfcd7e",
+    "tokenizer_checkpoint": "openai-community/gpt2",
+    "tokenizer_revision": "607a30d783dfa663caf39e06633721c8d4cfcd7e",
+    "architecture": "base_causal_lm",
+    "prompt_adapter": "plain_text",
+    "role": {
+      "id": "front_desk_employee",
+      "display_name": "front-desk employee",
+      "industry": "hotel"
+    },
+    "canonical_id": "multitasking",
+    "skill_label": "Multitasking",
+    "prompt_variant": {
+      "id": "required",
+      "template": "Does performing the work of a {role} in a {industry} require {skill}? Answer only Yes or No."
+    },
+    "rendered_prompt": "Does performing the work of a front-desk employee in a hotel require Multitasking? Answer only Yes or No.",
+    "method": "teacher_forced_binary_sequence",
+    "choices": [
+      " Yes",
+      " No"
+    ]
+  },
+  "taxonomy_sha256": "3efd7767a7ecd24098cb51c14bc5b312fc5399e777876d5d371f17a5fae37639",
+  "approval_sha256": "53ec8fd2d63521f18df764879205301ae01960fc53509bc49f699a640828e516",
+  "model_id": "gpt2_2017",
+  "checkpoint": "openai-community/gpt2",
+  "revision": "607a30d783dfa663caf39e06633721c8d4cfcd7e",
+  "tokenizer_checkpoint": "openai-community/gpt2",
+  "tokenizer_revision": "607a30d783dfa663caf39e06633721c8d4cfcd7e",
+  "architecture": "base_causal_lm",
+  "prompt_adapter": "plain_text",
+  "release_date": "2019-02-14",
+  "release_source": "https://openai.com/index/better-language-models/",
+  "cutoff": {
+    "status": "documented_period",
+    "value": "Reddit outbound links used to construct WebText were collected from posts before December 2017",
+    "latest_date": "2017-11-30",
+    "scope": "pretraining corpus collection rule; not a claim that every linked page predates this date",
+    "sources": [
+      "https://cdn.openai.com/better-language-models/language_models_are_unsupervised_multitask_learners.pdf"
+    ]
+  },
+  "canonical_id": "multitasking",
+  "skill_label": "Multitasking",
+  "prompt_variant": "required",
+  "prompt_template": "Does performing the work of a {role} in a {industry} require {skill}? Answer only Yes or No.",
+  "rendered_prompt": "Does performing the work of a front-desk employee in a hotel require Multitasking? Answer only Yes or No.",
+  "method": "teacher_forced_binary_sequence",
+  "choices": [
+    " Yes",
+    " No"
+  ],
+  "backend": "fixture",
+  "fixture_data": true,
+  "started_at": "2026-09-06T12:12:35.926850+00:00",
+  "status": "success",
+  "components": [
+    {
+      "choice": " Yes",
+      "sequence_log_probability": -1.153750949347606,
+      "mean_token_log_probability": -1.153750949347606,
+      "token_count": 1,
+      "tokens": [
+        {
+          "token_id": null,
+          "token_text": "fixture_token_1",
+          "log_probability": -1.153750949347606,
+          "synthetic_fixture": true
+        }
+      ]
+    },
+    {
+      "choice": " No",
+      "sequence_log_probability": -1.846249050652394,
+      "mean_token_log_probability": -0.923124525326197,
+      "token_count": 2,
+      "tokens": [
+        {
+          "token_id": null,
+          "token_text": "fixture_token_1",
+          "log_probability": -0.923124525326197,
+          "synthetic_fixture": true
+        },
+        {
+          "token_id": null,
+          "token_text": "fixture_token_2",
+          "log_probability": -0.923124525326197,
+          "synthetic_fixture": true
+        }
+      ]
+    }
+  ],
+  "calibrated_yes_probability": 0.666522411231717,
+  "length_normalized_yes_probability": 0.44259759793344383,
+  "calibration": "softmax restricted to the exact Yes/No answer sequences",
+  "metric_scope": "model_relative_constrained_choice",
+  "runtime": {
+    "synthetic_fixture": true,
+    "fixture_version": 1,
+    "warning": "Deterministic mock scores; no checkpoint was loaded or queried."
+  },
+  "finished_at": "2026-09-06T12:12:35.926869+00:00"
+}

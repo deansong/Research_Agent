@@ -171,10 +171,16 @@ class CodexBackend:
                 handle.interrupt()
                 worker.join(timeout=30.0)
                 raise BackendTimeout(
-                    f"Codex did not finish within {self.timeout:.0f}s.\n"
-                    f"That usually means the request was too large or too open-ended "
-                    f"rather than that anything is broken.\n"
-                    f"Raise it with the `timeout` option on this role's backend config."
+                    f"Codex did not finish within {self.timeout:.0f}s.\n\n"
+                    f"This is usually the task being big rather than anything being "
+                    f"broken -- a node asked to implement a lot in one turn can "
+                    f"legitimately run for a long time.\n\n"
+                    f"To give it longer, put this in <repo>/.agent/config.json:\n"
+                    f'    {{"roles": {{"<role>": {{"options": {{"timeout": 3600}}}}}}}}\n'
+                    f"and use the role name this node declares as its `backend`.\n\n"
+                    f"If it times out even then, the node is probably being asked to do "
+                    f"too much at once. Split the work across more nodes, or narrow the "
+                    f"brief."
                 )
             # Only speak up if the provider itself has said nothing for a while.
             if now - last_output[0] >= 30.0:

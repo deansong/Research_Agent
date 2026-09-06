@@ -76,6 +76,39 @@ def test_run_structured_signatures_agree():
     print("PASS  every run_structured accepts the same keyword arguments")
 
 
+def test_configured_options_reach_the_backend():
+    """Options in config must actually arrive, for every provider.
+
+    The codex branch of _instantiate built `cls(client, model=...)` and dropped
+    spec.options on the floor. So `{"options": {"timeout": 3600}}` did nothing
+    -- and BackendTimeout's own message told you to use exactly that. A dead
+    end is worse than no advice.
+    """
+    from unittest.mock import MagicMock
+
+    from agent.backends import _instantiate
+    from agent.config import BackendConfig
+
+    spec = BackendConfig(provider="codex", model="m", options={"timeout": 1234})
+    backend = _instantiate(spec, role="anything", codex_client=MagicMock())
+    assert backend.timeout == 1234, (
+        f"configured timeout did not reach the backend (got {backend.timeout})"
+    )
+    assert backend.model == "m"
+
+    # And the stubs, which take **options too -- they must not choke on it.
+    from agent.backends.base import BackendUnavailable
+
+    for provider in ("api", "claude_code", "antigravity"):
+        try:
+            _instantiate(BackendConfig(provider=provider, options={"anything": 1}),
+                         role="r", codex_client=None)
+        except BackendUnavailable:
+            pass   # refusing is correct; crashing on an unexpected kwarg is not
+
+    print("PASS  configured options reach the backend (timeout included)")
+
+
 def test_stub_backends_fail_loudly_at_construction():
     """A stub must refuse at startup, not halfway through a task."""
     from agent.backends.base import BackendUnavailable
