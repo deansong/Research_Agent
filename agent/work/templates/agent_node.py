@@ -48,7 +48,7 @@ def make_agent_node(
             print(f"\n[{name}] {config.announce}")
 
         # ---- step 1: which provider conversation is this? -----------------
-        context = render_context(state)
+        context = render_context(state, steps=list(config.steps))
         thread_suffix = render(config.thread_key, context) if config.thread_key else ""
         thread_id_key = f"{name}/{thread_suffix}"
         thread_id = state.get("threads", {}).get(thread_id_key)
@@ -110,10 +110,12 @@ def make_agent_node(
             update["counters"] = {
                 counter: int(counters.get(counter, 0)) + 1 for counter in config.bump
             }
+        after = render_context({**state, "outputs": {**state.get("outputs", {}), name: data}},
+                               steps=list(config.steps))
+
         if config.record:
             # Re-render with this turn's output already visible, so a node can
             # record something it just produced.
-            after = render_context({**state, "outputs": {**state.get("outputs", {}), name: data}})
             text = render(config.record, after).strip()
             if text:
                 update["transcript"] = [{"role": name, "text": text}]
@@ -121,10 +123,8 @@ def make_agent_node(
             update["pending"] = {
                 "purpose": ask.purpose,
                 "resume_to": ask.resume_to,
-                "question": render(ask.question, render_context(
-                    {**state, "outputs": {**state.get("outputs", {}), name: data}})),
-                "context": render(ask.context, render_context(
-                    {**state, "outputs": {**state.get("outputs", {}), name: data}})),
+                "question": render(ask.question, after),
+                "context": render(ask.context, after),
             }
 
         record_usage(state.get("usage", {}), thread_id_key, run.usage)

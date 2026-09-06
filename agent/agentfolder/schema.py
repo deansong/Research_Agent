@@ -174,6 +174,15 @@ class AgentNodeConfig(FolderModel):
     --backend-role reviewer=codex:gpt-5.4, using the existing config stack."""
 
     access: Literal["none", "read_only", "write"] = "read_only"
+
+    steps: list[str] = Field(default_factory=list, max_length=20)
+    """Plan step ids this node is responsible for, e.g. ["2", "3.1"].
+
+    The context-control mechanism: {my_steps} in this node's prompt renders
+    only these, in full, while {plan_outline} gives one line per step so the
+    node knows where it sits. Without this every node got the whole brief and
+    tried to do the whole job."""
+
     instructions: str = ""
     output: list[FieldSpec] = Field(min_length=1, max_length=12)
     prompts: PromptPair

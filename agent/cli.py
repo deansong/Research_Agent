@@ -182,7 +182,11 @@ def _bootstrap(cfg, paths, checkpointer, codex, request) -> bool:
         print("No task supplied.")
         return False
 
-    needed = {"discussor": Access.READ_ONLY, "designer": Access.READ_ONLY}
+    needed = {
+        "discussor": Access.READ_ONLY,
+        "planner": Access.READ_ONLY,
+        "designer": Access.READ_ONLY,
+    }
     try:
         backends = build_backends(cfg, needed, codex_client=codex.get(cfg, needed))
     except BackendError as exc:
@@ -335,6 +339,7 @@ def _run_work_phase(folder, cfg, paths, backends, checkpointer, task_brief) -> N
                 task_brief=task_brief,
                 agent_dir=str(folder.path),
                 artifacts_dir=str(paths.artifacts),
+                plan=_load_plan(paths),
                 threads=threads,
             ),
         )
@@ -371,6 +376,24 @@ def _run_work_phase(folder, cfg, paths, backends, checkpointer, task_brief) -> N
         print(f"\n===== new task, same agent =====\n{task_brief}")
         print("(this agent was designed for the previous task -- /exit and "
               "start a new session if it does not fit)")
+
+
+def _load_plan(paths) -> dict:
+    """Read plan.json, if this session has one.
+
+    Absent under --pre-build-agent, where no planning happened: {my_steps}
+    then renders empty and the node falls back to {task_brief}, which is the
+    same graceful-degradation every placeholder has.
+    """
+    import json
+
+    if not paths.plan.exists():
+        return {}
+    try:
+        return json.loads(paths.plan.read_text())
+    except json.JSONDecodeError as exc:
+        print(f"Warning: {paths.plan} is not valid JSON ({exc}); ignoring it.")
+        return {}
 
 
 def _recoverable(exc: BackendError, paths, folder) -> str:

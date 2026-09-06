@@ -50,6 +50,7 @@ from agent.bootstrap.nodes import (
     human_input,
     make_designer,
     make_discussor,
+    make_planner,
     make_validator,
     make_writer,
 )
@@ -61,6 +62,7 @@ def build_bootstrap_graph(backends, paths, checkpointer, *, max_attempts: int):
 
     builder.add_node("discussor", make_discussor(backends["discussor"]))
     builder.add_node("human", human_input)
+    builder.add_node("planner", make_planner(backends["planner"], paths))
     builder.add_node("designer", make_designer(backends["designer"]))
     builder.add_node("writer", make_writer(paths))
     builder.add_node("validator", make_validator(paths, max_attempts=max_attempts))
@@ -73,8 +75,13 @@ def build_bootstrap_graph(backends, paths, checkpointer, *, max_attempts: int):
     builder.add_conditional_edges(
         "human",
         _route_after_human,
-        {"discussor": "discussor", "designer": "designer", "end": END},
+        {"discussor": "discussor", "planner": "planner",
+         "designer": "designer", "human": "human", "end": END},
     )
+
+    # Planning stops for approval: the planner routes to `human`, never
+    # straight to the designer. Same enforcement-by-topology as /plan itself.
+    builder.add_edge("planner", "human")
 
     # design -> materialise -> check. Three nodes rather than one, so each is
     # small enough to read and so a failed design still leaves an inspectable

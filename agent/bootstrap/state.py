@@ -40,6 +40,13 @@ class DesignState(TypedDict, total=False):
     discussed, not a copy of the transcript: the new agent has no idea what
     "as we discussed" refers to."""
 
+    plan: dict
+    """The numbered steps, as a plain dict. Written to plan.json before the
+    human sees them, and re-read from disk on approval so hand edits win."""
+
+    plan_feedback: str
+    """What the human asked to change about the plan."""
+
     problems: str
     attempt: int
     written_to: str
@@ -80,7 +87,7 @@ def initial_bootstrap_state(*, repo_path: str, session_dir: str, request: str) -
         "transcript": [{"role": "human", "text": request}],
         "discussion": {"requirements": "", "advice": "keep_discussing", "advice_reason": ""},
         "design": {"proposal": {}, "task_brief": "", "problems": "", "attempt": 0,
-                   "written_to": "", "rationale": ""},
+                   "written_to": "", "rationale": "", "plan": {}, "plan_feedback": ""},
         "human": {"question": "", "context": "", "purpose": "discussion",
                   "return_to": "discussor", "last_answer": ""},
         "providers": {"role_threads": {}},

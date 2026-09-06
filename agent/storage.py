@@ -16,6 +16,7 @@ LAYOUT
             meta.json           schema version, so a stale session refuses
             request.txt         what YOU asked for -- identifies the session
             brief.md            the designer's rewrite of it, for the agent
+            plan.json           the numbered steps -- EDIT THIS before approving
             artifacts/          where a run puts its OUTPUT -- see below
             agent.tmp/          staging; renamed to agent/ only once valid
             agent/              the agent designed for this session
@@ -64,6 +65,7 @@ class SessionPaths:
     brief: Path
     request: Path
     artifacts: Path
+    plan: Path
     meta: Path
     agents_dir: Path
 
@@ -92,6 +94,7 @@ def session_paths(repo: Path, session: str) -> SessionPaths:
         brief=session_dir / "brief.md",
         request=session_dir / "request.txt",
         artifacts=session_dir / "artifacts",
+        plan=session_dir / "plan.json",
         meta=session_dir / "meta.json",
         agents_dir=dot_agent / "agents",
     )

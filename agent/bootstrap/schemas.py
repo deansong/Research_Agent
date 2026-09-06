@@ -70,6 +70,43 @@ class CommandProposal(StrictModel):
     outcome: str = ""
 
 
+class SubStep(StrictModel):
+    """A piece of one step. Deliberately NOT recursive.
+
+    A self-referencing model produces a recursive JSON Schema, which strict
+    structured-output modes reject. Two levels -- step and substep -- is also
+    as deep as a plan stays readable.
+    """
+
+    id: str = Field(pattern=r"^[0-9]+\.[0-9]+$")
+    """Dotted, e.g. "2.1", so a substep's parent is obvious at a glance."""
+    title: str
+    detail: str = ""
+
+
+class PlanStep(StrictModel):
+    """One numbered step of the work."""
+
+    id: str = Field(pattern=r"^[0-9]+$")
+    title: str
+    detail: str = ""
+    substeps: list[SubStep] = Field(default_factory=list, max_length=8)
+
+
+class PlannerOutput(StrictModel):
+    """The plan, produced BEFORE any graph is designed.
+
+    Splitting planning from designing is the point: the designer used to jump
+    straight from a conversation to a topology, which meant nobody -- human or
+    model -- ever wrote down what the work actually consists of. Now the steps
+    come first, you approve them, and the graph is designed to carry them out.
+    """
+
+    summary: str
+    """Two or three sentences on the approach, for the human reading it."""
+    steps: list[PlanStep] = Field(min_length=1, max_length=20)
+
+
 class GraphProposal(StrictModel):
     """graph.json, as the designer emits it."""
 
@@ -100,6 +137,15 @@ class NodeProposal(StrictModel):
     # ---- agent nodes ----
     backend: str = ""
     access: Literal["none", "read_only", "write"] = "read_only"
+
+    steps: list[str] = Field(default_factory=list, max_length=20)
+    """Which plan steps this node is responsible for, by id (e.g. ["2", "3.1"]).
+
+    This is what keeps a node's context small. Its prompt receives ONLY these
+    steps via {my_steps}, plus a one-line outline of the rest via
+    {plan_outline} so it knows where it sits. Handing every node the entire
+    plan is how you get one node trying to do the whole project."""
+
     instructions: str = ""
     output: list[FieldSpec] = Field(default_factory=list, max_length=12)
     prompts: PromptPair = Field(default_factory=lambda: PromptPair(first=""))

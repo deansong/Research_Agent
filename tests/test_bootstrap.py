@@ -43,6 +43,7 @@ class ScriptedBackend:
         self.designs = designs
         self.design_calls = 0
         self.repair_prompts: list[str] = []
+        self.revise_prompts: list[str] = []
         self.turn = 0
 
     def run_structured(self, *, thread_id, repo_path, access, developer_instructions,
@@ -50,7 +51,11 @@ class ScriptedBackend:
         self.turn += 1
         fields = set(output_model.model_fields)
 
-        if {"task_brief", "graph", "nodes"} <= fields:
+        if {"summary", "steps"} <= fields:
+            if "Revise" in prompt:
+                self.revise_prompts.append(prompt)
+            data = output_model.model_validate(_PLAN)
+        elif {"task_brief", "graph", "nodes"} <= fields:
             index = min(self.design_calls, len(self.designs) - 1)
             self.design_calls += 1
             if "rejected" in prompt:
@@ -69,6 +74,18 @@ class ScriptedBackend:
         pass
 
 
+_PLAN = {
+    "summary": "Two steps: look, then write.",
+    "steps": [
+        {"id": "1", "title": "Survey the repo", "detail": "find conventions",
+         "substeps": []},
+        {"id": "2", "title": "Write the thing", "detail": "",
+         "substeps": [{"id": "2.1", "title": "draft", "detail": "first pass"},
+                      {"id": "2.2", "title": "verify", "detail": ""}]},
+    ],
+}
+
+
 def _broken_design() -> dict:
     """A design that is schema-valid but a broken graph: END is unreachable."""
     design = copy.deepcopy(_MINIMAL_AGENT)
@@ -85,8 +102,8 @@ def _run(designs: list[dict], answers: list[str], *, max_attempts: int = 3):
     paths = storage.session_paths(tmp, "test")
     backend = ScriptedBackend(designs)
     graph = build_bootstrap_graph(
-        {"discussor": backend, "designer": backend}, paths, InMemorySaver(),
-        max_attempts=max_attempts,
+        {"discussor": backend, "planner": backend, "designer": backend},
+        paths, InMemorySaver(), max_attempts=max_attempts,
     )
     config = {"configurable": {"thread_id": "b"}, "recursion_limit": 100}
     graph.invoke(
@@ -107,7 +124,7 @@ def test_plan_is_the_only_door_to_the_designer():
 
 
 def test_a_valid_design_is_written_and_promoted():
-    backend, graph, config, paths = _run([_MINIMAL_AGENT], ["/plan"])
+    backend, graph, config, paths = _run([_MINIMAL_AGENT], ["/plan", "/approve"])
     values = graph.get_state(config).values
 
     assert values["outcome"] == "ready", values.get("outcome")
@@ -127,7 +144,7 @@ def test_a_valid_design_is_written_and_promoted():
 
 
 def test_the_brief_is_handed_over():
-    backend, graph, config, paths = _run([_MINIMAL_AGENT], ["/plan"])
+    backend, graph, config, paths = _run([_MINIMAL_AGENT], ["/plan", "/approve"])
     brief = graph.get_state(config).values["design"]["task_brief"]
     assert brief, "no task_brief produced"
     assert paths.brief.exists(), "brief.md not written"
@@ -140,7 +157,7 @@ def test_the_brief_is_handed_over():
 def test_repair_loop_recovers():
     """Two bad designs then a good one: it should retry and succeed."""
     backend, graph, config, paths = _run(
-        [_broken_design(), _broken_design(), _MINIMAL_AGENT], ["/plan"]
+        [_broken_design(), _broken_design(), _MINIMAL_AGENT], ["/plan", "/approve"]
     )
     values = graph.get_state(config).values
 
@@ -155,7 +172,8 @@ def test_repair_loop_recovers():
 
 def test_repair_loop_gives_up_and_asks_the_human():
     """Always broken: it must stop, not loop, and hand control back."""
-    backend, graph, config, paths = _run([_broken_design()], ["/plan"], max_attempts=3)
+    backend, graph, config, paths = _run([_broken_design()], ["/plan", "/approve"],
+                                         max_attempts=3)
     values = graph.get_state(config).values
 
     assert backend.design_calls == 3, f"expected exactly 3 attempts, got {backend.design_calls}"
@@ -167,12 +185,83 @@ def test_repair_loop_gives_up_and_asks_the_human():
 
 
 def test_use_falls_back_to_the_builtin_agent():
-    backend, graph, config, paths = _run([_broken_design()], ["/plan", "/use"], max_attempts=2)
+    backend, graph, config, paths = _run([_broken_design()], ["/plan", "/approve", "/use"],
+                                         max_attempts=2)
     values = graph.get_state(config).values
     assert values["outcome"] == "ready", values.get("outcome")
     assert not paths.has_agent(), "/use should not write a session agent"
     # cli.py sees no session agent and resolves the shipped default.
     print("PASS  /use gives up designing and falls back to the built-in agent")
+
+
+def test_planning_stops_for_approval_before_designing():
+    """/plan reaches the PLANNER, and the designer waits for /approve."""
+    backend, graph, config, paths = _run([_MINIMAL_AGENT], ["/plan"])
+    values = graph.get_state(config).values
+
+    assert backend.design_calls == 0, "the designer ran before the plan was approved"
+    assert values["human"]["purpose"] == "plan_review", values["human"]
+    assert graph.get_state(config).next == ("human",)
+    assert paths.plan.exists(), "plan.json was not written for review"
+
+    plan = json.loads(paths.plan.read_text())
+    assert [s["id"] for s in plan["steps"]] == ["1", "2"], plan
+    print("PASS  planning stops for approval; plan.json is written first")
+
+
+def test_editing_plan_json_by_hand_wins():
+    """The gate is pointless if approval ignores your edits."""
+    backend, graph, config, paths = _run([_MINIMAL_AGENT], ["/plan"])
+
+    edited = json.loads(paths.plan.read_text())
+    edited["steps"].append({"id": "3", "title": "MY EXTRA STEP", "detail": "added by hand",
+                            "substeps": []})
+    paths.plan.write_text(json.dumps(edited))
+
+    graph.invoke(Command(resume="/approve"), config=config)
+    approved = graph.get_state(config).values["design"]["plan"]
+
+    titles = [s["title"] for s in approved["steps"]]
+    assert "MY EXTRA STEP" in titles, f"hand edit was ignored: {titles}"
+    print("PASS  /approve re-reads plan.json, so hand edits win")
+
+
+def test_a_broken_hand_edit_falls_back_rather_than_crashing():
+    backend, graph, config, paths = _run([_MINIMAL_AGENT], ["/plan"])
+    paths.plan.write_text("{ this is not json")
+
+    graph.invoke(Command(resume="/approve"), config=config)
+    approved = graph.get_state(config).values["design"]["plan"]
+    assert approved["steps"], "should have fallen back to the planner's own plan"
+    print("PASS  invalid plan.json falls back instead of crashing")
+
+
+def test_revise_sends_the_plan_back():
+    backend, graph, config, paths = _run(
+        [_MINIMAL_AGENT], ["/plan", "/revise make it shorter"])
+    values = graph.get_state(config).values
+    assert backend.design_calls == 0, "the designer ran during a revision"
+    # Back at the gate with a fresh plan, having been told what to change.
+    assert values["human"]["purpose"] == "plan_review"
+    assert any("make it shorter" in p for p in backend.revise_prompts), backend.revise_prompts
+    print("PASS  /revise returns to the planner with the human's note")
+
+
+def test_a_node_only_sees_its_own_steps():
+    """The context-control mechanism, which is the point of the whole change."""
+    from agent.bootstrap.nodes.planner import outline, steps_for
+
+    plan = _PLAN
+    mine = steps_for(plan, ["2.1"])
+    assert "draft" in mine and "first pass" in mine, mine
+    assert "Survey the repo" not in mine, "a node saw a step it does not own"
+    assert "verify" not in mine, "a node saw a sibling substep it does not own"
+
+    # But it still knows the shape of the whole job, one line per step.
+    every = outline(plan)
+    assert "Survey the repo" in every and "Write the thing" in every
+    assert "first pass" not in every, "the outline leaked step detail"
+    print("PASS  a node sees its own steps in full and everything else as one line")
 
 
 def test_designer_schema_survives_strict_mode():

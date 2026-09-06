@@ -71,6 +71,14 @@ class WorkState(TypedDict, total=False):
     caches, generated corpora. Source changes still go in the repository;
     this is for output that belongs to the run rather than to the project."""
 
+    plan: dict
+    """The approved numbered plan, as a plain dict.
+
+    Kept whole in state, but a node never sees the whole thing: the templates
+    render only that node's own steps into {my_steps}. Stored as a dict rather
+    than a Pydantic model because a model in a loosely-typed state field
+    reloads as a dict anyway, with only a line on stderr."""
+
     agent_dir: str
     """Provenance only. The folder itself is loaded from disk, never stored in
     state -- a Pydantic object in a loosely-typed state field reloads as a
@@ -124,6 +132,7 @@ def initial_work_state(
     task_brief: str,
     agent_dir: str,
     artifacts_dir: str = "",
+    plan: dict | None = None,
     threads: dict[str, str] | None = None,
 ) -> dict[str, Any]:
     """Build the input for a fresh run of a generated agent.
@@ -137,6 +146,7 @@ def initial_work_state(
         "task_brief": task_brief,
         "agent_dir": agent_dir,
         "artifacts_dir": artifacts_dir,
+        "plan": plan or {},
         "transcript": [{"role": "human", "text": task_brief}],
         "outputs": {},
         "threads": dict(threads or {}),
@@ -152,14 +162,26 @@ def initial_work_state(
     }
 
 
-def render_context(state: WorkState, *, argument: str = "") -> dict[str, Any]:
+def render_context(
+    state: WorkState,
+    *,
+    argument: str = "",
+    steps: list[str] | None = None,
+) -> dict[str, Any]:
     """Build the mapping agentfolder.render.render() reads.
 
     One place that decides what a prompt can see, so the placeholder
     vocabulary in render.py and the state schema above cannot drift apart.
     """
+    from agent.bootstrap.nodes.planner import outline, steps_for
+
+    plan = state.get("plan") or {}
+
     return {
         "task_brief": state.get("task_brief", ""),
+        # Only THIS node's steps, in full. Everyone else's collapse to a line.
+        "my_steps": steps_for(plan, steps or []),
+        "plan_outline": outline(plan),
         "repo_path": state.get("repo_path", ""),
         "artifacts_dir": state.get("artifacts_dir", ""),
         "last_answer": state.get("last_answer", ""),

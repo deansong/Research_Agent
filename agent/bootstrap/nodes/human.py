@@ -49,8 +49,47 @@ def human_input(state: BootstrapState):
     }
 
 
+def _reread_plan(state, design: dict):
+    """Load plan.json, falling back to what the planner produced."""
+    import json
+    from pathlib import Path
+
+    path = Path(state.get("session_dir", "")) / "plan.json"
+    if not path.exists():
+        return design.get("plan", {}), ""
+
+    try:
+        plan = json.loads(path.read_text())
+    except json.JSONDecodeError as exc:
+        return design.get("plan", {}), (
+            f"\n[human] {path.name} is not valid JSON ({exc}).\n"
+            f"        Using the plan as the planner wrote it instead."
+        )
+
+    edited = plan != design.get("plan")
+    return plan, (f"\n[human] using your edited {path.name}." if edited else "")
+
+
 def _command(state, human: dict, name: str, argument: str) -> dict:
     design = dict(state.get("design", {}))
+
+    if name == "approve":
+        # Re-read plan.json from disk rather than trusting what the planner
+        # returned: the whole point of pausing here is that you can edit the
+        # file, and an approval that ignored your edits would be a lie.
+        plan, note = _reread_plan(state, design)
+        if note:
+            print(note)
+        return {
+            "design": merge_section(design, plan=plan, attempt=0, problems=""),
+            "human": merge_section(human, question="", context="", return_to="designer"),
+        }
+
+    if name == "revise":
+        return {
+            "design": merge_section(design, plan_feedback=argument),
+            "human": merge_section(human, question="", context="", return_to="planner"),
+        }
 
     if name == "exit":
         return {"outcome": "aborted", "human": merge_section(human, return_to="end")}
@@ -63,7 +102,7 @@ def _command(state, human: dict, name: str, argument: str) -> dict:
                                     + (f" Guidance: {argument}" if argument else "")}],
             "design": merge_section(design, attempt=0, problems=""),
             "human": merge_section(human, question="", context="", last_answer=argument,
-                                   return_to="designer"),
+                                   return_to="planner"),
         }
 
     if name == "retry":

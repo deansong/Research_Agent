@@ -31,6 +31,8 @@ SIMPLE_TOKENS = (
     "last_answer",
     "repo_path",
     "artifacts_dir",
+    "my_steps",
+    "plan_outline",
     "argument",
 )
 

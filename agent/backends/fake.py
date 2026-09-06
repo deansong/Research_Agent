@@ -49,8 +49,12 @@ class FakeBackend:
         # agent instead is what makes `--backend fake` able to demonstrate the
         # entire two-phase flow -- design, write, validate, then run the thing
         # that was designed -- with no API key and no network.
+        if _looks_like_a_planner(output_model):
+            return self._canned(output_model, _MINIMAL_PLAN, turn,
+                                "a small two-step plan")
         if _looks_like_a_designer(output_model):
-            return self._design(output_model, turn)
+            return self._canned(output_model, _MINIMAL_AGENT, turn,
+                                "a minimal but genuinely valid two-node agent")
 
         fields = _placeholder_fields(output_model, turn)
 
@@ -75,18 +79,45 @@ class FakeBackend:
                         output_tokens=10, context_window=200_000),
         )
 
-    def _design(self, output_model, turn: int):
-        data = output_model.model_validate(_MINIMAL_AGENT)
-        print("[fake] returning a minimal but genuinely valid two-node agent")
+    def _canned(self, output_model, payload: dict, turn: int, what: str):
+        """Return a hand-written valid object for a model too structured to fill in.
+
+        PlannerOutput and DesignerOutput both nest several models deep, so the
+        generic field-filler cannot produce something that validates. Canning a
+        REAL one is what lets --backend fake demonstrate the whole pipeline --
+        discuss, plan, approve, design, write, validate, run -- offline.
+        """
+        print(f"[fake] returning {what}")
         return StructuredRun(
-            data=data,
-            thread_id=f"fake-designer-{turn}",
+            data=output_model.model_validate(payload),
+            thread_id=f"fake-{turn}",
             is_new_thread=True,
             usage=Usage(input_tokens=500, cached_input_tokens=100, output_tokens=200),
         )
 
     def close(self) -> None:
         return None
+
+
+def _looks_like_a_planner(output_model) -> bool:
+    return {"summary", "steps"} <= set(output_model.model_fields)
+
+
+# A plan the canned agent below actually maps onto: worker owns step 1,
+# review owns step 2. Small on purpose -- it exists to prove the pipeline.
+_MINIMAL_PLAN = {
+    "summary": "[fake] Look at the repository, then report what is there.",
+    "steps": [
+        {"id": "1", "title": "Inspect the repository",
+         "detail": "Read what is there and note the conventions.",
+         "substeps": [
+             {"id": "1.1", "title": "List the files", "detail": ""},
+             {"id": "1.2", "title": "Read the entry points", "detail": ""},
+         ]},
+        {"id": "2", "title": "Report back to the human",
+         "detail": "Summarise findings and stop for review.", "substeps": []},
+    ],
+}
 
 
 def _looks_like_a_designer(output_model) -> bool:
@@ -121,13 +152,19 @@ _MINIMAL_AGENT = {
             "name": "worker",
             "backend": "worker",
             "access": "read_only",
+            "steps": ["1"],
             "instructions": "You are a worker. Do exactly what the brief asks and report back.",
             "output": [
                 {"name": "summary", "type": "string", "required": True},
                 {"name": "detail", "type": "string"},
             ],
             "prompts": {
-                "first": "Your task:\n\n{task_brief}\n\nDo it and report what you found.",
+                # Shows the context-control shape a real designer should copy:
+                # this node's OWN steps in full, everyone else's as one line.
+                "first": "Your task:\n\n{task_brief}\n\n"
+                         "The steps you are responsible for:\n{my_steps}\n\n"
+                         "The wider plan, for context only:\n{plan_outline}\n\n"
+                         "Do your steps and report what you found.",
                 "next": "The human said:\n\n{last_answer}\n\nContinue.",
             },
             "announce": "working...",

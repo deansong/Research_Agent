@@ -27,7 +27,7 @@ from agent.statelib import merge_section
 _GRAPH_KEYS = {"name", "description", "entry", "nodes", "edges", "branches"}
 
 _AGENT_KEYS = (
-    "backend", "access", "instructions", "output", "prompts",
+    "backend", "access", "steps", "instructions", "output", "prompts",
     "thread_key", "refresh_on", "bump", "capture", "record", "announce",
 )
 

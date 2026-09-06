@@ -21,6 +21,19 @@ BOOTSTRAP_REGISTRY: tuple[SlashCommand, ...] = tuple(
         contexts=("discussion",),
     ),
     SlashCommand(
+        name="approve",
+        scope="graph",
+        summary="Accept the plan and design an agent for it",
+        contexts=("plan_review",),
+    ),
+    SlashCommand(
+        name="revise",
+        scope="graph",
+        summary="Have the planner change the plan",
+        argument="<what to change>",
+        contexts=("plan_review",),
+    ),
+    SlashCommand(
         name="retry",
         scope="graph",
         summary="Try designing again",
@@ -31,7 +44,7 @@ BOOTSTRAP_REGISTRY: tuple[SlashCommand, ...] = tuple(
         name="discuss",
         scope="graph",
         summary="Go back to talking it through",
-        contexts=("design_failed",),
+        contexts=("design_failed", "plan_review"),
     ),
     SlashCommand(
         name="use",
