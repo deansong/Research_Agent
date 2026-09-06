@@ -175,6 +175,47 @@ def test_use_falls_back_to_the_builtin_agent():
     print("PASS  /use gives up designing and falls back to the built-in agent")
 
 
+def test_designer_schema_survives_strict_mode():
+    """Every model we send to a provider must satisfy strict structured output.
+
+    Two rules, at every level: `required` lists every property, and
+    `additionalProperties` is false. Notably that FORBIDS an open-ended
+    dict[str, X] -- which is why the designer emits `sets` as name/value pairs
+    and `nodes` as a list, and the writer converts both.
+
+    This is a local check on purpose: each of these was originally found by a
+    live API rejection, one round trip at a time.
+    """
+    from agent.backends._schema import strict_json_schema
+    from agent.bootstrap.schemas import DesignerOutput, DiscussorOutput
+
+    def audit(node, path="root", out=None):
+        out = [] if out is None else out
+        if isinstance(node, dict):
+            if node.get("type") == "object" or "properties" in node:
+                props, extra = node.get("properties"), node.get("additionalProperties")
+                if props is None and extra not in (False, None):
+                    out.append(f"open dict at {path}")
+                elif props is not None:
+                    if set(props) - set(node.get("required", [])):
+                        out.append(f"{path}: properties missing from required")
+                    if extra is not False:
+                        out.append(f"{path}: additionalProperties is not false")
+            for key, value in node.items():
+                if key != "required":
+                    audit(value, f"{path}.{key}", out)
+        elif isinstance(node, list):
+            for i, value in enumerate(node):
+                audit(value, f"{path}[{i}]", out)
+        return out
+
+    for model in (DiscussorOutput, DesignerOutput):
+        problems = sorted(set(audit(strict_json_schema(model))))
+        assert not problems, f"{model.__name__}:\n  " + "\n  ".join(problems)
+
+    print("PASS  designer and discussor schemas are strict-mode clean")
+
+
 if __name__ == "__main__":
     for name, fn in sorted(globals().items()):
         if name.startswith("test_"):

@@ -11,6 +11,7 @@ import contextlib
 
 from openai_codex import Codex, Sandbox
 
+from agent.backends._schema import strict_json_schema
 from agent.backends.base import Access, BackendError, StructuredRun, Usage, OutputT
 
 # Our provider-neutral Access maps onto Codex's own sandbox levels.
@@ -54,7 +55,12 @@ class CodexBackend:
 
         # output_schema is what makes the reply parseable: Codex constrains
         # the model to emit JSON matching our Pydantic class's JSON Schema.
-        result = thread.run(prompt, output_schema=output_model.model_json_schema())
+        #
+        # strict_json_schema() rather than model_json_schema(): Codex rejects a
+        # schema whose `required` omits any property, and Pydantic omits every
+        # field that has a default. Measured against a live call --
+        #   invalid_json_schema: ... Missing 'question'.
+        result = thread.run(prompt, output_schema=strict_json_schema(output_model))
 
         if not result.final_response:
             raise BackendError("Codex returned no final response.")

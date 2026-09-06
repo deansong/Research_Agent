@@ -13,7 +13,6 @@ from pydantic import BaseModel, ConfigDict, Field
 
 from agent.agentfolder.schema import (
     BranchSpec,
-    CommandSpec,
     EdgeSpec,
     FieldSpec,
     NodeRef,
@@ -33,6 +32,42 @@ class DiscussorOutput(StrictModel):
     requirements: str = ""
     advice: Literal["keep_discussing", "ready_to_plan"] = "keep_discussing"
     advice_reason: str = ""
+
+
+class SetSpec(StrictModel):
+    """One value a command writes into `vars`, as a name/value PAIR.
+
+    On disk this is a plain object -- {"planner_feedback": "{argument}"} --
+    which is what you want to hand-edit. But an open-ended dict[str, X] cannot
+    be expressed in a strict structured-output schema, so the designer emits
+    pairs and the writer converts. Measured against a live Codex call:
+
+        invalid_json_schema: ... Extra required key 'sets' supplied.
+
+    Same reason `nodes` below is a list rather than an object.
+    """
+
+    name: str
+    value: str
+
+
+class CommandProposal(StrictModel):
+    """A human-node command, as the designer emits it.
+
+    Mirrors agentfolder.schema.CommandSpec except for `sets` (pairs, above) and
+    `purposes` (an empty list rather than None, to avoid a nullable union).
+    """
+
+    name: str
+    to: str
+    purposes: list[str] = Field(default_factory=list, max_length=8)
+    """Empty means "valid everywhere"."""
+    aliases: list[str] = Field(default_factory=list, max_length=4)
+    argument: str = ""
+    summary: str = ""
+    record: str = ""
+    sets: list[SetSpec] = Field(default_factory=list, max_length=8)
+    outcome: str = ""
 
 
 class GraphProposal(StrictModel):
@@ -67,7 +102,7 @@ class NodeProposal(StrictModel):
     access: Literal["none", "read_only", "write"] = "read_only"
     instructions: str = ""
     output: list[FieldSpec] = Field(default_factory=list, max_length=12)
-    prompts: PromptPair | None = None
+    prompts: PromptPair = Field(default_factory=lambda: PromptPair(first=""))
     thread_key: str = ""
     refresh_on: str = ""
     bump: list[str] = Field(default_factory=list, max_length=4)
@@ -76,7 +111,7 @@ class NodeProposal(StrictModel):
     announce: str = ""
 
     # ---- human nodes ----
-    commands: list[CommandSpec] = Field(default_factory=list, max_length=12)
+    commands: list[CommandProposal] = Field(default_factory=list, max_length=12)
 
 
 class DesignerOutput(StrictModel):

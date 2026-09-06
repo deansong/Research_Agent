@@ -86,7 +86,7 @@ def _entry_for(kind: str | None, entry: dict) -> dict:
     but it would be confusing to read and to hand-edit.
     """
     if kind == "human":
-        return {"commands": entry.get("commands", [])}
+        return {"commands": [_command(c) for c in entry.get("commands", [])]}
 
     out: dict = {}
     for key in _AGENT_KEYS:
@@ -95,6 +95,29 @@ def _entry_for(kind: str | None, entry: dict) -> dict:
             continue
         out[key] = value
     out.setdefault("access", "read_only")
+    return out
+
+
+def _command(proposal: dict) -> dict:
+    """Convert a CommandProposal into the on-disk CommandSpec shape.
+
+    Two conversions, both because strict structured output cannot express the
+    nicer on-disk form:
+      - `sets` arrives as name/value pairs, and becomes an object;
+      - `purposes` arrives as a list, where empty means "everywhere", and
+        becomes None (which is what CommandSpec uses for that).
+    """
+    out = {k: v for k, v in proposal.items()
+           if k not in ("sets", "purposes") and v not in (None, "", [])}
+
+    pairs = proposal.get("sets") or []
+    if pairs:
+        out["sets"] = {pair["name"]: pair["value"] for pair in pairs}
+
+    purposes = proposal.get("purposes") or []
+    if purposes:
+        out["purposes"] = purposes
+
     return out
 
 
