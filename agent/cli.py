@@ -22,7 +22,9 @@ from agent import storage
 from agent.agentfolder.load import AgentFolderError, load_agent_folder
 from agent.agentfolder.validate import format_problems, validate_folder
 from agent.backends import build_backends
-from agent.backends.base import BackendError
+from agent.backends.base import Access, BackendError
+from agent.bootstrap.graph import build_bootstrap_graph
+from agent.bootstrap.session import bootstrap_session
 from agent.config import DEFAULT_SESSION, backend_for, describe, load_config
 from agent.terminal import drive, print_usage_table
 from agent.work.compile import backends_needed, compile_agent
@@ -56,50 +58,135 @@ def main() -> None:
     )
     paths = storage.session_paths(repo_path, cfg.session)
 
-    # ---- 2. which agent are we running? -----------------------------------
-    folder_path = _resolve_folder(args, paths, cfg)
-    try:
-        folder = load_agent_folder(folder_path)
-    except AgentFolderError as exc:
-        raise SystemExit(f"\nCould not read the agent at {folder_path}:\n{exc}")
-
-    problems = validate_folder(folder)
-    blocking = [p for p in problems if not p.warning]
-    if problems:
-        print(f"\nAgent {folder.graph.name!r} validation:")
-        print(format_problems(problems))
-    if blocking:
-        raise SystemExit("\nThat agent cannot run. Fix the errors above.")
-
-    needed = backends_needed(folder)
-
-    if args.explain:
-        _explain(cfg, folder, paths, needed)
-        return
-
-    print(describe(cfg))
-    print(f"\nagent    {folder.graph.name}  ({folder.path})")
-    print(f"session  {paths.session}")
-
-    # ---- 3. backends, checkpointer, graph ---------------------------------
+    # ---- 2. open the checkpointer -----------------------------------------
+    # Both phases share one database. They MUST use different thread ids --
+    # measured: two graphs with different schemas on the same thread do not
+    # raise, their channels silently merge and one schema's keys turn up in
+    # the other's state.
     with contextlib.ExitStack() as stack:
-        codex_client = None
-        if any(backend_for(cfg, role).provider == "codex" for role in needed):
-            from agent.backends.codex import open_client
-
-            codex_client = stack.enter_context(open_client())
-
-        try:
-            backends = build_backends(cfg, needed, codex_client=codex_client)
-        except BackendError as exc:
-            raise SystemExit(f"\n{exc}")
+        codex = _LazyCodex(stack)
 
         checkpointer = stack.enter_context(
             SqliteSaver.from_conn_string(str(paths.checkpoint))
         )
         checkpointer.setup()
 
+        # ---- 3. phase 1: design an agent, unless we already have one -------
+        folder_path = None
+        if args.pre_build_agent:
+            folder_path = storage.resolve_agent(args.pre_build_agent, paths)
+            print(f"Skipping the design phase: using {folder_path}")
+        elif paths.has_agent():
+            folder_path = paths.agent_dir
+            print(f"Reusing the agent designed for this session: {folder_path}")
+
+        if folder_path is None:
+            if args.explain:
+                print(describe(cfg))
+                print("\nNo agent has been designed for this session yet.")
+                print("Run without --explain to design one, or pass --pre-build-agent.")
+                return
+            print(describe(cfg))
+            if not _bootstrap(cfg, paths, checkpointer, codex, args):
+                return
+            folder_path = paths.agent_dir if paths.has_agent() else storage.resolve_agent(
+                cfg.default_agent, paths
+            )
+
+        # ---- 4. load and check the agent -----------------------------------
+        try:
+            folder = load_agent_folder(folder_path)
+        except AgentFolderError as exc:
+            raise SystemExit(f"\nCould not read the agent at {folder_path}:\n{exc}")
+
+        problems = validate_folder(folder)
+        blocking = [p for p in problems if not p.warning]
+        if problems:
+            print(f"\nAgent {folder.graph.name!r} validation:")
+            print(format_problems(problems))
+        if blocking:
+            raise SystemExit("\nThat agent cannot run. Fix the errors above.")
+
+        needed = backends_needed(folder)
+
+        if args.explain:
+            _explain(cfg, folder, paths, needed)
+            return
+
+        print(f"\nagent    {folder.graph.name}  ({folder.path})")
+        print(f"session  {paths.session}")
+
+        # ---- 5. phase 2: run it --------------------------------------------
+        try:
+            backends = build_backends(cfg, needed, codex_client=codex.get(cfg, needed))
+        except BackendError as exc:
+            raise SystemExit(f"\n{exc}")
+
         _run_work_phase(folder, cfg, paths, backends, checkpointer, args)
+
+
+class _LazyCodex:
+    """Opens the Codex client on first use, and only if something needs it.
+
+    It has to be lazy now: the work graph's roles are not known until phase 1
+    has finished designing the agent, so we cannot decide up front whether any
+    of them uses Codex. Being lazy is also what lets --backend fake run with no
+    login and no network.
+    """
+
+    def __init__(self, stack):
+        self._stack = stack
+        self._client = None
+
+    def get(self, cfg, needed):
+        if not any(backend_for(cfg, role).provider == "codex" for role in needed):
+            return self._client
+        if self._client is None:
+            from agent.backends.codex import open_client
+
+            self._client = self._stack.enter_context(open_client())
+        return self._client
+
+
+def _bootstrap(cfg, paths, checkpointer, codex, args) -> bool:
+    """Phase 1. Returns True if an agent is ready to run."""
+    request = _task_text(args, paths)
+    if not request:
+        print("No task supplied.")
+        return False
+
+    needed = {"discussor": Access.READ_ONLY, "designer": Access.READ_ONLY}
+    try:
+        backends = build_backends(cfg, needed, codex_client=codex.get(cfg, needed))
+    except BackendError as exc:
+        raise SystemExit(f"\n{exc}")
+
+    graph = build_bootstrap_graph(
+        backends, paths, checkpointer, max_attempts=cfg.max_design_attempts
+    )
+    session = bootstrap_session(
+        graph=graph,
+        thread_id=f"{cfg.session}:bootstrap",
+        recursion_limit=cfg.recursion_limit,
+        repo_path=str(paths.repo),
+        session_dir=str(paths.session),
+        request=request,
+    )
+
+    values = drive(session, cfg)
+    outcome = values.get("outcome")
+
+    if outcome != "ready":
+        print("\nStopped before an agent was ready.")
+        return False
+
+    brief = (values.get("design") or {}).get("task_brief", "").strip()
+    if brief:
+        paths.brief.write_text(brief + "\n")
+        print("\n===== the brief handed to the new agent =====")
+        print(brief)
+
+    return True
 
 
 def _run_work_phase(folder, cfg, paths, backends, checkpointer, args) -> None:

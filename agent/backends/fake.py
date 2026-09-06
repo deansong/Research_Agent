@@ -44,6 +44,14 @@ class FakeBackend:
         turn = next(self.counter)
         print(f"[fake] pretending to run {output_model.__name__} (turn {turn})")
 
+        # A designer is asked for a whole agent folder, which is far too
+        # structured to fill in generically. Returning a real, minimal, VALID
+        # agent instead is what makes `--backend fake` able to demonstrate the
+        # entire two-phase flow -- design, write, validate, then run the thing
+        # that was designed -- with no API key and no network.
+        if _looks_like_a_designer(output_model):
+            return self._design(output_model, turn)
+
         fields = _placeholder_fields(output_model, turn)
 
         # Special case so a fake run actually TERMINATES. A node with an
@@ -67,8 +75,74 @@ class FakeBackend:
                         output_tokens=10, context_window=200_000),
         )
 
+    def _design(self, output_model, turn: int):
+        data = output_model.model_validate(_MINIMAL_AGENT)
+        print("[fake] returning a minimal but genuinely valid two-node agent")
+        return StructuredRun(
+            data=data,
+            thread_id=f"fake-designer-{turn}",
+            is_new_thread=True,
+            usage=Usage(input_tokens=500, cached_input_tokens=100, output_tokens=200),
+        )
+
     def close(self) -> None:
         return None
+
+
+def _looks_like_a_designer(output_model) -> bool:
+    """Detected by field names, not class name -- the class is built at runtime."""
+    return {"task_brief", "graph", "nodes"} <= set(output_model.model_fields)
+
+
+# A complete agent: do the work in one step, then show the human and let them
+# run it again or stop. Small on purpose -- it is here to prove the pipeline,
+# not to be impressive.
+_MINIMAL_AGENT = {
+    "task_brief": "[fake] Do the task described when this session started.",
+    "rationale": "[fake] A single worker plus a review stop is the smallest useful shape.",
+    "graph": {
+        "name": "fake-generated",
+        "description": "A minimal agent produced by the fake backend.",
+        "entry": "worker",
+        "nodes": [
+            {"name": "worker", "kind": "agent"},
+            {"name": "review", "kind": "human"},
+        ],
+        "edges": [
+            {"from": "worker", "to": "review",
+             "ask": {"purpose": "review", "resume_to": "worker",
+                     "question": "The worker reported: {out.worker.summary}. What next?",
+                     "context": "{out.worker.detail}"}},
+        ],
+        "branches": [],
+    },
+    "nodes": [
+        {
+            "name": "worker",
+            "backend": "worker",
+            "access": "read_only",
+            "instructions": "You are a worker. Do exactly what the brief asks and report back.",
+            "output": [
+                {"name": "summary", "type": "string", "required": True},
+                {"name": "detail", "type": "string"},
+            ],
+            "prompts": {
+                "first": "Your task:\n\n{task_brief}\n\nDo it and report what you found.",
+                "next": "The human said:\n\n{last_answer}\n\nContinue.",
+            },
+            "announce": "working...",
+            "record": "{out.worker.summary}",
+        },
+        {
+            "name": "review",
+            "commands": [
+                {"name": "again", "to": "worker", "summary": "Have another go"},
+                {"name": "exit", "to": "__end__", "aliases": ["quit", "q"],
+                 "summary": "Finish"},
+            ],
+        },
+    ],
+}
 
 
 def _placeholder_fields(output_model, turn: int) -> dict:
