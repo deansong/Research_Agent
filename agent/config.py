@@ -25,6 +25,7 @@ print the result of all this without spending a token.
 
 from __future__ import annotations
 
+import difflib
 import json
 import os
 from dataclasses import dataclass, field, replace
@@ -63,6 +64,19 @@ class AgentConfig:
     roles: dict[str, BackendConfig]
     session: str = DEFAULT_SESSION
     recursion_limit: int = DEFAULT_RECURSION_LIMIT
+
+    # ---- phase 4: designing and running generated agents -------------------
+    max_design_attempts: int = 3
+    """How many times the designer may be asked to fix a bad folder before
+    giving up and asking the human."""
+
+    work_recursion_limit: int = 200
+    """Step budget for a generated agent. Lower than the bootstrap graph's:
+    a generated graph that loops forever should fail fast and visibly."""
+
+    default_agent: str = "default"
+    """Folder used by /use and by --pre-build-agent with no argument."""
+
     sources: tuple[str, ...] = ()
     """Human-readable list of where the settings came from, for --explain."""
 
@@ -107,6 +121,9 @@ class _ConfigFile(BaseModel):
     roles: dict[str, _BackendFile] = {}
     session: str | None = None
     recursion_limit: int | None = None
+    max_design_attempts: int | None = None
+    work_recursion_limit: int | None = None
+    default_agent: str | None = None
 
 
 def _strip_comments(value):
@@ -154,6 +171,7 @@ def load_config(
     session = DEFAULT_SESSION
     recursion_limit = DEFAULT_RECURSION_LIMIT
     sources: list[str] = ["built-in defaults"]
+    extras: dict[str, Any] = {}
 
     # ---- layers 2-4: files ---------------------------------------------
     if config_file is not None:
@@ -172,11 +190,11 @@ def load_config(
         if parsed.default is not None:
             default = _apply_file(default, parsed.default)
         for role_name, entry in parsed.roles.items():
-            if role_name not in roles.ALL_ROLES:
-                known = ", ".join(roles.ALL_ROLES)
-                raise SystemExit(
-                    f"Config error in {path}: unknown role '{role_name}'. Known roles: {known}"
-                )
+            # NOT an error any more. A generated agent folder can name a role
+            # anything it likes ("reviewer", "summariser"), and you are allowed
+            # to configure that role before the folder exists. So an unknown
+            # name is a WARNING with a typo suggestion, not a hard stop.
+            _warn_unknown_role(role_name, f"in {path}")
             role_configs[role_name] = _apply_file(
                 role_configs.get(role_name, BackendConfig(provider="", model=None)), entry
             )
@@ -184,6 +202,10 @@ def load_config(
             session = parsed.session
         if parsed.recursion_limit:
             recursion_limit = parsed.recursion_limit
+        for name in ("max_design_attempts", "work_recursion_limit", "default_agent"):
+            value = getattr(parsed, name)
+            if value is not None:
+                extras[name] = value
 
     # ---- layer 5: environment -------------------------------------------
     # CODEX_MODEL is the pre-refactor name; still honoured so old shell
@@ -239,6 +261,7 @@ def load_config(
         session=session,
         recursion_limit=recursion_limit,
         sources=tuple(sources),
+        **extras,
     )
 
 
@@ -260,12 +283,29 @@ def _parse_role_override(item: str) -> tuple[str, BackendConfig]:
     role_name, spec = item.split("=", 1)
     role_name = role_name.strip()
 
-    if role_name not in roles.ALL_ROLES:
-        known = ", ".join(roles.ALL_ROLES)
-        raise SystemExit(f"Unknown role '{role_name}' in --backend-role. Known roles: {known}")
+    _warn_unknown_role(role_name, "in --backend-role")
 
     provider, _, model = spec.partition(":")
     return role_name, BackendConfig(provider=provider.strip(), model=model.strip() or None)
+
+
+def _warn_unknown_role(role_name: str, where: str) -> None:
+    """Warn (do not fail) about a role name we do not recognise.
+
+    Role names come from two places now: the four built-in ones, and whatever
+    a generated agent folder invented. We cannot know the second set until a
+    folder is loaded, so we can only offer a typo suggestion.
+    """
+    if role_name in roles.ALL_ROLES:
+        return
+
+    suggestion = difflib.get_close_matches(role_name, roles.ALL_ROLES, n=1, cutoff=0.7)
+    hint = f" Did you mean '{suggestion[0]}'?" if suggestion else ""
+    print(
+        f"Note: role '{role_name}' {where} is not one of the built-in roles "
+        f"({', '.join(roles.ALL_ROLES)}).{hint}\n"
+        f"      That is fine if a generated agent folder defines it."
+    )
 
 
 def describe(cfg: AgentConfig) -> str:

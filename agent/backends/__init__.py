@@ -8,7 +8,8 @@ CONCEPT: Composition root helper.  cli.py calls build_backends() once, then
 
 from __future__ import annotations
 
-from agent import roles
+from typing import Mapping
+
 from agent.backends.base import Access, AgentBackend, BackendUnavailable
 
 # provider name -> the class implementing it.
@@ -39,21 +40,35 @@ def _load(provider: str):
     return getattr(module, class_name)
 
 
-def build_backends(cfg, *, codex_client=None) -> dict[str, AgentBackend]:
+def build_backends(
+    cfg,
+    needed: Mapping[str, Access],
+    *,
+    codex_client=None,
+) -> dict[str, AgentBackend]:
     """Create one backend per role, and check each can do that role's job.
+
+    `needed` maps a role name to the access that role requires, e.g.
+        {"discussor": Access.READ_ONLY, "executor": Access.WRITE}
+
+    It is a PARAMETER rather than a lookup in roles.REQUIRED_ACCESS because
+    role names are no longer a fixed set: a generated agent folder invents its
+    own node names and declares each node's `access` in nodes.json. Passing the
+    requirement in means the check is driven by what the agent actually asks
+    for, which is strictly better than a hardcoded table.
 
     Returns a dict keyed by role name, e.g.
         {"discussor": <CodexBackend>, "executor": <CodexBackend>, ...}
 
-    Two backends configured identically share ONE instance (see `cache`
-    below), so four Codex roles do not open four clients.
+    Two roles configured identically share ONE instance (see `cache` below),
+    so four Codex roles do not open four clients.
     """
     from agent.config import backend_for
 
     cache: dict[tuple, AgentBackend] = {}
     built: dict[str, AgentBackend] = {}
 
-    for role in roles.ALL_ROLES:
+    for role, required in needed.items():
         spec = backend_for(cfg, role)
 
         # The cache key is everything that distinguishes one instance from
@@ -65,7 +80,7 @@ def build_backends(cfg, *, codex_client=None) -> dict[str, AgentBackend]:
         # without importing an SDK or opening a connection -- and the error
         # you get names the real problem instead of whatever the backend's
         # constructor happened to complain about first.
-        _check_access(role, _load(spec.provider), spec)
+        _check_access(role, _load(spec.provider), spec, required)
 
         if key not in cache:
             cache[key] = _instantiate(spec, role=role, codex_client=codex_client)
@@ -99,15 +114,13 @@ def _instantiate(spec, *, role: str, codex_client):
         ) from None
 
 
-def _check_access(role: str, backend_cls, spec) -> None:
+def _check_access(role: str, backend_cls, spec, needed: Access) -> None:
     """Refuse, at startup, to give a role a backend that cannot do its job.
 
     This is the concrete answer to "can I run the executor on a plain chat
     API?" -- no, and you find out here rather than after the discussor and
     planner have already spent tokens.
     """
-    needed = roles.REQUIRED_ACCESS[role]
-
     if needed <= backend_cls.max_access:
         return
 

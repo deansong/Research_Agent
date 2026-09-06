@@ -55,7 +55,7 @@ from __future__ import annotations
 
 import difflib
 from dataclasses import dataclass
-from typing import Literal
+from typing import Literal, Sequence
 
 
 # "terminal" commands are answered by the REPL itself and never resume the
@@ -188,36 +188,44 @@ REGISTRY: tuple[SlashCommand, ...] = (
 )
 
 
-def lookup(name: str) -> SlashCommand | None:
+def lookup(name: str, registry: Sequence[SlashCommand] = REGISTRY) -> SlashCommand | None:
     """Find a command by its name or any of its aliases.  Case-insensitive."""
     wanted = name.strip().lower()
-    for command in REGISTRY:
+    for command in registry:
         if wanted == command.name or wanted in command.aliases:
             return command
     return None
 
 
-def all_names() -> list[str]:
+def all_names(registry: Sequence[SlashCommand] = REGISTRY) -> list[str]:
     """Every name AND alias, for the "did you mean ...?" suggestion."""
     names: list[str] = []
-    for command in REGISTRY:
+    for command in registry:
         names.append(command.name)
         names.extend(command.aliases)
     return names
 
 
-def available(purpose: str | None) -> list[SlashCommand]:
+def available(
+    purpose: str | None,
+    registry: Sequence[SlashCommand] = REGISTRY,
+) -> list[SlashCommand]:
     """The commands valid in a given context, in registry order.
 
     `purpose is None` means "don't filter" -- used when we genuinely do not
     know the context, e.g. printing help before the graph has started.
     """
     if purpose is None:
-        return list(REGISTRY)
-    return [c for c in REGISTRY if c.contexts is None or purpose in c.contexts]
+        return list(registry)
+    return [c for c in registry if c.contexts is None or purpose in c.contexts]
 
 
-def parse(raw: str, *, purpose: str = "") -> ParsedInput:
+def parse(
+    raw: str,
+    *,
+    purpose: str = "",
+    registry: Sequence[SlashCommand] = REGISTRY,
+) -> ParsedInput:
     """Turn one typed line into a ParsedInput.
 
     The rules are applied strictly in order.  Each `if` below is one rule, and
@@ -254,12 +262,12 @@ def parse(raw: str, *, purpose: str = "") -> ParsedInput:
     name = parts[0].lower()
     argument = parts[1].strip() if len(parts) > 1 else ""
 
-    command = lookup(name)
+    command = lookup(name, registry)
 
     # Rule 5 -- unknown command.  Never forward it to the model: a typo would
     # silently become an expensive answer.  Suggest the closest real name.
     if command is None:
-        suggestion = difflib.get_close_matches(name, all_names(), n=1, cutoff=0.6)
+        suggestion = difflib.get_close_matches(name, all_names(registry), n=1, cutoff=0.6)
         hint = f" Did you mean /{suggestion[0]}?" if suggestion else ""
         return ParsedInput(
             kind="rejected",
@@ -304,9 +312,12 @@ def parse(raw: str, *, purpose: str = "") -> ParsedInput:
     return ParsedInput(kind="command", raw=text, text=argument, command=command)
 
 
-def render_help(purpose: str | None = None) -> str:
-    """Build the /help text from REGISTRY, filtered to the current context."""
-    commands = available(purpose)
+def render_help(
+    purpose: str | None = None,
+    registry: Sequence[SlashCommand] = REGISTRY,
+) -> str:
+    """Build the /help text from `registry`, filtered to the current context."""
+    commands = available(purpose, registry)
 
     # Pre-compute the left column so the summaries line up.
     def usage(command: SlashCommand) -> str:

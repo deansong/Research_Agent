@@ -70,7 +70,7 @@ def main() -> None:
             codex_client = stack.enter_context(open_client())
 
         try:
-            backends = build_backends(cfg, codex_client=codex_client)
+            backends = build_backends(cfg, roles.REQUIRED_ACCESS, codex_client=codex_client)
         except BackendError as exc:
             # A configuration problem. Stop now, before spending anything.
             raise SystemExit(f"\n{exc}")
