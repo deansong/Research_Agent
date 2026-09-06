@@ -10,6 +10,7 @@ from __future__ import annotations
 from typing import Any
 
 from agent.agentfolder.commands import build_registry
+from agent.agentfolder.render import mermaid
 from agent.agentfolder.load import AgentFolder
 from agent.session import GraphSession
 from agent.work.state import WorkState
@@ -36,6 +37,7 @@ def work_session(
         state_report=lambda values, full: _state_report(folder, values, full),
         transcript=lambda values: list(values.get("transcript", [])),
         usage=lambda values: dict(values.get("usage", {})),
+        topology=mermaid(folder),
     )
 
 

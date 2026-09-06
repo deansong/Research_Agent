@@ -1,3 +1,22 @@
+> **SUPERSEDED — kept for its measurements, not its design.**
+>
+> This document proposed running the generated graph as a *child* invoked
+> inside a parent node. That is not what was built. The shipped design runs the
+> two graphs **sequentially** — the bootstrap graph designs an agent, finishes,
+> and is discarded; the generated agent then runs as an ordinary top-level
+> graph. That deletes almost everything sections 5, 6 and 8 below wrestle with.
+>
+> **Read `README.md` and `docs/AGENT_FOLDER.md` for what actually exists.**
+>
+> What is still worth reading here: the measured LangGraph behaviours in
+> sections 5 and 11. They are accurate, and they are precisely *why* the
+> sequential design is better — every one of them is a hazard the shipped
+> design does not have to think about. One correction: section 4 says
+> `compile()` does not catch duplicate node names. On langgraph 1.2.11 it does
+> raise; the real gaps are the node names `""` and `"A-B"`, which it accepts.
+
+---
+
 # Design: letting the agent build its own graph
 
 **Status: design only. No code for this exists yet — that is deliberate, so you can

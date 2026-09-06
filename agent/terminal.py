@@ -203,6 +203,21 @@ def _handle_transcript(session, cfg, argument: str, purpose: str) -> None:
         print(_indent(entry.get("text", "")))
 
 
+def _handle_graph(session, cfg, argument: str, purpose: str) -> None:
+    """Show the shape of the agent you are talking to.
+
+    Worth having for a generated agent especially: you want to see what was
+    designed before deciding whether to let it run.
+    """
+    if not session.topology:
+        print("No diagram available for this phase.")
+        return
+    print(session.topology)
+    print("\nPaste that into any mermaid viewer, or read it as: A --> B means "
+          "'after A, always B';\nA -. label .-> B means 'after A, go to B when "
+          "the label matches'.")
+
+
 def _handle_config(session, cfg, argument: str, purpose: str) -> None:
     from agent.config import describe
 
@@ -215,6 +230,7 @@ TERMINAL_HANDLERS: dict[str, Callable[..., None]] = {
     "state": _handle_state,
     "transcript": _handle_transcript,
     "config": _handle_config,
+    "graph": _handle_graph,
 }
 
 

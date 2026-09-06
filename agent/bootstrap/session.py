@@ -30,7 +30,27 @@ def bootstrap_session(*, graph, thread_id, recursion_limit, repo_path, session_d
         state_report=_state_report,
         transcript=lambda values: list(values.get("transcript", [])),
         usage=lambda values: dict(values.get("usage_by_role", {})),
+        topology=_BOOTSTRAP_TOPOLOGY,
     )
+
+
+# The bootstrap graph is hand-written and fixed, so unlike a generated agent
+# its diagram can simply be written down. Kept next to the session so /graph
+# works in both phases.
+_BOOTSTRAP_TOPOLOGY = """graph TD;
+  __start__ --> discussor;
+  discussor --> human;
+  human -. plain text .-> discussor;
+  human -. /plan .-> designer;
+  human -. /discuss .-> discussor;
+  human -. /retry .-> designer;
+  human -. /use .-> __end__;
+  human -. /exit .-> __end__;
+  designer --> writer;
+  writer --> validator;
+  validator -. valid .-> __end__;
+  validator -. problems .-> designer;
+  validator -. gave up .-> human;"""
 
 
 def _resume_payload(values: BootstrapState) -> dict | None:

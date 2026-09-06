@@ -147,6 +147,11 @@ REGISTRY: tuple[SlashCommand, ...] = (
         summary="Show which backend and model each role is using",
     ),
     SlashCommand(
+        name="graph",
+        scope="terminal",
+        summary="Draw the agent's shape (mermaid)",
+    ),
+    SlashCommand(
         name="transcript",
         scope="terminal",
         summary="Print the discussion so far",

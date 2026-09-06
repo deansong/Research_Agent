@@ -56,3 +56,11 @@ class GraphSession:
 
     usage: Callable[[dict], dict]
     """values -> {key: usage dict} for /usage."""
+
+    topology: str = ""
+    """A mermaid diagram of this graph, for /graph.
+
+    Precomputed rather than a callable: for a generated agent it comes from the
+    folder, which is fixed for the whole run. Showing you the shape BEFORE it
+    runs is the main mitigation for the one thing this architecture gives up --
+    LangGraph cannot draw a graph that does not exist yet."""

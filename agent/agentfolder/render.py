@@ -98,3 +98,34 @@ def _stringify(value: Any) -> str:
     if isinstance(value, (list, tuple)):
         return "\n".join(f"- {_stringify(item)}" for item in value)
     return str(value)
+
+
+def mermaid(folder) -> str:
+    """Draw a folder's topology as a mermaid diagram.
+
+    Deliberately drawn from the SPEC rather than from a compiled graph: it
+    works before backends exist and before anything is compiled, which is what
+    lets `--explain` and a failed design still show you the shape.
+
+    (LangGraph can draw a compiled graph itself, but draw_ascii() needs the
+    `grandalf` package and draw_mermaid() needs a compiled graph -- neither is
+    available at the moment you most want the picture.)
+    """
+    from agent.agentfolder.schema import HumanNodeConfig
+
+    lines = ["graph TD;", f"  __start__ --> {folder.graph.entry};"]
+
+    for edge in folder.graph.edges:
+        lines.append(f"  {edge.from_} --> {edge.to};")
+
+    for branch in folder.graph.branches:
+        for case in branch.cases:
+            lines.append(f"  {branch.from_} -. {branch.route_on}={case.when} .-> {case.to};")
+        lines.append(f"  {branch.from_} -. otherwise .-> {branch.default};")
+
+    for name, config in folder.nodes.items():
+        if isinstance(config, HumanNodeConfig):
+            for command in config.commands:
+                lines.append(f"  {name} -. /{command.name} .-> {command.to};")
+
+    return "\n".join(lines)

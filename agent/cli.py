@@ -20,6 +20,7 @@ from langgraph.checkpoint.sqlite import SqliteSaver
 
 from agent import storage
 from agent.agentfolder.load import AgentFolderError, load_agent_folder
+from agent.agentfolder.render import mermaid
 from agent.agentfolder.validate import format_problems, validate_folder
 from agent.backends import build_backends
 from agent.backends.base import Access, BackendError
@@ -341,28 +342,7 @@ def _explain(cfg, folder, paths, needed) -> None:
     print(f"checkpoint   {paths.checkpoint}")
     print()
     print("topology (mermaid):")
-    print(_mermaid(folder))
-
-
-def _mermaid(folder) -> str:
-    """Draw the folder's topology without compiling or building backends.
-
-    draw_ascii() would need the `grandalf` package; mermaid needs nothing.
-    """
-    lines = ["graph TD;", f"  __start__ --> {folder.graph.entry};"]
-    for edge in folder.graph.edges:
-        lines.append(f"  {edge.from_} --> {edge.to};")
-    for branch in folder.graph.branches:
-        for case in branch.cases:
-            lines.append(f"  {branch.from_} -. {case.when} .-> {case.to};")
-        lines.append(f"  {branch.from_} -. default .-> {branch.default};")
-    from agent.agentfolder.schema import HumanNodeConfig
-
-    for name, config in folder.nodes.items():
-        if isinstance(config, HumanNodeConfig):
-            for command in config.commands:
-                lines.append(f"  {name} -. /{command.name} .-> {command.to};")
-    return "\n".join(lines)
+    print(mermaid(folder))
 
 
 def _parse_args():
