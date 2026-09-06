@@ -60,6 +60,13 @@ export const api = {
   startSession:  (id, body) => request('POST', `/api/sessions/${encodeURIComponent(id)}/start`, body || {}),
   answer:        (id, text) => request('POST', `/api/sessions/${encodeURIComponent(id)}/answer`, { text }),
   closeSession:  (id)   => request('DELETE', `/api/sessions/${encodeURIComponent(id)}`),
+  getPlan:       (id)   => request('GET', `/api/sessions/${encodeURIComponent(id)}/plan`),
+  putPlan:       (id, plan) => request('PUT', `/api/sessions/${encodeURIComponent(id)}/plan`, { plan }),
+  getAgent:      (id)   => request('GET', `/api/sessions/${encodeURIComponent(id)}/agent`),
+  putAgent:      (id, doc) => request('PUT', `/api/sessions/${encodeURIComponent(id)}/agent`, doc),
+  validateAgent: (id, doc) => request('POST', `/api/sessions/${encodeURIComponent(id)}/agent/validate`, doc),
+  nodeContext:   (id, name) =>
+    request('GET', `/api/sessions/${encodeURIComponent(id)}/nodes/${encodeURIComponent(name)}/context`),
   config:        ()     => request('GET', '/api/config'),
   schema:        ()     => request('GET', '/api/schema'),
 };

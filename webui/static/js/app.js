@@ -12,6 +12,9 @@
 
 import { api, Problem, subscribe } from './api.js';
 import { Chat } from './chat.js';
+import { GraphPanel } from './graph.js';
+import { Inspector } from './inspector.js';
+import { PlanPanel, ownersByStep } from './plan.js';
 
 const el = (id) => document.getElementById(id);
 
@@ -19,9 +22,38 @@ const state = {
   session: null,     // the SessionDetail we last fetched
   unsubscribe: null, // closes the SSE stream
   problems: [],
+  agent: null,       // {graph, nodes, view, editable} from /agent
+  plan: null,
+  selected: null,    // the node name being inspected
 };
 
 const chat = new Chat({ onSend: answer });
+
+const graph = new GraphPanel(el('tab-graph'), {
+  onSelect: (name) => selectNode(name),
+});
+
+const plan = new PlanPanel(el('tab-plan'), {
+  onSave: savePlan,
+  // Clicking a plan step lights up the nodes that own it. `steps` is what
+  // decides how much of the plan each node is shown, so this makes the
+  // context-control design visible instead of buried in two JSON files.
+  onSelectStep: (stepId, owners) => graph.highlight(stepId ? owners : []),
+});
+
+const inspector = new Inspector({
+  onSave: saveNode,
+  onSelectSteps: () => {},
+});
+
+// A problem row in the right-hand panel names a node; clicking it selects one.
+document.addEventListener('select-node', (event) => {
+  selectNode(event.detail.name);
+  showTab('canvas-tabs', 'graph');
+});
+
+// Cytoscape cannot notice the column being dragged; it has to be told.
+document.addEventListener('panels-resized', () => graph.resize());
 
 // ---------------------------------------------------------------------------
 // driving a session
@@ -44,7 +76,10 @@ async function openSession(detail) {
   state.unsubscribe?.();
   state.session = detail;
   chat.clear();
+  state.agent = null;
+  state.selected = null;
   renderSession(detail);
+  loadAgent();
 
   // Anything the session already emitted -- a run that started before this tab
   // opened, or a reconnect -- arrives as replay before the live feed.
@@ -62,9 +97,13 @@ async function openSession(detail) {
     question: (e) => {
       chat.question(e, e.commands);
       refresh();
+      // The plan appears at the plan_review question and the agent at the
+      // first work-phase one, so a question is the moment to look for both.
+      loadPlan();
+      if (e.purpose !== 'discussion' && e.purpose !== 'plan_review') loadAgent();
     },
     state: (e) => {
-      if (e.has_agent) refresh();
+      if (e.has_agent) { refresh(); loadAgent(); }
     },
     usage: (e) => renderUsage(e.by_node),
     error: (e) => {
@@ -79,6 +118,79 @@ async function openSession(detail) {
     },
     onerror: () => chat.status('reconnecting...'),
   });
+}
+
+async function loadAgent() {
+  if (!state.session) return;
+  try {
+    state.agent = await api.getAgent(state.session.id);
+  } catch (error) {
+    // 404 just means the design phase has not finished. Anything else is real.
+    if (error.status !== 404) showError(error);
+    state.agent = null;
+    graph.render(null);
+    inspector.clear('No agent yet.');
+    return;
+  }
+
+  graph.render(state.agent.view);
+  state.problems = state.agent.problems || [];
+  renderProblems();
+
+  if (state.selected) selectNode(state.selected);
+  await loadPlan();
+}
+
+async function loadPlan() {
+  if (!state.session) return;
+  try {
+    const got = await api.getPlan(state.session.id);
+    state.plan = got.plan;
+    plan.render(got.plan, ownersByStep(state.agent?.view, got.plan));
+  } catch (error) {
+    if (error.status !== 404) showError(error);
+  }
+}
+
+async function savePlan(edited) {
+  const result = await api.putPlan(state.session.id, edited);
+  state.plan = edited;
+  plan.render(edited, ownersByStep(state.agent?.view, edited));
+  for (const problem of result.problems || []) addProblem(problem);
+  return result;
+}
+
+async function selectNode(name) {
+  state.selected = name;
+  graph.select(name);
+  if (!name || !state.agent) {
+    inspector.clear();
+    return;
+  }
+
+  const kind = state.agent.view.nodes.find((n) => n.id === name)?.kind;
+  inspector.show(name, kind, state.agent.nodes[name]);
+  showTab('inspector-tabs', 'configure');
+
+  try {
+    inspector.showContext(await api.nodeContext(state.session.id, name));
+  } catch (error) {
+    showError(error);
+  }
+}
+
+async function saveNode(name, entry) {
+  // Send the WHOLE document, not a patch. graph.json and nodes.json have to
+  // agree about which nodes exist, and the server validates them together --
+  // a per-node PATCH endpoint would let them disagree in between.
+  const document_ = {
+    graph: state.agent.graph,
+    nodes: { ...state.agent.nodes, [name]: entry },
+  };
+  const result = await api.putAgent(state.session.id, document_);
+  await loadAgent();
+  await selectNode(name);
+  return result;
 }
 
 async function refresh() {
@@ -218,6 +330,14 @@ function showError(error) {
 // ---------------------------------------------------------------------------
 // tabs and the resizable columns
 // ---------------------------------------------------------------------------
+
+/** Switch a tab strip from code -- the app drives these, not only clicks. */
+function showTab(stripId, name) {
+  const strip = el(stripId);
+  const tab = strip.querySelector(`.tab[data-tab="${name}"]`);
+  if (tab) tab.click();
+}
+
 
 function wireTabs(stripId) {
   const strip = el(stripId);
@@ -360,6 +480,12 @@ function wireDialogs() {
 
 // ---------------------------------------------------------------------------
 
+api.schema().then((schema) => inspector.setSchema(schema)).catch(() => {
+  // Not fatal: the inspector falls back to its built-in option lists. Worth
+  // knowing about though, because it means /api/schema is broken.
+  chat.logLine('could not load /api/schema; using fallback field options', 'error');
+});
+
 wireTabs('canvas-tabs');
 wireTabs('inspector-tabs');
 wireResize();
@@ -367,4 +493,4 @@ wireDialogs();
 
 // Exported so the panels added in later steps can reach the shared bits
 // without importing app.js and creating a cycle.
-export { state, chat, refresh, showError };
+export { state, chat, graph, plan, inspector, refresh, showError };

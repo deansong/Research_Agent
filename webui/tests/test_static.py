@@ -140,6 +140,36 @@ def test_ids_used_by_js_exist_in_the_html():
     print(f"PASS  all {len(wanted)} element ids the JS uses exist in the HTML")
 
 
+def test_vendor_globals_exist():
+    """The UMD bundles must still export the names our code reaches for.
+
+    graph.js uses the bare globals `cytoscape` and `cytoscapeDagre`, because
+    UMD bundles predate ES modules and there is no build step to import them.
+    A version bump that renamed one would give a blank canvas and a console
+    error nobody has open -- so pin it here instead.
+    """
+    vendor = STATIC / "vendor"
+    files = {p.name: p.read_bytes() for p in vendor.glob("*.js")}
+    assert files, "no vendored libraries found"
+
+    for global_name, filename in [
+        ("cytoscape", "cytoscape.min.js"),
+        ("dagre", "dagre.min.js"),
+        ("cytoscapeDagre", "cytoscape-dagre.min.js"),
+    ]:
+        assert filename in files, f"{filename} is missing from vendor/"
+        # UMD assigns the global as `X.name=` or `.name=t()`; either way the
+        # identifier appears next to an assignment in the wrapper.
+        assert f".{global_name}=".encode() in files[filename], \
+            f"{filename} no longer defines the global {global_name!r}"
+
+    html = (STATIC / "index.html").read_text()
+    for filename in files:
+        assert filename in html, f"vendor/{filename} is never loaded by index.html"
+
+    print(f"PASS  {len(files)} vendored bundles are loaded and export what we use")
+
+
 def test_css_variables_are_defined_before_use():
     """A misspelt var() renders as nothing at all -- a transparent background or
     an invisible border -- with no error anywhere."""

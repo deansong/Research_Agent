@@ -165,6 +165,18 @@
   </div>
 </dialog>
 
+<!--
+  Vendored, not from a CDN, so the UI works offline. Plain <script> tags rather
+  than imports because these are UMD bundles that predate ES modules -- they
+  define globals (`cytoscape`, `dagre`) that js/graph.js then uses. They must
+  load BEFORE the module, which they do: classic scripts run in order, and a
+  module is deferred until after the document is parsed either way.
+-->
+<script src="/vendor/cytoscape.min.js"></script>
+<script src="/vendor/dagre.min.js"></script>
+<script src="/vendor/cytoscape-dagre.min.js"></script>
+<script>cytoscape.use(cytoscapeDagre);</script>
+
 <script type="module" src="/js/app.js"></script>
 </body>
 </html>
