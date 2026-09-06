@@ -1,13 +1,14 @@
 {
   "schema_version": 1,
   "audited_at": "2026-09-06",
-  "status": "taxonomy_proposed_unapproved",
+  "status": "taxonomy_approved_empirical_scoring_completed",
   "hardware": {
     "cpu": "2 x AMD EPYC 7313, 64 logical CPUs",
     "memory_total_gib": 503,
     "memory_available_gib_at_probe": 217,
-    "gpu_probe": "nvidia-smi failed: unable to communicate with NVIDIA driver",
-    "gpu_inference_ready": false
+    "gpu_probe": "nvidia-smi and a later sandboxed torch probe could not initialize NVML/CUDA",
+    "empirical_runtime_device": "cuda:0 for all 84 records",
+    "gpu_inference_ready": "available to the escalated empirical process despite unavailable NVML; record runtime is authoritative"
   },
   "storage": {
     "workspace_free_gib_at_probe": 394,
@@ -24,9 +25,56 @@
     "accelerate": "1.13.0"
   },
   "tokenizer_and_config_downloads_executed": true,
-  "checkpoint_weight_downloads_executed": false,
-  "empirical_inference_executed": false,
-  "human_taxonomy_approval_present": false,
+  "checkpoint_weight_downloads_executed": true,
+  "workspace_local_checkpoint_cache": {
+    "path": "hotel_skill_study/.model_cache/hub",
+    "bytes_at_verification": 3020647010,
+    "snapshots": {
+      "Qwen/Qwen1.5-0.5B-Chat": "4d14e384a4b037942bb3f3016665157c8bcb70ea",
+      "Qwen/Qwen3.5-0.8B": "2fc06364715b967f1860aea9cf38778875588b17"
+    },
+    "offline_config_and_tokenizer_probe": "passed",
+    "provenance_note": "The first empirical invocation resolved through pre-existing HF_HUB_CACHE/TRANSFORMERS_CACHE overrides. Both exact snapshots were then explicitly downloaded to this ignored workspace-local cache and verified offline."
+  },
+  "empirical_inference_executed": true,
+  "empirical_scoring": {
+    "output": "artifacts/qwen_score_run",
+    "successful_cells": 84,
+    "failed_cells": 0,
+    "missing_cells": 0,
+    "validation": "passed",
+    "runtime_device": "cuda:0",
+    "checkpoint_execution": "sequential",
+    "qwen3_5_fast_path": "unavailable; recorded console fallback to Torch implementation",
+    "offline_resume": "84 cached cells; no checkpoint reload output"
+  },
+  "direct_phrase_scoring": {
+    "output": "artifacts/qwen_phrase_score_run",
+    "successful_cells": 84,
+    "failed_cells": 0,
+    "missing_cells": 0,
+    "target_token_observations": 180,
+    "target_token_counts": [2, 3],
+    "validation": "passed",
+    "offline_resume": "84 cached cells; no checkpoint reload",
+    "failure_ledger": "no_failures",
+    "relationship_to_binary_run": "Separate complementary analysis; does not replace artifacts/qwen_score_run."
+  },
+  "taxonomy_sensitivity": {
+    "status": "alternative_proposed_unapproved_not_scored",
+    "base_digest": "3095201c9ad6c3243f2a60a63dc4959e4d3252a54a4f8b7af3f6305a55ca03cc",
+    "alternative_digest": "2de4ced503de820a2474a97e17eb7794714906d64f88bdd2a3691d7b4ebdea9a",
+    "review_bundle": "artifacts/qwen_taxonomy_alternatives/ambiguous_splits_v1",
+    "base_approval_applies": false,
+    "scoring_executed": false
+  },
+  "human_taxonomy_approval_present": true,
+  "human_taxonomy_approval": {
+    "digest": "3095201c9ad6c3243f2a60a63dc4959e4d3252a54a4f8b7af3f6305a55ca03cc",
+    "verbatim_command": "/approve",
+    "human_notes": "",
+    "record": "artifacts/qwen_taxonomy/approval.json"
+  },
   "fixture_scoring": {
     "executed": true,
     "approval_scope": "fixture_test",
@@ -42,7 +90,7 @@
     "excluded_derived_fixture_run": "artifacts/qwen_invalidated/qwen_fixture_score_run_invalid_human_approval"
   },
   "blocking_conditions": [
-    "Exact taxonomy digest requires genuine human approval before empirical scoring."
+    "None for the completed empirical scoring run."
   ],
   "interpretation_warning": "This is a model release-generation comparison, not evidence of hotel-skill or labour-market change."
 }

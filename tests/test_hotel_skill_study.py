@@ -3,7 +3,9 @@ from __future__ import annotations
 
 import json
 import copy
+import math
 import pathlib
+import shutil
 import sys
 import tempfile
 from types import SimpleNamespace
@@ -16,8 +18,9 @@ from hotel_skill_study.pipeline import (approve_taxonomy, bootstrap_interval, ch
                                         _chat_input_ids, _choice_logprob,
                                         compare_taxonomy_runs, derive_taxonomy_alternative,
                                         discover, load_json, propose_taxonomy, require_approval,
-                                        score_taxonomy, validate_manifest,
-                                        validate_score_artifacts, validate_study)
+                                        score_skill_phrases, score_taxonomy, validate_manifest,
+                                        validate_phrase_scoring_config, _summarize_phrase_records,
+                                        validate_phrase_artifacts, validate_score_artifacts, validate_study)
 
 ROOT = pathlib.Path(__file__).resolve().parents[1]
 
@@ -149,6 +152,59 @@ def test_scoring_math_is_stable_and_seeded():
     one = bootstrap_interval([0.2, 0.5, 0.8], iterations=100, level=0.95, seed=7)
     two = bootstrap_interval([0.2, 0.5, 0.8], iterations=100, level=0.95, seed=7)
     assert one == two and one[0] <= 0.5 <= one[1]
+
+
+def test_phrase_scoring_config_and_within_model_normalization():
+    config = load_json(ROOT / "configs/qwen_phrase_scoring.json")
+    assert validate_phrase_scoring_config(config) == []
+    records = []
+    for prompt, offset in (("p1", 0.0), ("p2", -0.2)):
+        for skill, value in (("a", -1.0 + offset), ("b", -2.0 + offset)):
+            records.append({"status": "success", "model_id": "model", "prompt_variant": prompt,
+                            "canonical_id": skill, "skill_label": skill.upper(),
+                            "target_text": " " + skill.upper(), "token_count": 2,
+                            "sequence_log_probability": value, "sequence_probability": math.exp(value),
+                            "mean_token_log_probability": value / 2,
+                            "geometric_mean_token_probability": math.exp(value / 2),
+                            "record_id": prompt + skill})
+    measurements, summary = _summarize_phrase_records(records, config)
+    for prompt in ("p1", "p2"):
+        subset = [r for r in measurements if r["prompt_variant"] == prompt]
+        assert abs(sum(r["within_model_prompt_sequence_probability"] for r in subset) - 1) < 1e-12
+        assert abs(sum(r["within_model_prompt_length_normalized_probability"] for r in subset) - 1) < 1e-12
+    assert len(summary) == 2
+    assert next(r for r in summary if r["canonical_id"] == "a")["within_model_sequence_rank"] == 1
+
+
+def test_fixture_approval_cannot_authorize_phrase_scoring():
+    with tempfile.TemporaryDirectory() as tmp:
+        try:
+            score_skill_phrases(ROOT / "configs/hotel_skill_study.json", ROOT / "configs/qwen_models.json",
+                                ROOT / "artifacts/qwen_taxonomy/proposal.json",
+                                ROOT / "artifacts/qwen_taxonomy/fixture_test_approval.json",
+                                ROOT / "configs/qwen_phrase_scoring.json", pathlib.Path(tmp) / "phrases")
+        except PermissionError as exc:
+            assert "fixture-test approval cannot authorize empirical phrase scoring" in str(exc)
+        else:
+            raise AssertionError("fixture approval authorized direct empirical phrase scoring")
+
+
+def test_empirical_phrase_artifacts_validate_and_detect_token_tampering():
+    run = ROOT / "artifacts/qwen_phrase_score_run"
+    assert validate_phrase_artifacts(
+        ROOT / "configs/hotel_skill_study.json", ROOT / "configs/qwen_models.json",
+        ROOT / "artifacts/qwen_taxonomy/proposal.json", ROOT / "artifacts/qwen_taxonomy/approval.json",
+        ROOT / "configs/qwen_phrase_scoring.json", run) == []
+    with tempfile.TemporaryDirectory() as tmp:
+        changed = pathlib.Path(tmp) / "run"; shutil.copytree(run, changed)
+        record_path = next((changed / "records").glob("*.json"))
+        record = json.loads(record_path.read_text()); record["tokens"][0]["target_logit"] += 0.25
+        record_path.write_text(json.dumps(record))
+        errors = validate_phrase_artifacts(
+            ROOT / "configs/hotel_skill_study.json", ROOT / "configs/qwen_models.json",
+            ROOT / "artifacts/qwen_taxonomy/proposal.json", ROOT / "artifacts/qwen_taxonomy/approval.json",
+            ROOT / "configs/qwen_phrase_scoring.json", changed)
+        assert any("phrase token normalization mismatch" in error for error in errors)
 
 
 def test_approved_fixture_scoring_is_complete_traceable_and_resumable():
@@ -293,6 +349,41 @@ def test_fixture_taxonomy_sensitivity_branch_is_versioned_gated_and_compared():
         comparison = load_json(root / "comparison/comparison_manifest.json")
         assert comparison["fixture_data"] and comparison["compared_quantities"] == [
             "coverage", "ranks", "rank directions", "intervals", "prompt ranges"]
+
+
+def test_qwen_ambiguity_alternative_is_review_ready_and_base_approval_is_rejected():
+    base = ROOT / "artifacts/qwen_taxonomy/proposal.json"
+    base_before = base.read_bytes()
+    with tempfile.TemporaryDirectory() as tmp:
+        root = pathlib.Path(tmp); proposal = root / "proposal.json"
+        alternative = derive_taxonomy_alternative(base, proposal, "qwen_ambiguous_splits_v1")
+        assert base.read_bytes() == base_before
+        assert alternative["status"] == "proposed_unapproved"
+        assert alternative["alternative_of_sha256"] == "3095201c9ad6c3243f2a60a63dc4959e4d3252a54a4f8b7af3f6305a55ca03cc"
+        assert alternative["approval_consequence"]["base_approval_applies"] is False
+        assert len(alternative["categories"]) == 19 and len(alternative["mappings"]) == 144
+        assert alternative["coverage"]["mapping_coverage"] == 1.0
+        labels = {category["label"] for category in alternative["categories"]}
+        assert {"Conflict resolution", "Cash handling", "PMS proficiency", "Accuracy", "Prioritization"} <= labels
+        assert len(alternative["ambiguity_rationale"]) == 5
+        for name in ("REVIEW.md", "categories.csv", "raw_phrase_mappings.csv", "fixture_prevalence.svg"):
+            assert (root / name).exists()
+        try:
+            require_approval(proposal, ROOT / "artifacts/qwen_taxonomy/approval.json")
+        except PermissionError as exc:
+            assert "does not match the exact taxonomy digest" in str(exc)
+        else:
+            raise AssertionError("base approval authorized Qwen taxonomy alternative")
+        output = root / "score"
+        try:
+            score_skill_phrases(ROOT / "configs/hotel_skill_study.json", ROOT / "configs/qwen_models.json",
+                                proposal, ROOT / "artifacts/qwen_taxonomy/approval.json",
+                                ROOT / "configs/qwen_phrase_scoring.json", output)
+        except PermissionError:
+            pass
+        else:
+            raise AssertionError("unapproved Qwen alternative was phrase-scored")
+        assert not output.exists()
 
 
 if __name__ == "__main__":

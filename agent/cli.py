@@ -305,6 +305,7 @@ def _run_work_phase(folder, cfg, paths, backends, checkpointer, task_brief) -> N
             registry=__import__(
                 "agent.agentfolder.commands", fromlist=["build_registry"]
             ).build_registry(folder),
+            artifacts_dir=str(paths.artifacts),
         )
 
         # The two phases and each task get their OWN thread id. Measured: two
@@ -321,6 +322,7 @@ def _run_work_phase(folder, cfg, paths, backends, checkpointer, task_brief) -> N
                 repo_path=str(paths.repo),
                 task_brief=task_brief,
                 agent_dir=str(folder.path),
+                artifacts_dir=str(paths.artifacts),
                 threads=threads,
             ),
         )

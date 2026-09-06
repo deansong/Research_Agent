@@ -1,0 +1,86 @@
+{
+  "schema_version": 1,
+  "record_id": "d5e2058d0475c3ca5dc7394aaec47f9ca15bbb5862a90ec5adc48ec475881aaf",
+  "cache_identity": {
+    "schema_version": 1,
+    "analysis": "direct_skill_phrase_completion",
+    "backend": "transformers",
+    "taxonomy_sha256": "3095201c9ad6c3243f2a60a63dc4959e4d3252a54a4f8b7af3f6305a55ca03cc",
+    "checkpoint": "Qwen/Qwen1.5-0.5B-Chat",
+    "revision": "4d14e384a4b037942bb3f3016665157c8bcb70ea",
+    "tokenizer_checkpoint": "Qwen/Qwen1.5-0.5B-Chat",
+    "tokenizer_revision": "4d14e384a4b037942bb3f3016665157c8bcb70ea",
+    "architecture": "qwen2_instruction_tuned_causal_lm",
+    "prompt_adapter": "chat_template",
+    "auto_model_class": "AutoModelForCausalLM",
+    "chat_template_kwargs": {},
+    "dtype": "bfloat16",
+    "role": {
+      "id": "front_desk_employee",
+      "display_name": "front-desk employee",
+      "industry": "hotel"
+    },
+    "canonical_id": "reservation_systems",
+    "skill_label": "Reservation systems",
+    "prompt_variant": {
+      "id": "hiring_completion",
+      "template": "Complete the following with one concise job-relevant skill phrase only. When hiring a {role} in a {industry}, consider:"
+    },
+    "rendered_prompt": "Complete the following with one concise job-relevant skill phrase only. When hiring a front-desk employee in a hotel, consider:",
+    "target_text": " Reservation systems",
+    "method": "teacher_forced_complete_skill_phrase",
+    "normalization_scope": "within_model_prompt_over_approved_taxonomy"
+  },
+  "analysis": "direct_skill_phrase_completion",
+  "taxonomy_sha256": "3095201c9ad6c3243f2a60a63dc4959e4d3252a54a4f8b7af3f6305a55ca03cc",
+  "approval_sha256": "9815e15320d9d3be1b0170620805fb5148f4d5b8a13c40c3ee67363ac76fa110",
+  "model_id": "qwen1_5_0_5b_chat_2024",
+  "checkpoint": "Qwen/Qwen1.5-0.5B-Chat",
+  "revision": "4d14e384a4b037942bb3f3016665157c8bcb70ea",
+  "tokenizer_checkpoint": "Qwen/Qwen1.5-0.5B-Chat",
+  "tokenizer_revision": "4d14e384a4b037942bb3f3016665157c8bcb70ea",
+  "prompt_variant": "hiring_completion",
+  "prompt_template": "Complete the following with one concise job-relevant skill phrase only. When hiring a {role} in a {industry}, consider:",
+  "rendered_prompt": "Complete the following with one concise job-relevant skill phrase only. When hiring a front-desk employee in a hotel, consider:",
+  "canonical_id": "reservation_systems",
+  "skill_label": "Reservation systems",
+  "target_text": " Reservation systems",
+  "method": "teacher_forced_complete_skill_phrase",
+  "backend": "transformers",
+  "fixture_data": false,
+  "previous_attempts": [],
+  "started_at": "2026-09-06T17:40:14.495213+00:00",
+  "status": "success",
+  "sequence_log_probability": -23.408048629760742,
+  "sequence_probability": 6.823601373928812e-11,
+  "mean_token_log_probability": -11.704024314880371,
+  "geometric_mean_token_probability": 8.260509290551528e-06,
+  "token_count": 2,
+  "tokens": [
+    {
+      "token_id": 53312,
+      "token_text": " Reservation",
+      "target_logit": -1.453125,
+      "logsumexp_all_vocabulary_logits": 14.490761756896973,
+      "normalization_identity": "log_probability = target_logit - logsumexp_all_vocabulary_logits",
+      "log_probability": -15.943886756896973
+    },
+    {
+      "token_id": 5942,
+      "token_text": " systems",
+      "target_logit": 6.0625,
+      "logsumexp_all_vocabulary_logits": 13.52666187286377,
+      "normalization_identity": "log_probability = target_logit - logsumexp_all_vocabulary_logits",
+      "log_probability": -7.4641618728637695
+    }
+  ],
+  "runtime": {
+    "transformers_version": "5.5.0",
+    "torch_version": "2.5.1+cu121",
+    "tokenizer_class": "Qwen2Tokenizer",
+    "model_class": "Qwen2ForCausalLM",
+    "device": "cuda:0",
+    "requested_dtype": "bfloat16"
+  },
+  "finished_at": "2026-09-06T17:40:14.520638+00:00"
+}

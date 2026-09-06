@@ -1,0 +1,86 @@
+{
+  "schema_version": 1,
+  "record_id": "356915dd0e9a69ac2f89a32fcad5f4108b4fe2a5e09ac8b7e30fbf9327dcb358",
+  "cache_identity": {
+    "schema_version": 1,
+    "analysis": "direct_skill_phrase_completion",
+    "backend": "transformers",
+    "taxonomy_sha256": "3095201c9ad6c3243f2a60a63dc4959e4d3252a54a4f8b7af3f6305a55ca03cc",
+    "checkpoint": "Qwen/Qwen1.5-0.5B-Chat",
+    "revision": "4d14e384a4b037942bb3f3016665157c8bcb70ea",
+    "tokenizer_checkpoint": "Qwen/Qwen1.5-0.5B-Chat",
+    "tokenizer_revision": "4d14e384a4b037942bb3f3016665157c8bcb70ea",
+    "architecture": "qwen2_instruction_tuned_causal_lm",
+    "prompt_adapter": "chat_template",
+    "auto_model_class": "AutoModelForCausalLM",
+    "chat_template_kwargs": {},
+    "dtype": "bfloat16",
+    "role": {
+      "id": "front_desk_employee",
+      "display_name": "front-desk employee",
+      "industry": "hotel"
+    },
+    "canonical_id": "customer_service",
+    "skill_label": "Customer service",
+    "prompt_variant": {
+      "id": "direct_completion",
+      "template": "Complete the following with one concise skill phrase only. A {role} in a {industry} needs:"
+    },
+    "rendered_prompt": "Complete the following with one concise skill phrase only. A front-desk employee in a hotel needs:",
+    "target_text": " Customer service",
+    "method": "teacher_forced_complete_skill_phrase",
+    "normalization_scope": "within_model_prompt_over_approved_taxonomy"
+  },
+  "analysis": "direct_skill_phrase_completion",
+  "taxonomy_sha256": "3095201c9ad6c3243f2a60a63dc4959e4d3252a54a4f8b7af3f6305a55ca03cc",
+  "approval_sha256": "9815e15320d9d3be1b0170620805fb5148f4d5b8a13c40c3ee67363ac76fa110",
+  "model_id": "qwen1_5_0_5b_chat_2024",
+  "checkpoint": "Qwen/Qwen1.5-0.5B-Chat",
+  "revision": "4d14e384a4b037942bb3f3016665157c8bcb70ea",
+  "tokenizer_checkpoint": "Qwen/Qwen1.5-0.5B-Chat",
+  "tokenizer_revision": "4d14e384a4b037942bb3f3016665157c8bcb70ea",
+  "prompt_variant": "direct_completion",
+  "prompt_template": "Complete the following with one concise skill phrase only. A {role} in a {industry} needs:",
+  "rendered_prompt": "Complete the following with one concise skill phrase only. A front-desk employee in a hotel needs:",
+  "canonical_id": "customer_service",
+  "skill_label": "Customer service",
+  "target_text": " Customer service",
+  "method": "teacher_forced_complete_skill_phrase",
+  "backend": "transformers",
+  "fixture_data": false,
+  "previous_attempts": [],
+  "started_at": "2026-09-06T17:40:13.843498+00:00",
+  "status": "success",
+  "sequence_log_probability": -10.6407470703125,
+  "sequence_probability": 2.3921161549180043e-05,
+  "mean_token_log_probability": -5.32037353515625,
+  "geometric_mean_token_probability": 0.004890926451009056,
+  "token_count": 2,
+  "tokens": [
+    {
+      "token_id": 12277,
+      "token_text": " Customer",
+      "target_logit": 3.984375,
+      "logsumexp_all_vocabulary_logits": 14.594736099243164,
+      "normalization_identity": "log_probability = target_logit - logsumexp_all_vocabulary_logits",
+      "log_probability": -10.610361099243164
+    },
+    {
+      "token_id": 2473,
+      "token_text": " service",
+      "target_logit": 19.625,
+      "logsumexp_all_vocabulary_logits": 19.655385971069336,
+      "normalization_identity": "log_probability = target_logit - logsumexp_all_vocabulary_logits",
+      "log_probability": -0.030385971069335938
+    }
+  ],
+  "runtime": {
+    "transformers_version": "5.5.0",
+    "torch_version": "2.5.1+cu121",
+    "tokenizer_class": "Qwen2Tokenizer",
+    "model_class": "Qwen2ForCausalLM",
+    "device": "cuda:0",
+    "requested_dtype": "bfloat16"
+  },
+  "finished_at": "2026-09-06T17:40:13.869163+00:00"
+}

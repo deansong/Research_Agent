@@ -101,6 +101,7 @@ Placeholders you may use, and NOTHING else:
     {transcript}            the conversation with the human
     {last_answer}           what the human last typed
     {repo_path}             the repository path
+    {artifacts_dir}         where this run should put what it PRODUCES
     {out.<node>.<field>}    another node's output field
     {var.<name>}            a value set by a human command
 
@@ -127,6 +128,10 @@ JUDGEMENT
 - Include a human node only where a person must genuinely decide something, or
   to let them stop the agent. Always give them a way to exit.
 - Only give a node "write" access if it must change files.
+- A run's OUTPUT -- generated data, caches, reports, plots, logs -- belongs in
+  {artifacts_dir}, not in new top-level directories in the repository. Say so
+  in the prompt of any node that produces such output. Changing the project's
+  own source, tests and docs is different and belongs in the repository.
 - An `ask.question` that is ONLY a placeholder renders BLANK whenever that
   field happens to be empty, and the human sees a useless generic prompt.
   Always append a static sentence telling them what they can do, e.g.

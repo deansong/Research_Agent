@@ -1,0 +1,46 @@
+{
+  "schema_version": 1,
+  "status": "completed",
+  "run_identity": {
+    "schema_version": 1,
+    "analysis": "direct_skill_phrase_completion",
+    "backend": "transformers",
+    "study_config_sha256": "5a234a131894aa5c73f2cbb48d6842c19c794cb32349acec25d36db69176dd53",
+    "model_manifest_sha256": "9fbc12480ed2a981ca039ed9c31b46e11cf817e1be3f8d6a1f0d53c6ed714555",
+    "phrase_config_sha256": "fe9fc9a7efb8479cc62008ac66999beeeaa76ba33c526c8cc906225557fcd1de",
+    "taxonomy_sha256": "3095201c9ad6c3243f2a60a63dc4959e4d3252a54a4f8b7af3f6305a55ca03cc",
+    "approval_sha256": "9815e15320d9d3be1b0170620805fb5148f4d5b8a13c40c3ee67363ac76fa110"
+  },
+  "backend": "transformers",
+  "fixture_data": false,
+  "taxonomy_sha256": "3095201c9ad6c3243f2a60a63dc4959e4d3252a54a4f8b7af3f6305a55ca03cc",
+  "approval_sha256": "9815e15320d9d3be1b0170620805fb5148f4d5b8a13c40c3ee67363ac76fa110",
+  "study_config_sha256": "5a234a131894aa5c73f2cbb48d6842c19c794cb32349acec25d36db69176dd53",
+  "model_manifest_sha256": "9fbc12480ed2a981ca039ed9c31b46e11cf817e1be3f8d6a1f0d53c6ed714555",
+  "phrase_config_sha256": "fe9fc9a7efb8479cc62008ac66999beeeaa76ba33c526c8cc906225557fcd1de",
+  "counts": {
+    "success": 84
+  },
+  "invocation_counts": {
+    "cached": 84
+  },
+  "missing_success_cells": 0,
+  "derived_artifact_sha256": {
+    "tables/adjacent_release_phrase_ranks.csv": "b672151bc65fe3b6f209f1bb6e39c4fbd9bf912334918bff2c2480fddbbd6f5a",
+    "tables/per_model/qwen1_5_0_5b_chat_2024.csv": "827e020a1419543eddea559747e8a68a57a60dd8ea987e6c4e93dcc2e680ec7d",
+    "tables/per_model/qwen3_5_0_8b_2026.csv": "cb2ebe828437793fbbf4114e371deb4b3f261f37b0a36f7fa44965101674aef2",
+    "tables/phrase_measurements.csv": "7de11a0762262b85f92bfddf657aaa9408e87d66745065766b4226a2aa2787b6",
+    "tables/phrase_measurements.json": "d7fc139a318f7e0c01a78573ef4e78092c19192d3fb9ebcef91e92af2bc29196",
+    "tables/phrase_skill_summary.csv": "21f1ea18f0e102e66a87a8a43fd8258d2f5a3a10985ee393ba6b3fcb93447eae",
+    "tables/phrase_skill_summary.json": "d7ac5e2748ae6c754e8d9b048e0e6c90bbb8f0af2b42ba3b88264b46b720e788",
+    "tables/prompt_sensitivity.csv": "99d8a71fa18c8f5f118e1f204ce4eb9a90acca5f680d89a9dbc43869a000a085",
+    "failure_ledger.json": "d4372be185823a2a8cd8227e39553adde66db3c1410fd505e7dd0441c34085ef",
+    "REPORT.md": "ed7f75a3b265066994aa621da0be0f61b9a81e6d5584ad61696529caaa88bee9"
+  },
+  "comparison_axis": "model_release_generation",
+  "normalization_scope": "within_model_prompt_over_approved_taxonomy",
+  "binary_yes_no_run_reference": "artifacts/qwen_score_run",
+  "interpretation_warning": "Direct phrase completion is model-relative; raw logits are not compared across tokenizers and results are not labour-market change.",
+  "git_revision": "90697d9373c28542e15fb05a3f5d5aad4151e4b5",
+  "updated_at": "2026-09-06T17:41:29.605058+00:00"
+}

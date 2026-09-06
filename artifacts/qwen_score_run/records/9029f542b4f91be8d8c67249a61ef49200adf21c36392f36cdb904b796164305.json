@@ -1,0 +1,121 @@
+{
+  "schema_version": 3,
+  "record_id": "9029f542b4f91be8d8c67249a61ef49200adf21c36392f36cdb904b796164305",
+  "cache_identity": {
+    "schema_version": 3,
+    "backend": "transformers",
+    "taxonomy_sha256": "3095201c9ad6c3243f2a60a63dc4959e4d3252a54a4f8b7af3f6305a55ca03cc",
+    "checkpoint": "Qwen/Qwen1.5-0.5B-Chat",
+    "revision": "4d14e384a4b037942bb3f3016665157c8bcb70ea",
+    "tokenizer_checkpoint": "Qwen/Qwen1.5-0.5B-Chat",
+    "tokenizer_revision": "4d14e384a4b037942bb3f3016665157c8bcb70ea",
+    "architecture": "qwen2_instruction_tuned_causal_lm",
+    "prompt_adapter": "chat_template",
+    "auto_model_class": "AutoModelForCausalLM",
+    "chat_template_kwargs": {},
+    "dtype": "bfloat16",
+    "role": {
+      "id": "front_desk_employee",
+      "display_name": "front-desk employee",
+      "industry": "hotel"
+    },
+    "canonical_id": "ai_literacy",
+    "skill_label": "AI literacy",
+    "prompt_variant": {
+      "id": "hiring",
+      "template": "When hiring a {role} in a {industry}, should {skill} be considered job-relevant? Answer only Yes or No."
+    },
+    "rendered_prompt": "When hiring a front-desk employee in a hotel, should AI literacy be considered job-relevant? Answer only Yes or No.",
+    "method": "teacher_forced_binary_sequence",
+    "choices": [
+      " Yes",
+      " No"
+    ]
+  },
+  "taxonomy_sha256": "3095201c9ad6c3243f2a60a63dc4959e4d3252a54a4f8b7af3f6305a55ca03cc",
+  "approval_sha256": "9815e15320d9d3be1b0170620805fb5148f4d5b8a13c40c3ee67363ac76fa110",
+  "model_id": "qwen1_5_0_5b_chat_2024",
+  "checkpoint": "Qwen/Qwen1.5-0.5B-Chat",
+  "revision": "4d14e384a4b037942bb3f3016665157c8bcb70ea",
+  "tokenizer_checkpoint": "Qwen/Qwen1.5-0.5B-Chat",
+  "tokenizer_revision": "4d14e384a4b037942bb3f3016665157c8bcb70ea",
+  "architecture": "qwen2_instruction_tuned_causal_lm",
+  "prompt_adapter": "chat_template",
+  "auto_model_class": "AutoModelForCausalLM",
+  "chat_template_kwargs": {},
+  "requested_dtype": "bfloat16",
+  "release_date": "2024-02-04",
+  "release_source": "https://qwenlm.github.io/blog/qwen1.5/",
+  "cutoff": {
+    "status": "unknown",
+    "value": null,
+    "latest_date": null,
+    "scope": "Qwen documents data scale and composition but does not publish a defensible latest training-data date for this checkpoint.",
+    "sources": [
+      "https://huggingface.co/Qwen/Qwen1.5-0.5B-Chat",
+      "https://qwenlm.github.io/blog/qwen1.5/"
+    ]
+  },
+  "canonical_id": "ai_literacy",
+  "skill_label": "AI literacy",
+  "prompt_variant": "hiring",
+  "prompt_template": "When hiring a {role} in a {industry}, should {skill} be considered job-relevant? Answer only Yes or No.",
+  "rendered_prompt": "When hiring a front-desk employee in a hotel, should AI literacy be considered job-relevant? Answer only Yes or No.",
+  "method": "teacher_forced_binary_sequence",
+  "choices": [
+    " Yes",
+    " No"
+  ],
+  "backend": "transformers",
+  "fixture_data": false,
+  "started_at": "2026-09-06T17:30:21.885287+00:00",
+  "status": "success",
+  "components": [
+    {
+      "choice": " Yes",
+      "sequence_log_probability": -9.876365661621094,
+      "mean_token_log_probability": -9.876365661621094,
+      "token_count": 1,
+      "tokens": [
+        {
+          "token_id": 7414,
+          "token_text": " Yes",
+          "target_logit": 10.0625,
+          "logsumexp_all_vocabulary_logits": 19.938865661621094,
+          "normalization_identity": "log_probability = target_logit - logsumexp_all_vocabulary_logits",
+          "log_probability": -9.876365661621094
+        }
+      ]
+    },
+    {
+      "choice": " No",
+      "sequence_log_probability": -13.345115661621094,
+      "mean_token_log_probability": -13.345115661621094,
+      "token_count": 1,
+      "tokens": [
+        {
+          "token_id": 2308,
+          "token_text": " No",
+          "target_logit": 6.59375,
+          "logsumexp_all_vocabulary_logits": 19.938865661621094,
+          "normalization_identity": "log_probability = target_logit - logsumexp_all_vocabulary_logits",
+          "log_probability": -13.345115661621094
+        }
+      ]
+    }
+  ],
+  "calibrated_yes_probability": 0.9697854129326061,
+  "length_normalized_yes_probability": 0.9697854129326061,
+  "calibration": "softmax restricted to the exact Yes/No answer sequences",
+  "metric_scope": "model_relative_constrained_choice",
+  "runtime": {
+    "transformers_version": "5.5.0",
+    "torch_version": "2.5.1+cu121",
+    "tokenizer_class": "Qwen2Tokenizer",
+    "model_class": "Qwen2ForCausalLM",
+    "auto_model_class": "AutoModelForCausalLM",
+    "requested_dtype": "bfloat16",
+    "device": "cuda:0"
+  },
+  "finished_at": "2026-09-06T17:30:21.938050+00:00"
+}

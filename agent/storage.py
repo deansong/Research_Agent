@@ -16,9 +16,17 @@ LAYOUT
             meta.json           schema version, so a stale session refuses
             request.txt         what YOU asked for -- identifies the session
             brief.md            the designer's rewrite of it, for the agent
+            artifacts/          where a run puts its OUTPUT -- see below
             agent.tmp/          staging; renamed to agent/ only once valid
             agent/              the agent designed for this session
         agents/<name>/          promoted, committed, reusable
+
+`artifacts/` exists because a write-access node otherwise scatters its output
+across the repository root. A run that produced data files, reports and caches
+invented its own top-level `artifacts/`, `configs/` and `docs/` directories in
+someone's project. Source changes belong in the repository -- that is the job --
+but everything a run PRODUCES belongs to the run, and lands here where it is
+already gitignored and thrown away with the session.
 
 `brief.md` sits beside `agent/` deliberately: promoting a good agent is
 `cp -r sessions/<s>/agent .agent/agents/<name>`, and a task-specific brief
@@ -55,6 +63,7 @@ class SessionPaths:
     agent_dir: Path
     brief: Path
     request: Path
+    artifacts: Path
     meta: Path
     agents_dir: Path
 
@@ -82,11 +91,13 @@ def session_paths(repo: Path, session: str) -> SessionPaths:
         agent_dir=session_dir / "agent",
         brief=session_dir / "brief.md",
         request=session_dir / "request.txt",
+        artifacts=session_dir / "artifacts",
         meta=session_dir / "meta.json",
         agents_dir=dot_agent / "agents",
     )
 
     session_dir.mkdir(parents=True, exist_ok=True)
+    paths.artifacts.mkdir(parents=True, exist_ok=True)
     paths.agents_dir.mkdir(parents=True, exist_ok=True)
     _ensure_gitignore(dot_agent)
     _notice_legacy(repo)

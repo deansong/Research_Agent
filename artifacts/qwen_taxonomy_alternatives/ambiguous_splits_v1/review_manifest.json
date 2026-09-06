@@ -1,0 +1,28 @@
+{
+  "schema_version": 1,
+  "status": "proposed_unapproved_do_not_score",
+  "taxonomy_sha256": "2de4ced503de820a2474a97e17eb7794714906d64f88bdd2a3691d7b4ebdea9a",
+  "alternative_of_sha256": "3095201c9ad6c3243f2a60a63dc4959e4d3252a54a4f8b7af3f6305a55ca03cc",
+  "base_approval_applies": false,
+  "category_count": 19,
+  "mapping_count": 144,
+  "mapping_coverage": 1.0,
+  "fixture_records_by_model": {
+    "qwen1_5_0_5b_chat_2024": 9,
+    "qwen3_5_0_8b_2026": 9
+  },
+  "fixture_phrase_occurrences_by_model": {
+    "qwen1_5_0_5b_chat_2024": 72,
+    "qwen3_5_0_8b_2026": 72
+  },
+  "artifact_file_sha256": {
+    "proposal.json": "87ee3397c67bd18bf7e940ac113b63aa53e738c591511df160679a7062d91fda",
+    "categories.csv": "5a7069d7adfc644bba5a9e41b6458f1c099929e1ceff5d65b9fc533dd23bd916",
+    "raw_phrase_mappings.csv": "c18ba6e07f60cc8ce91c6edd83c4072b8878d1480ccd97035a1f712f9df4056f",
+    "fixture_prevalence.svg": "334241e6492c0ece11b3bdfe11873c5191e4dac3082dfcedec14865e6c717f04",
+    "REVIEW.md": "65365dc265049be163692a9b47b023d77bb0df906c139c46aaeb1c81902b0a35",
+    "taxonomy_sensitivity_plan.json": "ee2a8fc943a2f6f26657b4b7ed850287cecff7b7364b608e2ffc8eba0f2e2951"
+  },
+  "digest_reproduction": "Remove taxonomy_sha256 from proposal.json, canonicalize with sorted keys and separators (',', ':'), UTF-8 encode, and compute SHA-256.",
+  "approval_consequence": "The approved base digest does not authorize this alternative. A separate approval matching taxonomy_sha256 is required before any scoring."
+}

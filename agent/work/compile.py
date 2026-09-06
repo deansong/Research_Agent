@@ -24,12 +24,37 @@ from agent.work.templates.human_node import make_human_node
 # Appended to every write-access node's instructions by the loader, not the
 # folder -- so a generated agent cannot opt out of it. The session checkpoint
 # lives under .agent/, inside the executor's own write sandbox.
-INFRASTRUCTURE_WARNING = (
-    "\n\nIMPORTANT: the `.agent/` directory at the repository root is agent "
-    "infrastructure -- it holds this session's checkpoint database and the "
-    "agent definition you are running inside. Never read, modify, move or "
-    "delete anything under `.agent/`, and never include it in a cleanup task."
-)
+def infrastructure_rules(artifacts_dir: str) -> str:
+    """The standing rules every write-access node gets, appended by us.
+
+    Appended by the loader rather than written into the folder, so a generated
+    agent cannot opt out of them -- and so they can mention paths the designer
+    did not know about when it wrote the folder.
+
+    The second rule was added after a run scattered its output across someone's
+    repository root: it invented top-level `artifacts/`, `configs/` and `docs/`
+    directories, plus a model cache, in a project that had none of them. The
+    distinction it was missing is the one below -- changing the project is the
+    job, but what a run PRODUCES belongs to the run.
+    """
+    return (
+        "\n\nWORKING RULES (these override anything above):\n"
+        "1. The `.agent/` directory at the repository root is agent "
+        "infrastructure -- it holds this session's checkpoint database and the "
+        "agent definition you are running inside. Never read, modify, move or "
+        "delete anything under `.agent/`, except the run directory named in "
+        "rule 2. Never include `.agent/` in a cleanup task.\n"
+        f"2. Put everything this run PRODUCES in:\n     {artifacts_dir}\n"
+        "   That means generated data, downloaded caches, intermediate files, "
+        "reports, plots, logs and scratch work. Create subdirectories there as "
+        "you like. Do NOT invent new top-level directories in the repository "
+        "for them.\n"
+        "3. Change files in the repository itself only where changing the "
+        "project is genuinely the task -- source code, its tests, its docs. If "
+        "you are unsure which of rule 2 and rule 3 applies, prefer rule 2: an "
+        "unwanted file under the run directory is harmless, an unwanted file in "
+        "someone's repository is not."
+    )
 
 
 def backends_needed(folder: AgentFolder) -> dict[str, Access]:
@@ -54,6 +79,7 @@ def compile_agent(
     backends: Mapping[str, object],
     checkpointer,
     registry,
+    artifacts_dir: str = "",
 ):
     """Build and compile the graph described by `folder`.
 
@@ -76,7 +102,7 @@ def compile_agent(
         assert isinstance(config, AgentNodeConfig)
         instructions = config.instructions
         if config.access == "write":
-            instructions += INFRASTRUCTURE_WARNING
+            instructions += infrastructure_rules(artifacts_dir)
 
         builder.add_node(
             ref.name,

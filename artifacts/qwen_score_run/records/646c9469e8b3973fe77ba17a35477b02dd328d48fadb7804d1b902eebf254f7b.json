@@ -1,0 +1,121 @@
+{
+  "schema_version": 3,
+  "record_id": "646c9469e8b3973fe77ba17a35477b02dd328d48fadb7804d1b902eebf254f7b",
+  "cache_identity": {
+    "schema_version": 3,
+    "backend": "transformers",
+    "taxonomy_sha256": "3095201c9ad6c3243f2a60a63dc4959e4d3252a54a4f8b7af3f6305a55ca03cc",
+    "checkpoint": "Qwen/Qwen1.5-0.5B-Chat",
+    "revision": "4d14e384a4b037942bb3f3016665157c8bcb70ea",
+    "tokenizer_checkpoint": "Qwen/Qwen1.5-0.5B-Chat",
+    "tokenizer_revision": "4d14e384a4b037942bb3f3016665157c8bcb70ea",
+    "architecture": "qwen2_instruction_tuned_causal_lm",
+    "prompt_adapter": "chat_template",
+    "auto_model_class": "AutoModelForCausalLM",
+    "chat_template_kwargs": {},
+    "dtype": "bfloat16",
+    "role": {
+      "id": "front_desk_employee",
+      "display_name": "front-desk employee",
+      "industry": "hotel"
+    },
+    "canonical_id": "payment_processing",
+    "skill_label": "Payment processing",
+    "prompt_variant": {
+      "id": "required",
+      "template": "Does performing the work of a {role} in a {industry} require {skill}? Answer only Yes or No."
+    },
+    "rendered_prompt": "Does performing the work of a front-desk employee in a hotel require Payment processing? Answer only Yes or No.",
+    "method": "teacher_forced_binary_sequence",
+    "choices": [
+      " Yes",
+      " No"
+    ]
+  },
+  "taxonomy_sha256": "3095201c9ad6c3243f2a60a63dc4959e4d3252a54a4f8b7af3f6305a55ca03cc",
+  "approval_sha256": "9815e15320d9d3be1b0170620805fb5148f4d5b8a13c40c3ee67363ac76fa110",
+  "model_id": "qwen1_5_0_5b_chat_2024",
+  "checkpoint": "Qwen/Qwen1.5-0.5B-Chat",
+  "revision": "4d14e384a4b037942bb3f3016665157c8bcb70ea",
+  "tokenizer_checkpoint": "Qwen/Qwen1.5-0.5B-Chat",
+  "tokenizer_revision": "4d14e384a4b037942bb3f3016665157c8bcb70ea",
+  "architecture": "qwen2_instruction_tuned_causal_lm",
+  "prompt_adapter": "chat_template",
+  "auto_model_class": "AutoModelForCausalLM",
+  "chat_template_kwargs": {},
+  "requested_dtype": "bfloat16",
+  "release_date": "2024-02-04",
+  "release_source": "https://qwenlm.github.io/blog/qwen1.5/",
+  "cutoff": {
+    "status": "unknown",
+    "value": null,
+    "latest_date": null,
+    "scope": "Qwen documents data scale and composition but does not publish a defensible latest training-data date for this checkpoint.",
+    "sources": [
+      "https://huggingface.co/Qwen/Qwen1.5-0.5B-Chat",
+      "https://qwenlm.github.io/blog/qwen1.5/"
+    ]
+  },
+  "canonical_id": "payment_processing",
+  "skill_label": "Payment processing",
+  "prompt_variant": "required",
+  "prompt_template": "Does performing the work of a {role} in a {industry} require {skill}? Answer only Yes or No.",
+  "rendered_prompt": "Does performing the work of a front-desk employee in a hotel require Payment processing? Answer only Yes or No.",
+  "method": "teacher_forced_binary_sequence",
+  "choices": [
+    " Yes",
+    " No"
+  ],
+  "backend": "transformers",
+  "fixture_data": false,
+  "started_at": "2026-09-06T17:30:23.106452+00:00",
+  "status": "success",
+  "components": [
+    {
+      "choice": " Yes",
+      "sequence_log_probability": -9.633407592773438,
+      "mean_token_log_probability": -9.633407592773438,
+      "token_count": 1,
+      "tokens": [
+        {
+          "token_id": 7414,
+          "token_text": " Yes",
+          "target_logit": 8.625,
+          "logsumexp_all_vocabulary_logits": 18.258407592773438,
+          "normalization_identity": "log_probability = target_logit - logsumexp_all_vocabulary_logits",
+          "log_probability": -9.633407592773438
+        }
+      ]
+    },
+    {
+      "choice": " No",
+      "sequence_log_probability": -10.820907592773438,
+      "mean_token_log_probability": -10.820907592773438,
+      "token_count": 1,
+      "tokens": [
+        {
+          "token_id": 2308,
+          "token_text": " No",
+          "target_logit": 7.4375,
+          "logsumexp_all_vocabulary_logits": 18.258407592773438,
+          "normalization_identity": "log_probability = target_logit - logsumexp_all_vocabulary_logits",
+          "log_probability": -10.820907592773438
+        }
+      ]
+    }
+  ],
+  "calibrated_yes_probability": 0.7662936430859597,
+  "length_normalized_yes_probability": 0.7662936430859597,
+  "calibration": "softmax restricted to the exact Yes/No answer sequences",
+  "metric_scope": "model_relative_constrained_choice",
+  "runtime": {
+    "transformers_version": "5.5.0",
+    "torch_version": "2.5.1+cu121",
+    "tokenizer_class": "Qwen2Tokenizer",
+    "model_class": "Qwen2ForCausalLM",
+    "auto_model_class": "AutoModelForCausalLM",
+    "requested_dtype": "bfloat16",
+    "device": "cuda:0"
+  },
+  "finished_at": "2026-09-06T17:30:23.159065+00:00"
+}

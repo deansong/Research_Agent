@@ -1,0 +1,25 @@
+{
+  "taxonomy_sha256": "2de4ced503de820a2474a97e17eb7794714906d64f88bdd2a3691d7b4ebdea9a",
+  "alternatives_requiring_separate_review_and_approval": [
+    {
+      "id": "split_low_confidence_merges",
+      "rule": "split configured synonym clusters with confidence below 0.85"
+    },
+    {
+      "id": "split_pms_from_booking",
+      "rule": "separate property-management-system phrases from generic reservations"
+    },
+    {
+      "id": "split_conflict_from_complaints",
+      "rule": "separate conflict resolution from complaint handling"
+    }
+  ],
+  "comparison_outputs": [
+    "category coverage",
+    "within-model ranks",
+    "rank direction",
+    "bootstrap intervals",
+    "prompt range"
+  ],
+  "status": "planned_not_scored_before_approval"
+}

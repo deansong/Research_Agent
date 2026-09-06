@@ -66,6 +66,11 @@ class WorkState(TypedDict, total=False):
     task_brief: str
     """The self-contained statement of the job, written by the bootstrap
     designer FOR this agent (or typed by the human under --pre-build-agent)."""
+    artifacts_dir: str
+    """Where this run should put anything it PRODUCES -- data, reports,
+    caches, generated corpora. Source changes still go in the repository;
+    this is for output that belongs to the run rather than to the project."""
+
     agent_dir: str
     """Provenance only. The folder itself is loaded from disk, never stored in
     state -- a Pydantic object in a loosely-typed state field reloads as a
@@ -118,6 +123,7 @@ def initial_work_state(
     repo_path: str,
     task_brief: str,
     agent_dir: str,
+    artifacts_dir: str = "",
     threads: dict[str, str] | None = None,
 ) -> dict[str, Any]:
     """Build the input for a fresh run of a generated agent.
@@ -130,6 +136,7 @@ def initial_work_state(
         "repo_path": repo_path,
         "task_brief": task_brief,
         "agent_dir": agent_dir,
+        "artifacts_dir": artifacts_dir,
         "transcript": [{"role": "human", "text": task_brief}],
         "outputs": {},
         "threads": dict(threads or {}),
@@ -154,6 +161,7 @@ def render_context(state: WorkState, *, argument: str = "") -> dict[str, Any]:
     return {
         "task_brief": state.get("task_brief", ""),
         "repo_path": state.get("repo_path", ""),
+        "artifacts_dir": state.get("artifacts_dir", ""),
         "last_answer": state.get("last_answer", ""),
         "transcript": format_transcript(state.get("transcript", [])),
         "argument": argument,

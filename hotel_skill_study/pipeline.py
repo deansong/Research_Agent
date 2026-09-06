@@ -460,7 +460,7 @@ def derive_taxonomy_alternative(taxonomy_path: Path, output_path: Path,
     check = dict(base); check.pop("taxonomy_sha256", None)
     if digest(check) != claimed:
         raise ValueError("base taxonomy content does not match its digest")
-    if alternative_id != "reviewed_splits_v1":
+    if alternative_id not in {"reviewed_splits_v1", "qwen_ambiguous_splits_v1"}:
         raise ValueError(f"unsupported taxonomy alternative {alternative_id!r}")
     split_labels = {"Conflict resolution": "Conflict resolution", "Cash handling": "Cash handling",
                     "PMS proficiency": "PMS proficiency",
@@ -487,12 +487,30 @@ def derive_taxonomy_alternative(taxonomy_path: Path, output_path: Path,
                            "confidence": min(x["confidence"] for x in evidence),
                            "review_flags": ["taxonomy_sensitivity_alternative"],
                            "decision": "proposed_sensitivity_alternative"})
+    ambiguity_rationale = [
+        {"new_category": "Conflict resolution", "split_from": "Complaint handling",
+         "reason": "Conflict resolution can include interpersonal or operational conflicts beyond handling a guest complaint."},
+        {"new_category": "Cash handling", "split_from": "Payment processing",
+         "reason": "Cash custody and reconciliation are narrower operational skills than general card or digital payment processing."},
+        {"new_category": "PMS proficiency", "split_from": "Reservation systems",
+         "reason": "Property-management-system operation covers hotel records and workflows beyond generic booking systems."},
+        {"new_category": "Accuracy", "split_from": "Attention to detail",
+         "reason": "Accuracy is an outcome-oriented competency while attention to detail describes a work tendency."},
+        {"new_category": "Prioritization", "split_from": "Time management",
+         "reason": "Prioritization concerns ordering competing tasks, whereas time management is broader scheduling and pace control."}
+    ]
     body = {"schema_version": 1, "status": "proposed_unapproved",
-            "taxonomy_version": "v1-alt-reviewed-splits-v1",
+            "taxonomy_version": f"alt-{alternative_id}",
             "fixture_data": base.get("fixture_data", False), "created_at": utc_now(),
             "alternative_id": alternative_id, "alternative_of_sha256": claimed,
             "method": {"transformation": "Split reviewer-flagged approved merges by exact raw phrase",
-                       "split_labels": split_labels, "non_merge_policy": "All other v1 mappings unchanged"},
+                       "split_labels": split_labels, "non_merge_policy": "All other base mappings unchanged"},
+            "ambiguity_rationale": ambiguity_rationale,
+            "approval_consequence": {
+                "base_approval_applies": False,
+                "status": "separate_human_approval_required_before_any_scoring",
+                "reason": "This alternative has different categories and its own digest; approval of the base digest cannot authorize it."
+            },
             "source_run": base.get("source_run"), "categories": categories, "mappings": mappings,
             "failures": copy.deepcopy(base.get("failures", [])),
             "coverage": {"successful_records": base["coverage"]["successful_records"],
@@ -500,6 +518,28 @@ def derive_taxonomy_alternative(taxonomy_path: Path, output_path: Path,
                          "mapping_coverage": 1.0 if mappings else 0.0}}
     body["taxonomy_sha256"] = digest(body)
     atomic_json(output_path, body)
+    write_taxonomy_review_files(body, output_path.parent)
+    review_lines = [
+        "# Taxonomy-sensitivity alternative review", "",
+        "Status: **proposed and unapproved; do not score**", "",
+        f'Alternative digest: `{body["taxonomy_sha256"]}`  ',
+        f'Approved base digest: `{claimed}`', "",
+        f'This proposal contains {len(categories)} categories and {len(mappings)} mappings with '
+        f'{body["coverage"]["mapping_coverage"]:.1f} mapping coverage. It changes only the exact mappings '
+        "listed below; the approved base proposal remains unchanged.", "",
+        "## Ambiguity rationale", ""]
+    for item in ambiguity_rationale:
+        review_lines.append(f'- **{item["new_category"]}** split from **{item["split_from"]}**: {item["reason"]}')
+    review_lines += ["", "## Approval consequence", "",
+                     "The base approval does **not** authorize this alternative. Any fixture or empirical",
+                     "scoring requires a new approval record naming the exact alternative digest above.",
+                     "Changing any category, mapping, rationale, or provenance field changes the digest and",
+                     "requires another review.", "", "## Review files", "",
+                     "- `categories.csv`: categories, raw variants/aliases, per-model fixture counts, confidence, and flags.",
+                     "- `raw_phrase_mappings.csv`: every source phrase and its proposed alternative mapping.",
+                     "- `fixture_prevalence.svg`: readable per-model fixture coverage; synthetic and not empirical.",
+                     "- `proposal.json`: complete canonical proposal and provenance."]
+    (output_path.parent / "REVIEW.md").write_text("\n".join(review_lines) + "\n", encoding="utf-8")
     return body
 
 
@@ -757,7 +797,10 @@ def score_taxonomy(study_path: Path, models_path: Path, taxonomy_path: Path,
     counts = Counter()
     for model_cfg in (m for m in manifest["models"] if m["selected"]):
         tokenizer = model = load_error = None
-        if backend == "transformers":
+        pending_model_cells = any(
+            not (records_dir / f"{digest(_score_identity(taxonomy, model_cfg, category, variant, study, backend))}.json").exists()
+            for category in taxonomy["categories"] for variant in study["scoring"]["prompt_variants"])
+        if backend == "transformers" and pending_model_cells:
             try:
                 tokenizer = AutoTokenizer.from_pretrained(model_cfg["tokenizer_checkpoint"],
                                                           revision=model_cfg["tokenizer_revision"])
@@ -838,7 +881,7 @@ def score_taxonomy(study_path: Path, models_path: Path, taxonomy_path: Path,
                     row.update(status="failure", failure={"type": type(exc).__name__, "message": str(exc)})
                     counts["failure"] += 1
                 row["finished_at"] = utc_now(); atomic_json(target, row)
-        if backend == "transformers":
+        if backend == "transformers" and pending_model_cells:
             del model, tokenizer
             if torch.cuda.is_available(): torch.cuda.empty_cache()
     rows = [load_json(p) for p in sorted(records_dir.glob("*.json"))]
@@ -956,6 +999,380 @@ def score_taxonomy(study_path: Path, models_path: Path, taxonomy_path: Path,
                 "interpretation_warning": "Model-period differences are not direct labour-market measurements.",
                 "updated_at": utc_now()})
     return dict(counts)
+
+
+def validate_phrase_scoring_config(doc: dict[str, Any]) -> list[str]:
+    errors: list[str] = []
+    variants = doc.get("prompt_variants", [])
+    if len(variants) < 2 or len({v.get("id") for v in variants}) != len(variants):
+        errors.append("phrase scoring requires at least two uniquely named prompt variants")
+    for variant in variants:
+        template = variant.get("template", "")
+        if "{role}" not in template or "{industry}" not in template or "{skill}" in template:
+            errors.append(f"phrase prompt {variant.get('id')!r} must parameterize role/industry but not reveal skill")
+    if doc.get("method") != "teacher_forced_complete_skill_phrase":
+        errors.append("unsupported phrase scoring method")
+    if doc.get("normalization_scope") != "within_model_prompt_over_approved_taxonomy":
+        errors.append("phrase probabilities must normalize within model/prompt over the approved taxonomy")
+    if doc.get("target_prefix") != " ":
+        errors.append("phrase target_prefix must be one leading ASCII space")
+    return errors
+
+
+def _phrase_identity(taxonomy: dict[str, Any], model: dict[str, Any], category: dict[str, Any],
+                     variant: dict[str, Any], study: dict[str, Any], config: dict[str, Any],
+                     backend: str) -> dict[str, Any]:
+    prompt = variant["template"].format(role=study["role"]["display_name"],
+                                         industry=study["role"]["industry"])
+    target = config.get("target_prefix", " ") + category["label"]
+    return {"schema_version": 1, "analysis": "direct_skill_phrase_completion", "backend": backend,
+            "taxonomy_sha256": taxonomy["taxonomy_sha256"],
+            "checkpoint": model["checkpoint"], "revision": model["revision"],
+            "tokenizer_checkpoint": model["tokenizer_checkpoint"],
+            "tokenizer_revision": model["tokenizer_revision"],
+            "architecture": model["architecture"], "prompt_adapter": model["prompt_adapter"],
+            "auto_model_class": model["auto_model_class"],
+            "chat_template_kwargs": model.get("chat_template_kwargs", {}),
+            "dtype": model.get("dtype", "auto"), "role": study["role"],
+            "canonical_id": category["canonical_id"], "skill_label": category["label"],
+            "prompt_variant": variant, "rendered_prompt": prompt, "target_text": target,
+            "method": config["method"], "normalization_scope": config["normalization_scope"]}
+
+
+def _softmax_map(values: dict[str, float]) -> dict[str, float]:
+    high = max(values.values())
+    weights = {key: math.exp(value - high) for key, value in values.items()}
+    total = sum(weights.values())
+    return {key: value / total for key, value in weights.items()}
+
+
+def _summarize_phrase_records(records: list[dict[str, Any]], config: dict[str, Any]
+                              ) -> tuple[list[dict[str, Any]], list[dict[str, Any]]]:
+    successful = [row for row in records if row.get("status") == "success"]
+    by_model_prompt: dict[tuple[str, str], list[dict[str, Any]]] = defaultdict(list)
+    for row in successful:
+        by_model_prompt[(row["model_id"], row["prompt_variant"])].append(row)
+    measurements: list[dict[str, Any]] = []
+    for (model_id, prompt_id), items in sorted(by_model_prompt.items()):
+        sequence = _softmax_map({r["canonical_id"]: float(r["sequence_log_probability"]) for r in items})
+        length = _softmax_map({r["canonical_id"]: float(r["mean_token_log_probability"]) for r in items})
+        for row in sorted(items, key=lambda x: x["canonical_id"]):
+            measurements.append({
+                "model_id": model_id, "prompt_variant": prompt_id,
+                "canonical_id": row["canonical_id"], "skill_label": row["skill_label"],
+                "target_text": row["target_text"], "token_count": row["token_count"],
+                "sequence_log_probability": row["sequence_log_probability"],
+                "sequence_probability": row["sequence_probability"],
+                "mean_token_log_probability": row["mean_token_log_probability"],
+                "geometric_mean_token_probability": row["geometric_mean_token_probability"],
+                "within_model_prompt_sequence_probability": sequence[row["canonical_id"]],
+                "within_model_prompt_length_normalized_probability": length[row["canonical_id"]],
+                "normalization_scope": config["normalization_scope"],
+                "record_id": row["record_id"],
+                "interpretation_warning": "Within-model taxonomy normalization; raw logits are not comparable across tokenizers."})
+    grouped: dict[tuple[str, str], list[dict[str, Any]]] = defaultdict(list)
+    for row in measurements:
+        grouped[(row["model_id"], row["canonical_id"])].append(row)
+    summary: list[dict[str, Any]] = []
+    for (model_id, skill), items in sorted(grouped.items()):
+        seq = [float(x["within_model_prompt_sequence_probability"]) for x in items]
+        length = [float(x["within_model_prompt_length_normalized_probability"]) for x in items]
+        seq_lo, seq_hi = bootstrap_interval(seq, iterations=config["bootstrap_iterations"],
+                                            level=config["confidence_level"],
+                                            seed=int(digest(["phrase-seq", model_id, skill])[:8], 16))
+        len_lo, len_hi = bootstrap_interval(length, iterations=config["bootstrap_iterations"],
+                                            level=config["confidence_level"],
+                                            seed=int(digest(["phrase-len", model_id, skill])[:8], 16))
+        summary.append({"model_id": model_id, "canonical_id": skill,
+                        "skill_label": items[0]["skill_label"], "n_prompts": len(items),
+                        "token_count": items[0]["token_count"],
+                        "mean_sequence_log_probability": statistics.fmean(float(x["sequence_log_probability"]) for x in items),
+                        "mean_token_log_probability": statistics.fmean(float(x["mean_token_log_probability"]) for x in items),
+                        "mean_within_model_sequence_probability": statistics.fmean(seq),
+                        "sequence_probability_ci_low": seq_lo, "sequence_probability_ci_high": seq_hi,
+                        "sequence_prompt_range": max(seq) - min(seq),
+                        "mean_within_model_length_normalized_probability": statistics.fmean(length),
+                        "length_probability_ci_low": len_lo, "length_probability_ci_high": len_hi,
+                        "length_probability_prompt_range": max(length) - min(length),
+                        "record_ids_json": canonical_json([x["record_id"] for x in items]),
+                        "uncertainty_type": "descriptive_prompt_resampling_interval",
+                        "interpretation_warning": "Model-relative phrase completion over fixed taxonomy; not labour-market change."})
+    by_model: dict[str, list[dict[str, Any]]] = defaultdict(list)
+    for row in summary:
+        by_model[row["model_id"]].append(row)
+    for items in by_model.values():
+        for rank, row in enumerate(sorted(items, key=lambda x: (-x["mean_within_model_sequence_probability"], x["canonical_id"])), 1):
+            row["within_model_sequence_rank"] = rank
+        for rank, row in enumerate(sorted(items, key=lambda x: (-x["mean_within_model_length_normalized_probability"], x["canonical_id"])), 1):
+            row["within_model_length_normalized_rank"] = rank
+    return measurements, summary
+
+
+def score_skill_phrases(study_path: Path, models_path: Path, taxonomy_path: Path,
+                        approval_path: Path, config_path: Path, output_dir: Path,
+                        *, backend: str = "transformers") -> dict[str, int]:
+    """Teacher-force complete canonical skill phrases in a separate empirical analysis."""
+    taxonomy, approval = require_approval(taxonomy_path, approval_path)
+    if backend != "transformers":
+        raise ValueError("direct phrase scoring currently requires the transformers backend")
+    if approval.get("approval_scope") == "fixture_test":
+        raise PermissionError("fixture-test approval cannot authorize empirical phrase scoring")
+    study, manifest, config = load_json(study_path), load_json(models_path), load_json(config_path)
+    problems = validate_study(study) + validate_manifest(manifest) + validate_phrase_scoring_config(config)
+    if problems:
+        raise ValueError("invalid configuration:\n- " + "\n- ".join(problems))
+    run_identity = {"schema_version": 1, "analysis": "direct_skill_phrase_completion",
+                    "backend": backend, "study_config_sha256": digest(study),
+                    "model_manifest_sha256": digest(manifest), "phrase_config_sha256": digest(config),
+                    "taxonomy_sha256": taxonomy["taxonomy_sha256"], "approval_sha256": digest(approval)}
+    output_dir.mkdir(parents=True, exist_ok=True)
+    _reject_incompatible_run(output_dir / "phrase_run_manifest.json", run_identity)
+    atomic_json(output_dir / "phrase_run_manifest.json", {"schema_version": 1, "status": "running",
+                "run_identity": run_identity, "updated_at": utc_now()})
+    records_dir = output_dir / "records"; records_dir.mkdir(exist_ok=True)
+    import torch
+    import transformers
+    from transformers import AutoTokenizer
+    counts = Counter()
+    selected = [m for m in manifest["models"] if m["selected"]]
+    for model_cfg in selected:
+        cells = [(category, variant, _phrase_identity(taxonomy, model_cfg, category, variant,
+                                                       study, config, backend))
+                 for category in taxonomy["categories"] for variant in config["prompt_variants"]]
+        pending = []
+        for category, variant, identity in cells:
+            target = records_dir / f"{digest(identity)}.json"
+            if target.exists() and load_json(target).get("status") == "success":
+                counts["cached"] += 1
+            else:
+                pending.append((category, variant, identity, target))
+        if not pending:
+            continue
+        tokenizer = model = load_error = None
+        try:
+            tokenizer = AutoTokenizer.from_pretrained(model_cfg["tokenizer_checkpoint"],
+                                                      revision=model_cfg["tokenizer_revision"])
+            model_class = _auto_model_class(transformers, model_cfg)
+            model = model_class.from_pretrained(model_cfg["checkpoint"], revision=model_cfg["revision"],
+                                                 device_map="auto", dtype=model_cfg.get("dtype", "auto"))
+            model.eval()
+        except Exception as exc:
+            load_error = exc
+        for category, variant, identity, target in pending:
+            previous_attempts = []
+            if target.exists():
+                old = load_json(target)
+                previous_attempts = old.get("previous_attempts", []) + [{
+                    "started_at": old.get("started_at"), "finished_at": old.get("finished_at"),
+                    "status": old.get("status"), "failure": old.get("failure")}]
+                counts["retried"] += 1
+            row = {"schema_version": 1, "record_id": digest(identity), "cache_identity": identity,
+                   "analysis": "direct_skill_phrase_completion", "taxonomy_sha256": taxonomy["taxonomy_sha256"],
+                   "approval_sha256": digest(approval), "model_id": model_cfg["id"],
+                   "checkpoint": model_cfg["checkpoint"], "revision": model_cfg["revision"],
+                   "tokenizer_checkpoint": model_cfg["tokenizer_checkpoint"],
+                   "tokenizer_revision": model_cfg["tokenizer_revision"],
+                   "prompt_variant": variant["id"], "prompt_template": variant["template"],
+                   "rendered_prompt": identity["rendered_prompt"], "canonical_id": category["canonical_id"],
+                   "skill_label": category["label"], "target_text": identity["target_text"],
+                   "method": config["method"], "backend": backend, "fixture_data": False,
+                   "previous_attempts": previous_attempts, "started_at": utc_now()}
+            try:
+                if load_error:
+                    raise load_error
+                prompt_ids = (_chat_input_ids(tokenizer, row["rendered_prompt"], model_cfg).to(model.device)
+                              if model_cfg["prompt_adapter"] == "chat_template" else
+                              tokenizer(row["rendered_prompt"], return_tensors="pt")["input_ids"].to(model.device))
+                sequence_lp, tokens = _choice_logprob(model, torch, prompt_ids, tokenizer, row["target_text"])
+                mean_lp = sequence_lp / len(tokens)
+                row.update(status="success", sequence_log_probability=sequence_lp,
+                           sequence_probability=math.exp(sequence_lp),
+                           mean_token_log_probability=mean_lp,
+                           geometric_mean_token_probability=math.exp(mean_lp),
+                           token_count=len(tokens), tokens=tokens,
+                           runtime={"transformers_version": transformers.__version__, "torch_version": torch.__version__,
+                                    "tokenizer_class": tokenizer.__class__.__name__,
+                                    "model_class": model.__class__.__name__, "device": str(model.device),
+                                    "requested_dtype": model_cfg.get("dtype", "auto")})
+                counts["success"] += 1
+            except Exception as exc:
+                row.update(status="failure", failure={"stage": "model_load" if load_error else "phrase_scoring",
+                           "type": type(exc).__name__, "message": str(exc), "retryable": True})
+                counts["failure"] += 1
+            row["finished_at"] = utc_now(); atomic_json(target, row)
+        del model, tokenizer
+        if torch.cuda.is_available():
+            torch.cuda.empty_cache()
+    records = [load_json(path) for path in sorted(records_dir.glob("*.json"))]
+    measurements, summary = _summarize_phrase_records(records, config)
+    tables = output_dir / "tables"; tables.mkdir(exist_ok=True)
+    atomic_json(tables / "phrase_measurements.json", measurements)
+    atomic_json(tables / "phrase_skill_summary.json", summary)
+    _write_csv(tables / "phrase_measurements.csv", measurements)
+    _write_csv(tables / "phrase_skill_summary.csv", summary)
+    _write_csv(tables / "prompt_sensitivity.csv", [{
+        "model_id": r["model_id"], "canonical_id": r["canonical_id"],
+        "sequence_prompt_range": r["sequence_prompt_range"],
+        "length_probability_prompt_range": r["length_probability_prompt_range"],
+        "interpretation_warning": r["interpretation_warning"]} for r in summary])
+    per_model = tables / "per_model"; per_model.mkdir(exist_ok=True)
+    for model_cfg in selected:
+        _write_csv(per_model / f"{model_cfg['id']}.csv", [r for r in summary if r["model_id"] == model_cfg["id"]])
+    axis = manifest.get("comparison_axis", "training_period")
+    order_key = (lambda x: x["cutoff"]["latest_date"]) if axis == "training_period" else (lambda x: x["release_date"])
+    ordered = sorted(selected, key=order_key)
+    summary_index = {(r["model_id"], r["canonical_id"]): r for r in summary}
+    adjacent = []
+    for earlier, later in zip(ordered, ordered[1:]):
+        for category in taxonomy["categories"]:
+            left = summary_index.get((earlier["id"], category["canonical_id"]))
+            right = summary_index.get((later["id"], category["canonical_id"]))
+            adjacent.append({"comparison_axis": axis, "earlier_model_id": earlier["id"],
+                             "later_model_id": later["id"], "canonical_id": category["canonical_id"],
+                             "earlier_sequence_rank": left.get("within_model_sequence_rank") if left else None,
+                             "later_sequence_rank": right.get("within_model_sequence_rank") if right else None,
+                             "sequence_rank_change": (right["within_model_sequence_rank"] - left["within_model_sequence_rank"])
+                                                     if left and right else None,
+                             "earlier_length_rank": left.get("within_model_length_normalized_rank") if left else None,
+                             "later_length_rank": right.get("within_model_length_normalized_rank") if right else None,
+                             "length_rank_change": (right["within_model_length_normalized_rank"] - left["within_model_length_normalized_rank"])
+                                                   if left and right else None,
+                             "interpretation_warning": "Adjacent model-release ranks; raw logits are not compared and this is not labour-market change."})
+    _write_csv(tables / "adjacent_release_phrase_ranks.csv", adjacent)
+    report_lines = [
+        "# Direct skill-phrase completion findings", "",
+        "This analysis complements and does not replace the binary Yes/No elicitation in",
+        "`artifacts/qwen_score_run`. Each canonical skill phrase is teacher-forced in full",
+        "after three completion prompts. Raw logits remain token-level provenance and are",
+        "never compared across the checkpoints' different vocabularies.", "",
+        "The reported probabilities are normalized within each model and prompt over the",
+        "14 approved taxonomy phrases. They describe model-relative phrase completion, not",
+        "historical hotel work, worker capabilities, vacancies, or labour demand.", "",
+        "## Length-normalized within-model ranks", "",
+        "| model | rank | skill | mean normalized probability | prompt range |", "| --- | ---: | --- | ---: | ---: |"]
+    for model_cfg in ordered:
+        for row in sorted((r for r in summary if r["model_id"] == model_cfg["id"]),
+                          key=lambda r: r["within_model_length_normalized_rank"]):
+            report_lines.append(f'| {model_cfg["id"]} | {row["within_model_length_normalized_rank"]} | '
+                                f'{row["skill_label"]} | {row["mean_within_model_length_normalized_probability"]:.8f} | '
+                                f'{row["length_probability_prompt_range"]:.8f} |')
+    report_lines += ["", "Sequence-total and length-normalized rankings are both retained because",
+                     "phrase token counts differ. Prompt ranges and descriptive prompt-resampling",
+                     "intervals use only three fixed phrasings and are not population confidence intervals."]
+    (output_dir / "REPORT.md").write_text("\n".join(report_lines) + "\n", encoding="utf-8")
+    failures = [{"record_id": r["record_id"], "model_id": r["model_id"],
+                 "canonical_id": r["canonical_id"], "prompt_variant": r["prompt_variant"],
+                 "failure": r.get("failure"), "previous_attempts": r.get("previous_attempts", [])}
+                for r in records if r.get("status") != "success" or r.get("previous_attempts")]
+    atomic_json(output_dir / "failure_ledger.json", {
+        "schema_version": 1, "status": "failures_present" if failures else "no_failures",
+        "failure_count": sum(r.get("status") != "success" for r in records),
+        "recovered_attempt_count": sum(len(r.get("previous_attempts", [])) for r in records),
+        "entries": failures,
+        "resume_policy": "Successful content-addressed cells are cached; failed cells are retried and prior attempts retained."})
+    derived = sorted(path for path in tables.rglob("*") if path.is_file()) + [
+        output_dir / "failure_ledger.json", output_dir / "REPORT.md"]
+    outcome_counts = Counter(r.get("status", "unknown") for r in records)
+    atomic_json(output_dir / "phrase_run_manifest.json", {
+        "schema_version": 1, "status": "completed_with_failures" if outcome_counts["failure"] else "completed",
+        "run_identity": run_identity, "backend": backend, "fixture_data": False,
+        "taxonomy_sha256": taxonomy["taxonomy_sha256"], "approval_sha256": digest(approval),
+        "study_config_sha256": digest(study), "model_manifest_sha256": digest(manifest),
+        "phrase_config_sha256": digest(config), "counts": dict(outcome_counts),
+        "invocation_counts": dict(counts), "missing_success_cells": len(selected) * len(taxonomy["categories"]) * len(config["prompt_variants"]) - outcome_counts["success"],
+        "derived_artifact_sha256": {str(path.relative_to(output_dir)): file_sha256(path) for path in derived},
+        "comparison_axis": axis, "normalization_scope": config["normalization_scope"],
+        "binary_yes_no_run_reference": "artifacts/qwen_score_run",
+        "interpretation_warning": "Direct phrase completion is model-relative; raw logits are not compared across tokenizers and results are not labour-market change.",
+        "git_revision": git_revision(), "updated_at": utc_now()})
+    return dict(counts)
+
+
+def validate_phrase_artifacts(study_path: Path, models_path: Path, taxonomy_path: Path,
+                              approval_path: Path, config_path: Path, output_dir: Path) -> list[str]:
+    errors: list[str] = []
+    try:
+        taxonomy, approval = require_approval(taxonomy_path, approval_path)
+    except (PermissionError, ValueError) as exc:
+        return [str(exc)]
+    study, manifest, config = load_json(study_path), load_json(models_path), load_json(config_path)
+    manifest_path = output_dir / "phrase_run_manifest.json"
+    if not manifest_path.exists():
+        return ["missing phrase_run_manifest.json"]
+    run = load_json(manifest_path); backend = run.get("backend")
+    expected_identity = {"schema_version": 1, "analysis": "direct_skill_phrase_completion",
+                         "backend": backend, "study_config_sha256": digest(study),
+                         "model_manifest_sha256": digest(manifest), "phrase_config_sha256": digest(config),
+                         "taxonomy_sha256": taxonomy["taxonomy_sha256"], "approval_sha256": digest(approval)}
+    if run.get("run_identity") != expected_identity:
+        errors.append("phrase run identity mismatch")
+    selected = {m["id"]: m for m in manifest["models"] if m["selected"]}
+    categories = {c["canonical_id"]: c for c in taxonomy["categories"]}
+    variants = {v["id"]: v for v in config["prompt_variants"]}
+    expected_cells = {(m, c, v) for m in selected for c in categories for v in variants}
+    records = [load_json(path) for path in sorted((output_dir / "records").glob("*.json"))]
+    actual_cells = set()
+    for row in records:
+        cell = (row.get("model_id"), row.get("canonical_id"), row.get("prompt_variant")); actual_cells.add(cell)
+        if cell not in expected_cells:
+            errors.append(f"unexpected phrase cell {cell}"); continue
+        identity = _phrase_identity(taxonomy, selected[cell[0]], categories[cell[1]], variants[cell[2]],
+                                    study, config, backend)
+        if row.get("cache_identity") != identity or row.get("record_id") != digest(identity):
+            errors.append(f"{row.get('record_id')}: phrase cache identity mismatch")
+        if row.get("target_text") != config.get("target_prefix", " ") + categories[cell[1]]["label"]:
+            errors.append(f"{row.get('record_id')}: target phrase mismatch")
+        if row.get("status") == "success":
+            tokens = row.get("tokens", [])
+            if row.get("token_count") != len(tokens) or not tokens:
+                errors.append(f"{row.get('record_id')}: invalid phrase token count")
+            for token in tokens:
+                if not math.isclose(float(token["target_logit"]) - float(token["logsumexp_all_vocabulary_logits"]),
+                                    float(token["log_probability"]), rel_tol=1e-7, abs_tol=1e-7):
+                    errors.append(f"{row.get('record_id')}: phrase token normalization mismatch")
+            token_sum = sum(float(t["log_probability"]) for t in tokens)
+            if not math.isclose(token_sum, float(row["sequence_log_probability"]), rel_tol=1e-10, abs_tol=1e-10):
+                errors.append(f"{row.get('record_id')}: phrase sequence sum mismatch")
+            if not math.isclose(token_sum / len(tokens), float(row["mean_token_log_probability"]), rel_tol=1e-10, abs_tol=1e-10):
+                errors.append(f"{row.get('record_id')}: phrase mean mismatch")
+            if not math.isclose(math.exp(token_sum), float(row["sequence_probability"]), rel_tol=1e-10, abs_tol=1e-12):
+                errors.append(f"{row.get('record_id')}: phrase sequence probability mismatch")
+            if not math.isclose(math.exp(token_sum / len(tokens)), float(row["geometric_mean_token_probability"]), rel_tol=1e-10, abs_tol=1e-12):
+                errors.append(f"{row.get('record_id')}: phrase geometric-mean probability mismatch")
+        elif not row.get("failure"):
+            errors.append(f"{row.get('record_id')}: phrase failure lacks details")
+    if actual_cells != expected_cells:
+        errors.append("phrase record cells do not match configured Cartesian product")
+    measurements, summary = _summarize_phrase_records(records, config)
+    for name, expected in (("phrase_measurements.json", measurements), ("phrase_skill_summary.json", summary)):
+        path = output_dir / "tables" / name
+        if not path.exists() or load_json(path) != expected:
+            errors.append(f"derived phrase table mismatch: {name}")
+    sums: dict[tuple[str, str], list[float]] = defaultdict(lambda: [0.0, 0.0])
+    for row in measurements:
+        key = (row["model_id"], row["prompt_variant"])
+        sums[key][0] += row["within_model_prompt_sequence_probability"]
+        sums[key][1] += row["within_model_prompt_length_normalized_probability"]
+    for key, values in sums.items():
+        if any(not math.isclose(value, 1.0, rel_tol=1e-12, abs_tol=1e-12) for value in values):
+            errors.append(f"within-model phrase normalization does not sum to one: {key}")
+    ledger_path = output_dir / "failure_ledger.json"
+    if not ledger_path.exists():
+        errors.append("missing failure_ledger.json")
+    else:
+        ledger = load_json(ledger_path)
+        if ledger.get("failure_count") != sum(r.get("status") != "success" for r in records):
+            errors.append("phrase failure ledger count mismatch")
+        if ledger.get("recovered_attempt_count") != sum(len(r.get("previous_attempts", [])) for r in records):
+            errors.append("phrase recovered-attempt ledger count mismatch")
+    actual_outcomes = dict(Counter(r.get("status", "unknown") for r in records))
+    if run.get("counts") != actual_outcomes:
+        errors.append("phrase manifest outcome count mismatch")
+    for relative, expected_hash in run.get("derived_artifact_sha256", {}).items():
+        path = output_dir / relative
+        if not path.exists() or file_sha256(path) != expected_hash:
+            errors.append(f"phrase derived artifact hash mismatch: {relative}")
+    return errors
 
 
 def validate_score_artifacts(study_path: Path, models_path: Path, taxonomy_path: Path,

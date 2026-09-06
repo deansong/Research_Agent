@@ -1,0 +1,13 @@
+{
+  "schema_version": 1,
+  "method": "teacher_forced_complete_skill_phrase",
+  "prompt_variants": [
+    {"id": "direct_completion", "template": "Complete the following with one concise skill phrase only. A {role} in a {industry} needs:"},
+    {"id": "hiring_completion", "template": "Complete the following with one concise job-relevant skill phrase only. When hiring a {role} in a {industry}, consider:"},
+    {"id": "task_completion", "template": "Complete the following with one concise skill phrase only. For guest arrival, departure, questions, complaints, records, and coordination, a {role} in a {industry} needs:"}
+  ],
+  "target_prefix": " ",
+  "bootstrap_iterations": 2000,
+  "confidence_level": 0.95,
+  "normalization_scope": "within_model_prompt_over_approved_taxonomy"
+}

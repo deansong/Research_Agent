@@ -1,0 +1,88 @@
+{
+  "schema_version": 1,
+  "record_id": "725c24ce26af6ea323e31c69c13cb0c8fc3fb7e358d7a53bec599cb62d2759a4",
+  "cache_identity": {
+    "schema_version": 1,
+    "analysis": "direct_skill_phrase_completion",
+    "backend": "transformers",
+    "taxonomy_sha256": "3095201c9ad6c3243f2a60a63dc4959e4d3252a54a4f8b7af3f6305a55ca03cc",
+    "checkpoint": "Qwen/Qwen3.5-0.8B",
+    "revision": "2fc06364715b967f1860aea9cf38778875588b17",
+    "tokenizer_checkpoint": "Qwen/Qwen3.5-0.8B",
+    "tokenizer_revision": "2fc06364715b967f1860aea9cf38778875588b17",
+    "architecture": "qwen3_5_native_multimodal_instruction_model_text_only",
+    "prompt_adapter": "chat_template",
+    "auto_model_class": "AutoModelForImageTextToText",
+    "chat_template_kwargs": {
+      "enable_thinking": false
+    },
+    "dtype": "bfloat16",
+    "role": {
+      "id": "front_desk_employee",
+      "display_name": "front-desk employee",
+      "industry": "hotel"
+    },
+    "canonical_id": "customer_service",
+    "skill_label": "Customer service",
+    "prompt_variant": {
+      "id": "task_completion",
+      "template": "Complete the following with one concise skill phrase only. For guest arrival, departure, questions, complaints, records, and coordination, a {role} in a {industry} needs:"
+    },
+    "rendered_prompt": "Complete the following with one concise skill phrase only. For guest arrival, departure, questions, complaints, records, and coordination, a front-desk employee in a hotel needs:",
+    "target_text": " Customer service",
+    "method": "teacher_forced_complete_skill_phrase",
+    "normalization_scope": "within_model_prompt_over_approved_taxonomy"
+  },
+  "analysis": "direct_skill_phrase_completion",
+  "taxonomy_sha256": "3095201c9ad6c3243f2a60a63dc4959e4d3252a54a4f8b7af3f6305a55ca03cc",
+  "approval_sha256": "9815e15320d9d3be1b0170620805fb5148f4d5b8a13c40c3ee67363ac76fa110",
+  "model_id": "qwen3_5_0_8b_2026",
+  "checkpoint": "Qwen/Qwen3.5-0.8B",
+  "revision": "2fc06364715b967f1860aea9cf38778875588b17",
+  "tokenizer_checkpoint": "Qwen/Qwen3.5-0.8B",
+  "tokenizer_revision": "2fc06364715b967f1860aea9cf38778875588b17",
+  "prompt_variant": "task_completion",
+  "prompt_template": "Complete the following with one concise skill phrase only. For guest arrival, departure, questions, complaints, records, and coordination, a {role} in a {industry} needs:",
+  "rendered_prompt": "Complete the following with one concise skill phrase only. For guest arrival, departure, questions, complaints, records, and coordination, a front-desk employee in a hotel needs:",
+  "canonical_id": "customer_service",
+  "skill_label": "Customer service",
+  "target_text": " Customer service",
+  "method": "teacher_forced_complete_skill_phrase",
+  "backend": "transformers",
+  "fixture_data": false,
+  "previous_attempts": [],
+  "started_at": "2026-09-06T17:40:22.025106+00:00",
+  "status": "success",
+  "sequence_log_probability": -11.592714309692383,
+  "sequence_probability": 9.233112878559767e-06,
+  "mean_token_log_probability": -5.796357154846191,
+  "geometric_mean_token_probability": 0.003038603771234375,
+  "token_count": 2,
+  "tokens": [
+    {
+      "token_id": 11926,
+      "token_text": " Customer",
+      "target_logit": 9.75,
+      "logsumexp_all_vocabulary_logits": 19.6485595703125,
+      "normalization_identity": "log_probability = target_logit - logsumexp_all_vocabulary_logits",
+      "log_probability": -9.8985595703125
+    },
+    {
+      "token_id": 2393,
+      "token_text": " service",
+      "target_logit": 18.125,
+      "logsumexp_all_vocabulary_logits": 19.819154739379883,
+      "normalization_identity": "log_probability = target_logit - logsumexp_all_vocabulary_logits",
+      "log_probability": -1.6941547393798828
+    }
+  ],
+  "runtime": {
+    "transformers_version": "5.5.0",
+    "torch_version": "2.5.1+cu121",
+    "tokenizer_class": "TokenizersBackend",
+    "model_class": "Qwen3_5ForConditionalGeneration",
+    "device": "cuda:0",
+    "requested_dtype": "bfloat16"
+  },
+  "finished_at": "2026-09-06T17:40:22.183408+00:00"
+}

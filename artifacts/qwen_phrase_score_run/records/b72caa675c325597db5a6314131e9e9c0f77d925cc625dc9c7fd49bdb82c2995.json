@@ -1,0 +1,88 @@
+{
+  "schema_version": 1,
+  "record_id": "b72caa675c325597db5a6314131e9e9c0f77d925cc625dc9c7fd49bdb82c2995",
+  "cache_identity": {
+    "schema_version": 1,
+    "analysis": "direct_skill_phrase_completion",
+    "backend": "transformers",
+    "taxonomy_sha256": "3095201c9ad6c3243f2a60a63dc4959e4d3252a54a4f8b7af3f6305a55ca03cc",
+    "checkpoint": "Qwen/Qwen3.5-0.8B",
+    "revision": "2fc06364715b967f1860aea9cf38778875588b17",
+    "tokenizer_checkpoint": "Qwen/Qwen3.5-0.8B",
+    "tokenizer_revision": "2fc06364715b967f1860aea9cf38778875588b17",
+    "architecture": "qwen3_5_native_multimodal_instruction_model_text_only",
+    "prompt_adapter": "chat_template",
+    "auto_model_class": "AutoModelForImageTextToText",
+    "chat_template_kwargs": {
+      "enable_thinking": false
+    },
+    "dtype": "bfloat16",
+    "role": {
+      "id": "front_desk_employee",
+      "display_name": "front-desk employee",
+      "industry": "hotel"
+    },
+    "canonical_id": "guest_communication",
+    "skill_label": "Guest communication",
+    "prompt_variant": {
+      "id": "task_completion",
+      "template": "Complete the following with one concise skill phrase only. For guest arrival, departure, questions, complaints, records, and coordination, a {role} in a {industry} needs:"
+    },
+    "rendered_prompt": "Complete the following with one concise skill phrase only. For guest arrival, departure, questions, complaints, records, and coordination, a front-desk employee in a hotel needs:",
+    "target_text": " Guest communication",
+    "method": "teacher_forced_complete_skill_phrase",
+    "normalization_scope": "within_model_prompt_over_approved_taxonomy"
+  },
+  "analysis": "direct_skill_phrase_completion",
+  "taxonomy_sha256": "3095201c9ad6c3243f2a60a63dc4959e4d3252a54a4f8b7af3f6305a55ca03cc",
+  "approval_sha256": "9815e15320d9d3be1b0170620805fb5148f4d5b8a13c40c3ee67363ac76fa110",
+  "model_id": "qwen3_5_0_8b_2026",
+  "checkpoint": "Qwen/Qwen3.5-0.8B",
+  "revision": "2fc06364715b967f1860aea9cf38778875588b17",
+  "tokenizer_checkpoint": "Qwen/Qwen3.5-0.8B",
+  "tokenizer_revision": "2fc06364715b967f1860aea9cf38778875588b17",
+  "prompt_variant": "task_completion",
+  "prompt_template": "Complete the following with one concise skill phrase only. For guest arrival, departure, questions, complaints, records, and coordination, a {role} in a {industry} needs:",
+  "rendered_prompt": "Complete the following with one concise skill phrase only. For guest arrival, departure, questions, complaints, records, and coordination, a front-desk employee in a hotel needs:",
+  "canonical_id": "guest_communication",
+  "skill_label": "Guest communication",
+  "target_text": " Guest communication",
+  "method": "teacher_forced_complete_skill_phrase",
+  "backend": "transformers",
+  "fixture_data": false,
+  "previous_attempts": [],
+  "started_at": "2026-09-06T17:40:22.980640+00:00",
+  "status": "success",
+  "sequence_log_probability": -12.7869873046875,
+  "sequence_probability": 2.7969324226586625e-06,
+  "mean_token_log_probability": -6.39349365234375,
+  "geometric_mean_token_probability": 0.0016724031878284204,
+  "token_count": 2,
+  "tokens": [
+    {
+      "token_id": 25379,
+      "token_text": " Guest",
+      "target_logit": 10.6875,
+      "logsumexp_all_vocabulary_logits": 19.6485595703125,
+      "normalization_identity": "log_probability = target_logit - logsumexp_all_vocabulary_logits",
+      "log_probability": -8.9610595703125
+    },
+    {
+      "token_id": 10222,
+      "token_text": " communication",
+      "target_logit": 14.5,
+      "logsumexp_all_vocabulary_logits": 18.325927734375,
+      "normalization_identity": "log_probability = target_logit - logsumexp_all_vocabulary_logits",
+      "log_probability": -3.825927734375
+    }
+  ],
+  "runtime": {
+    "transformers_version": "5.5.0",
+    "torch_version": "2.5.1+cu121",
+    "tokenizer_class": "TokenizersBackend",
+    "model_class": "Qwen3_5ForConditionalGeneration",
+    "device": "cuda:0",
+    "requested_dtype": "bfloat16"
+  },
+  "finished_at": "2026-09-06T17:40:23.150931+00:00"
+}

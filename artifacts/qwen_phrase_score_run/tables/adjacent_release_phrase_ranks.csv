@@ -1,0 +1,15 @@
+comparison_axis,earlier_model_id,later_model_id,canonical_id,earlier_sequence_rank,later_sequence_rank,sequence_rank_change,earlier_length_rank,later_length_rank,length_rank_change,interpretation_warning
+model_release_generation,qwen1_5_0_5b_chat_2024,qwen3_5_0_8b_2026,ai_literacy,13,14,1,13,14,1,Adjacent model-release ranks; raw logits are not compared and this is not labour-market change.
+model_release_generation,qwen1_5_0_5b_chat_2024,qwen3_5_0_8b_2026,attention_to_detail,2,2,0,1,1,0,Adjacent model-release ranks; raw logits are not compared and this is not labour-market change.
+model_release_generation,qwen1_5_0_5b_chat_2024,qwen3_5_0_8b_2026,complaint_handling,8,7,-1,8,7,-1,Adjacent model-release ranks; raw logits are not compared and this is not labour-market change.
+model_release_generation,qwen1_5_0_5b_chat_2024,qwen3_5_0_8b_2026,customer_service,1,1,0,3,3,0,Adjacent model-release ranks; raw logits are not compared and this is not labour-market change.
+model_release_generation,qwen1_5_0_5b_chat_2024,qwen3_5_0_8b_2026,data_privacy,14,13,-1,14,13,-1,Adjacent model-release ranks; raw logits are not compared and this is not labour-market change.
+model_release_generation,qwen1_5_0_5b_chat_2024,qwen3_5_0_8b_2026,guest_communication,11,3,-8,11,4,-7,Adjacent model-release ranks; raw logits are not compared and this is not labour-market change.
+model_release_generation,qwen1_5_0_5b_chat_2024,qwen3_5_0_8b_2026,local_knowledge,10,10,0,9,10,1,Adjacent model-release ranks; raw logits are not compared and this is not labour-market change.
+model_release_generation,qwen1_5_0_5b_chat_2024,qwen3_5_0_8b_2026,multitasking,6,6,0,2,2,0,Adjacent model-release ranks; raw logits are not compared and this is not labour-market change.
+model_release_generation,qwen1_5_0_5b_chat_2024,qwen3_5_0_8b_2026,payment_processing,4,8,4,5,8,3,Adjacent model-release ranks; raw logits are not compared and this is not labour-market change.
+model_release_generation,qwen1_5_0_5b_chat_2024,qwen3_5_0_8b_2026,problem_solving,7,9,2,7,9,2,Adjacent model-release ranks; raw logits are not compared and this is not labour-market change.
+model_release_generation,qwen1_5_0_5b_chat_2024,qwen3_5_0_8b_2026,record_keeping,9,11,2,10,11,1,Adjacent model-release ranks; raw logits are not compared and this is not labour-market change.
+model_release_generation,qwen1_5_0_5b_chat_2024,qwen3_5_0_8b_2026,reservation_systems,12,12,0,12,12,0,Adjacent model-release ranks; raw logits are not compared and this is not labour-market change.
+model_release_generation,qwen1_5_0_5b_chat_2024,qwen3_5_0_8b_2026,teamwork,5,5,0,6,6,0,Adjacent model-release ranks; raw logits are not compared and this is not labour-market change.
+model_release_generation,qwen1_5_0_5b_chat_2024,qwen3_5_0_8b_2026,time_management,3,4,1,4,5,1,Adjacent model-release ranks; raw logits are not compared and this is not labour-market change.

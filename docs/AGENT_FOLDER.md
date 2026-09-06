@@ -183,6 +183,7 @@ These, and nothing else:
 | `{transcript}` | the conversation so far |
 | `{last_answer}` | what the human last typed |
 | `{repo_path}` | the repository path |
+| `{artifacts_dir}` | where this run should put what it **produces** |
 | `{out.<node>.<field>}` | another node's output field |
 | `{var.<name>}` | a value set by a human command |
 | `{argument}` | only inside a command's `record` or `sets` |
@@ -225,6 +226,26 @@ counter nothing bumps, and a node's `access` exceeding its backend.
 Every problem is reported **together**, so one repair round can fix them all.
 
 ---
+
+## Where output goes
+
+A write-access node changes two very different kinds of thing, and conflating
+them makes a mess of someone's repository:
+
+| | goes in |
+| --- | --- |
+| **project changes** — source, its tests, its docs | the repository, as normal |
+| **run output** — generated data, caches, reports, plots, logs, scratch | `.agent/sessions/<session>/artifacts/` |
+
+The loader appends this rule to every `write` node's instructions itself, so a
+generated agent cannot opt out of it, and the path is available to prompts as
+`{artifacts_dir}`. When it is ambiguous, the rule says prefer the run
+directory: an unwanted file there is thrown away with the session, an unwanted
+file in the repository is not.
+
+This exists because a real run did the other thing — it invented top-level
+`artifacts/`, `configs/` and `docs/` directories plus a model cache in a
+project that had none of them.
 
 ## When a node times out
 

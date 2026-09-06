@@ -73,7 +73,8 @@ class RecordingBackend:
 
         data = output_model.model_validate(fields)
         self.calls.append({"model": output_model.__name__, "prompt": prompt,
-                           "thread_id": thread_id, "access": access, "data": data})
+                           "thread_id": thread_id, "access": access, "data": data,
+                           "developer_instructions": developer_instructions})
         return StructuredRun(data=data, thread_id=thread_id or f"thread-{self.turn}",
                              is_new_thread=thread_id is None,
                              usage=Usage(input_tokens=100, cached_input_tokens=40))
@@ -192,6 +193,47 @@ def test_executor_gets_the_plan_first_then_the_short_prompt():
     assert counters.get("plan_revision") == 1, counters
     assert marks.get("executor/main") == 1, marks
     print("PASS  executor got the full plan first; thread_marks tracks the plan revision")
+
+
+def test_write_nodes_are_told_where_output_goes():
+    """A run's output must be scoped to the run, not scattered in the repo.
+
+    A real run invented top-level artifacts/, configs/ and docs/ directories
+    plus a model cache in someone's project, because nothing told it where
+    generated files belong. The rules are appended by the LOADER rather than
+    written into the folder, so a generated agent cannot opt out of them.
+    """
+    folder = load_agent_folder(DEFAULT)
+    backend = RecordingBackend()
+    artifacts = "/somewhere/.agent/sessions/task-x/artifacts"
+
+    graph = compile_agent(
+        folder,
+        backends={role: backend for role in backends_needed(folder)},
+        checkpointer=InMemorySaver(),
+        registry=build_registry(folder),
+        artifacts_dir=artifacts,
+    )
+    config = {"configurable": {"thread_id": "artifacts"}, "recursion_limit": 100}
+    graph.invoke(initial_work_state(repo_path="/tmp", task_brief="do it",
+                                    agent_dir=str(DEFAULT), artifacts_dir=artifacts),
+                 config=config)
+    graph.invoke(Command(resume="/plan"), config=config)
+
+    by_access = {}
+    for call in backend.calls:
+        by_access.setdefault(call["access"].value, []).append(call["developer_instructions"])
+
+    for instructions in by_access.get("write", []):
+        assert artifacts in instructions, "a write node was not told where output goes"
+        assert ".agent/" in instructions, "a write node lost the infrastructure warning"
+    assert by_access.get("write"), "no write node ran, so this test proved nothing"
+
+    # Read-only nodes have nothing to write, so they are not burdened with it.
+    for instructions in by_access.get("read_only", []):
+        assert artifacts not in instructions, "a read-only node got write rules"
+
+    print(f"PASS  write nodes are told to put output in the run's artifacts dir")
 
 
 if __name__ == "__main__":

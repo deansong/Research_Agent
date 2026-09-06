@@ -1,0 +1,106 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="900" height="837">
+<style>text{font:12px sans-serif}.title{font:bold 15px sans-serif}.bar{fill:#2878b5}</style>
+<text class="title" x="10" y="21">Fixture phrase prevalence by proposed category and model label</text>
+<text x="10" y="53">AI literacy · qwen3_5_0_8b_2026</text>
+<rect class="bar" x="310" y="42" width="373.3" height="14"/>
+<text x="688.3" y="53">6</text>
+<text x="10" y="76">Accuracy · qwen1_5_0_5b_chat_2024</text>
+<rect class="bar" x="310" y="65" width="186.7" height="14"/>
+<text x="501.7" y="76">3</text>
+<text x="10" y="99">Accuracy · qwen3_5_0_8b_2026</text>
+<rect class="bar" x="310" y="88" width="124.4" height="14"/>
+<text x="439.4" y="99">2</text>
+<text x="10" y="122">Attention to detail · qwen1_5_0_5b_chat_2024</text>
+<rect class="bar" x="310" y="111" width="248.9" height="14"/>
+<text x="563.9" y="122">4</text>
+<text x="10" y="145">Attention to detail · qwen3_5_0_8b_2026</text>
+<rect class="bar" x="310" y="134" width="311.1" height="14"/>
+<text x="626.1" y="145">5</text>
+<text x="10" y="168">Cash handling · qwen1_5_0_5b_chat_2024</text>
+<rect class="bar" x="310" y="157" width="186.7" height="14"/>
+<text x="501.7" y="168">3</text>
+<text x="10" y="191">Cash handling · qwen3_5_0_8b_2026</text>
+<rect class="bar" x="310" y="180" width="62.2" height="14"/>
+<text x="377.2" y="191">1</text>
+<text x="10" y="214">Complaint handling · qwen1_5_0_5b_chat_2024</text>
+<rect class="bar" x="310" y="203" width="248.9" height="14"/>
+<text x="563.9" y="214">4</text>
+<text x="10" y="237">Complaint handling · qwen3_5_0_8b_2026</text>
+<rect class="bar" x="310" y="226" width="248.9" height="14"/>
+<text x="563.9" y="237">4</text>
+<text x="10" y="260">Conflict resolution · qwen1_5_0_5b_chat_2024</text>
+<rect class="bar" x="310" y="249" width="124.4" height="14"/>
+<text x="439.4" y="260">2</text>
+<text x="10" y="283">Conflict resolution · qwen3_5_0_8b_2026</text>
+<rect class="bar" x="310" y="272" width="62.2" height="14"/>
+<text x="377.2" y="283">1</text>
+<text x="10" y="306">Customer service · qwen1_5_0_5b_chat_2024</text>
+<rect class="bar" x="310" y="295" width="560.0" height="14"/>
+<text x="875.0" y="306">9</text>
+<text x="10" y="329">Customer service · qwen3_5_0_8b_2026</text>
+<rect class="bar" x="310" y="318" width="373.3" height="14"/>
+<text x="688.3" y="329">6</text>
+<text x="10" y="352">Data privacy · qwen3_5_0_8b_2026</text>
+<rect class="bar" x="310" y="341" width="560.0" height="14"/>
+<text x="875.0" y="352">9</text>
+<text x="10" y="375">Guest communication · qwen1_5_0_5b_chat_2024</text>
+<rect class="bar" x="310" y="364" width="560.0" height="14"/>
+<text x="875.0" y="375">9</text>
+<text x="10" y="398">Guest communication · qwen3_5_0_8b_2026</text>
+<rect class="bar" x="310" y="387" width="560.0" height="14"/>
+<text x="875.0" y="398">9</text>
+<text x="10" y="421">Local knowledge · qwen1_5_0_5b_chat_2024</text>
+<rect class="bar" x="310" y="410" width="311.1" height="14"/>
+<text x="626.1" y="421">5</text>
+<text x="10" y="444">Multitasking · qwen1_5_0_5b_chat_2024</text>
+<rect class="bar" x="310" y="433" width="373.3" height="14"/>
+<text x="688.3" y="444">6</text>
+<text x="10" y="467">Multitasking · qwen3_5_0_8b_2026</text>
+<rect class="bar" x="310" y="456" width="373.3" height="14"/>
+<text x="688.3" y="467">6</text>
+<text x="10" y="490">PMS proficiency · qwen1_5_0_5b_chat_2024</text>
+<rect class="bar" x="310" y="479" width="62.2" height="14"/>
+<text x="377.2" y="490">1</text>
+<text x="10" y="513">PMS proficiency · qwen3_5_0_8b_2026</text>
+<rect class="bar" x="310" y="502" width="311.1" height="14"/>
+<text x="626.1" y="513">5</text>
+<text x="10" y="536">Payment processing · qwen1_5_0_5b_chat_2024</text>
+<rect class="bar" x="310" y="525" width="186.7" height="14"/>
+<text x="501.7" y="536">3</text>
+<text x="10" y="559">Payment processing · qwen3_5_0_8b_2026</text>
+<rect class="bar" x="310" y="548" width="124.4" height="14"/>
+<text x="439.4" y="559">2</text>
+<text x="10" y="582">Prioritization · qwen1_5_0_5b_chat_2024</text>
+<rect class="bar" x="310" y="571" width="62.2" height="14"/>
+<text x="377.2" y="582">1</text>
+<text x="10" y="605">Prioritization · qwen3_5_0_8b_2026</text>
+<rect class="bar" x="310" y="594" width="62.2" height="14"/>
+<text x="377.2" y="605">1</text>
+<text x="10" y="628">Problem solving · qwen1_5_0_5b_chat_2024</text>
+<rect class="bar" x="310" y="617" width="186.7" height="14"/>
+<text x="501.7" y="628">3</text>
+<text x="10" y="651">Problem solving · qwen3_5_0_8b_2026</text>
+<rect class="bar" x="310" y="640" width="248.9" height="14"/>
+<text x="563.9" y="651">4</text>
+<text x="10" y="674">Record keeping · qwen1_5_0_5b_chat_2024</text>
+<rect class="bar" x="310" y="663" width="186.7" height="14"/>
+<text x="501.7" y="674">3</text>
+<text x="10" y="697">Reservation systems · qwen1_5_0_5b_chat_2024</text>
+<rect class="bar" x="310" y="686" width="311.1" height="14"/>
+<text x="626.1" y="697">5</text>
+<text x="10" y="720">Reservation systems · qwen3_5_0_8b_2026</text>
+<rect class="bar" x="310" y="709" width="248.9" height="14"/>
+<text x="563.9" y="720">4</text>
+<text x="10" y="743">Teamwork · qwen1_5_0_5b_chat_2024</text>
+<rect class="bar" x="310" y="732" width="560.0" height="14"/>
+<text x="875.0" y="743">9</text>
+<text x="10" y="766">Teamwork · qwen3_5_0_8b_2026</text>
+<rect class="bar" x="310" y="755" width="373.3" height="14"/>
+<text x="688.3" y="766">6</text>
+<text x="10" y="789">Time management · qwen1_5_0_5b_chat_2024</text>
+<rect class="bar" x="310" y="778" width="124.4" height="14"/>
+<text x="439.4" y="789">2</text>
+<text x="10" y="812">Time management · qwen3_5_0_8b_2026</text>
+<rect class="bar" x="310" y="801" width="62.2" height="14"/>
+<text x="377.2" y="812">1</text>
+</svg>

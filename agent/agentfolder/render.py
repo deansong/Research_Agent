@@ -25,7 +25,14 @@ from typing import Any, Mapping
 _TOKEN = re.compile(r"\{([a-z][a-z0-9_]*(?:\.[a-z0-9_]+)*)\}")
 
 # The simple names. Anything else must be an {out.*} or {var.*} lookup.
-SIMPLE_TOKENS = ("task_brief", "transcript", "last_answer", "repo_path", "argument")
+SIMPLE_TOKENS = (
+    "task_brief",
+    "transcript",
+    "last_answer",
+    "repo_path",
+    "artifacts_dir",
+    "argument",
+)
 
 
 def find_tokens(text: str) -> list[str]:

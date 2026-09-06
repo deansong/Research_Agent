@@ -1,6 +1,6 @@
-# Qwen taxonomy review required
+# Qwen taxonomy review decision
 
-Status: **proposed, unapproved, synthetic-fixture preflight only**
+Status: **approved for the exact digest below by explicit `/approve` response**
 
 Exact proposal digest:
 `3095201c9ad6c3243f2a60a63dc4959e4d3252a54a4f8b7af3f6305a55ca03cc`
@@ -13,11 +13,12 @@ accuracy, and prioritization; review the unclustered `Record keeping` category;
 and do not interpret model-specific fixture labels such as `AI literacy` as
 emergence.
 
-No genuine human answer has been supplied. There is no human `approval.json`.
-The earlier unsupported approval assertion and the synthetic run derived from
-it are preserved under `artifacts/qwen_invalidated/` and excluded. Editing the
-proposal or synonym rules changes the digest and requires review of the new
-proposal.
+The human answered `/approve` to the immediately preceding review request that
+named this exact digest and its consequences. `approval.json` preserves that
+verbatim command and the blank human-notes field. The earlier unsupported
+approval assertion and the synthetic run derived from it remain preserved under
+`artifacts/qwen_invalidated/` and excluded. Editing the proposal or synonym
+rules changes the digest and requires review of the new proposal.
 
-A separate `fixture_test_approval.json`, if present, authorizes synthetic
+A separate `fixture_test_approval.json` authorizes synthetic
 software testing only. The scorer rejects that scope for empirical inference.

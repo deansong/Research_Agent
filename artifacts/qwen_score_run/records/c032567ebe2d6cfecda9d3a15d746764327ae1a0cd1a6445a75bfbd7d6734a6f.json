@@ -1,0 +1,125 @@
+{
+  "schema_version": 3,
+  "record_id": "c032567ebe2d6cfecda9d3a15d746764327ae1a0cd1a6445a75bfbd7d6734a6f",
+  "cache_identity": {
+    "schema_version": 3,
+    "backend": "transformers",
+    "taxonomy_sha256": "3095201c9ad6c3243f2a60a63dc4959e4d3252a54a4f8b7af3f6305a55ca03cc",
+    "checkpoint": "Qwen/Qwen3.5-0.8B",
+    "revision": "2fc06364715b967f1860aea9cf38778875588b17",
+    "tokenizer_checkpoint": "Qwen/Qwen3.5-0.8B",
+    "tokenizer_revision": "2fc06364715b967f1860aea9cf38778875588b17",
+    "architecture": "qwen3_5_native_multimodal_instruction_model_text_only",
+    "prompt_adapter": "chat_template",
+    "auto_model_class": "AutoModelForImageTextToText",
+    "chat_template_kwargs": {
+      "enable_thinking": false
+    },
+    "dtype": "bfloat16",
+    "role": {
+      "id": "front_desk_employee",
+      "display_name": "front-desk employee",
+      "industry": "hotel"
+    },
+    "canonical_id": "local_knowledge",
+    "skill_label": "Local knowledge",
+    "prompt_variant": {
+      "id": "hiring",
+      "template": "When hiring a {role} in a {industry}, should {skill} be considered job-relevant? Answer only Yes or No."
+    },
+    "rendered_prompt": "When hiring a front-desk employee in a hotel, should Local knowledge be considered job-relevant? Answer only Yes or No.",
+    "method": "teacher_forced_binary_sequence",
+    "choices": [
+      " Yes",
+      " No"
+    ]
+  },
+  "taxonomy_sha256": "3095201c9ad6c3243f2a60a63dc4959e4d3252a54a4f8b7af3f6305a55ca03cc",
+  "approval_sha256": "9815e15320d9d3be1b0170620805fb5148f4d5b8a13c40c3ee67363ac76fa110",
+  "model_id": "qwen3_5_0_8b_2026",
+  "checkpoint": "Qwen/Qwen3.5-0.8B",
+  "revision": "2fc06364715b967f1860aea9cf38778875588b17",
+  "tokenizer_checkpoint": "Qwen/Qwen3.5-0.8B",
+  "tokenizer_revision": "2fc06364715b967f1860aea9cf38778875588b17",
+  "architecture": "qwen3_5_native_multimodal_instruction_model_text_only",
+  "prompt_adapter": "chat_template",
+  "auto_model_class": "AutoModelForImageTextToText",
+  "chat_template_kwargs": {
+    "enable_thinking": false
+  },
+  "requested_dtype": "bfloat16",
+  "release_date": "2026-03-02",
+  "release_source": "https://qwen.ai/blog?id=qwen3.5",
+  "cutoff": {
+    "status": "unknown",
+    "value": null,
+    "latest_date": null,
+    "scope": "The official release describes training and architecture but does not publish a defensible latest training-data date for this checkpoint.",
+    "sources": [
+      "https://huggingface.co/Qwen/Qwen3.5-0.8B",
+      "https://qwen.ai/blog?id=qwen3.5"
+    ]
+  },
+  "canonical_id": "local_knowledge",
+  "skill_label": "Local knowledge",
+  "prompt_variant": "hiring",
+  "prompt_template": "When hiring a {role} in a {industry}, should {skill} be considered job-relevant? Answer only Yes or No.",
+  "rendered_prompt": "When hiring a front-desk employee in a hotel, should Local knowledge be considered job-relevant? Answer only Yes or No.",
+  "method": "teacher_forced_binary_sequence",
+  "choices": [
+    " Yes",
+    " No"
+  ],
+  "backend": "transformers",
+  "fixture_data": false,
+  "started_at": "2026-09-06T17:30:49.826953+00:00",
+  "status": "success",
+  "components": [
+    {
+      "choice": " Yes",
+      "sequence_log_probability": -9.50339126586914,
+      "mean_token_log_probability": -9.50339126586914,
+      "token_count": 1,
+      "tokens": [
+        {
+          "token_id": 7179,
+          "token_text": " Yes",
+          "target_logit": 17.75,
+          "logsumexp_all_vocabulary_logits": 27.25339126586914,
+          "normalization_identity": "log_probability = target_logit - logsumexp_all_vocabulary_logits",
+          "log_probability": -9.50339126586914
+        }
+      ]
+    },
+    {
+      "choice": " No",
+      "sequence_log_probability": -12.75339126586914,
+      "mean_token_log_probability": -12.75339126586914,
+      "token_count": 1,
+      "tokens": [
+        {
+          "token_id": 2233,
+          "token_text": " No",
+          "target_logit": 14.5,
+          "logsumexp_all_vocabulary_logits": 27.25339126586914,
+          "normalization_identity": "log_probability = target_logit - logsumexp_all_vocabulary_logits",
+          "log_probability": -12.75339126586914
+        }
+      ]
+    }
+  ],
+  "calibrated_yes_probability": 0.9626731126558706,
+  "length_normalized_yes_probability": 0.9626731126558706,
+  "calibration": "softmax restricted to the exact Yes/No answer sequences",
+  "metric_scope": "model_relative_constrained_choice",
+  "runtime": {
+    "transformers_version": "5.5.0",
+    "torch_version": "2.5.1+cu121",
+    "tokenizer_class": "TokenizersBackend",
+    "model_class": "Qwen3_5ForConditionalGeneration",
+    "auto_model_class": "AutoModelForImageTextToText",
+    "requested_dtype": "bfloat16",
+    "device": "cuda:0"
+  },
+  "finished_at": "2026-09-06T17:30:50.127525+00:00"
+}

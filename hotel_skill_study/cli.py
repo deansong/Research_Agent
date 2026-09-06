@@ -6,7 +6,8 @@ from pathlib import Path
 
 from .pipeline import (approve_taxonomy, compare_taxonomy_runs, derive_taxonomy_alternative,
                        discover, load_json, propose_taxonomy, score_taxonomy, require_approval,
-                       validate_manifest, validate_score_artifacts, validate_study)
+                       score_skill_phrases, validate_manifest, validate_phrase_artifacts,
+                       validate_score_artifacts, validate_study)
 
 
 def parser() -> argparse.ArgumentParser:
@@ -42,6 +43,20 @@ def parser() -> argparse.ArgumentParser:
     s.add_argument("--models", type=Path, default=Path("configs/models.json"))
     s.add_argument("--output-dir", type=Path, required=True)
     s.add_argument("--backend", choices=("fixture", "transformers"), default="transformers")
+    ps = sub.add_parser("score-phrases")
+    ps.add_argument("--taxonomy", type=Path, required=True)
+    ps.add_argument("--approval", type=Path, required=True)
+    ps.add_argument("--study", type=Path, default=Path("configs/hotel_skill_study.json"))
+    ps.add_argument("--models", type=Path, default=Path("configs/qwen_models.json"))
+    ps.add_argument("--config", type=Path, default=Path("configs/qwen_phrase_scoring.json"))
+    ps.add_argument("--output-dir", type=Path, required=True)
+    pv = sub.add_parser("validate-phrase-artifacts")
+    pv.add_argument("--taxonomy", type=Path, required=True)
+    pv.add_argument("--approval", type=Path, required=True)
+    pv.add_argument("--study", type=Path, default=Path("configs/hotel_skill_study.json"))
+    pv.add_argument("--models", type=Path, default=Path("configs/qwen_models.json"))
+    pv.add_argument("--config", type=Path, default=Path("configs/qwen_phrase_scoring.json"))
+    pv.add_argument("--output-dir", type=Path, required=True)
     av = sub.add_parser("validate-artifacts")
     av.add_argument("--taxonomy", type=Path, required=True)
     av.add_argument("--approval", type=Path, required=True)
@@ -89,6 +104,19 @@ def main(argv: list[str] | None = None) -> int:
             return 0
         except PermissionError as exc:
             print(str(exc)); return 2
+    if args.command == "score-phrases":
+        try:
+            print(json.dumps(score_skill_phrases(args.study, args.models, args.taxonomy,
+                                                args.approval, args.config, args.output_dir), indent=2))
+            return 0
+        except PermissionError as exc:
+            print(str(exc)); return 2
+    if args.command == "validate-phrase-artifacts":
+        problems = validate_phrase_artifacts(args.study, args.models, args.taxonomy,
+                                             args.approval, args.config, args.output_dir)
+        if problems:
+            print("\n".join(f"ERROR {x}" for x in problems)); return 1
+        print("Phrase-scoring artifacts valid"); return 0
     if args.command == "validate-artifacts":
         problems = validate_score_artifacts(args.study, args.models, args.taxonomy,
                                             args.approval, args.output_dir)
