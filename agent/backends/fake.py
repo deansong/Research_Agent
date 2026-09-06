@@ -46,13 +46,16 @@ class FakeBackend:
 
         fields = _placeholder_fields(output_model, turn)
 
-        # Special case so a fake run actually TERMINATES: the orchestrator
-        # would otherwise pick "execute" forever and bounce between
-        # executor -> orchestrator until the recursion limit.
-        if output_model.__name__ == "OrchestratorOutput":
+        # Special case so a fake run actually TERMINATES. A node with an
+        # "action" enum is a router; left to the first choice it would pick
+        # "execute" forever and bounce until the recursion limit. Detected by
+        # FIELD NAME, not class name -- output models are built at runtime from
+        # nodes.json and are named after whatever the folder called the node.
+        if "action" in fields and "finish" in _choices(output_model, "action"):
             self.orchestrator_turns += 1
             fields["action"] = "execute" if self.orchestrator_turns == 1 else "finish"
-            fields["final_summary"] = "[fake] pretend work finished"
+            if "final_summary" in fields:
+                fields["final_summary"] = "[fake] pretend work finished"
 
         data = output_model.model_validate(fields)
 
@@ -71,30 +74,43 @@ class FakeBackend:
 def _placeholder_fields(output_model, turn: int) -> dict:
     """Build a dict that satisfies `output_model`, whatever its fields are.
 
-    Fields with defaults are left out. Required fields get a value derived
-    from their annotation: the first choice for a Literal (so, e.g., the
-    orchestrator always picks "execute"), an empty list for a list, otherwise
-    a string.
+    EVERY field is filled, not just the required ones. That matters: a node's
+    prompts read other nodes' outputs via {out.x.y}, and its thread_key may be
+    "{out.planner.workstream}". If optional fields came back empty, prompts
+    would render blank and every thread key would collapse to the same value --
+    so a fake run would not exercise the parts most likely to be wrong.
     """
     import typing
 
     values: dict[str, object] = {}
     for name, field in output_model.model_fields.items():
-        if not field.is_required():
-            continue
-
         annotation = field.annotation
         origin = typing.get_origin(annotation)
 
         if origin is typing.Literal:
             values[name] = typing.get_args(annotation)[0]
         elif origin in (list, set, tuple):
-            values[name] = []
+            values[name] = [f"[fake {name} 1]", f"[fake {name} 2]"]
         elif annotation is bool:
             values[name] = False
         elif annotation is int:
             values[name] = turn
+        elif name == "workstream":
+            # A stable value, so per-workstream thread keys actually group.
+            values[name] = "main"
         else:
             values[name] = f"[fake {name} #{turn}]"
 
     return values
+
+
+def _choices(output_model, field_name: str) -> tuple:
+    """The Literal choices of one field, or () if it is not an enum."""
+    import typing
+
+    field = output_model.model_fields.get(field_name)
+    if field is None:
+        return ()
+    if typing.get_origin(field.annotation) is typing.Literal:
+        return typing.get_args(field.annotation)
+    return ()
