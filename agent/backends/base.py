@@ -119,6 +119,15 @@ class BackendOutputError(BackendError):
     """The model replied, but not with valid JSON for the requested schema."""
 
 
+class BackendTimeout(BackendError):
+    """The provider did not finish within the configured time.
+
+    Worth its own type because the right response differs from other errors:
+    a timeout usually means the request was too big or too vague, not that
+    anything is broken.
+    """
+
+
 class AgentBackend(Protocol):
     """What every backend must provide.
 

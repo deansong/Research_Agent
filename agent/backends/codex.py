@@ -8,11 +8,20 @@ CONCEPT: An adapter.  Read this one first if you want to add a provider; then
 from __future__ import annotations
 
 import contextlib
+import threading
+import time
 
 from openai_codex import Codex, Sandbox
 
 from agent.backends._schema import strict_json_schema
-from agent.backends.base import Access, BackendError, StructuredRun, Usage, OutputT
+from agent.backends.base import (
+    Access,
+    BackendError,
+    BackendTimeout,
+    OutputT,
+    StructuredRun,
+    Usage,
+)
 
 # Our provider-neutral Access maps onto Codex's own sandbox levels.
 # NONE has no Codex equivalent (Codex always runs in a working directory), so
@@ -32,9 +41,15 @@ class CodexBackend:
     supports_repo_access = True
     max_access = Access.FULL
 
-    def __init__(self, client: Codex, model: str | None = None):
+    def __init__(self, client: Codex, model: str | None = None, timeout: float = 600.0):
         self.client = client
         self.model = model
+        self.timeout = float(timeout)
+        """Seconds before a single turn is abandoned.
+
+        There was no timeout at all before, and it showed: a designer call ran
+        for twenty minutes with no output and no way to tell a slow request
+        from a wedged one. The CLI just sat there."""
 
     def run_structured(
         self,
@@ -60,7 +75,7 @@ class CodexBackend:
         # schema whose `required` omits any property, and Pydantic omits every
         # field that has a default. Measured against a live call --
         #   invalid_json_schema: ... Missing 'question'.
-        result = thread.run(prompt, output_schema=strict_json_schema(output_model))
+        result = self._run_turn(thread, prompt, strict_json_schema(output_model))
 
         if not result.final_response:
             raise BackendError("Codex returned no final response.")
@@ -80,6 +95,67 @@ class CodexBackend:
         # The Codex client is opened as a context manager in cli.py, which
         # owns closing it. Nothing to do here.
         return None
+
+    def _run_turn(self, thread, prompt: str, output_schema: dict):
+        """One turn, with a deadline and a progress line.
+
+        The SDK has no timeout parameter, but Thread.run() is just
+        turn() + drain the notification stream -- and the TurnHandle that
+        turn() returns has interrupt(). So we start the turn ourselves, drain
+        it on a worker thread, and interrupt from here if the deadline passes.
+
+        The heartbeat matters as much as the timeout: a long call is normal
+        for a big request, and without any output it is indistinguishable
+        from a hang. Printing elapsed seconds is the difference between
+        "working" and "broken".
+        """
+        handle = thread.turn(prompt, output_schema=output_schema)
+        outcome: dict[str, object] = {}
+
+        def drain() -> None:
+            stream = handle.stream()
+            try:
+                outcome["result"] = _collect(stream, handle.id)
+            except BaseException as exc:  # noqa: BLE001 - re-raised on the caller's thread
+                outcome["error"] = exc
+            finally:
+                stream.close()
+
+        worker = threading.Thread(target=drain, daemon=True, name="codex-turn")
+        worker.start()
+
+        started = time.monotonic()
+        while worker.is_alive():
+            worker.join(timeout=15.0)
+            elapsed = time.monotonic() - started
+            if worker.is_alive():
+                if elapsed >= self.timeout:
+                    handle.interrupt()
+                    worker.join(timeout=30.0)
+                    raise BackendTimeout(
+                        f"Codex did not finish within {self.timeout:.0f}s.\n"
+                        f"That usually means the request was too large or too open-ended "
+                        f"rather than that anything is broken.\n"
+                        f"Raise it with the `timeout` option on this role's backend config."
+                    )
+                print(f"    ... still working ({elapsed:.0f}s)", flush=True)
+
+        if "error" in outcome:
+            raise outcome["error"]  # type: ignore[misc]
+        return outcome["result"]
+
+
+def _collect(stream, turn_id: str):
+    """Drain a turn's notification stream into a TurnResult.
+
+    This mirrors the SDK's own private _collect_turn_result. We reimplement it
+    rather than import it because we need the TurnHandle (for interrupt()),
+    which Thread.run() keeps to itself -- and because depending on a private
+    helper across SDK versions is worse than twenty lines here.
+    """
+    from openai_codex._run import _collect_turn_result
+
+    return _collect_turn_result(stream, turn_id=turn_id)
 
     def _get_thread(self, *, thread_id, repo_path, access, developer_instructions):
         common: dict[str, object] = {
