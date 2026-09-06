@@ -84,6 +84,8 @@
     <div class="panel-head tabs" id="canvas-tabs">
       <button class="tab active" data-tab="graph">Graph</button>
       <button class="tab" data-tab="plan">Plan</button>
+      <button class="tab" data-tab="wiring">Wiring</button>
+      <button class="tab" data-tab="json">JSON</button>
     </div>
     <div class="tab-body active" id="tab-graph">
       <div class="empty-state">
@@ -94,6 +96,19 @@
       <div class="empty-state">
         <p class="muted">No plan yet. Type <code>/plan</code> when you have finished discussing.</p>
       </div>
+    </div>
+    <div class="tab-body" id="tab-wiring">
+      <div class="empty-state"><p class="muted">No agent yet.</p></div>
+    </div>
+    <div class="tab-body" id="tab-json">
+      <div class="json-head">
+        <span class="muted">graph.json and nodes.json, as they are on disk.
+          Editing here is the escape hatch for anything the forms do not
+          cover.</span>
+        <button id="btn-json-save" class="btn tiny primary" disabled>Save JSON</button>
+        <span id="json-status" class="muted"></span>
+      </div>
+      <textarea id="json-editor" spellcheck="false"></textarea>
     </div>
   </section>
 

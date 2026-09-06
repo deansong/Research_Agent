@@ -14,7 +14,7 @@ PHASE 2  run the agent that was just designed
 
 ## Contents
 
-- [Install](#install) · [Your first run](#your-first-run) · [**Setup**](#setup) — session folder · [a folder of your own](#putting-the-session-folder-somewhere-else) · [`brief.txt`](#starting-from-a-written-brief-brieftxt) · config file · env vars
+- [Install](#install) · [**The browser UI**](#the-browser-ui) · [Your first run](#your-first-run) · [**Setup**](#setup) — session folder · [a folder of your own](#putting-the-session-folder-somewhere-else) · [`brief.txt`](#starting-from-a-written-brief-brieftxt) · config file · env vars
 - [The five things you'll actually do](#the-five-things-youll-actually-do) —
   start · resume · reuse an agent · edit an agent · configure backends
 - [Command reference](#command-reference) · [CLI reference](#cli-reference)
@@ -36,6 +36,24 @@ Only `codex` is implemented as a real provider. Sign in once:
 ```bash
 python main.py login
 ```
+
+## The browser UI
+
+There is a web front end as well as the terminal, and it is the easier way to
+see what an agent actually is:
+
+```bash
+pip install fastapi 'uvicorn[standard]'
+python main.py web . --backend fake     # then open http://localhost:8420
+```
+
+Chat on the left, the graph and the plan in the middle, the selected node on
+the right. You can edit the plan before approving it, rewire the graph, change
+any node's backend, and — the useful one — see the prompt a node will *really*
+be sent, with its placeholders resolved.
+
+Both front ends drive the same sessions, so you can start one in the browser
+and resume it with `run --session <name>`. See [`webui/README.md`](webui/README.md).
 
 ## Your first run
 
@@ -458,6 +476,7 @@ you need an answer that begins with a slash.
 ```
 python main.py login                          sign in to Codex
 python main.py run <repo> [options]           the main command
+python main.py web <repo> [options]           serve the browser UI
 python main.py sessions <repo>                list sessions
 python main.py promote <repo> <name>          keep this session's agent
 ```
@@ -606,6 +625,7 @@ python tests/test_graph.py       # the acceptance test
 python tests/test_bootstrap.py   # planning, approval, the repair loop
 python tests/test_backends.py    # provider contract and recovery
 python tests/test_storage.py     # session folders, --session-dir, brief.txt
+python -m pytest webui/tests -q  # the web UI: HTTP, SSE, and editing
 ```
 
 `test_graph.py` is the one that matters: it builds a graph **from

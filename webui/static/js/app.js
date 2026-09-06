@@ -15,6 +15,7 @@ import { Chat } from './chat.js';
 import { GraphPanel } from './graph.js';
 import { Inspector } from './inspector.js';
 import { PlanPanel, ownersByStep } from './plan.js';
+import { TopologyPanel } from './topology.js';
 
 const el = (id) => document.getElementById(id);
 
@@ -44,6 +45,12 @@ const plan = new PlanPanel(el('tab-plan'), {
 const inspector = new Inspector({
   onSave: saveNode,
   onSelectSteps: () => {},
+});
+
+const topology = new TopologyPanel(el('tab-wiring'), {
+  getAgent: () => state.agent,
+  onSave: (document_) => saveAgent(document_),
+  onSelect: (name) => { selectNode(name); showTab('canvas-tabs', 'graph'); },
 });
 
 // A problem row in the right-hand panel names a node; clicking it selects one.
@@ -134,6 +141,8 @@ async function loadAgent() {
   }
 
   graph.render(state.agent.view);
+  topology.draw();
+  drawJson();
   state.problems = state.agent.problems || [];
   renderProblems();
 
@@ -183,14 +192,69 @@ async function saveNode(name, entry) {
   // Send the WHOLE document, not a patch. graph.json and nodes.json have to
   // agree about which nodes exist, and the server validates them together --
   // a per-node PATCH endpoint would let them disagree in between.
-  const document_ = {
+  const result = await saveAgent({
     graph: state.agent.graph,
     nodes: { ...state.agent.nodes, [name]: entry },
-  };
-  const result = await api.putAgent(state.session.id, document_);
-  await loadAgent();
+  });
   await selectNode(name);
   return result;
+}
+
+async function saveAgent(document_) {
+  const result = await api.putAgent(state.session.id, document_);
+  await loadAgent();
+  // Saving is allowed to leave the agent invalid -- you cannot rewire a graph
+  // without passing through states where something is unreachable -- so the
+  // problems are shown rather than the save being blocked. Jump to them, since
+  // an edit that broke something is worth noticing straight away.
+  if ((result.problems || []).some((p) => !p.warning)) {
+    showTab('inspector-tabs', 'problems');
+  }
+  return result;
+}
+
+// ---- the raw JSON escape hatch -------------------------------------------
+
+function drawJson() {
+  const editor = el('json-editor');
+  if (document.activeElement === editor) return;   // do not clobber a live edit
+  editor.value = state.agent
+    ? JSON.stringify({ graph: state.agent.graph, nodes: state.agent.nodes }, null, 2)
+    : '';
+  el('btn-json-save').disabled = true;
+  el('json-status').textContent = '';
+}
+
+function wireJson() {
+  const editor = el('json-editor');
+  const save = el('btn-json-save');
+
+  editor.addEventListener('input', () => {
+    // Parse as you type, so a stray comma is caught before you press save
+    // rather than after. Cheap: this document is a few kilobytes.
+    try {
+      JSON.parse(editor.value);
+      save.disabled = false;
+      el('json-status').textContent = 'unsaved';
+    } catch (error) {
+      save.disabled = true;
+      el('json-status').textContent = error.message;
+    }
+  });
+
+  save.addEventListener('click', async () => {
+    save.disabled = true;
+    el('json-status').textContent = 'saving...';
+    try {
+      const result = await saveAgent(JSON.parse(editor.value));
+      const blocking = (result.problems || []).filter((p) => !p.warning).length;
+      el('json-status').textContent = blocking
+        ? `saved, ${blocking} problem(s)` : 'saved';
+    } catch (error) {
+      el('json-status').textContent = error.message || 'save failed';
+      save.disabled = false;
+    }
+  });
 }
 
 async function refresh() {
@@ -488,9 +552,10 @@ api.schema().then((schema) => inspector.setSchema(schema)).catch(() => {
 
 wireTabs('canvas-tabs');
 wireTabs('inspector-tabs');
+wireJson();
 wireResize();
 wireDialogs();
 
 // Exported so the panels added in later steps can reach the shared bits
 // without importing app.js and creating a cycle.
-export { state, chat, graph, plan, inspector, refresh, showError };
+export { state, chat, graph, plan, inspector, topology, refresh, showError };

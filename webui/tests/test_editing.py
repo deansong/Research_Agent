@@ -341,6 +341,91 @@ def test_validate_endpoint_does_not_write():
         print("PASS  /validate reports problems without writing anything")
 
 
+def test_adding_a_node_and_wiring_it_in_ends_valid():
+    """The acceptance test for topology editing.
+
+    Not "does a save succeed" -- saves succeed even when they break things, by
+    design -- but "can you get from one working agent to a different working
+    agent, through the states in between". Those middle states are invalid, and
+    that is the point: an editor that refused them could not do this at all.
+
+    The sequence is the one the Wiring panel performs, in the same order.
+    """
+    with tempfile.TemporaryDirectory() as tmp:
+        repo = pathlib.Path(tmp)
+        client = _client(repo)
+        sid = _session_with_an_agent(client, repo)
+
+        agent = client.get(f"/api/sessions/{sid}/agent").json()
+        assert not [p for p in agent["problems"] if not p["warning"]], agent["problems"]
+
+        entry = agent["graph"]["entry"]          # "worker"
+        human = next(ref["name"] for ref in agent["graph"]["nodes"]
+                     if ref["kind"] == "human")  # "review"
+
+        # 1. Add a node. Nothing points at it yet, so this is invalid -- and it
+        #    must still save, or you could never build anything.
+        graph = copy.deepcopy(agent["graph"])
+        nodes = copy.deepcopy(agent["nodes"])
+        graph["nodes"].append({"name": "checker", "kind": "agent"})
+        nodes["checker"] = {
+            "backend": "checker",
+            "access": "read_only",
+            "output": [{"name": "summary", "type": "string", "required": True}],
+            "prompts": {"first": "Check the work.\n\n{task_brief}"},
+        }
+        response = client.put(f"/api/sessions/{sid}/agent",
+                              json={"graph": graph, "nodes": nodes})
+        assert response.status_code == 200, response.text
+        codes = {p["code"] for p in response.json()["problems"]}
+        assert "unreachable" in codes, codes
+        assert "dead_end" in codes, codes
+
+        # 2. Wire it between the entry node and the human one.
+        graph["edges"] = [e for e in graph["edges"]
+                          if not (e["from"] == entry and e["to"] == human)]
+        graph["edges"].append({"from": entry, "to": "checker"})
+        graph["edges"].append({
+            "from": "checker", "to": human,
+            "ask": {"purpose": "review", "resume_to": entry,
+                    "question": "The checker says: {out.checker.summary}. What next?",
+                    "context": ""},
+        })
+        response = client.put(f"/api/sessions/{sid}/agent",
+                              json={"graph": graph, "nodes": nodes})
+        assert response.status_code == 200, response.text
+        blocking = [p for p in response.json()["problems"] if not p["warning"]]
+        assert not blocking, blocking
+
+        # 3. And the result really is a runnable three-node agent.
+        after = client.get(f"/api/sessions/{sid}/agent").json()
+        assert {n["id"] for n in after["view"]["nodes"]} == {
+            entry, "checker", human, "__end__"}
+        assert not [p for p in after["problems"] if not p["warning"]]
+        print("PASS  add a node, wire it in, and the agent is valid again")
+
+
+def test_an_edge_into_a_human_node_without_an_ask_is_reported():
+    """The failure this catches is silent and confusing: the run stops at a
+    human node with no question to show, so the UI just sits there."""
+    with tempfile.TemporaryDirectory() as tmp:
+        repo = pathlib.Path(tmp)
+        client = _client(repo)
+        sid = _session_with_an_agent(client, repo)
+
+        agent = client.get(f"/api/sessions/{sid}/agent").json()
+        graph = copy.deepcopy(agent["graph"])
+        for edge in graph["edges"]:
+            edge.pop("ask", None)
+
+        response = client.put(f"/api/sessions/{sid}/agent",
+                              json={"graph": graph, "nodes": agent["nodes"]})
+        assert response.status_code == 200, response.text
+        codes = {p["code"] for p in response.json()["problems"]}
+        assert "ask_missing" in codes, codes
+        print("PASS  an edge into a human node with no ask is reported")
+
+
 # ---------------------------------------------------------------------------
 # the graph view and node context
 # ---------------------------------------------------------------------------
