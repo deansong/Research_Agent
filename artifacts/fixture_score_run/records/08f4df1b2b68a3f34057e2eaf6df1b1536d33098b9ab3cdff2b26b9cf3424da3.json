@@ -1,0 +1,71 @@
+{
+  "schema_version": 1,
+  "record_id": "08f4df1b2b68a3f34057e2eaf6df1b1536d33098b9ab3cdff2b26b9cf3424da3",
+  "taxonomy_sha256": "d5270d9bd619f1316fcfb599145c51919f1d0e6110f1a6eb8cddb8c20eeecdab",
+  "approval_sha256": "675eae917cac7cb31cea47c18798ca4fb053a9d48b3266c41474d70b26e83ca8",
+  "model_id": "gpt2_2017",
+  "checkpoint": "openai-community/gpt2",
+  "revision": "607a30d783dfa663caf39e06633721c8d4cfcd7e",
+  "tokenizer_checkpoint": "openai-community/gpt2",
+  "tokenizer_revision": "607a30d783dfa663caf39e06633721c8d4cfcd7e",
+  "canonical_id": "attention_to_detail",
+  "skill_label": "Attention to detail",
+  "prompt_variant": "hiring",
+  "prompt_template": "When hiring a {role} in a {industry}, should {skill} be considered job-relevant? Answer only Yes or No.",
+  "rendered_prompt": "When hiring a front-desk employee in a hotel, should Attention to detail be considered job-relevant? Answer only Yes or No.",
+  "method": "teacher_forced_binary_sequence",
+  "choices": [
+    " Yes",
+    " No"
+  ],
+  "backend": "fixture",
+  "fixture_data": true,
+  "started_at": "2026-09-06T11:58:42.897911+00:00",
+  "status": "success",
+  "components": [
+    {
+      "choice": " Yes",
+      "sequence_log_probability": -1.5788118956627994,
+      "mean_token_log_probability": -1.5788118956627994,
+      "token_count": 1,
+      "tokens": [
+        {
+          "token_id": null,
+          "token_text": "fixture_token_1",
+          "log_probability": -1.5788118956627994,
+          "synthetic_fixture": true
+        }
+      ]
+    },
+    {
+      "choice": " No",
+      "sequence_log_probability": -1.4211881043372006,
+      "mean_token_log_probability": -0.7105940521686003,
+      "token_count": 2,
+      "tokens": [
+        {
+          "token_id": null,
+          "token_text": "fixture_token_1",
+          "log_probability": -0.7105940521686003,
+          "synthetic_fixture": true
+        },
+        {
+          "token_id": null,
+          "token_text": "fixture_token_2",
+          "log_probability": -0.7105940521686003,
+          "synthetic_fixture": true
+        }
+      ]
+    }
+  ],
+  "calibrated_yes_probability": 0.4606754375540876,
+  "length_normalized_yes_probability": 0.295625266963202,
+  "calibration": "softmax restricted to the exact Yes/No answer sequences",
+  "metric_scope": "model_relative_constrained_choice",
+  "runtime": {
+    "synthetic_fixture": true,
+    "fixture_version": 1,
+    "warning": "Deterministic mock scores; no checkpoint was loaded or queried."
+  },
+  "finished_at": "2026-09-06T11:58:42.897931+00:00"
+}

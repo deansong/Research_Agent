@@ -13,6 +13,7 @@ import time
 
 from openai_codex import Codex, Sandbox
 
+from agent.backends._progress import describe
 from agent.backends._schema import strict_json_schema
 from agent.backends.base import (
     Access,
@@ -120,25 +121,38 @@ class CodexBackend:
         return None
 
     def _run_turn(self, thread, prompt: str, output_schema: dict):
-        """One turn, with a deadline and a progress line.
+        """One turn, with a deadline and live progress.
 
         The SDK has no timeout parameter, but Thread.run() is just
         turn() + drain the notification stream -- and the TurnHandle that
         turn() returns has interrupt(). So we start the turn ourselves, drain
         it on a worker thread, and interrupt from here if the deadline passes.
 
-        The heartbeat matters as much as the timeout: a long call is normal
-        for a big request, and without any output it is indistinguishable
-        from a hang. Printing elapsed seconds is the difference between
-        "working" and "broken".
+        Draining it ourselves has a second payoff. Thread.run() collects the
+        stream and hands back only the final answer, so everything Codex says
+        about what it is DOING is discarded. We tee the stream through
+        _progress.describe() on the way to the same collector, which turns a
+        silent five-minute wait into a log of the commands it ran and the
+        files it touched. See agent/backends/_progress.py.
+
+        The elapsed-time heartbeat is kept, but only as a fallback for when
+        the provider has genuinely gone quiet -- otherwise it just interleaves
+        noise with the real output.
         """
         handle = thread.turn(prompt, output_schema=output_schema)
         outcome: dict[str, object] = {}
+        last_output = [time.monotonic()]
+
+        def report(event) -> None:
+            line = describe(event)
+            if line:
+                print(line, flush=True)
+                last_output[0] = time.monotonic()
 
         def drain() -> None:
             stream = handle.stream()
             try:
-                outcome["result"] = _collect(stream, handle.id)
+                outcome["result"] = _collect(_observe(stream, report), handle.id)
             except BaseException as exc:  # noqa: BLE001 - re-raised on the caller's thread
                 outcome["error"] = exc
             finally:
@@ -149,19 +163,23 @@ class CodexBackend:
 
         started = time.monotonic()
         while worker.is_alive():
-            worker.join(timeout=15.0)
-            elapsed = time.monotonic() - started
-            if worker.is_alive():
-                if elapsed >= self.timeout:
-                    handle.interrupt()
-                    worker.join(timeout=30.0)
-                    raise BackendTimeout(
-                        f"Codex did not finish within {self.timeout:.0f}s.\n"
-                        f"That usually means the request was too large or too open-ended "
-                        f"rather than that anything is broken.\n"
-                        f"Raise it with the `timeout` option on this role's backend config."
-                    )
-                print(f"    ... still working ({elapsed:.0f}s)", flush=True)
+            worker.join(timeout=5.0)
+            now = time.monotonic()
+            if not worker.is_alive():
+                break
+            if now - started >= self.timeout:
+                handle.interrupt()
+                worker.join(timeout=30.0)
+                raise BackendTimeout(
+                    f"Codex did not finish within {self.timeout:.0f}s.\n"
+                    f"That usually means the request was too large or too open-ended "
+                    f"rather than that anything is broken.\n"
+                    f"Raise it with the `timeout` option on this role's backend config."
+                )
+            # Only speak up if the provider itself has said nothing for a while.
+            if now - last_output[0] >= 30.0:
+                print(f"    ... still working ({now - started:.0f}s)", flush=True)
+                last_output[0] = now
 
         if "error" in outcome:
             raise outcome["error"]  # type: ignore[misc]
@@ -196,6 +214,22 @@ class CodexBackend:
             return self.client.thread_resume(thread_id, **common), False
 
         return self.client.thread_start(**common), True
+
+
+def _observe(stream, report):
+    """Pass every event through `report` on its way to the collector.
+
+    A generator rather than a rewritten collector: the SDK still assembles the
+    turn exactly as it always did, and we only watch what goes past. If a
+    future SDK changes how turns are assembled, this keeps working.
+    """
+    for event in stream:
+        try:
+            report(event)
+        except Exception:  # noqa: BLE001
+            # Progress reporting must never break the turn it is describing.
+            pass
+        yield event
 
 
 def _collect(stream, turn_id: str):

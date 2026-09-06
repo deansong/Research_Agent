@@ -1,0 +1,47 @@
+{
+  "schema_version": 1,
+  "record_id": "712584feccbf86ed2b6a734625c5a01f8b880a55eef6eaa2947854f75284faf3",
+  "study_id": "hotel-skills-cutoff-study-v1",
+  "role": {
+    "id": "front_desk_employee",
+    "display_name": "front-desk employee",
+    "industry": "hotel"
+  },
+  "model_id": "gpt2_2017",
+  "checkpoint": "openai-community/gpt2",
+  "revision": "607a30d783dfa663caf39e06633721c8d4cfcd7e",
+  "tokenizer_checkpoint": "openai-community/gpt2",
+  "tokenizer_revision": "607a30d783dfa663caf39e06633721c8d4cfcd7e",
+  "architecture": "base_causal_lm",
+  "prompt_adapter": "plain_text",
+  "cutoff": {
+    "status": "documented_period",
+    "value": "Reddit outbound links used to construct WebText were collected from posts before December 2017",
+    "latest_date": "2017-11-30",
+    "scope": "pretraining corpus collection rule; not a claim that every linked page predates this date",
+    "sources": [
+      "https://cdn.openai.com/better-language-models/language_models_are_unsupervised_multitask_learners.pdf"
+    ]
+  },
+  "prompt_variant": "direct",
+  "prompt_template": "List 8 to 12 skills a {role} in a {industry} needs. Give one concise skill phrase per line, with no explanations.",
+  "rendered_prompt": "List 8 to 12 skills a front-desk employee in a hotel needs. Give one concise skill phrase per line, with no explanations.",
+  "seed": 101,
+  "generation": {
+    "do_sample": true,
+    "temperature": 0.7,
+    "top_p": 0.9,
+    "max_new_tokens": 220,
+    "repetition_penalty": 1.0
+  },
+  "backend": "fixture",
+  "started_at": "2026-09-06T11:50:25.503542+00:00",
+  "status": "success",
+  "raw_output": "Communication skills\nCustomer service\nProblem solving\nAttention to detail\nMultitasking\nTeamwork\nCash handling\nLocal area knowledge",
+  "runtime": {
+    "fixture": true,
+    "fixture_source": "fixtures/discovery_outputs.jsonl",
+    "warning": "Demonstration text supplied by the repository; not model inference."
+  },
+  "finished_at": "2026-09-06T11:50:25.503564+00:00"
+}

@@ -1,0 +1,47 @@
+{
+  "schema_version": 1,
+  "record_id": "a568cdd30ec5a10155db8718059657eb78c59fe21b1a214d6add15f920144ce6",
+  "study_id": "hotel-skills-cutoff-study-v1",
+  "role": {
+    "id": "front_desk_employee",
+    "display_name": "front-desk employee",
+    "industry": "hotel"
+  },
+  "model_id": "llama3_8b_instruct_2023",
+  "checkpoint": "meta-llama/Meta-Llama-3-8B-Instruct",
+  "revision": "8afb486c1db24fe5011ec46dfbe5b5dccdb575c2",
+  "tokenizer_checkpoint": "meta-llama/Meta-Llama-3-8B-Instruct",
+  "tokenizer_revision": "8afb486c1db24fe5011ec46dfbe5b5dccdb575c2",
+  "architecture": "instruction_tuned_causal_lm",
+  "prompt_adapter": "chat_template",
+  "cutoff": {
+    "status": "documented_cutoff",
+    "value": "March 2023",
+    "latest_date": "2023-03-31",
+    "scope": "pretraining data for the 8B model; fine-tuning freshness is not fully dated",
+    "sources": [
+      "https://github.com/meta-llama/llama3/blob/main/MODEL_CARD.md"
+    ]
+  },
+  "prompt_variant": "scenario",
+  "prompt_template": "Imagine hiring a {role} for a busy {industry}. List 8 to 12 skills required to perform the job well. Give one concise skill phrase per line, with no explanations.",
+  "rendered_prompt": "Imagine hiring a front-desk employee for a busy hotel. List 8 to 12 skills required to perform the job well. Give one concise skill phrase per line, with no explanations.",
+  "seed": 303,
+  "generation": {
+    "do_sample": true,
+    "temperature": 0.7,
+    "top_p": 0.9,
+    "max_new_tokens": 220,
+    "repetition_penalty": 1.0
+  },
+  "backend": "fixture",
+  "started_at": "2026-09-06T11:50:25.508064+00:00",
+  "status": "success",
+  "raw_output": "Verbal communication\nCustomer service\nConflict resolution\nBooking systems\nAttention to detail\nCollaboration\nPrivacy awareness\nArtificial intelligence literacy",
+  "runtime": {
+    "fixture": true,
+    "fixture_source": "fixtures/discovery_outputs.jsonl",
+    "warning": "Demonstration text supplied by the repository; not model inference."
+  },
+  "finished_at": "2026-09-06T11:50:25.508073+00:00"
+}

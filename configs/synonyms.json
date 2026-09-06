@@ -1,0 +1,18 @@
+{
+  "schema_version": 1,
+  "clusters": [
+    {"canonical": "Guest communication", "aliases": ["communication", "communication skills", "verbal communication", "guest communication"], "confidence": 0.94},
+    {"canonical": "Customer service", "aliases": ["customer service", "guest service", "hospitality service"], "confidence": 0.92},
+    {"canonical": "Problem solving", "aliases": ["problem solving", "problem-solving", "issue resolution"], "confidence": 0.94},
+    {"canonical": "Complaint handling", "aliases": ["complaint handling", "handling guest complaints", "conflict resolution"], "confidence": 0.86},
+    {"canonical": "Reservation systems", "aliases": ["reservation systems", "booking systems", "property management systems", "pms proficiency"], "confidence": 0.85},
+    {"canonical": "Attention to detail", "aliases": ["attention to detail", "accuracy"], "confidence": 0.84},
+    {"canonical": "Multitasking", "aliases": ["multitasking", "multi-tasking"], "confidence": 0.97},
+    {"canonical": "Teamwork", "aliases": ["teamwork", "team collaboration", "collaboration"], "confidence": 0.91},
+    {"canonical": "Time management", "aliases": ["time management", "prioritization"], "confidence": 0.82},
+    {"canonical": "Payment processing", "aliases": ["payment processing", "cash handling"], "confidence": 0.78},
+    {"canonical": "Local knowledge", "aliases": ["local area knowledge", "local knowledge", "destination knowledge"], "confidence": 0.91},
+    {"canonical": "Data privacy", "aliases": ["data privacy", "guest data protection", "privacy awareness"], "confidence": 0.88},
+    {"canonical": "AI literacy", "aliases": ["ai literacy", "artificial intelligence literacy", "using ai assistants"], "confidence": 0.91}
+  ]
+}

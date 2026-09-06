@@ -6,6 +6,10 @@ A LangGraph learning project. It runs in two phases:
    an agent for that job and writes it to disk as JSON.
 2. **Run.** That agent — a graph of nodes it just invented — runs and does the work.
 
+The repository also contains a self-contained [hotel skill study](docs/HOTEL_SKILL_STUDY.md).
+It is deliberately separate from the LangGraph teaching agent and uses only the
+Python standard library until local checkpoint inference is requested.
+
 The agent is **data, not code**. You can read it, diff it, hand-edit it, commit
 it, and run it again on another repository.
 

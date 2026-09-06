@@ -1,0 +1,71 @@
+{
+  "schema_version": 1,
+  "record_id": "a612f02f39193cfc2d8587cc215938f940d18697c24d8eb2a6e4191c1214f141",
+  "taxonomy_sha256": "d5270d9bd619f1316fcfb599145c51919f1d0e6110f1a6eb8cddb8c20eeecdab",
+  "approval_sha256": "675eae917cac7cb31cea47c18798ca4fb053a9d48b3266c41474d70b26e83ca8",
+  "model_id": "gpt2_2017",
+  "checkpoint": "openai-community/gpt2",
+  "revision": "607a30d783dfa663caf39e06633721c8d4cfcd7e",
+  "tokenizer_checkpoint": "openai-community/gpt2",
+  "tokenizer_revision": "607a30d783dfa663caf39e06633721c8d4cfcd7e",
+  "canonical_id": "complaint_handling",
+  "skill_label": "Complaint handling",
+  "prompt_variant": "required",
+  "prompt_template": "Does performing the work of a {role} in a {industry} require {skill}? Answer only Yes or No.",
+  "rendered_prompt": "Does performing the work of a front-desk employee in a hotel require Complaint handling? Answer only Yes or No.",
+  "method": "teacher_forced_binary_sequence",
+  "choices": [
+    " Yes",
+    " No"
+  ],
+  "backend": "fixture",
+  "fixture_data": true,
+  "started_at": "2026-09-06T11:58:42.898608+00:00",
+  "status": "success",
+  "components": [
+    {
+      "choice": " Yes",
+      "sequence_log_probability": -1.6118812713676474,
+      "mean_token_log_probability": -1.6118812713676474,
+      "token_count": 1,
+      "tokens": [
+        {
+          "token_id": null,
+          "token_text": "fixture_token_1",
+          "log_probability": -1.6118812713676474,
+          "synthetic_fixture": true
+        }
+      ]
+    },
+    {
+      "choice": " No",
+      "sequence_log_probability": -1.3881187286323526,
+      "mean_token_log_probability": -0.6940593643161763,
+      "token_count": 2,
+      "tokens": [
+        {
+          "token_id": null,
+          "token_text": "fixture_token_1",
+          "log_probability": -0.6940593643161763,
+          "synthetic_fixture": true
+        },
+        {
+          "token_id": null,
+          "token_text": "fixture_token_2",
+          "log_probability": -0.6940593643161763,
+          "synthetic_fixture": true
+        }
+      ]
+    }
+  ],
+  "calibrated_yes_probability": 0.4442916123170562,
+  "length_normalized_yes_probability": 0.285401903540645,
+  "calibration": "softmax restricted to the exact Yes/No answer sequences",
+  "metric_scope": "model_relative_constrained_choice",
+  "runtime": {
+    "synthetic_fixture": true,
+    "fixture_version": 1,
+    "warning": "Deterministic mock scores; no checkpoint was loaded or queried."
+  },
+  "finished_at": "2026-09-06T11:58:42.898629+00:00"
+}

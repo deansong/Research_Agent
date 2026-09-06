@@ -1,0 +1,21 @@
+{
+  "taxonomy_sha256": "d5270d9bd619f1316fcfb599145c51919f1d0e6110f1a6eb8cddb8c20eeecdab",
+  "approved_taxonomy_version": "v1",
+  "status": "counterfactual_taxonomies_not_scored",
+  "reason": "Changing approved merges creates a new taxonomy requiring a new digest and human approval. Canonical scores cannot identify split-category scores.",
+  "approved_categories_scored": 14,
+  "planned_alternatives": [
+    {
+      "id": "split_low_confidence_merges",
+      "rule": "split configured synonym clusters with confidence below 0.85"
+    },
+    {
+      "id": "split_pms_from_booking",
+      "rule": "separate property-management-system phrases from generic reservations"
+    },
+    {
+      "id": "split_conflict_from_complaints",
+      "rule": "separate conflict resolution from complaint handling"
+    }
+  ]
+}

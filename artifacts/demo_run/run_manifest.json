@@ -1,0 +1,14 @@
+{
+  "schema_version": 1,
+  "study_config": "configs/hotel_skill_study.json",
+  "study_config_sha256": "5a234a131894aa5c73f2cbb48d6842c19c794cb32349acec25d36db69176dd53",
+  "model_manifest": "configs/models.json",
+  "model_manifest_sha256": "3836f0d5aa3b540eb93439cb3661fcccf4a31641f9ac9646bbc39f7fa9b05136",
+  "backend": "fixture",
+  "fixture_data": true,
+  "updated_at": "2026-09-06T11:50:25.509332+00:00",
+  "record_counts": {
+    "success": 18
+  },
+  "execution_status": "fixture_demo"
+}

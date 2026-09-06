@@ -62,7 +62,11 @@ class BackendConfig:
 class AgentConfig:
     default: BackendConfig
     roles: dict[str, BackendConfig]
-    session: str = DEFAULT_SESSION
+    session: str | None = None
+    """None means "derive a name from the task" -- see storage.session_name_for.
+    A fixed default would make every task share one session, and a session owns
+    exactly one task."""
+
     recursion_limit: int = DEFAULT_RECURSION_LIMIT
 
     # ---- phase 4: designing and running generated agents -------------------
@@ -168,7 +172,7 @@ def load_config(
     # ---- layer 1: built-in defaults ------------------------------------
     default = BackendConfig(provider="codex", model=None, options={})
     role_configs: dict[str, BackendConfig] = {}
-    session = DEFAULT_SESSION
+    session: str | None = None
     recursion_limit = DEFAULT_RECURSION_LIMIT
     sources: list[str] = ["built-in defaults"]
     extras: dict[str, Any] = {}
@@ -318,7 +322,7 @@ def describe(cfg: AgentConfig) -> str:
         lines.append(f"  {role_name:14} {spec.provider:14} {model:24} needs {needed}")
 
     lines.append("")
-    lines.append(f"  session          {cfg.session}")
+    lines.append(f"  session          {cfg.session or '(derived from the task)'}")
     lines.append(f"  recursion limit  {cfg.recursion_limit}")
     lines.append("")
     lines.append("  settings from: " + ", ".join(cfg.sources))

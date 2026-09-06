@@ -1,0 +1,71 @@
+{
+  "schema_version": 1,
+  "record_id": "2f75ddbe891a7bd42085da297ce0a7f0f84155c8aef84b48466ec4b79f235870",
+  "taxonomy_sha256": "d5270d9bd619f1316fcfb599145c51919f1d0e6110f1a6eb8cddb8c20eeecdab",
+  "approval_sha256": "675eae917cac7cb31cea47c18798ca4fb053a9d48b3266c41474d70b26e83ca8",
+  "model_id": "gpt2_2017",
+  "checkpoint": "openai-community/gpt2",
+  "revision": "607a30d783dfa663caf39e06633721c8d4cfcd7e",
+  "tokenizer_checkpoint": "openai-community/gpt2",
+  "tokenizer_revision": "607a30d783dfa663caf39e06633721c8d4cfcd7e",
+  "canonical_id": "reservation_systems",
+  "skill_label": "Reservation systems",
+  "prompt_variant": "important",
+  "prompt_template": "Is {skill} an important skill for a {role} in a {industry}? Answer only Yes or No.",
+  "rendered_prompt": "Is Reservation systems an important skill for a front-desk employee in a hotel? Answer only Yes or No.",
+  "method": "teacher_forced_binary_sequence",
+  "choices": [
+    " Yes",
+    " No"
+  ],
+  "backend": "fixture",
+  "fixture_data": true,
+  "started_at": "2026-09-06T11:58:42.907526+00:00",
+  "status": "success",
+  "components": [
+    {
+      "choice": " Yes",
+      "sequence_log_probability": -1.8845060876408701,
+      "mean_token_log_probability": -1.8845060876408701,
+      "token_count": 1,
+      "tokens": [
+        {
+          "token_id": null,
+          "token_text": "fixture_token_1",
+          "log_probability": -1.8845060876408701,
+          "synthetic_fixture": true
+        }
+      ]
+    },
+    {
+      "choice": " No",
+      "sequence_log_probability": -1.1154939123591299,
+      "mean_token_log_probability": -0.5577469561795649,
+      "token_count": 2,
+      "tokens": [
+        {
+          "token_id": null,
+          "token_text": "fixture_token_1",
+          "log_probability": -0.5577469561795649,
+          "synthetic_fixture": true
+        },
+        {
+          "token_id": null,
+          "token_text": "fixture_token_2",
+          "log_probability": -0.5577469561795649,
+          "synthetic_fixture": true
+        }
+      ]
+    }
+  ],
+  "calibrated_yes_probability": 0.31669283131538944,
+  "length_normalized_yes_probability": 0.20969594816975876,
+  "calibration": "softmax restricted to the exact Yes/No answer sequences",
+  "metric_scope": "model_relative_constrained_choice",
+  "runtime": {
+    "synthetic_fixture": true,
+    "fixture_version": 1,
+    "warning": "Deterministic mock scores; no checkpoint was loaded or queried."
+  },
+  "finished_at": "2026-09-06T11:58:42.907545+00:00"
+}

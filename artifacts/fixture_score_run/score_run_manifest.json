@@ -1,0 +1,16 @@
+{
+  "schema_version": 1,
+  "status": "completed",
+  "taxonomy_sha256": "d5270d9bd619f1316fcfb599145c51919f1d0e6110f1a6eb8cddb8c20eeecdab",
+  "approval_sha256": "675eae917cac7cb31cea47c18798ca4fb053a9d48b3266c41474d70b26e83ca8",
+  "approved_taxonomy_version": "v1",
+  "backend": "fixture",
+  "fixture_data": true,
+  "counts": {
+    "success": 84
+  },
+  "missing_success_cells": 0,
+  "metric_scope": "model_relative_constrained_choice",
+  "interpretation_warning": "Model-period differences are not direct labour-market measurements.",
+  "updated_at": "2026-09-06T11:58:43.179238+00:00"
+}

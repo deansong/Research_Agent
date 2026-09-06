@@ -1,0 +1,71 @@
+{
+  "schema_version": 1,
+  "record_id": "27428a8174ac5f99d0250f327bb4c38f4b2926e8935a3e0a9800fb456de5fe05",
+  "taxonomy_sha256": "d5270d9bd619f1316fcfb599145c51919f1d0e6110f1a6eb8cddb8c20eeecdab",
+  "approval_sha256": "675eae917cac7cb31cea47c18798ca4fb053a9d48b3266c41474d70b26e83ca8",
+  "model_id": "gpt2_2017",
+  "checkpoint": "openai-community/gpt2",
+  "revision": "607a30d783dfa663caf39e06633721c8d4cfcd7e",
+  "tokenizer_checkpoint": "openai-community/gpt2",
+  "tokenizer_revision": "607a30d783dfa663caf39e06633721c8d4cfcd7e",
+  "canonical_id": "multitasking",
+  "skill_label": "Multitasking",
+  "prompt_variant": "important",
+  "prompt_template": "Is {skill} an important skill for a {role} in a {industry}? Answer only Yes or No.",
+  "rendered_prompt": "Is Multitasking an important skill for a front-desk employee in a hotel? Answer only Yes or No.",
+  "method": "teacher_forced_binary_sequence",
+  "choices": [
+    " Yes",
+    " No"
+  ],
+  "backend": "fixture",
+  "fixture_data": true,
+  "started_at": "2026-09-06T11:58:42.903402+00:00",
+  "status": "success",
+  "components": [
+    {
+      "choice": " Yes",
+      "sequence_log_probability": -1.1528740064067073,
+      "mean_token_log_probability": -1.1528740064067073,
+      "token_count": 1,
+      "tokens": [
+        {
+          "token_id": null,
+          "token_text": "fixture_token_1",
+          "log_probability": -1.1528740064067073,
+          "synthetic_fixture": true
+        }
+      ]
+    },
+    {
+      "choice": " No",
+      "sequence_log_probability": -1.8471259935932927,
+      "mean_token_log_probability": -0.9235629967966463,
+      "token_count": 2,
+      "tokens": [
+        {
+          "token_id": null,
+          "token_text": "fixture_token_1",
+          "log_probability": -0.9235629967966463,
+          "synthetic_fixture": true
+        },
+        {
+          "token_id": null,
+          "token_text": "fixture_token_2",
+          "log_probability": -0.9235629967966463,
+          "synthetic_fixture": true
+        }
+      ]
+    }
+  ],
+  "calibrated_yes_probability": 0.6669121340264021,
+  "length_normalized_yes_probability": 0.44292214165758564,
+  "calibration": "softmax restricted to the exact Yes/No answer sequences",
+  "metric_scope": "model_relative_constrained_choice",
+  "runtime": {
+    "synthetic_fixture": true,
+    "fixture_version": 1,
+    "warning": "Deterministic mock scores; no checkpoint was loaded or queried."
+  },
+  "finished_at": "2026-09-06T11:58:42.903421+00:00"
+}

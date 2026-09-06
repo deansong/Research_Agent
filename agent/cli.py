@@ -44,6 +44,18 @@ def main() -> None:
 
     repo_path = _validated_repo(args.repo)
 
+    if args.command == "sessions":
+        rows = storage.list_sessions(repo_path)
+        if not rows:
+            print("No sessions yet.")
+            return
+        width = max(len(name) for name, _, _ in rows)
+        for name, brief, has_agent in rows:
+            mark = "agent" if has_agent else "  -  "
+            print(f"  {name:<{width}}  {mark}  {brief[:70]}")
+        print(f"\nResume one with:  --session <name>")
+        return
+
     if args.command == "promote":
         paths = storage.session_paths(repo_path, args.session or DEFAULT_SESSION)
         target = storage.promote(paths, args.name, overwrite=args.force)
@@ -57,7 +69,11 @@ def main() -> None:
         config_file=Path(args.config).expanduser() if args.config else None,
         cli=args,
     )
-    paths = storage.session_paths(repo_path, cfg.session)
+    # The task decides the session, not the other way round. A session owns one
+    # task: its conversation, the agent designed from that conversation, and
+    # the brief that agent runs. Defaulting every run to one shared session
+    # meant a second, unrelated task silently reused the first task's agent.
+    paths, task_brief = _resolve_session(args, cfg, repo_path)
 
     # ---- 2. open the checkpointer -----------------------------------------
     # Both phases share one database. They MUST use different thread ids --
@@ -88,7 +104,7 @@ def main() -> None:
                 print("Run without --explain to design one, or pass --pre-build-agent.")
                 return
             print(describe(cfg))
-            if not _bootstrap(cfg, paths, checkpointer, codex, args):
+            if not _bootstrap(cfg, paths, checkpointer, codex, task_brief):
                 return
             folder_path = paths.agent_dir if paths.has_agent() else storage.resolve_agent(
                 cfg.default_agent, paths
@@ -115,7 +131,6 @@ def main() -> None:
             return
 
         print(f"\nagent    {folder.graph.name}  ({folder.path})")
-        print(f"session  {paths.session}")
 
         # ---- 5. phase 2: run it --------------------------------------------
         try:
@@ -123,7 +138,7 @@ def main() -> None:
         except BackendError as exc:
             raise SystemExit(f"\n{exc}")
 
-        _run_work_phase(folder, cfg, paths, backends, checkpointer, args)
+        _run_work_phase(folder, cfg, paths, backends, checkpointer, task_brief)
 
 
 class _LazyCodex:
@@ -149,9 +164,8 @@ class _LazyCodex:
         return self._client
 
 
-def _bootstrap(cfg, paths, checkpointer, codex, args) -> bool:
+def _bootstrap(cfg, paths, checkpointer, codex, request) -> bool:
     """Phase 1. Returns True if an agent is ready to run."""
-    request = _task_text(args, paths)
     if not request:
         print("No task supplied.")
         return False
@@ -190,7 +204,82 @@ def _bootstrap(cfg, paths, checkpointer, codex, args) -> bool:
     return True
 
 
-def _run_work_phase(folder, cfg, paths, backends, checkpointer, args) -> None:
+def _resolve_session(args, cfg, repo_path):
+    """Return (SessionPaths, task text).
+
+    Two routes in:
+      --session NAME   you named it, so you mean "carry on with that one".
+                       The task may come from its saved brief.
+      no --session     the task names the session, so the same task resumes
+                       and a different task starts somewhere clean.
+    """
+    supplied = args.task.strip() if args.task else (
+        Path(args.task_file).expanduser().read_text().strip() if args.task_file else ""
+    )
+
+    if cfg.session:
+        paths = storage.session_paths(repo_path, cfg.session)
+        task = supplied or _saved_request(paths) or _prompt_for_task()
+        _warn_if_task_changed(paths, task)
+    else:
+        task = supplied or _prompt_for_task()
+        if not task:
+            return storage.session_paths(repo_path, "unnamed"), ""
+        paths = storage.session_paths(repo_path, storage.session_name_for(task))
+        print(f"session  {paths.session.name}  (derived from the task; "
+              f"reuse it with --session {paths.session.name})")
+
+    if task:
+        # request.txt is what YOU asked for and is what identifies the session.
+        # brief.md is the designer's rewrite of it for the generated agent --
+        # comparing against that would falsely trip the guard below, because
+        # the designer legitimately rewords the task.
+        paths.request.write_text(task)
+    return paths, task
+
+
+def _saved_request(paths) -> str:
+    if not paths.request.exists():
+        return ""
+    text = paths.request.read_text().strip()
+    if text:
+        print(f"Task (from {paths.request.name}): {text[:100]}")
+    return text
+
+
+def _prompt_for_task() -> str:
+    return input("\nWhat do you want to build/change?\n\nyou> ").strip()
+
+
+def _warn_if_task_changed(paths, task: str) -> None:
+    """Refuse to silently run one task's agent against a different task.
+
+    Only reachable via an explicit --session, since a derived name cannot
+    collide across different tasks. Worth an explicit stop: the agent in a
+    session was designed FOR its brief, and pointing it at unrelated work
+    produces confident, plausible, wrong output.
+    """
+    if not paths.has_agent() or not paths.request.exists():
+        return
+
+    previous = paths.request.read_text().strip()
+    if not previous or previous == task.strip():
+        return
+
+    raise SystemExit(
+        f"\nSession {paths.session.name!r} already has an agent, designed for:\n"
+        f"    {previous[:200]}\n\n"
+        f"You are asking it to do something else:\n"
+        f"    {task[:200]}\n\n"
+        f"That agent was built for the first task and would likely do the wrong "
+        f"thing.\nEither:\n"
+        f"  - drop --session, and a new session will be derived from this task;\n"
+        f"  - pass --session {storage.session_name_for(task)} to start one explicitly;\n"
+        f"  - or delete {paths.agent_dir} to redesign in place."
+    )
+
+
+def _run_work_phase(folder, cfg, paths, backends, checkpointer, task_brief) -> None:
     """Run the generated agent, once per task.
 
     The loop exists because /new-style commands end the run with
@@ -201,7 +290,6 @@ def _run_work_phase(folder, cfg, paths, backends, checkpointer, args) -> None:
     """
     from agent.agentfolder.commands import build_registry  # noqa: F401  (docs)
 
-    task_brief = _task_text(args, paths)
     if not task_brief:
         print("No task supplied.")
         return
@@ -257,9 +345,18 @@ def _run_work_phase(folder, cfg, paths, backends, checkpointer, args) -> None:
         # Carry conversations forward so the next task is cheap.
         threads = dict(values.get("threads", {}))
         task_brief = values["next_request"]
+
+        # This DELIBERATELY reuses one agent for a different task -- the very
+        # thing _warn_if_task_changed() refuses. The difference is consent:
+        # there, a stale session would silently hijack a new task; here you
+        # typed a command asking for exactly this. Both files are updated so
+        # the session's recorded identity matches what it is now doing.
+        paths.request.write_text(task_brief)
         paths.brief.write_text(task_brief)
         run_index += 1
-        print(f"\n===== new task in the same session =====\n{task_brief}")
+        print(f"\n===== new task, same agent =====\n{task_brief}")
+        print("(this agent was designed for the previous task -- /exit and "
+              "start a new session if it does not fit)")
 
 
 def _report(values: dict) -> None:
@@ -284,37 +381,6 @@ def _resolve_folder(args, paths, cfg) -> Path:
 
     # Until the bootstrap graph exists (step 4), fall back to the shipped agent.
     return storage.resolve_agent(cfg.default_agent, paths)
-
-
-def _task_text(args, paths) -> str:
-    """Where the task comes from, in precedence order.
-
-    Normally the bootstrap designer writes brief.md, because it is the thing
-    that last had the whole picture. With bootstrap skipped, the human is the
-    author -- so ask the human, once, at the CLI. Deliberately NOT from a human
-    node inside the agent: that would make a human node mandatory in every
-    folder, and would put "what is the task" into the same interrupt vocabulary
-    as "the orchestrator has a question".
-    """
-    if args.task:
-        return _remember(paths, args.task.strip())
-    if args.task_file:
-        return _remember(paths, Path(args.task_file).expanduser().read_text().strip())
-    if paths.brief.exists():
-        text = paths.brief.read_text().strip()
-        if text:
-            print(f"Task (from {paths.brief.name}): {text[:100]}")
-            return text
-
-    text = input("\nWhat do you want to build/change?\n\nyou> ").strip()
-    return _remember(paths, text)
-
-
-def _remember(paths, text: str) -> str:
-    """Persist the brief so a resumed session does not ask again."""
-    if text:
-        paths.brief.write_text(text)
-    return text
 
 
 def _explain(cfg, folder, paths, needed) -> None:
@@ -369,7 +435,7 @@ def _parse_args():
         # indistinguishable from something the user typed, so a non-None
         # default would silently outrank the config file.
         default=None,
-        help=f"Persistent session name (default: {DEFAULT_SESSION})",
+        help="Resume a named session (default: one derived from the task)",
     )
     run.add_argument("--pre-build-agent", metavar="NAME|PATH",
                      help="Skip designing an agent; run this one")
@@ -383,6 +449,9 @@ def _parse_args():
                      help="Override one role, e.g. executor=codex:gpt-5.4. Repeatable.")
     run.add_argument("--explain", action="store_true",
                      help="Print the resolved config and the agent, then exit")
+
+    sessions = subparsers.add_parser("sessions", help="List this repo's sessions")
+    sessions.add_argument("repo", help="Path to the repository")
 
     promote = subparsers.add_parser("promote", help="Keep this session's agent for reuse")
     promote.add_argument("repo", help="Path to the repository")

@@ -14,7 +14,8 @@ LAYOUT
         sessions/<session>/     scratch, gitignored
             checkpoint.sqlite   both phases live here, under two thread ids
             meta.json           schema version, so a stale session refuses
-            brief.md            the task brief -- BESIDE agent/, not inside
+            request.txt         what YOU asked for -- identifies the session
+            brief.md            the designer's rewrite of it, for the agent
             agent.tmp/          staging; renamed to agent/ only once valid
             agent/              the agent designed for this session
         agents/<name>/          promoted, committed, reusable
@@ -53,6 +54,7 @@ class SessionPaths:
     staging: Path
     agent_dir: Path
     brief: Path
+    request: Path
     meta: Path
     agents_dir: Path
 
@@ -79,6 +81,7 @@ def session_paths(repo: Path, session: str) -> SessionPaths:
         staging=session_dir / "agent.tmp",
         agent_dir=session_dir / "agent",
         brief=session_dir / "brief.md",
+        request=session_dir / "request.txt",
         meta=session_dir / "meta.json",
         agents_dir=dot_agent / "agents",
     )
@@ -89,6 +92,52 @@ def session_paths(repo: Path, session: str) -> SessionPaths:
     _notice_legacy(repo)
 
     return paths
+
+
+def session_name_for(task: str) -> str:
+    """A stable, readable session name derived from the task itself.
+
+    Why derive it rather than default to "main": a session owns ONE task. It
+    holds the conversation that shaped the agent, the agent designed from that
+    conversation, and the brief that agent runs against. Pointing a second,
+    unrelated task at the same session silently reuses an agent built for the
+    first one -- which is exactly the bug this replaces.
+
+    Deriving from the task gives both properties at once: the same task resumes
+    where it left off, and a different task gets its own session without
+    anyone having to remember --session.
+
+    The hash suffix matters. Two tasks can easily share their first few words
+    ("add tests for the parser" / "add tests for the lexer"), and colliding
+    those would resurrect the very bug we are fixing.
+    """
+    import hashlib
+    import re
+
+    words = re.findall(r"[a-z0-9]+", task.lower())[:5]
+    slug = "-".join(words)[:40].strip("-") or "task"
+    digest = hashlib.sha256(task.strip().encode()).hexdigest()[:6]
+    return f"{slug}-{digest}"
+
+
+def list_sessions(repo: Path) -> list[tuple[str, str, bool]]:
+    """(name, first line of brief, has an agent) for every session in a repo."""
+    root = Path(repo).resolve() / DOT_AGENT / "sessions"
+    if not root.exists():
+        return []
+
+    out = []
+    for entry in sorted(root.iterdir()):
+        if not entry.is_dir():
+            continue
+        # The REQUEST identifies the session; brief.md is the designer's
+        # rewrite of it for the generated agent, and is not the same thing.
+        source = entry / "request.txt"
+        if not source.exists():
+            source = entry / "brief.md"
+        text = source.read_text().strip().splitlines()[0] if source.exists() else ""
+        out.append((entry.name, text, (entry / "agent" / "graph.json").exists()))
+    return out
 
 
 def builtin_agents_dir() -> Path:
