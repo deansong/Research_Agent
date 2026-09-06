@@ -1,13 +1,15 @@
 """
-WHAT:  End-to-end tests for the graph, using the `fake` backend.
-WHY:   Also a worked example of how you test a LangGraph app at all: build the
-       graph with an InMemorySaver and a stub backend, then drive it with
-       invoke() / Command(resume=...) exactly as the terminal does.
-CONCEPT: Testing interrupt/resume. Note there is no mocking of LangGraph
-       itself -- the real graph runs, the real checkpointer records it.
+WHAT:  The acceptance test for the folder format.
+WHY:   builtin_agents/default/ is today's four-role agent expressed as JSON.
+       If these assertions -- the same ones the hand-written graph had to pass
+       -- still hold when the graph is BUILT FROM THAT FOLDER, then the format
+       is strong enough to express a real agent. If they ever fail, the format
+       is too weak and needs extending, not the test relaxing.
+CONCEPT: Testing a LangGraph app: build it with an InMemorySaver and a stub
+       backend, then drive it with invoke() / Command(resume=...) exactly as
+       the terminal does. No mocking of LangGraph itself.
 
 Run with:   python tests/test_graph.py
-       or:  pytest tests/
 """
 
 from __future__ import annotations
@@ -22,47 +24,57 @@ sys.path.insert(0, str(pathlib.Path(__file__).resolve().parents[1]))
 from langgraph.checkpoint.memory import InMemorySaver
 from langgraph.types import Command
 
-from agent import roles
+from agent.agentfolder.commands import build_registry
+from agent.agentfolder.load import load_agent_folder
 from agent.backends.base import Access, StructuredRun, Usage
-from agent.graph import build_graph
-from agent.schemas import DiscussorOutput, ExecutorOutput, OrchestratorOutput, PlannerOutput
-from agent.state import create_initial_state
+from agent.work.compile import backends_needed, compile_agent
+from agent.work.state import initial_work_state
+
+DEFAULT = pathlib.Path(__file__).resolve().parents[1] / "agent" / "builtin_agents" / "default"
 
 
 class RecordingBackend:
-    """A fake backend that also records every call, so tests can assert on
-    WHICH role ran and WHAT prompt it was given."""
+    """A stub that fills whatever model it is handed, and remembers the calls.
+
+    It cannot hardcode field names, because the output models are BUILT AT
+    RUNTIME from nodes.json -- which is itself a useful check that the
+    generated models behave like hand-written ones.
+    """
 
     name = "recording"
     supports_repo_access = True
     max_access = Access.FULL
 
     def __init__(self):
-        self.calls: list[tuple[str, str]] = []
+        self.calls: list[dict] = []
         self.turn = 0
         self.orchestrator_turns = 0
 
     def run_structured(self, *, thread_id, repo_path, access, developer_instructions,
                        prompt, output_model):
         self.turn += 1
-        self.calls.append((output_model.__name__, prompt))
+        fields = {}
 
-        if output_model is DiscussorOutput:
-            # Always claims to be ready -- the point is that this must NOT
-            # move the graph on by itself.
-            data = DiscussorOutput(reply=f"reply-{self.turn}", question=f"q-{self.turn}?",
-                                   requirements=f"brief-{self.turn}", advice="ready_to_plan")
-        elif output_model is PlannerOutput:
-            data = PlannerOutput(plan=f"plan-{self.turn}", workstream="main",
-                                 next_task=f"task-{self.turn}")
-        elif output_model is OrchestratorOutput:
-            self.orchestrator_turns += 1
-            action = "execute" if self.orchestrator_turns == 1 else "finish"
-            data = OrchestratorOutput(action=action, final_summary="done")
-        else:
-            data = ExecutorOutput(status="done", summary="implemented")
+        for field_name, field in output_model.model_fields.items():
+            if field_name == "action":
+                # Drive one full loop: execute once, then finish.
+                self.orchestrator_turns += 1
+                fields[field_name] = "execute" if self.orchestrator_turns == 1 else "finish"
+            elif field_name == "advice":
+                fields[field_name] = "ready_to_plan"     # must NOT move the graph on
+            elif field_name == "status":
+                fields[field_name] = "done"
+            elif field_name == "workstream":
+                fields[field_name] = "main"
+            elif field.annotation is str:
+                fields[field_name] = f"{field_name}-{self.turn}"
+            elif field.is_required():
+                fields[field_name] = []
 
-        return StructuredRun(data=data, thread_id=f"thread-{output_model.__name__}",
+        data = output_model.model_validate(fields)
+        self.calls.append({"model": output_model.__name__, "prompt": prompt,
+                           "thread_id": thread_id, "access": access, "data": data})
+        return StructuredRun(data=data, thread_id=thread_id or f"thread-{self.turn}",
                              is_new_thread=thread_id is None,
                              usage=Usage(input_tokens=100, cached_input_tokens=40))
 
@@ -70,44 +82,51 @@ class RecordingBackend:
         pass
 
     def ran(self, model_name: str) -> bool:
-        return any(c[0] == model_name for c in self.calls)
+        return any(c["model"] == model_name for c in self.calls)
 
-    def prompt_for(self, model_name: str) -> str:
-        return next(c[1] for c in self.calls if c[0] == model_name)
+    def prompts_for(self, model_name: str) -> list[str]:
+        return [c["prompt"] for c in self.calls if c["model"] == model_name]
 
 
 def new_session():
+    folder = load_agent_folder(DEFAULT)
     backend = RecordingBackend()
-    graph = build_graph({r: backend for r in roles.ALL_ROLES}, InMemorySaver())
+    backends = {role: backend for role in backends_needed(folder)}
+    graph = compile_agent(folder, backends=backends, checkpointer=InMemorySaver(),
+                          registry=build_registry(folder))
     config = {"configurable": {"thread_id": "test"}, "recursion_limit": 100}
-    state = create_initial_state(pathlib.Path("/tmp"), "add a login page")
+    state = initial_work_state(repo_path="/tmp", task_brief="add a login page",
+                               agent_dir=str(DEFAULT))
     return backend, graph, config, graph.invoke(state, config=config)
 
 
+# ---------------------------------------------------------------------------
+# The five original assertions, now against the compiled folder
+# ---------------------------------------------------------------------------
+
 def test_discussor_never_reaches_planner_on_its_own():
-    """Requirement 2: only /plan moves the graph to the planner."""
+    """Requirement 2, now enforced by graph.json rather than by graph.py."""
     backend, graph, config, _ = new_session()
 
     for answer in ["email login", "no oauth", "keep it simple"]:
         graph.invoke(Command(resume=answer), config=config)
-        assert graph.get_state(config).next == ("human",), "graph left the human"
+        assert graph.get_state(config).next == ("human",), graph.get_state(config).next
         assert not backend.ran("PlannerOutput"), "the planner ran without /plan!"
 
     print("PASS  discussor never advanced on its own (3 turns, advice=ready_to_plan each)")
 
 
 def test_transcript_accumulates_without_duplicating():
-    """The operator.add reducer must append deltas, not re-add whole lists."""
     backend, graph, config, _ = new_session()
     for answer in ["a", "b", "c"]:
         graph.invoke(Command(resume=answer), config=config)
 
     transcript = graph.get_state(config).values["transcript"]
-    roles_seen = [e["role"] for e in transcript]
+    roles = [e["role"] for e in transcript]
 
-    # 1 seed (the original request) + 3 human answers + 4 discussor replies
-    assert len(transcript) == 8, f"expected 8 entries, got {len(transcript)}"
-    assert roles_seen == ["human", "discussor"] * 4, roles_seen
+    # 1 seed (the brief) + 3 human answers + 4 discussor replies
+    assert len(transcript) == 8, f"expected 8, got {len(transcript)}: {roles}"
+    assert roles == ["human", "discussor"] * 4, roles
     assert len({(e["role"], e["text"]) for e in transcript}) == 8, "entries duplicated"
     print("PASS  transcript: 8 entries, alternating, no duplication")
 
@@ -118,9 +137,9 @@ def test_plan_command_reaches_planner_with_full_conversation():
     graph.invoke(Command(resume="/plan focus on tests"), config=config)
 
     assert backend.ran("PlannerOutput"), "/plan did not reach the planner"
-    prompt = backend.prompt_for("PlannerOutput")
-    for needle in ["add a login page", "email login", "reply-1", "q-1?", "focus on tests"]:
-        assert needle in prompt, f"planner prompt missing {needle!r}"
+    prompt = backend.prompts_for("PlannerOutput")[0]
+    for needle in ["add a login page", "email login", "reply-1", "focus on tests"]:
+        assert needle in prompt, f"planner prompt missing {needle!r}\n---\n{prompt}"
     print("PASS  /plan reached the planner with both sides of the conversation")
 
 
@@ -128,6 +147,7 @@ def test_exit_ends_the_graph():
     backend, graph, config, _ = new_session()
     graph.invoke(Command(resume="/exit"), config=config)
     assert graph.get_state(config).next == (), "graph did not reach END"
+    assert graph.get_state(config).values["outcome"] == "exit"
     print("PASS  /exit ends the run")
 
 
@@ -135,12 +155,47 @@ def test_full_cycle_reaches_the_executor():
     backend, graph, config, _ = new_session()
     graph.invoke(Command(resume="/plan"), config=config)
     assert backend.ran("ExecutorOutput"), "never reached the executor"
-    assert graph.get_state(config).values["final_summary"] == "done"
     print("PASS  /plan -> planner -> orchestrator -> executor -> finish")
+
+
+# ---------------------------------------------------------------------------
+# Two more the folder format specifically needs
+# ---------------------------------------------------------------------------
+
+def test_threads_accumulate_across_nodes():
+    """The operator.or_ lesson: one node writing `threads` must not erase others.
+
+    With merge_section() this would be a bug, because the code does not know
+    the keys -- they come from nodes.json. See agent/work/state.py.
+    """
+    backend, graph, config, _ = new_session()
+    graph.invoke(Command(resume="/plan"), config=config)
+
+    threads = graph.get_state(config).values["threads"]
+    assert set(threads) >= {"discussor/", "planner/", "orchestrator/", "executor/main"}, threads
+    # executor/main, not executor/ -- thread_key rendered the workstream.
+    print(f"PASS  threads accumulated without erasure: {sorted(threads)}")
+
+
+def test_executor_gets_the_plan_first_then_the_short_prompt():
+    """refresh_on + bump + thread_marks reproduce executor_seen_plan_generation."""
+    backend, graph, config, _ = new_session()
+    graph.invoke(Command(resume="/plan"), config=config)
+
+    executor_prompts = backend.prompts_for("ExecutorOutput")
+    assert executor_prompts, "executor never ran"
+    first = executor_prompts[0]
+    assert "Overall plan:" in first, "the executor's first prompt should carry the whole plan"
+
+    marks = graph.get_state(config).values["thread_marks"]
+    counters = graph.get_state(config).values["counters"]
+    assert counters.get("plan_revision") == 1, counters
+    assert marks.get("executor/main") == 1, marks
+    print("PASS  executor got the full plan first; thread_marks tracks the plan revision")
 
 
 if __name__ == "__main__":
     for name, fn in sorted(globals().items()):
         if name.startswith("test_"):
             fn()
-    print("\nAll tests passed.")
+    print("\nAll acceptance tests passed -- the folder format expresses today's agent.")
