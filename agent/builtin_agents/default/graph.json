@@ -49,7 +49,6 @@
     {
       "from": "orchestrator",
       "route_on": "action",
-      "default": "__end__",
       "cases": [
         {
           "when": "execute",
@@ -79,7 +78,8 @@
             "context": "{out.orchestrator.final_summary}"
           }
         }
-      ]
+      ],
+      "default": "__end__"
     }
   ]
 }

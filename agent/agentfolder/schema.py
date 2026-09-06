@@ -217,3 +217,139 @@ class HumanNodeConfig(FolderModel):
 
 
 NodeConfig = AgentNodeConfig | HumanNodeConfig
+
+
+# ---------------------------------------------------------------------------
+# How a node is written back to nodes.json
+# ---------------------------------------------------------------------------
+
+#: The keys an agent node may carry on disk, in the order they are written.
+#: Order matters only for readability -- but readability is the point of a
+#: hand-editable format, and a stable order keeps `git diff` on a promoted
+#: agent about what actually changed.
+AGENT_KEYS: tuple[str, ...] = (
+    "backend", "access", "steps", "instructions", "output", "prompts",
+    "thread_key", "refresh_on", "bump", "capture", "record", "announce",
+)
+
+
+def node_entry(kind: str | None, values: dict) -> dict:
+    """One nodes.json entry, written the one canonical way.
+
+    TWO callers, and they must not drift: the design phase writing a folder the
+    model just invented (agent/bootstrap/nodes/writer.py) and the web editor
+    saving one you changed by hand (webui/editing.py). When they disagreed, a
+    no-op save through the editor rewrote every file -- which turns `git diff`
+    on a promoted agent into noise and hides the edit you actually made.
+
+    Two rules, both about being readable rather than complete:
+
+      - Empty values are dropped. An agent node carrying `"record": ""` and
+        `"bump": []` validates perfectly and is miserable to read.
+      - `access` is kept even at its default. It is the one field whose value
+        has consequences you want to see without thinking -- "does this node
+        touch my files?" should never require knowing what the default is.
+    """
+    if kind == "human":
+        return {"commands": [command_entry(c) for c in values.get("commands", [])]}
+
+    out: dict = {}
+    for key in AGENT_KEYS:
+        value = values.get(key)
+        if key == "access":
+            # Written in POSITION, not appended. A setdefault() after the loop
+            # put it last, so a no-op save reordered every agent node in the
+            # file -- correct JSON, unreadable diff.
+            out["access"] = value or "read_only"
+            continue
+        if value in (None, "", [], {}):
+            continue
+        if key == "output":
+            out[key] = [_field_entry(f) for f in value]
+        elif key == "prompts":
+            out[key] = {k: v for k, v in value.items() if v}
+        else:
+            out[key] = value
+    return out
+
+
+#: One output field's keys, in the order they are written.
+FIELD_KEYS: tuple[str, ...] = ("name", "type", "choices", "description", "required")
+
+
+def _field_entry(values: dict) -> dict:
+    """One entry of a node's `output` list.
+
+    Cleaned HERE rather than left to the caller's model_dump, so the two
+    writers cannot disagree by dumping differently. The design phase gets its
+    fields from a model whose strict-output schema requires every property, so
+    they arrive with `"choices": [], "description": "", "required": false`
+    spelled out; the editor's arrive already trimmed. Same file either way.
+    """
+    out = {}
+    for key in FIELD_KEYS:
+        value = values.get(key)
+        if key in ("name", "type"):
+            out[key] = value
+        elif value not in (None, "", [], {}, False):
+            out[key] = value
+    return out
+
+
+#: A command's keys, in the order they are written.
+COMMAND_KEYS: tuple[str, ...] = (
+    "name", "to", "purposes", "aliases", "argument", "summary", "record",
+    "sets", "outcome",
+)
+
+
+def command_entry(values: dict) -> dict:
+    """One human-node command, written the one canonical way.
+
+    Same empty-dropping rule as `node_entry`, and for the same reason: a
+    command carrying `"record": "", "sets": {}, "outcome": ""` validates fine
+    and is three lines of noise per command in a file you are meant to read.
+
+    `purposes` is the interesting one. `None` means "legal at every question",
+    and that is the DEFAULT -- so dropping it is not just tidiness, it is the
+    difference between a file that says what it means and one that spells out
+    the absence of a restriction.
+    """
+    return {key: values[key] for key in COMMAND_KEYS
+            if values.get(key) not in (None, "", [], {})}
+
+
+#: graph.json's keys, in the order they are written.
+GRAPH_KEYS: tuple[str, ...] = (
+    "name", "description", "entry", "nodes", "edges", "branches",
+)
+
+
+def graph_document(values: dict) -> dict:
+    """graph.json, written the one canonical way.
+
+    `format_version` is injected here rather than taken from the input: it
+    describes the FILE, and neither a model proposing an agent nor a browser
+    editing one has any business choosing it.
+
+    Everything else follows node_entry's rule -- drop what is empty -- so a
+    graph with no branches simply has no `branches` key rather than an empty
+    list to read past. The loader defaults it back.
+    """
+    out: dict = {"format_version": 1}
+    for key in GRAPH_KEYS:
+        value = values.get(key)
+        if key in ("name", "entry", "nodes"):
+            out[key] = value          # required; write it even if it is odd
+        elif value not in (None, "", [], {}):
+            out[key] = value
+
+    # A branch's `default` is spelled out even when it is the default value,
+    # for the same reason `access` is: "where does this go when nothing
+    # matches?" is a question you should be able to answer by looking, not by
+    # remembering what the fallback is. Everything else nested inside a branch
+    # follows the ordinary drop-what-is-empty rule.
+    for branch in out.get("branches", []):
+        branch.setdefault("default", END_TARGET)
+
+    return out

@@ -91,9 +91,6 @@
     "backend": "planner",
     "access": "read_only",
     "instructions": "You are the PLANNER in a software-engineering agent.\n\nResponsibilities:\n- inspect the repository read-only;\n- understand the existing architecture;\n- turn the discussion with the human into a practical technical plan;\n- identify a short stable workstream slug;\n- choose the next concrete coding task.\n\nDo not modify files.\nDo not over-plan trivial changes.",
-    "bump": [
-      "plan_revision"
-    ],
     "output": [
       {
         "name": "plan",
@@ -115,6 +112,9 @@
       "first": "The human has finished discussing and asked for a plan.\n\nTask brief:\n\n{task_brief}\n\nThe full conversation with the human:\n\n{transcript}\n\nExtra guidance they gave when asking for the plan:\n{var.planner_feedback}\n\nInspect the repository and create an implementation plan. Return the plan, the most appropriate workstream slug, and the first concrete executor task.",
       "next": "Revise your current implementation plan.\n\nFeedback:\n{var.planner_feedback}\n\nFor reference, the conversation with the human was:\n\n{transcript}\n\nInspect the repository again if necessary. Return the revised plan, the workstream, and the next executable task."
     },
+    "bump": [
+      "plan_revision"
+    ],
     "announce": "turning the discussion into a plan..."
   },
   "orchestrator": {
@@ -164,12 +164,6 @@
     "backend": "executor",
     "access": "write",
     "instructions": "You are the EXECUTOR / CODING WORKER.\n\nYou work directly inside a software repository.\n\nResponsibilities:\n- inspect the repository and applicable AGENTS.md files;\n- implement the assigned task;\n- edit files;\n- run relevant tests, linters, type checks, or builds;\n- diagnose and fix failures when reasonably possible;\n- keep unrelated changes out of the diff.\n\nDo not ask the human directly.\nIf a genuine product decision or missing external secret blocks you, report status=blocked.\nMake real repository changes when implementation is requested and verify them before reporting done.",
-    "thread_key": "{out.planner.workstream}",
-    "refresh_on": "plan_revision",
-    "capture": [
-      "git_status",
-      "git_diff"
-    ],
     "output": [
       {
         "name": "status",
@@ -210,6 +204,12 @@
       "first": "You are beginning work under a new or revised implementation plan.\n\nWorkstream:\n{out.planner.workstream}\n\nOverall plan:\n{out.planner.plan}\n\nYour CURRENT task is:\n{out.orchestrator.task}\n\nImplement this task in the repository. Inspect existing code before changing it, run appropriate verification, and avoid unrelated future plan items unless they are required to make the current task correct.",
       "next": "Next task from the orchestrator:\n\n{out.orchestrator.task}\n\nContinue using your existing repository and workstream context. Implement it and run appropriate verification."
     },
+    "thread_key": "{out.planner.workstream}",
+    "refresh_on": "plan_revision",
+    "capture": [
+      "git_status",
+      "git_diff"
+    ],
     "announce": "coding..."
   }
 }

@@ -33,6 +33,7 @@ the session folder, so losing this dict costs you an open connection, not work.
 from __future__ import annotations
 
 import asyncio
+import tempfile
 import threading
 import time
 from contextlib import asynccontextmanager
@@ -44,11 +45,14 @@ from fastapi.responses import FileResponse, JSONResponse, StreamingResponse
 from fastapi.staticfiles import StaticFiles
 
 from agent import storage
+from agent.agentfolder.load import AgentFolderError, load_agent_folder
 from agent.agentfolder.schema import GraphFile
+from agent.agentfolder.validate import Problem, validate_folder
 from agent.backends import PROVIDERS
 from agent.backends.base import Access
 from agent.config import backend_for, load_config
 from agent.runtime import needed_for
+from webui import editing
 from webui.models import (
     Answer,
     NewSession,
@@ -195,6 +199,133 @@ def _register(app: FastAPI) -> None:
                        status=404)
         runner.shutdown()
         return Ok(detail="closed")
+
+    # ---- the plan --------------------------------------------------------
+
+    @app.get("/api/sessions/{session_id}/plan")
+    def get_plan(session_id: str):
+        runner = _runner(session_id)
+        plan = editing.read_plan(runner.paths)
+        return {"plan": plan, "path": str(runner.paths.plan),
+                "exists": runner.paths.plan.exists(),
+                "step_ids": sorted(editing.plan_step_ids(plan))}
+
+    @app.put("/api/sessions/{session_id}/plan")
+    def put_plan(session_id: str, body: dict = Body(...)):
+        """Save an edited plan.
+
+        Lands on a hook that already existed: the planner writes plan.json
+        BEFORE asking for approval, and bootstrap/nodes/human.py re-reads it
+        from disk when you type /approve. So editing here and then approving is
+        the supported path, not a workaround.
+        """
+        runner = _runner(session_id)
+        problems = editing.write_plan(runner.paths, body.get("plan", body))
+        blocking = [p for p in problems if not p.warning]
+        if blocking:
+            raise _bad("bad_plan", str(runner.paths.plan), blocking[0].message, 422)
+        return {"saved": True, "problems": [_problem(p) for p in problems]}
+
+    # ---- the agent folder ------------------------------------------------
+
+    @app.get("/api/sessions/{session_id}/agent")
+    def get_agent(session_id: str):
+        """graph.json and nodes.json as one document, plus a drawable view."""
+        runner = _runner(session_id)
+        path = _agent_path(runner)
+        try:
+            document = editing.read_folder(path)
+            folder = load_agent_folder(path)
+        except AgentFolderError as exc:
+            raise _bad("unreadable_agent", str(path), str(exc), 422)
+
+        plan = editing.read_plan(runner.paths)
+        return {
+            **document,
+            "editable": path == runner.paths.agent_dir,
+            "view": editing.graph_view(folder, plan),
+            "problems": [_problem(p) for p in validate_folder(folder)],
+        }
+
+    @app.put("/api/sessions/{session_id}/agent")
+    def put_agent(session_id: str, body: dict = Body(...)):
+        """Save an edited agent.
+
+        Saving is allowed even when the result has problems -- you cannot
+        rewire a graph without passing through invalid states -- so the response
+        always carries the validation report and the UI decides how loudly to
+        say it. Running is what is gated, by cli.py and by the runner.
+        """
+        runner = _runner(session_id)
+        if runner.busy:
+            raise _bad("running", session_id,
+                       "Stop the run before editing its agent.", 409)
+
+        path = _agent_path(runner)
+        if path != runner.paths.agent_dir:
+            raise _bad("not_editable", str(path),
+                       "That agent is shipped or promoted, not this session's own. "
+                       "Copy it into the session first.", 409)
+
+        result = editing.save_folder(path, body, staging=runner.paths.staging)
+        if not result.saved:
+            raise _bad("invalid_agent", str(path), result.error, 422)
+        return {"saved": True, "problems": [_problem(p) for p in result.problems]}
+
+    @app.post("/api/sessions/{session_id}/agent/validate")
+    def validate_agent(session_id: str, body: dict = Body(...)):
+        """Check an edit without writing it -- for live feedback while typing."""
+        _runner(session_id)
+        try:
+            graph = GraphFile.model_validate({"format_version": 1, **body.get("graph", {})})
+        except Exception as exc:  # pydantic.ValidationError
+            return {"ok": False, "problems": [{
+                "code": "invalid_graph", "where": "graph.json",
+                "message": editing._pydantic_message(exc), "warning": False}]}
+
+        with tempfile.TemporaryDirectory() as tmp:
+            result = editing.save_folder(
+                Path(tmp) / "agent", {"graph": graph.model_dump(mode="json", by_alias=True),
+                                      "nodes": body.get("nodes", {})},
+                staging=Path(tmp) / "staging",
+            )
+        if not result.saved:
+            return {"ok": False, "problems": [{
+                "code": "invalid_agent", "where": "nodes.json",
+                "message": result.error, "warning": False}]}
+        return {"ok": not [p for p in result.problems if not p.warning],
+                "problems": [_problem(p) for p in result.problems]}
+
+    @app.get("/api/sessions/{session_id}/nodes/{name}/context")
+    def get_node_context(session_id: str, name: str):
+        """What this node will actually be sent, rendered against live state.
+
+        The most useful screen in the UI, because a template and the prompt it
+        produces are very different things -- and an unresolved placeholder
+        renders as empty rather than raising, so a wrong one looks fine
+        everywhere except here.
+        """
+        runner = _runner(session_id)
+        path = _agent_path(runner)
+        try:
+            folder = load_agent_folder(path)
+        except AgentFolderError as exc:
+            raise _bad("unreadable_agent", str(path), str(exc), 422)
+
+        state = dict(runner.last_values or {})
+        state.setdefault("plan", editing.read_plan(runner.paths))
+        state.setdefault("task_brief", _saved_task(runner.paths))
+        state.setdefault("repo_path", str(runner.paths.repo))
+        state.setdefault("artifacts_dir", str(runner.paths.artifacts))
+
+        try:
+            return editing.node_context(
+                folder, name, state=state,
+                artifacts_dir=str(runner.paths.artifacts),
+                session_dir=str(runner.paths.session),
+            )
+        except KeyError:
+            raise _bad("no_node", name, f"No node named {name!r} in this agent.", 404)
 
     # ---- the event stream ------------------------------------------------
 
@@ -383,6 +514,28 @@ def _runner(session_id: str) -> SessionRunner:
                    "No open session with that id. POST /api/sessions first.",
                    status=404)
     return runner
+
+
+def _problem(problem: Problem) -> dict:
+    """One Problem on the wire. Same shape as an API error, on purpose."""
+    return ProblemOut(code=problem.code, where=problem.where,
+                      message=problem.message, warning=problem.warning).model_dump()
+
+
+def _agent_path(runner: SessionRunner) -> Path:
+    """Which folder this session is looking at.
+
+    `runner.folder_path` is set once a run has resolved one -- which may be a
+    shipped or promoted agent rather than the session's own. Falling back to
+    the session's agent_dir covers the case where the design phase finished but
+    no run has started yet.
+    """
+    if runner.folder_path is not None:
+        return Path(runner.folder_path)
+    if runner.paths.has_agent():
+        return runner.paths.agent_dir
+    raise _bad("no_agent", runner.id,
+               "This session has no agent yet. Finish the design phase first.", 404)
 
 
 def _saved_task(paths) -> str:

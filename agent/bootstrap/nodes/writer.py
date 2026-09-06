@@ -19,17 +19,14 @@ import json
 import shutil
 from pathlib import Path
 
+from agent.agentfolder.schema import command_entry, graph_document, node_entry
 from agent.bootstrap.state import BootstrapState
 from agent.statelib import merge_section
 
-# graph.json carries these; everything else in a NodeProposal belongs to
-# nodes.json.
-_GRAPH_KEYS = {"name", "description", "entry", "nodes", "edges", "branches"}
-
-_AGENT_KEYS = (
-    "backend", "access", "steps", "instructions", "output", "prompts",
-    "thread_key", "refresh_on", "bump", "capture", "record", "announce",
-)
+# How both files are laid out -- graph_document, node_entry, command_entry --
+# lives in agentfolder.schema, shared
+# with the web editor so a hand edit and a designed folder are written the same
+# way. See the note in that function about what happened when they differed.
 
 
 def make_writer(paths):
@@ -47,8 +44,7 @@ def make_writer(paths):
             shutil.rmtree(staging)
         staging.mkdir(parents=True)
 
-        graph = {"format_version": 1, **{k: v for k, v in proposal["graph"].items()
-                                         if k in _GRAPH_KEYS}}
+        graph = graph_document(proposal["graph"])
         kinds = {node["name"]: node["kind"] for node in graph.get("nodes", [])}
 
         nodes: dict[str, dict] = {}
@@ -86,16 +82,10 @@ def _entry_for(kind: str | None, entry: dict) -> dict:
     but it would be confusing to read and to hand-edit.
     """
     if kind == "human":
-        return {"commands": [_command(c) for c in entry.get("commands", [])]}
-
-    out: dict = {}
-    for key in _AGENT_KEYS:
-        value = entry.get(key)
-        if value in (None, "", [], {}):
-            continue
-        out[key] = value
-    out.setdefault("access", "read_only")
-    return out
+        return node_entry("human", {
+            "commands": [_command(c) for c in entry.get("commands", [])],
+        })
+    return node_entry(kind, entry)
 
 
 def _command(proposal: dict) -> dict:
@@ -107,18 +97,16 @@ def _command(proposal: dict) -> dict:
       - `purposes` arrives as a list, where empty means "everywhere", and
         becomes None (which is what CommandSpec uses for that).
     """
-    out = {k: v for k, v in proposal.items()
-           if k not in ("sets", "purposes") and v not in (None, "", [])}
+    converted = dict(proposal)
 
     pairs = proposal.get("sets") or []
-    if pairs:
-        out["sets"] = {pair["name"]: pair["value"] for pair in pairs}
+    converted["sets"] = {pair["name"]: pair["value"] for pair in pairs}
 
-    purposes = proposal.get("purposes") or []
-    if purposes:
-        out["purposes"] = purposes
+    # [] from the model means "everywhere"; None is how CommandSpec spells that,
+    # and command_entry drops it.
+    converted["purposes"] = proposal.get("purposes") or None
 
-    return out
+    return command_entry(converted)
 
 
 def _fail(design: dict, message: str) -> dict:
