@@ -168,18 +168,6 @@ class CodexBackend:
         return outcome["result"]
 
 
-def _collect(stream, turn_id: str):
-    """Drain a turn's notification stream into a TurnResult.
-
-    This mirrors the SDK's own private _collect_turn_result. We reimplement it
-    rather than import it because we need the TurnHandle (for interrupt()),
-    which Thread.run() keeps to itself -- and because depending on a private
-    helper across SDK versions is worse than twenty lines here.
-    """
-    from openai_codex._run import _collect_turn_result
-
-    return _collect_turn_result(stream, turn_id=turn_id)
-
     def _get_thread(self, *, thread_id, repo_path, access, developer_instructions):
         if len(developer_instructions) > SAFE_INSTRUCTIONS_CHARS:
             print(
@@ -208,6 +196,24 @@ def _collect(stream, turn_id: str):
             return self.client.thread_resume(thread_id, **common), False
 
         return self.client.thread_start(**common), True
+
+
+def _collect(stream, turn_id: str):
+    """Drain a turn's notification stream into a TurnResult.
+
+    This is what Thread.run() does internally after starting a turn. We do it
+    ourselves because run() keeps its TurnHandle private and we need that
+    handle to interrupt() on a timeout.
+
+    Delegating to the SDK's own helper rather than reimplementing twenty lines
+    of notification matching: it is private, so the import is local and
+    explicit, and if a future SDK moves it the failure is an immediate
+    ImportError naming this line rather than a subtle mismatch in how turns
+    are assembled.
+    """
+    from openai_codex._run import _collect_turn_result
+
+    return _collect_turn_result(stream, turn_id=turn_id)
 
 
 def _to_usage(usage) -> Usage | None:
