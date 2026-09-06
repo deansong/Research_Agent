@@ -1,8 +1,0 @@
-{
-  "schema_version": 1,
-  "status": "no_failures",
-  "failure_count": 0,
-  "recovered_attempt_count": 0,
-  "entries": [],
-  "resume_policy": "Successful content-addressed cells are cached; failed cells are retried and prior attempts retained."
-}
