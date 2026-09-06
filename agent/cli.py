@@ -138,7 +138,19 @@ def main() -> None:
         except BackendError as exc:
             raise SystemExit(f"\n{exc}")
 
-        _run_work_phase(folder, cfg, paths, backends, checkpointer, task_brief)
+        try:
+            _run_work_phase(folder, cfg, paths, backends, checkpointer, task_brief)
+        except BackendError as exc:
+            # A provider problem, not a bug. The graph checkpoints after every
+            # completed node, so whatever finished before this is still there --
+            # say so, and say exactly how to pick it up, instead of printing a
+            # traceback that buries both facts.
+            raise SystemExit(_recoverable(exc, paths, folder))
+        except KeyboardInterrupt:
+            raise SystemExit(
+                f"\nStopped.\n\nResume with:\n"
+                f"  python main.py run {paths.repo} --session {paths.session.name}"
+            )
 
 
 class _LazyCodex:
@@ -359,6 +371,22 @@ def _run_work_phase(folder, cfg, paths, backends, checkpointer, task_brief) -> N
         print(f"\n===== new task, same agent =====\n{task_brief}")
         print("(this agent was designed for the previous task -- /exit and "
               "start a new session if it does not fit)")
+
+
+def _recoverable(exc: BackendError, paths, folder) -> str:
+    """The message a provider failure should end with.
+
+    Two things the user needs and a traceback does not give them: what went
+    wrong in one sentence, and the exact command to carry on.
+    """
+    return (
+        f"\n{exc}\n\n"
+        f"Nothing is lost -- every completed step is checkpointed.\n"
+        f"Resume with:\n"
+        f"  python main.py run {paths.repo} --session {paths.session.name}\n\n"
+        f"(that reuses the agent already designed for this session, at\n"
+        f" {folder.path})"
+    )
 
 
 def _report(values: dict) -> None:

@@ -247,6 +247,33 @@ This exists because a real run did the other thing — it invented top-level
 `artifacts/`, `configs/` and `docs/` directories plus a model cache in a
 project that had none of them.
 
+## When the provider runs out of credits
+
+The run does not die. It waits, says so, and retries — so you can top up and it
+carries on by itself:
+
+```
+    Out of credits. Waiting 60s, then retrying (3/20).
+    Add credits and this will continue on its own.
+    Ctrl-C to stop -- your progress is saved.
+```
+
+Twenty checks a minute apart by default. Tune it per role:
+
+```json
+{ "roles": { "executor": { "options": {
+    "credit_wait_attempts": 40, "credit_wait_seconds": 30 } } } }
+```
+
+Provider-overload errors back off the same way, but briefly (5s, 10s, 20s, 40s)
+since those clear on their own. A **genuine** error — a malformed request, a bad
+schema — is raised immediately and never retried: retrying it just spends the
+same money twice.
+
+If it does give up, or you press ctrl-C, you get the resume command rather than
+a traceback. Every completed node is checkpointed, so resuming re-runs only what
+had not finished.
+
 ## When a node times out
 
 A node that is asked to implement a lot in one turn can legitimately run for a

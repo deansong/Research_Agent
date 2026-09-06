@@ -17,12 +17,40 @@ from agent.backends._progress import describe
 from agent.backends._schema import strict_json_schema
 from agent.backends.base import (
     Access,
+    BackendBusy,
     BackendError,
+    BackendOutOfCredits,
     BackendTimeout,
     OutputT,
     StructuredRun,
     Usage,
 )
+
+# Out-of-credits and overload both arrive as a plain RuntimeError carrying the
+# provider's message -- the SDK's own is_retryable_error() only recognises
+# ServerBusyError, which these are not. So we read the message.
+_OUT_OF_CREDITS = ("out of credits", "insufficient_quota", "billing", "add credits")
+_BUSY = ("server busy", "overloaded", "rate limit", "429", "try again later")
+
+
+def classify(exc: BaseException) -> BaseException:
+    """Turn a provider error into one of our typed errors where we can.
+
+    Message sniffing is unlovely, but the alternative is treating a topped-up
+    account and a genuinely broken request identically -- and the difference
+    matters, because one of them is fixed by waiting thirty seconds.
+    """
+    from openai_codex import is_retryable_error
+
+    if is_retryable_error(exc):
+        return BackendBusy(str(exc))
+
+    text = str(exc).lower()
+    if any(marker in text for marker in _OUT_OF_CREDITS):
+        return BackendOutOfCredits(str(exc))
+    if any(marker in text for marker in _BUSY):
+        return BackendBusy(str(exc))
+    return exc
 
 # --------------------------------------------------------------------------
 # MEASURED: developer_instructions has an effective size limit
@@ -65,9 +93,24 @@ class CodexBackend:
     supports_repo_access = True
     max_access = Access.FULL
 
-    def __init__(self, client: Codex, model: str | None = None, timeout: float = 600.0):
+    def __init__(
+        self,
+        client: Codex,
+        model: str | None = None,
+        timeout: float = 600.0,
+        credit_wait_attempts: int = 20,
+        credit_wait_seconds: float = 60.0,
+        busy_attempts: int = 4,
+    ):
         self.client = client
         self.model = model
+        self.credit_wait_attempts = int(credit_wait_attempts)
+        """How many times to wait for credits to appear before giving up.
+        20 x 60s is twenty minutes, which is enough time to notice, top up and
+        have the run carry on by itself. Ctrl-C during a wait stops it."""
+
+        self.credit_wait_seconds = float(credit_wait_seconds)
+        self.busy_attempts = int(busy_attempts)
         self.timeout = float(timeout)
         """Seconds before a single turn is abandoned.
 
@@ -99,7 +142,7 @@ class CodexBackend:
         # schema whose `required` omits any property, and Pydantic omits every
         # field that has a default. Measured against a live call --
         #   invalid_json_schema: ... Missing 'question'.
-        result = self._run_turn(thread, prompt, strict_json_schema(output_model))
+        result = self._run_with_recovery(thread, prompt, strict_json_schema(output_model))
 
         if not result.final_response:
             raise BackendError("Codex returned no final response.")
@@ -119,6 +162,67 @@ class CodexBackend:
         # The Codex client is opened as a context manager in cli.py, which
         # owns closing it. Nothing to do here.
         return None
+
+    def _run_with_recovery(self, thread, prompt: str, output_schema: dict):
+        """Run a turn, waiting through the failures that waiting actually fixes.
+
+        Two are worth surviving rather than crashing on:
+
+          out of credits  someone can top up, and then the very same call
+                          works. Dying with a traceback throws away the run's
+                          place in the graph for a problem measured in minutes.
+          provider busy   transient by definition.
+
+        Everything else is raised straight away: retrying a malformed request
+        just spends the same money twice.
+        """
+        credit_waits = 0
+        busy_tries = 0
+
+        while True:
+            try:
+                return self._run_turn(thread, prompt, output_schema)
+            except BaseException as exc:  # noqa: BLE001 - re-raised below
+                error = classify(exc)
+
+                if isinstance(error, BackendOutOfCredits):
+                    credit_waits += 1
+                    if credit_waits > self.credit_wait_attempts:
+                        raise BackendOutOfCredits(
+                            f"Still out of credits after "
+                            f"{self.credit_wait_attempts} checks. Stopping.\n"
+                            f"Your progress is saved -- rerun with the same "
+                            f"--session to carry on from here."
+                        ) from None
+                    self._wait("Out of credits", credit_waits,
+                               self.credit_wait_attempts, self.credit_wait_seconds,
+                               "Add credits and this will continue on its own.")
+                    continue
+
+                if isinstance(error, BackendBusy):
+                    busy_tries += 1
+                    if busy_tries > self.busy_attempts:
+                        raise error from None
+                    # Short exponential backoff: 5s, 10s, 20s, 40s.
+                    self._wait("Provider busy", busy_tries, self.busy_attempts,
+                               5.0 * (2 ** (busy_tries - 1)), "")
+                    continue
+
+                raise error from None
+
+    def _wait(self, reason: str, attempt: int, limit: int, seconds: float, advice: str):
+        """Sleep in short slices so ctrl-C stays responsive during a long wait."""
+        print(f"\n    {reason}. Waiting {seconds:.0f}s, then retrying "
+              f"({attempt}/{limit}).", flush=True)
+        if advice:
+            print(f"    {advice}", flush=True)
+        print("    Ctrl-C to stop -- your progress is saved.", flush=True)
+
+        remaining = seconds
+        while remaining > 0:
+            slice_ = min(5.0, remaining)
+            time.sleep(slice_)
+            remaining -= slice_
 
     def _run_turn(self, thread, prompt: str, output_schema: dict):
         """One turn, with a deadline and live progress.

@@ -187,6 +187,111 @@ def test_progress_never_raises():
     print("PASS  describe() tolerates anything the stream throws at it")
 
 
+def test_provider_errors_are_classified():
+    """Out-of-credits and overload arrive as plain RuntimeErrors carrying the
+    provider's message. The SDK's is_retryable_error only knows ServerBusyError,
+    so we read the message -- and the distinction matters, because one of these
+    is fixed by waiting and the other is not."""
+    from agent.backends.base import BackendBusy, BackendOutOfCredits
+    from agent.backends.codex import classify
+
+    credits = classify(RuntimeError("Your workspace is out of credits. Add credits to continue."))
+    assert isinstance(credits, BackendOutOfCredits), type(credits)
+
+    for text in ("server busy", "Rate limit exceeded", "overloaded, try again later"):
+        assert isinstance(classify(RuntimeError(text)), BackendBusy), text
+
+    # A genuine bug must NOT be mistaken for something waiting will fix.
+    bug = classify(RuntimeError("invalid_json_schema: Missing 'question'."))
+    assert not isinstance(bug, (BackendBusy, BackendOutOfCredits)), bug
+    print("PASS  out-of-credits / busy / real errors are told apart")
+
+
+def test_out_of_credits_waits_then_succeeds():
+    """The behaviour the whole change exists for: top up, and it carries on."""
+    from unittest.mock import MagicMock
+
+    from agent.backends.codex import CodexBackend
+
+    backend = CodexBackend(MagicMock(), credit_wait_seconds=0, credit_wait_attempts=5)
+    calls = {"n": 0}
+
+    def flaky(thread, prompt, schema):
+        calls["n"] += 1
+        if calls["n"] < 3:          # broke twice, then someone added credits
+            raise RuntimeError("Your workspace is out of credits.")
+        return "the result"
+
+    backend._run_turn = flaky
+    assert backend._run_with_recovery(None, "p", {}) == "the result"
+    assert calls["n"] == 3, calls
+    print("PASS  out of credits: waits, retries, and succeeds once topped up")
+
+
+def test_out_of_credits_eventually_gives_up_with_resume_advice():
+    from unittest.mock import MagicMock
+
+    from agent.backends.base import BackendOutOfCredits
+    from agent.backends.codex import CodexBackend
+
+    backend = CodexBackend(MagicMock(), credit_wait_seconds=0, credit_wait_attempts=2)
+    backend._run_turn = lambda *a: (_ for _ in ()).throw(
+        RuntimeError("Your workspace is out of credits."))
+
+    try:
+        backend._run_with_recovery(None, "p", {})
+        raise AssertionError("should have given up")
+    except BackendOutOfCredits as exc:
+        assert "--session" in str(exc), "the message must say how to resume"
+    print("PASS  gives up after the configured waits, and says how to resume")
+
+
+def test_a_real_error_is_not_retried():
+    """Retrying a malformed request just spends the same money twice."""
+    from unittest.mock import MagicMock
+
+    from agent.backends.codex import CodexBackend
+
+    backend = CodexBackend(MagicMock(), credit_wait_seconds=0)
+    calls = {"n": 0}
+
+    def broken(thread, prompt, schema):
+        calls["n"] += 1
+        raise RuntimeError("invalid_json_schema: Missing 'question'.")
+
+    backend._run_turn = broken
+    try:
+        backend._run_with_recovery(None, "p", {})
+    except RuntimeError:
+        pass
+    assert calls["n"] == 1, f"a schema error was retried {calls['n']} times"
+    print("PASS  a genuine error is raised immediately, not retried")
+
+
+def test_busy_backs_off_then_gives_up():
+    from unittest.mock import MagicMock
+
+    from agent.backends.base import BackendBusy
+    from agent.backends.codex import CodexBackend
+
+    backend = CodexBackend(MagicMock(), busy_attempts=2)
+    backend._wait = lambda *a, **k: None      # no real sleeping in tests
+    calls = {"n": 0}
+
+    def busy(thread, prompt, schema):
+        calls["n"] += 1
+        raise RuntimeError("server busy")
+
+    backend._run_turn = busy
+    try:
+        backend._run_with_recovery(None, "p", {})
+        raise AssertionError("should have given up")
+    except BackendBusy:
+        pass
+    assert calls["n"] == 3, calls   # first try + 2 retries
+    print("PASS  provider-busy backs off a bounded number of times")
+
+
 if __name__ == "__main__":
     for name, fn in sorted(globals().items()):
         if name.startswith("test_"):

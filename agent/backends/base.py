@@ -119,6 +119,19 @@ class BackendOutputError(BackendError):
     """The model replied, but not with valid JSON for the requested schema."""
 
 
+class BackendOutOfCredits(BackendError):
+    """The account has no credit left.
+
+    Distinct from every other failure because waiting genuinely helps: a human
+    can top up and the same call will then succeed. So the backend waits and
+    retries rather than dying, and the run continues where it paused.
+    """
+
+
+class BackendBusy(BackendError):
+    """The provider is overloaded. Transient; retrying shortly usually works."""
+
+
 class BackendTimeout(BackendError):
     """The provider did not finish within the configured time.
 
