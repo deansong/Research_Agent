@@ -172,6 +172,9 @@ async function savePlan(edited) {
 async function selectNode(name) {
   state.selected = name;
   graph.select(name);
+  // The other half of the plan/graph link: selecting a node shows which plan
+  // steps it will actually be told about.
+  plan.highlightForNode(name);
   if (!name || !state.agent) {
     inspector.clear();
     return;

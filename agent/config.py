@@ -232,14 +232,17 @@ def load_config(
     # ignored while the same override worked fine from a config file or the
     # command line.
     for key, value in sorted(env.items()):
-        for prefix, field in (("AGENT_BACKEND_", "provider"), ("AGENT_MODEL_", "model")):
+        # `attr`, not `field`: dataclasses.field is imported at the top of this
+        # module, and shadowing it inside a loop is the kind of thing that is
+        # harmless until somebody adds a line that needs the real one.
+        for prefix, attr in (("AGENT_BACKEND_", "provider"), ("AGENT_MODEL_", "model")):
             if not key.startswith(prefix) or not value:
                 continue
             role_name = key[len(prefix):].lower()
             if not role_name:
                 continue
             existing = role_configs.get(role_name, BackendConfig(provider="", model=None))
-            role_configs[role_name] = replace(existing, **{field: value})
+            role_configs[role_name] = replace(existing, **{attr: value})
             sources.append(key)
 
     # ---- layer 6: command line -------------------------------------------

@@ -41,7 +41,7 @@ import json
 import threading
 import time
 from dataclasses import dataclass, field
-from typing import Any, Iterator
+from typing import Any
 
 #: Every event type the server may emit. The browser switches on these, so
 #: adding one means teaching static/js/api.js about it -- which is the point.

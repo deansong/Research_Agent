@@ -66,7 +66,7 @@ def main() -> None:
         for name, brief, has_agent in rows:
             mark = "agent" if has_agent else "  -  "
             print(f"  {name:<{width}}  {mark}  {brief[:70]}")
-        print(f"\nResume one with:  --session <name>")
+        print("\nResume one with:  --session <name>")
         return
 
     if args.command == "promote":
@@ -300,7 +300,7 @@ def _warn_if_task_changed(paths, task: str) -> None:
     # The first suggestion depends on how you got here, because "drop
     # --session" is no help at all to someone who passed --session-dir.
     start_fresh = (
-        f"  - use an empty folder: --session-dir <new path>;\n"
+        "  - use an empty folder: --session-dir <new path>;\n"
         if paths.external else
         f"  - drop --session, and a new session will be derived from this task;\n"
         f"  - pass --session {storage.session_name_for(task)} to start one explicitly;\n"

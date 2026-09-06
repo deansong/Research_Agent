@@ -30,7 +30,6 @@ See SAFE_INSTRUCTIONS_CHARS in agent/backends/codex.py for the measurements.
 from __future__ import annotations
 
 import json
-from pathlib import Path
 
 DISCUSSOR_INSTRUCTIONS = """
 You are the DISCUSSOR in a system that DESIGNS coding agents.

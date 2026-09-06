@@ -205,7 +205,7 @@ def validate_folder(
                                     f"so there would be no question to show."))
         if not target_is_human and ask is not None:
             problems.append(Problem("ask_stray", where,
-                                    f"has an ask block but does not go to a human node."))
+                                    "has an ask block but does not go to a human node."))
         if ask is not None:
             check_target(ask.resume_to, where, "ask.resume_to")
 

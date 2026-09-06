@@ -31,6 +31,7 @@ export class PlanPanel {
     this.plan = null;
     this.owners = new Map();   // step id -> [node names]
     this.selected = null;
+    this.ownedByNode = new Set();
     this.dirty = false;
   }
 
@@ -155,15 +156,41 @@ export class PlanPanel {
     }
 
     if (this.selected === step.id) item.classList.add('selected');
+    if (this.ownedByNode?.has(step.id)) item.classList.add('owned');
     return item;
   }
 
   selectStep(id) {
     this.selected = this.selected === id ? null : id;
-    for (const el of this.container.querySelectorAll('.plan-step')) {
-      el.classList.toggle('selected', el.dataset.stepId === this.selected);
-    }
+    this.paint();
     this.onSelectStep?.(this.selected, this.owners.get(this.selected) || []);
+  }
+
+  /**
+   * Highlight the steps a NODE owns -- the other direction of the same link.
+   *
+   * Selecting a node in the graph should show you which parts of the plan it
+   * will be told about, exactly as selecting a step shows you which nodes are
+   * told about it. Without both directions you can only ask the question one
+   * way round, which is the half that happens to be easier to build.
+   */
+  highlightForNode(nodeName) {
+    this.ownedByNode = new Set();
+    if (nodeName) {
+      for (const [stepId, owners] of this.owners) {
+        if (owners.includes(nodeName)) this.ownedByNode.add(stepId);
+      }
+    }
+    this.paint();
+  }
+
+  paint() {
+    const owned = this.ownedByNode || new Set();
+    for (const el of this.container.querySelectorAll('.plan-step')) {
+      const id = el.dataset.stepId;
+      el.classList.toggle('selected', id === this.selected);
+      el.classList.toggle('owned', owned.has(id));
+    }
   }
 
   markDirty() {

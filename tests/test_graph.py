@@ -233,7 +233,7 @@ def test_write_nodes_are_told_where_output_goes():
     for instructions in by_access.get("read_only", []):
         assert artifacts not in instructions, "a read-only node got write rules"
 
-    print(f"PASS  write nodes are told to put output in the run's artifacts dir")
+    print("PASS  write nodes are told to put output in the run's artifacts dir")
 
 
 if __name__ == "__main__":

@@ -976,3 +976,9 @@ dialog menu {
   outline: none;
   border-color: var(--accent-dim);
 }
+
+/* A step the selected NODE owns -- the graph->plan half of the link. */
+.plan-step.owned {
+  border-left-color: var(--accent-dim);
+  background: #10201e;
+}

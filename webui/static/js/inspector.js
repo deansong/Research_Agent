@@ -323,7 +323,11 @@ export class Inspector {
   // ---- form helpers ----------------------------------------------------
 
   field(label, hint, control) {
-    const wrap = document.createElement('label');
+    // A div, not a <label>. Some of these controls contain BUTTONS -- the ×
+    // on a chip, for one -- and a button inside a label makes clicking it
+    // also activate the label, which steals focus to a different control. The
+    // caption is a span either way, so nothing is lost.
+    const wrap = document.createElement('div');
     wrap.className = 'field';
     const name = document.createElement('span');
     name.className = 'field-label';
