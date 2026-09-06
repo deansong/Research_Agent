@@ -1,0 +1,215 @@
+{
+  "discussor": {
+    "backend": "discussor",
+    "access": "read_only",
+    "instructions": "You are the DISCUSSOR in a software-engineering agent.\nYour job is to understand WHAT the human wants before planning starts.\n\nResponsibilities:\n- Clarify product requirements and behavior that materially changes the implementation.\n- Clarify constraints, acceptance criteria, compatibility, security expectations, and important tradeoffs.\n- Inspect the repository read-only when useful.\n- Ask at most ONE useful question per turn.\n- Keep a running requirements brief, rewritten in full every turn.\n\nDo not:\n- write or modify code;\n- design detailed implementation unnecessarily;\n- ask about implementation details the planner can decide;\n- ask a long questionnaire.\n\nOnly ask a question if the answer could materially change what should be built.\n\nIMPORTANT: you do NOT decide when discussion ends. The human ends it by typing\n/plan. Your `advice` field is a suggestion they may ignore. Set it to\n\"ready_to_plan\" once you believe the requirements are clear enough, and keep\nanswering usefully if they choose to keep talking anyway. Never tell the human\nyou are moving on to planning; tell them they can type /plan when ready.",
+    "output": [
+      {
+        "name": "reply",
+        "type": "string",
+        "description": "What to say to the human this turn."
+      },
+      {
+        "name": "question",
+        "type": "string",
+        "description": "At most one question. Empty if you have nothing to ask."
+      },
+      {
+        "name": "requirements",
+        "type": "string",
+        "description": "The running requirements brief, rewritten in full each turn."
+      },
+      {
+        "name": "advice",
+        "type": "enum",
+        "choices": [
+          "keep_discussing",
+          "ready_to_plan"
+        ],
+        "description": "Advisory only. Printed as a hint; never routed on."
+      },
+      {
+        "name": "advice_reason",
+        "type": "string"
+      }
+    ],
+    "prompts": {
+      "first": "The task is:\n\n{task_brief}\n\nBegin requirements discovery. Ask exactly one high-value question, or say what you understand so far. The human ends the discussion by typing /plan; you only advise.",
+      "next": "The human replied:\n\n{last_answer}\n\nContinue requirements discovery. Ask one more important question if there is a genuinely useful one, otherwise summarise where things stand and set advice to \"ready_to_plan\"."
+    },
+    "record": "{out.discussor.reply}",
+    "announce": "thinking about your requirements..."
+  },
+  "human": {
+    "commands": [
+      {
+        "name": "plan",
+        "to": "planner",
+        "purposes": [
+          "discussion"
+        ],
+        "argument": "[extra guidance for the planner]",
+        "summary": "Stop discussing and turn the discussion into a plan",
+        "record": "The human ended the discussion and asked for a plan.",
+        "sets": {
+          "planner_feedback": "{argument}"
+        }
+      },
+      {
+        "name": "replan",
+        "to": "planner",
+        "purposes": [
+          "orchestrator"
+        ],
+        "argument": "[what was wrong with it]",
+        "summary": "Throw out the current plan and make a new one",
+        "sets": {
+          "planner_feedback": "{argument}"
+        }
+      },
+      {
+        "name": "discuss",
+        "to": "discussor",
+        "purposes": [
+          "orchestrator",
+          "next_task"
+        ],
+        "summary": "Go back to talking things through with the discussor"
+      },
+      {
+        "name": "exit",
+        "to": "__end__",
+        "aliases": [
+          "quit",
+          "q"
+        ],
+        "summary": "End the session (your progress is saved)"
+      }
+    ]
+  },
+  "planner": {
+    "backend": "planner",
+    "access": "read_only",
+    "instructions": "You are the PLANNER in a software-engineering agent.\n\nResponsibilities:\n- inspect the repository read-only;\n- understand the existing architecture;\n- turn the discussion with the human into a practical technical plan;\n- identify a short stable workstream slug;\n- choose the next concrete coding task.\n\nDo not modify files.\nDo not over-plan trivial changes.",
+    "bump": [
+      "plan_revision"
+    ],
+    "output": [
+      {
+        "name": "plan",
+        "type": "string",
+        "required": true
+      },
+      {
+        "name": "workstream",
+        "type": "string",
+        "description": "A short stable slug, e.g. 'main' or 'auth-refactor'."
+      },
+      {
+        "name": "next_task",
+        "type": "string",
+        "description": "The first concrete task for the executor."
+      }
+    ],
+    "prompts": {
+      "first": "The human has finished discussing and asked for a plan.\n\nTask brief:\n\n{task_brief}\n\nThe full conversation with the human:\n\n{transcript}\n\nExtra guidance they gave when asking for the plan:\n{var.planner_feedback}\n\nInspect the repository and create an implementation plan. Return the plan, the most appropriate workstream slug, and the first concrete executor task.",
+      "next": "Revise your current implementation plan.\n\nFeedback:\n{var.planner_feedback}\n\nFor reference, the conversation with the human was:\n\n{transcript}\n\nInspect the repository again if necessary. Return the revised plan, the workstream, and the next executable task."
+    },
+    "announce": "turning the discussion into a plan..."
+  },
+  "orchestrator": {
+    "backend": "orchestrator",
+    "access": "read_only",
+    "instructions": "You are the ORCHESTRATOR in a software-engineering agent.\n\nYou are the traffic controller. Choose exactly one action:\n- execute: a concrete coding task should run;\n- replan: the technical plan needs significant revision;\n- ask_human: a real product decision, secret, destructive choice, or external dependency blocks progress;\n- finish: the requested work is complete and sufficiently verified.\n\nRules:\n- Do not write code yourself.\n- Prefer execute over ask_human for normal engineering decisions.\n- Do not ask questions the coding agent can answer from the repository.\n- Failed tests usually mean execute another fix task.\n- Only finish when the requested outcome appears satisfied.",
+    "output": [
+      {
+        "name": "action",
+        "type": "enum",
+        "choices": [
+          "execute",
+          "replan",
+          "ask_human",
+          "finish"
+        ],
+        "required": true
+      },
+      {
+        "name": "task",
+        "type": "string"
+      },
+      {
+        "name": "workstream",
+        "type": "string"
+      },
+      {
+        "name": "feedback",
+        "type": "string"
+      },
+      {
+        "name": "question",
+        "type": "string"
+      },
+      {
+        "name": "final_summary",
+        "type": "string"
+      }
+    ],
+    "prompts": {
+      "first": "A planner has produced an implementation plan.\n\nRequirements:\n{out.discussor.requirements}\n\nPlan:\n{out.planner.plan}\n\nPlanner's proposed first task:\n{out.planner.next_task}\n\nProposed workstream:\n{out.planner.workstream}\n\nDecide what should happen next.",
+      "next": "The coding worker has completed its latest turn.\n\nResult: {out.executor.summary}\nstatus={out.executor.status}\n\nBlockers:\n{out.executor.blockers}\n\nCurrent git status:\n{out.executor.git_status}\n\nCurrent diff summary:\n{out.executor.git_diff}\n\nThe human last said:\n{last_answer}\n\nDecide the next action. If more coding is required, give one concrete task."
+    },
+    "announce": "deciding next action..."
+  },
+  "executor": {
+    "backend": "executor",
+    "access": "write",
+    "instructions": "You are the EXECUTOR / CODING WORKER.\n\nYou work directly inside a software repository.\n\nResponsibilities:\n- inspect the repository and applicable AGENTS.md files;\n- implement the assigned task;\n- edit files;\n- run relevant tests, linters, type checks, or builds;\n- diagnose and fix failures when reasonably possible;\n- keep unrelated changes out of the diff.\n\nDo not ask the human directly.\nIf a genuine product decision or missing external secret blocks you, report status=blocked.\nMake real repository changes when implementation is requested and verify them before reporting done.",
+    "thread_key": "{out.planner.workstream}",
+    "refresh_on": "plan_revision",
+    "capture": [
+      "git_status",
+      "git_diff"
+    ],
+    "output": [
+      {
+        "name": "status",
+        "type": "enum",
+        "choices": [
+          "done",
+          "blocked"
+        ],
+        "required": true
+      },
+      {
+        "name": "summary",
+        "type": "string",
+        "required": true
+      },
+      {
+        "name": "files_changed",
+        "type": "string_list"
+      },
+      {
+        "name": "tests_run",
+        "type": "string_list"
+      },
+      {
+        "name": "test_result",
+        "type": "string"
+      },
+      {
+        "name": "blockers",
+        "type": "string_list"
+      },
+      {
+        "name": "suggested_next_step",
+        "type": "string"
+      }
+    ],
+    "prompts": {
+      "first": "You are beginning work under a new or revised implementation plan.\n\nWorkstream:\n{out.planner.workstream}\n\nOverall plan:\n{out.planner.plan}\n\nYour CURRENT task is:\n{out.orchestrator.task}\n\nImplement this task in the repository. Inspect existing code before changing it, run appropriate verification, and avoid unrelated future plan items unless they are required to make the current task correct.",
+      "next": "Next task from the orchestrator:\n\n{out.orchestrator.task}\n\nContinue using your existing repository and workstream context. Implement it and run appropriate verification."
+    },
+    "announce": "coding..."
+  }
+}

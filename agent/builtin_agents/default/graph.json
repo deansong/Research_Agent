@@ -1,0 +1,85 @@
+{
+  "format_version": 1,
+  "name": "default",
+  "description": "The original four-role agent: discuss requirements with the human, turn the discussion into a plan on /plan, then loop an orchestrator against a coding executor until the work is done.",
+  "entry": "discussor",
+  "nodes": [
+    {
+      "name": "discussor",
+      "kind": "agent"
+    },
+    {
+      "name": "human",
+      "kind": "human"
+    },
+    {
+      "name": "planner",
+      "kind": "agent"
+    },
+    {
+      "name": "orchestrator",
+      "kind": "agent"
+    },
+    {
+      "name": "executor",
+      "kind": "agent"
+    }
+  ],
+  "edges": [
+    {
+      "from": "discussor",
+      "to": "human",
+      "ask": {
+        "purpose": "discussion",
+        "resume_to": "discussor",
+        "question": "{out.discussor.question}",
+        "context": "{out.discussor.requirements}"
+      }
+    },
+    {
+      "from": "planner",
+      "to": "orchestrator"
+    },
+    {
+      "from": "executor",
+      "to": "orchestrator"
+    }
+  ],
+  "branches": [
+    {
+      "from": "orchestrator",
+      "route_on": "action",
+      "default": "__end__",
+      "cases": [
+        {
+          "when": "execute",
+          "to": "executor"
+        },
+        {
+          "when": "replan",
+          "to": "planner"
+        },
+        {
+          "when": "ask_human",
+          "to": "human",
+          "ask": {
+            "purpose": "orchestrator",
+            "resume_to": "orchestrator",
+            "question": "{out.orchestrator.question}",
+            "context": "{out.orchestrator.feedback}"
+          }
+        },
+        {
+          "when": "finish",
+          "to": "human",
+          "ask": {
+            "purpose": "next_task",
+            "resume_to": "__end__",
+            "question": "Task complete. Tell me what to do next, or /exit.",
+            "context": "{out.orchestrator.final_summary}"
+          }
+        }
+      ]
+    }
+  ]
+}
