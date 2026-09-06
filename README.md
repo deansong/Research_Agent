@@ -14,7 +14,7 @@ PHASE 2  run the agent that was just designed
 
 ## Contents
 
-- [Install](#install) · [Your first run](#your-first-run)
+- [Install](#install) · [Your first run](#your-first-run) · [**Setup**](#setup) — session folder · [a folder of your own](#putting-the-session-folder-somewhere-else) · [`brief.txt`](#starting-from-a-written-brief-brieftxt) · config file · env vars
 - [The five things you'll actually do](#the-five-things-youll-actually-do) —
   start · resume · reuse an agent · edit an agent · configure backends
 - [Command reference](#command-reference) · [CLI reference](#cli-reference)
@@ -72,6 +72,231 @@ For real, swap `--backend fake` for nothing (codex is the default).
 
 ---
 
+## Setup
+
+Nothing here is required to start — `python main.py run <repo>` works with no
+config at all. This is what to change when you want to.
+
+### The session folder
+
+**Created for you** on the first run, at `<repo>/.agent/`. You never make it by
+hand.
+
+```
+<repo>/.agent/
+    .gitignore              written on first run. COMMIT THIS.
+    config.json             your settings (optional, gitignored)
+    sessions/<session>/     one per task. gitignored.
+        brief.txt           OPTIONAL, written by YOU — see below
+        request.txt         what you asked for — identifies the session
+        plan.json           the numbered steps — EDIT ME before approving
+        brief.md            the designer's rewrite of it, for the agent
+        agent/              the agent designed for this session
+        artifacts/          where a run puts what it PRODUCES
+        checkpoint.sqlite   both phases, under two thread ids
+    agents/<name>/          promoted agents. NOT gitignored — commit them.
+```
+
+**What to commit.** The `.gitignore` the tool writes ignores `sessions/` and
+`config.json`, and leaves `agents/` tracked — because a promoted agent is
+something you want to keep and share, while a session is scratch. Commit
+`.agent/.gitignore` and anything under `.agent/agents/`.
+
+**Managing sessions.**
+
+```bash
+python main.py sessions .                    # list them, with what each was for
+python main.py run . --session <name>        # resume one
+rm -rf .agent/sessions/<name>                # delete one
+rm -rf .agent/sessions                       # start completely fresh
+```
+
+Sessions are safe to delete — they hold conversation history and run output,
+never your project's source. But note `artifacts/` inside a session is **not in
+git**, so deleting a session deletes its outputs permanently. Check the size
+before a mass delete: a run that downloaded models can be gigabytes.
+
+```bash
+du -sh .agent/sessions/*
+```
+
+### Putting the session folder somewhere else
+
+`--session-dir PATH` uses a directory of your choosing **as** the session
+folder, with exactly the same contents:
+
+```bash
+mkdir -p ~/experiments/parser-tests
+python main.py run . --session-dir ~/experiments/parser-tests
+```
+
+Use it when the session is the thing you care about — an experiment you want
+sitting beside its data, a folder you want to keep after the checkout is gone,
+a directory two people look at. For ordinary throwaway work `--session NAME`
+is still the easier choice.
+
+Three things behave differently:
+
+- **Promoted agents still go to `<repo>/.agent/agents/`**, not into your
+  folder. They are reusable across sessions, which is the whole point of
+  promoting one; an external folder is usually a single experiment.
+- **`python main.py sessions .` will not list it.** That command walks
+  `.agent/sessions/`, and there is no index of folders you named yourself.
+- **If the folder is inside the repo it is not gitignored**, so the checkpoint
+  and artifacts show up in `git status`. You get a one-line warning; add the
+  path to `.gitignore` yourself if that isn't what you meant.
+
+A typo is caught rather than acted on: if neither the path nor its *parent*
+exists, the run stops instead of quietly creating an empty session somewhere
+you didn't mean.
+
+### Starting from a written brief (`brief.txt`)
+
+Drop a `brief.txt` into a session folder and it is read as the task — the
+initial idea, exactly what you would otherwise have typed at the
+*What do you want to build/change?* prompt.
+
+```bash
+mkdir -p ~/experiments/parser-tests
+cat > ~/experiments/parser-tests/brief.txt <<'EOF'
+Add pytest coverage for parser.py.
+
+Focus on the error paths — the happy path is already covered by the
+integration tests. Do not touch the lexer.
+EOF
+
+python main.py run . --session-dir ~/experiments/parser-tests
+```
+
+The run starts without asking you anything.
+
+**Why a file.** A brief written in an editor can have paragraphs, lists and
+second thoughts. `--task "…"` is one shell-quoted line, and the terminal
+prompt is one line you cannot go back and edit. This is the same input, taken
+seriously.
+
+**It only works when the folder is known before the task is.** That means
+`--session-dir PATH` or `--session NAME`. With neither, the session name is
+*derived from* the task, so there is nowhere to look for the file yet.
+
+**Precedence:** `--task` / `--task-file` beats `brief.txt`, which beats the
+`request.txt` we saved on a previous run. Most explicit wins. An empty
+`brief.txt` is reported and skipped rather than treated as an empty task.
+
+**`brief.txt` and `brief.md` are different files**, and the pair is worth
+learning once:
+
+| | who writes it | when | what it is |
+| --- | --- | --- | --- |
+| `brief.txt` | **you**, by hand | before the first run | the initial idea — an input |
+| `brief.md` | the **designer** | during the design phase | its rewrite of your idea, addressed to the generated agent — an output |
+
+**Editing `brief.txt` after an agent has been designed** stops the run, on
+purpose. That agent was built for the old text and would do confident,
+plausible, wrong work against the new one. Delete `<folder>/agent/` to
+redesign in place, or start in an empty folder.
+
+### The config file
+
+Optional. Two locations, both plain JSON:
+
+| | scope |
+| --- | --- |
+| `~/.codex-langgraph-agent/config.json` | all your projects |
+| `<repo>/.agent/config.json` | this repository only |
+
+Start from the shipped example:
+
+```bash
+mkdir -p .agent && cp agent.example.json .agent/config.json
+```
+
+**Every key it accepts** (all optional):
+
+```json
+{
+  "_comment": "Keys starting with _ are ignored, so you can annotate freely.",
+
+  "default":  { "provider": "codex", "model": null, "options": {} },
+
+  "roles": {
+    "discussor":    { "provider": "codex" },
+    "planner":      { "provider": "codex" },
+    "designer":     { "provider": "codex" },
+    "orchestrator": { "provider": "codex" },
+    "executor":     { "provider": "codex", "model": "gpt-5.4",
+                      "options": { "timeout": 3600 } }
+  },
+
+  "session":              null,
+  "recursion_limit":      1000,
+  "work_recursion_limit": 200,
+  "max_design_attempts":  3,
+  "default_agent":        "default"
+}
+```
+
+| key | default | what it does |
+| --- | --- | --- |
+| `default` | `{provider: "codex"}` | fallback for every role |
+| `roles` | `{}` | per-role overrides, merged over `default` **field by field** |
+| `session` | `null` | pin a session name; `null` derives one from the task |
+| `recursion_limit` | `1000` | step budget for the design phase |
+| `work_recursion_limit` | `200` | step budget for a generated agent — lower so a runaway loop fails fast |
+| `max_design_attempts` | `3` | how many times the designer may retry a rejected folder |
+| `default_agent` | `"default"` | folder used by `/use` and by `--pre-build-agent` with no name |
+
+A **role** is any name a node declares as its `backend`. The built-in ones are
+`discussor`, `planner`, `designer` (design phase) and `orchestrator`,
+`executor` (the `default` agent) — but a generated agent invents its own, and
+those are configurable the same way. An unknown name is a warning, not an
+error, since the folder that defines it may not exist yet.
+
+**Per-provider `options`:**
+
+| provider | options |
+| --- | --- |
+| `codex` | `timeout` (600s), `credit_wait_attempts` (20), `credit_wait_seconds` (60), `busy_attempts` (4) |
+| `claude_code` | `executable` (`"claude"`), `timeout` (900s) — *stub* |
+| `api` | `provider` (`"anthropic"`) — *stub* |
+
+Typos are caught: the file is parsed strictly, so `"provdier"` is an error
+naming the file and the key, not a silently ignored setting.
+
+### Environment variables
+
+| | |
+| --- | --- |
+| `AGENT_BACKEND` / `AGENT_MODEL` | every role |
+| `AGENT_BACKEND_<ROLE>` / `AGENT_MODEL_<ROLE>` | one role, e.g. `AGENT_BACKEND_EXECUTOR=fake` |
+| `CODEX_MODEL` | legacy alias for `AGENT_MODEL` |
+
+`<ROLE>` is the role name uppercased, and any role works — including ones only
+a generated agent has.
+
+### Precedence
+
+Later wins:
+
+```
+built-in defaults → ~/.codex-langgraph-agent/config.json → <repo>/.agent/config.json
+    → --config FILE → environment → CLI flags
+```
+
+`--config` **replaces** the two default files rather than layering on them.
+
+### Checking what you actually got
+
+```bash
+python main.py run . --explain      # resolved config + agent shape, spends nothing
+```
+
+It prints a line per role and a `settings from:` line naming every layer that
+contributed — usually the fastest way to find out why a setting isn't taking.
+`/config` shows the same thing mid-session.
+
+---
+
 ## The five things you'll actually do
 
 ### 1. Start a session
@@ -86,6 +311,18 @@ task starts somewhere clean. Without `--task` you're prompted.
 
 ```bash
 python main.py sessions .          # list them
+```
+
+Two other ways in, both covered under [Setup](#setup):
+
+```bash
+# put the session folder where you want it
+python main.py run . --session-dir ~/experiments/parser-tests
+
+# ...and write the task into it beforehand, instead of typing it
+echo "Add pytest coverage for parser.py, error paths only." \
+    > ~/experiments/parser-tests/brief.txt
+python main.py run . --session-dir ~/experiments/parser-tests
 ```
 
 ### 2. Resume a session
@@ -231,6 +468,7 @@ python main.py promote <repo> <name>          keep this session's agent
 | --- | --- |
 | `--task "…"` / `--task-file F` | the task, instead of being prompted |
 | `--session NAME` | resume a specific session |
+| `--session-dir PATH` | use PATH as the session folder, anywhere on disk |
 | `--pre-build-agent NAME\|PATH` | skip designing; run this agent |
 | `--backend NAME` | provider for every role |
 | `--model NAME` | model for every role |
@@ -246,7 +484,8 @@ python main.py promote <repo> <name>          keep this session's agent
 <repo>/.agent/
     .gitignore              committed; keeps sessions/ out of git
     config.json             per-repo backend config
-    sessions/<session>/     gitignored
+    sessions/<session>/     gitignored  (or anywhere, with --session-dir)
+        brief.txt           optional; YOUR initial idea, written by hand
         request.txt         what you asked for — identifies the session
         plan.json           the numbered steps — EDIT ME before approving
         brief.md            the designer's rewrite of it, for the agent
@@ -366,6 +605,7 @@ python tests/test_folder.py      # the format: one test per failure mode
 python tests/test_graph.py       # the acceptance test
 python tests/test_bootstrap.py   # planning, approval, the repair loop
 python tests/test_backends.py    # provider contract and recovery
+python tests/test_storage.py     # session folders, --session-dir, brief.txt
 ```
 
 `test_graph.py` is the one that matters: it builds a graph **from

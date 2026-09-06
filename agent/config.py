@@ -226,18 +226,21 @@ def load_config(
         default = replace(default, model=env["AGENT_MODEL"])
         sources.append("AGENT_MODEL")
 
-    for role_name in roles.ALL_ROLES:
-        suffix = role_name.upper()
-        provider = env.get(f"AGENT_BACKEND_{suffix}")
-        model = env.get(f"AGENT_MODEL_{suffix}")
-        if provider or model:
+    # Scan for ANY AGENT_BACKEND_<ROLE> / AGENT_MODEL_<ROLE>, rather than only
+    # the roles we happen to name in roles.py. A generated agent invents its
+    # own role names, so whitelisting meant AGENT_BACKEND_REVIEWER was silently
+    # ignored while the same override worked fine from a config file or the
+    # command line.
+    for key, value in sorted(env.items()):
+        for prefix, field in (("AGENT_BACKEND_", "provider"), ("AGENT_MODEL_", "model")):
+            if not key.startswith(prefix) or not value:
+                continue
+            role_name = key[len(prefix):].lower()
+            if not role_name:
+                continue
             existing = role_configs.get(role_name, BackendConfig(provider="", model=None))
-            role_configs[role_name] = replace(
-                existing,
-                provider=provider or existing.provider,
-                model=model if model is not None else existing.model,
-            )
-            sources.append(f"AGENT_*_{suffix}")
+            role_configs[role_name] = replace(existing, **{field: value})
+            sources.append(key)
 
     # ---- layer 6: command line -------------------------------------------
     if cli is not None:
@@ -312,17 +315,39 @@ def _warn_unknown_role(role_name: str, where: str) -> None:
     )
 
 
-def describe(cfg: AgentConfig) -> str:
-    """One line per role, plus where the settings came from.  Used by /config."""
+def describe(cfg: AgentConfig, paths=None) -> str:
+    """One line per role, plus where the settings came from.  Used by /config.
+
+    Which roles to list is not obvious any more.  Role names are open-ended --
+    a generated agent invents its own -- so there is no complete list to print.
+    We show the union of the roles WE name in Python (roles.ALL_ROLES) and the
+    roles YOU configured, which is the set where "what will this resolve to?"
+    is a question someone might actually be asking.  A role a folder invents
+    and you never override resolves to `default`, shown on its own line.
+
+    Deliberately no "needs <access>" column: access is per NODE now, and lives
+    in the folder's nodes.json, which this function has not been given.
+    """
+    listed = list(roles.ALL_ROLES) + [r for r in sorted(cfg.roles) if r not in roles.ALL_ROLES]
+
     lines = ["BACKENDS", "-" * 78]
-    for role_name in roles.ALL_ROLES:
+    for role_name in listed:
         spec = backend_for(cfg, role_name)
-        needed = roles.REQUIRED_ACCESS[role_name].value
         model = spec.model or "(provider default)"
-        lines.append(f"  {role_name:14} {spec.provider:14} {model:24} needs {needed}")
+        origin = "" if role_name in cfg.roles else "  (falls back to default)"
+        lines.append(f"  {role_name:14} {spec.provider:14} {model:24}{origin}")
 
     lines.append("")
-    lines.append(f"  session          {cfg.session or '(derived from the task)'}")
+    # Show the FOLDER once one has been resolved. `cfg.session` is only the
+    # name you typed, and is None for both of the other two routes in (derived
+    # from the task, or --session-dir) -- printing that alone told you least
+    # exactly when you most wanted to know where the files went.
+    if paths is not None:
+        lines.append(f"  session folder   {paths.session}")
+        if paths.input_brief.exists():
+            lines.append(f"  task read from   {paths.input_brief}")
+    else:
+        lines.append(f"  session          {cfg.session or '(derived from the task)'}")
     lines.append(f"  recursion limit  {cfg.recursion_limit}")
     lines.append("")
     lines.append("  settings from: " + ", ".join(cfg.sources))

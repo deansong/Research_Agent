@@ -12,6 +12,7 @@ LAYOUT
         .gitignore              written by us: "sessions/", "config.json"
         config.json             per-repo backend config (unchanged)
         sessions/<session>/     scratch, gitignored
+            brief.txt           OPTIONAL, WRITTEN BY YOU -- see below
             checkpoint.sqlite   both phases live here, under two thread ids
             meta.json           schema version, so a stale session refuses
             request.txt         what YOU asked for -- identifies the session
@@ -22,16 +23,43 @@ LAYOUT
             agent/              the agent designed for this session
         agents/<name>/          promoted, committed, reusable
 
+--------------------------------------------------------------------------
+A SESSION FOLDER SOMEWHERE ELSE
+--------------------------------------------------------------------------
+`--session-dir /path/to/anywhere` uses that directory AS the session folder,
+with the same contents. The repo still supplies `.agent/agents/` (so `promote`
+keeps working) and `.agent/config.json`, but nothing else lives under it.
+
+Use it when the session is the thing you care about: an experiment you want
+beside its data, a folder you want to keep after the repo is gone, a shared
+directory two people look at. `--session NAME` stays the right choice for
+ordinary throwaway work.
+
+--------------------------------------------------------------------------
+brief.txt -- THE INPUT, versus brief.md -- AN OUTPUT
+--------------------------------------------------------------------------
+These two are easy to confuse, so:
+
+    brief.txt   YOU write it, by hand, before the first run. It is the
+                initial idea -- exactly what you would otherwise have typed
+                at the "What do you want to build/change?" prompt. Prepare a
+                folder, drop a brief.txt in it, point --session-dir at it,
+                and the run starts without asking you anything.
+
+    brief.md    THE DESIGNER writes it, during the design phase. It is a
+                rewrite of your idea addressed to the generated agent, and
+                it appears only after an agent has been designed.
+
+`brief.md` sits beside `agent/` deliberately: promoting a good agent is
+`cp -r sessions/<s>/agent .agent/agents/<name>`, and a task-specific brief
+must not ride along.
+
 `artifacts/` exists because a write-access node otherwise scatters its output
 across the repository root. A run that produced data files, reports and caches
 invented its own top-level `artifacts/`, `configs/` and `docs/` directories in
 someone's project. Source changes belong in the repository -- that is the job --
 but everything a run PRODUCES belongs to the run, and lands here where it is
 already gitignored and thrown away with the session.
-
-`brief.md` sits beside `agent/` deliberately: promoting a good agent is
-`cp -r sessions/<s>/agent .agent/agents/<name>`, and a task-specific brief
-must not ride along.
 
 The agent.tmp/ -> agent/ rename is the durable signal that design succeeded.
 Without it, a session that crashed between "written" and "validated" would be
@@ -45,6 +73,9 @@ from dataclasses import dataclass
 from pathlib import Path
 
 DOT_AGENT = ".agent"
+
+#: Optional, hand-written: the initial idea, read instead of prompting for it.
+INPUT_BRIEF = "brief.txt"
 LEGACY_ROOT = Path.home() / ".codex-langgraph-agent"
 
 GITIGNORE_LINES = (
@@ -63,49 +94,110 @@ class SessionPaths:
     staging: Path
     agent_dir: Path
     brief: Path
+    input_brief: Path
     request: Path
     artifacts: Path
     plan: Path
     meta: Path
     agents_dir: Path
+    external: bool = False
+    """True when --session-dir put this session outside <repo>/.agent/sessions/.
+    Two things care: the gitignore we write does not cover it, and the working
+    rules handed to write-access nodes must name it explicitly so the agent
+    does not treat its own checkpoint as fair game."""
 
     def has_agent(self) -> bool:
         """True once a validated agent has been written for this session."""
         return (self.agent_dir / "graph.json").exists()
 
 
-def session_paths(repo: Path, session: str) -> SessionPaths:
+def session_paths(
+    repo: Path,
+    session: str,
+    *,
+    session_dir: Path | str | None = None,
+) -> SessionPaths:
     """Compute (and create) every path for one session.
+
+    `session` names a folder under <repo>/.agent/sessions/. `session_dir`
+    overrides that with a directory of your choosing, anywhere -- the contents
+    are identical either way, so everything downstream reads the same fields
+    and does not care which route was taken.
 
     Creating the directories here is not tidiness: SqliteSaver.from_conn_string
     does NOT create parent directories, it raises OperationalError. Measured.
     """
     repo = Path(repo).resolve()
     dot_agent = repo / DOT_AGENT
-    session_dir = dot_agent / "sessions" / _safe(session)
+
+    external = session_dir is not None
+    if external:
+        root = Path(session_dir).expanduser().resolve()
+        # An unhelpful failure mode to guard: a typo'd --session-dir would
+        # otherwise happily mkdir -p a whole new tree and start an empty
+        # session, and you would not find out until the brief.txt you wrote
+        # "disappeared". Requiring the PARENT to exist catches the typo while
+        # still letting you name a fresh subdirectory.
+        if not root.exists() and not root.parent.is_dir():
+            raise SystemExit(
+                f"--session-dir {root} does not exist, and neither does its "
+                f"parent {root.parent}.\nCreate the directory first, or check "
+                f"the path for a typo."
+            )
+        if root.exists() and not root.is_dir():
+            raise SystemExit(f"--session-dir {root} exists but is not a directory.")
+    else:
+        root = dot_agent / "sessions" / _safe(session)
 
     paths = SessionPaths(
         repo=repo,
         dot_agent=dot_agent,
-        session=session_dir,
-        checkpoint=session_dir / "checkpoint.sqlite",
-        staging=session_dir / "agent.tmp",
-        agent_dir=session_dir / "agent",
-        brief=session_dir / "brief.md",
-        request=session_dir / "request.txt",
-        artifacts=session_dir / "artifacts",
-        plan=session_dir / "plan.json",
-        meta=session_dir / "meta.json",
+        session=root,
+        checkpoint=root / "checkpoint.sqlite",
+        staging=root / "agent.tmp",
+        agent_dir=root / "agent",
+        brief=root / "brief.md",
+        # Written by hand, by you, BEFORE the first run -- the initial idea,
+        # in place of typing it at the prompt. Read by cli._resolve_session.
+        input_brief=root / INPUT_BRIEF,
+        request=root / "request.txt",
+        artifacts=root / "artifacts",
+        plan=root / "plan.json",
+        meta=root / "meta.json",
+        # Promoted agents stay with the REPOSITORY even for an external
+        # session: they are reusable across sessions, which is the point of
+        # promoting one, and an external folder is usually one experiment.
         agents_dir=dot_agent / "agents",
+        external=external,
     )
 
-    session_dir.mkdir(parents=True, exist_ok=True)
+    root.mkdir(parents=True, exist_ok=True)
     paths.artifacts.mkdir(parents=True, exist_ok=True)
     paths.agents_dir.mkdir(parents=True, exist_ok=True)
     _ensure_gitignore(dot_agent)
+    if external:
+        _warn_if_committable(paths)
     _notice_legacy(repo)
 
     return paths
+
+
+def _warn_if_committable(paths: SessionPaths) -> None:
+    """An external session inside the repo is not covered by our gitignore.
+
+    Worth one line: a checkpoint database and a run's artifacts turning up in
+    `git status` is surprising, and people usually did not mean it.
+    """
+    try:
+        relative = paths.session.relative_to(paths.repo)
+    except ValueError:
+        return  # outside the repo entirely -- git will never see it
+    print(
+        f"Note: session folder {relative}/ is inside the repository and is NOT "
+        f"gitignored.\n"
+        f"      Add it to .gitignore if you do not want the checkpoint and "
+        f"artifacts committed."
+    )
 
 
 def session_name_for(task: str) -> str:
@@ -144,12 +236,15 @@ def list_sessions(repo: Path) -> list[tuple[str, str, bool]]:
     for entry in sorted(root.iterdir()):
         if not entry.is_dir():
             continue
-        # The REQUEST identifies the session; brief.md is the designer's
-        # rewrite of it for the generated agent, and is not the same thing.
-        source = entry / "request.txt"
-        if not source.exists():
-            source = entry / "brief.md"
-        text = source.read_text().strip().splitlines()[0] if source.exists() else ""
+        # The REQUEST identifies the session. Fall back to a hand-written
+        # brief.txt for a folder prepared but never yet run, then to brief.md
+        # -- the designer's rewrite, which is not the same thing as either.
+        text = ""
+        for name in ("request.txt", INPUT_BRIEF, "brief.md"):
+            source = entry / name
+            if source.exists() and source.read_text().strip():
+                text = source.read_text().strip().splitlines()[0]
+                break
         out.append((entry.name, text, (entry / "agent" / "graph.json").exists()))
     return out
 

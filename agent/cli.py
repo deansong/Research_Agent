@@ -57,7 +57,9 @@ def main() -> None:
         return
 
     if args.command == "promote":
-        paths = storage.session_paths(repo_path, args.session or DEFAULT_SESSION)
+        paths = storage.session_paths(
+            repo_path, args.session or DEFAULT_SESSION, session_dir=args.session_dir
+        )
         target = storage.promote(paths, args.name, overwrite=args.force)
         print(f"Promoted this session's agent to {target}")
         print("It is not gitignored -- commit it to keep it.")
@@ -99,11 +101,11 @@ def main() -> None:
 
         if folder_path is None:
             if args.explain:
-                print(describe(cfg))
+                print(describe(cfg, paths))
                 print("\nNo agent has been designed for this session yet.")
                 print("Run without --explain to design one, or pass --pre-build-agent.")
                 return
-            print(describe(cfg))
+            print(describe(cfg, paths))
             if not _bootstrap(cfg, paths, checkpointer, codex, task_brief):
                 return
             folder_path = paths.agent_dir if paths.has_agent() else storage.resolve_agent(
@@ -197,7 +199,12 @@ def _bootstrap(cfg, paths, checkpointer, codex, request) -> bool:
     )
     session = bootstrap_session(
         graph=graph,
-        thread_id=f"{cfg.session}:bootstrap",
+        # paths.session.name, not cfg.session: cfg.session is None whenever
+        # the name was derived from the task or the folder came from
+        # --session-dir, which used to make every such run share the literal
+        # thread id "None:bootstrap". Harmless today only because each session
+        # gets its own checkpoint file -- and that is far too fragile a reason.
+        thread_id=f"{paths.session.name}:bootstrap",
         recursion_limit=cfg.recursion_limit,
         repo_path=str(paths.repo),
         session_dir=str(paths.session),
@@ -223,19 +230,38 @@ def _bootstrap(cfg, paths, checkpointer, codex, request) -> bool:
 def _resolve_session(args, cfg, repo_path):
     """Return (SessionPaths, task text).
 
-    Two routes in:
+    Three routes in:
+      --session-dir P  you chose the folder. It may already contain a
+                       hand-written brief.txt, which IS the task.
       --session NAME   you named it, so you mean "carry on with that one".
-                       The task may come from its saved brief.
-      no --session     the task names the session, so the same task resumes
+                       The task may come from its saved request.
+      neither          the task names the session, so the same task resumes
                        and a different task starts somewhere clean.
+
+    Note the asymmetry, which is not an oversight: the first two know the
+    folder BEFORE they know the task, so they can read a file out of it. The
+    third derives the folder FROM the task, so there is nowhere to look yet --
+    which is exactly why preparing a brief.txt requires naming the folder.
     """
     supplied = args.task.strip() if args.task else (
         Path(args.task_file).expanduser().read_text().strip() if args.task_file else ""
     )
+    session_dir = getattr(args, "session_dir", None)
 
-    if cfg.session:
-        paths = storage.session_paths(repo_path, cfg.session)
-        task = supplied or _saved_request(paths) or _prompt_for_task()
+    if session_dir or cfg.session:
+        paths = storage.session_paths(
+            repo_path, cfg.session or "unnamed", session_dir=session_dir
+        )
+        # Precedence, most explicit first. brief.txt outranks request.txt
+        # because YOU wrote brief.txt and WE wrote request.txt: if the two
+        # disagree, you edited the brief and meant it. (The guard below then
+        # stops that quietly re-running an agent designed for the old text.)
+        task = (
+            supplied
+            or _hand_written_brief(paths)
+            or _saved_request(paths)
+            or _prompt_for_task()
+        )
         _warn_if_task_changed(paths, task)
     else:
         task = supplied or _prompt_for_task()
@@ -254,6 +280,31 @@ def _resolve_session(args, cfg, repo_path):
     return paths, task
 
 
+def _hand_written_brief(paths) -> str:
+    """The initial idea, if you left one in the session folder as brief.txt.
+
+    This is the whole "prepare a folder, then run it" workflow: write the idea
+    into a file at your leisure, in an editor, with paragraphs -- rather than
+    typing it into a one-line terminal prompt or quoting it on a command line
+    where a newline ends the argument.
+    """
+    if not paths.input_brief.exists():
+        return ""
+    text = paths.input_brief.read_text().strip()
+    if not text:
+        # An empty file is almost certainly "I meant to write this and did
+        # not", so say so rather than silently falling through to the prompt.
+        print(f"Note: {paths.input_brief} is empty; ignoring it.")
+        return ""
+    print(f"Task (from {paths.input_brief.name}):")
+    print(_indent(text))
+    return text
+
+
+def _indent(text: str, prefix: str = "    ") -> str:
+    return "\n".join(prefix + line for line in text.splitlines())
+
+
 def _saved_request(paths) -> str:
     if not paths.request.exists():
         return ""
@@ -270,10 +321,12 @@ def _prompt_for_task() -> str:
 def _warn_if_task_changed(paths, task: str) -> None:
     """Refuse to silently run one task's agent against a different task.
 
-    Only reachable via an explicit --session, since a derived name cannot
-    collide across different tasks. Worth an explicit stop: the agent in a
-    session was designed FOR its brief, and pointing it at unrelated work
-    produces confident, plausible, wrong output.
+    Only reachable when YOU named the folder -- --session or --session-dir --
+    since a name derived from the task cannot collide across different tasks.
+    Worth an explicit stop: the agent in a session was designed FOR its brief,
+    and pointing it at unrelated work produces confident, plausible, wrong
+    output. Editing brief.txt after an agent exists lands here too, which is
+    the point: it is the same mistake, made in a file instead of a flag.
     """
     if not paths.has_agent() or not paths.request.exists():
         return
@@ -282,6 +335,15 @@ def _warn_if_task_changed(paths, task: str) -> None:
     if not previous or previous == task.strip():
         return
 
+    # The first suggestion depends on how you got here, because "drop
+    # --session" is no help at all to someone who passed --session-dir.
+    start_fresh = (
+        f"  - use an empty folder: --session-dir <new path>;\n"
+        if paths.external else
+        f"  - drop --session, and a new session will be derived from this task;\n"
+        f"  - pass --session {storage.session_name_for(task)} to start one explicitly;\n"
+    )
+
     raise SystemExit(
         f"\nSession {paths.session.name!r} already has an agent, designed for:\n"
         f"    {previous[:200]}\n\n"
@@ -289,9 +351,10 @@ def _warn_if_task_changed(paths, task: str) -> None:
         f"    {task[:200]}\n\n"
         f"That agent was built for the first task and would likely do the wrong "
         f"thing.\nEither:\n"
-        f"  - drop --session, and a new session will be derived from this task;\n"
-        f"  - pass --session {storage.session_name_for(task)} to start one explicitly;\n"
-        f"  - or delete {paths.agent_dir} to redesign in place."
+        f"{start_fresh}"
+        f"  - or delete {paths.agent_dir} to redesign in place\n"
+        f"    (that keeps the folder, its brief.txt and its artifacts -- only "
+        f"the agent is rebuilt)."
     )
 
 
@@ -322,12 +385,13 @@ def _run_work_phase(folder, cfg, paths, backends, checkpointer, task_brief) -> N
                 "agent.agentfolder.commands", fromlist=["build_registry"]
             ).build_registry(folder),
             artifacts_dir=str(paths.artifacts),
+            session_dir=str(paths.session),
         )
 
         # The two phases and each task get their OWN thread id. Measured: two
         # graphs sharing a thread id do not raise -- their channels silently
         # merge, and one schema's keys turn up in the other's state.
-        thread_id = f"{cfg.session}:work" + (f":{run_index}" if run_index > 1 else "")
+        thread_id = f"{paths.session.name}:work" + (f":{run_index}" if run_index > 1 else "")
 
         session = work_session(
             folder=folder,
@@ -438,7 +502,7 @@ def _resolve_folder(args, paths, cfg) -> Path:
 
 def _explain(cfg, folder, paths, needed) -> None:
     """Print everything and spend nothing."""
-    print(describe(cfg))
+    print(describe(cfg, paths))
     print()
     print(f"agent        {folder.graph.name}")
     print(f"  from       {folder.path}")
@@ -472,6 +536,7 @@ def _parse_args():
             "Examples:\n"
             "  python main.py run ./repo --backend fake            # no API calls\n"
             "  python main.py run ./repo --pre-build-agent default --task 'add tests'\n"
+            "  python main.py run ./repo --session-dir ~/exp/run1  # session folder of your choosing\n"
             "  python main.py run ./repo --explain                 # show everything, spend nothing\n"
             "  python main.py promote ./repo my-reviewer           # keep this session's agent\n"
         ),
@@ -489,6 +554,12 @@ def _parse_args():
         # default would silently outrank the config file.
         default=None,
         help="Resume a named session (default: one derived from the task)",
+    )
+    run.add_argument(
+        "--session-dir", metavar="PATH",
+        help="Use this directory as the session folder, instead of "
+             "<repo>/.agent/sessions/<name>. If it holds a brief.txt, that is "
+             "read as the task.",
     )
     run.add_argument("--pre-build-agent", metavar="NAME|PATH",
                      help="Skip designing an agent; run this one")
@@ -510,6 +581,8 @@ def _parse_args():
     promote.add_argument("repo", help="Path to the repository")
     promote.add_argument("name", help="Name to save it under")
     promote.add_argument("--session", default=None)
+    promote.add_argument("--session-dir", default=None, metavar="PATH",
+                         help="Promote from a session folder outside .agent/sessions/")
     promote.add_argument("--force", action="store_true", help="Replace an existing agent")
 
     return parser.parse_args()

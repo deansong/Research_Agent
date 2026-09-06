@@ -9,6 +9,7 @@ CONCEPT: StateGraph, add_node, add_edge, add_conditional_edges -- the same four
 
 from __future__ import annotations
 
+from pathlib import Path
 from typing import Mapping
 
 from langgraph.graph import END, START, StateGraph
@@ -23,13 +24,15 @@ from agent.work.templates.human_node import make_human_node
 
 # Appended to every write-access node's instructions by the loader, not the
 # folder -- so a generated agent cannot opt out of it. The session checkpoint
-# lives under .agent/, inside the executor's own write sandbox.
-def infrastructure_rules(artifacts_dir: str) -> str:
+# lives inside the executor's own write sandbox.
+def infrastructure_rules(artifacts_dir: str, session_dir: str = "") -> str:
     """The standing rules every write-access node gets, appended by us.
 
     Appended by the loader rather than written into the folder, so a generated
     agent cannot opt out of them -- and so they can mention paths the designer
-    did not know about when it wrote the folder.
+    did not know about when it wrote the folder. `session_dir` is one of those:
+    --session-dir can put the checkpoint anywhere, including somewhere the
+    agent has write access and no reason to suspect is off limits.
 
     The second rule was added after a run scattered its output across someone's
     repository root: it invented top-level `artifacts/`, `configs/` and `docs/`
@@ -37,13 +40,25 @@ def infrastructure_rules(artifacts_dir: str) -> str:
     distinction it was missing is the one below -- changing the project is the
     job, but what a run PRODUCES belongs to the run.
     """
+    # Name the session folder as well as .agent/ whenever it is somewhere else.
+    # Listing it unconditionally would be worse than useless: for an ordinary
+    # session it restates rule 1 with a longer path, and a rule that looks like
+    # filler is a rule that gets skimmed.
+    also = ""
+    if session_dir and ".agent" not in Path(session_dir).parts:
+        also = (
+            f" The same applies to this session's own folder:\n     "
+            f"{session_dir}\n   -- everything in it except the run directory "
+            f"in rule 2 is infrastructure."
+        )
+
     return (
         "\n\nWORKING RULES (these override anything above):\n"
         "1. The `.agent/` directory at the repository root is agent "
         "infrastructure -- it holds this session's checkpoint database and the "
         "agent definition you are running inside. Never read, modify, move or "
         "delete anything under `.agent/`, except the run directory named in "
-        "rule 2. Never include `.agent/` in a cleanup task.\n"
+        f"rule 2. Never include `.agent/` in a cleanup task.{also}\n"
         f"2. Put everything this run PRODUCES in:\n     {artifacts_dir}\n"
         "   That means generated data, downloaded caches, intermediate files, "
         "reports, plots, logs and scratch work. Create subdirectories there as "
@@ -80,6 +95,7 @@ def compile_agent(
     checkpointer,
     registry,
     artifacts_dir: str = "",
+    session_dir: str = "",
 ):
     """Build and compile the graph described by `folder`.
 
@@ -102,7 +118,7 @@ def compile_agent(
         assert isinstance(config, AgentNodeConfig)
         instructions = config.instructions
         if config.access == "write":
-            instructions += infrastructure_rules(artifacts_dir)
+            instructions += infrastructure_rules(artifacts_dir, session_dir)
 
         builder.add_node(
             ref.name,

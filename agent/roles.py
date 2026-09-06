@@ -1,27 +1,34 @@
 """
-WHAT:  The names of the agent's roles, and how much repo access each needs.
-WHY:   Config, the backend factory and the nodes all have to agree on the
-       string "executor".  One place to spell it.
+WHAT:  The role names the HAND-WRITTEN graphs use.
+WHY:   config.py and the bootstrap nodes both have to spell "designer" the
+       same way.  One place to spell it.
 CONCEPT: Not LangGraph -- just shared constants.  Kept in its own module so
-       config.py and backends/ can both import it without a cycle.
-"""
+       config.py and bootstrap/ can both import it without a cycle.
+
+A note on scope, because this file used to do more.  Role names are now
+OPEN-ENDED: a generated agent invents its own (`nodes.json` says
+`"backend": "reviewer"`, and that string is the role).  So nothing here is a
+whitelist, and there is no table of required access -- a node's access comes
+from its own `access` field in `nodes.json`, collected by
+`work.compile.backends_needed()` and handed to `build_backends()`.
+
+What is left is exactly the roles that appear in Python source we wrote.
+""" 
 
 from __future__ import annotations
 
-from agent.backends.base import Access
-
+# The design phase's own roles. These always exist, whatever agent gets built:
+# they belong to the hand-written bootstrap graph in agent/bootstrap/.
 DISCUSSOR = "discussor"
 PLANNER = "planner"
+DESIGNER = "designer"
+
+# Roles of the shipped `default` agent (agent/builtin_agents/default/nodes.json).
+# Named here only so --explain can show them and so a typo gets a suggestion;
+# the folder itself is the source of truth.
 ORCHESTRATOR = "orchestrator"
 EXECUTOR = "executor"
 
-ALL_ROLES: tuple[str, ...] = (DISCUSSOR, PLANNER, ORCHESTRATOR, EXECUTOR)
-
-REQUIRED_ACCESS: dict[str, Access] = {
-    # The three thinking roles only ever look at the repository.
-    DISCUSSOR: Access.READ_ONLY,
-    PLANNER: Access.READ_ONLY,
-    ORCHESTRATOR: Access.READ_ONLY,
-    # The executor is the only role that changes your files.
-    EXECUTOR: Access.WRITE,
-}
+#: Every role that some file in this repository mentions by name.  Used for
+#: typo suggestions and for the --explain listing -- NEVER as a whitelist.
+ALL_ROLES: tuple[str, ...] = (DISCUSSOR, PLANNER, DESIGNER, ORCHESTRATOR, EXECUTOR)
