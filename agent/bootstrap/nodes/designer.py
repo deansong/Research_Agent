@@ -11,7 +11,8 @@ from __future__ import annotations
 
 from agent import activity
 from agent.backends.base import Access, BackendOutputError
-from agent.bootstrap.prompts import (DESIGNER_INSTRUCTIONS, REPAIR_PREFIX,
+from agent.bootstrap.prompts import (CONTROL_FLOW, DESIGNER_INSTRUCTIONS,
+                                     PROMPT_REFERENCE, REPAIR_PREFIX,
                                      research_skeleton, worked_example)
 from agent.bootstrap.schemas import DesignerOutput
 from agent.bootstrap.state import BootstrapState, transcript_text
@@ -53,6 +54,8 @@ def make_designer(backend):
                 # ~6 KB of developer_instructions a Codex turn never completes.
                 # See agent/bootstrap/prompts.py.
                 + worked_example()
+                + PROMPT_REFERENCE
+                + CONTROL_FLOW
                 # Last, deliberately. It is the most specific and most
                 # actionable thing the designer is shown, and the end of a
                 # prompt is where that belongs.

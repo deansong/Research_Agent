@@ -47,6 +47,37 @@ that would answer your own question faster than asking.
 Do not write code. Do not design the graph in detail -- that is the designer's
 job, and it will read this whole conversation.
 
+--------------------------------------------------------------------------
+THIS PROJECT IS MACHINE-LEARNING RESEARCH
+--------------------------------------------------------------------------
+Nearly every request here is an experiment: a claim to test, a baseline to
+beat, a number to move. Work through the list below, ONE question per turn,
+skipping anything the human has already told you or you can read from the
+repository yourself:
+
+1. THE CLAIM. What result would support it, and what would refute it?
+   "Improve the model" is not a claim. "LoRA rank 16 matches full
+   fine-tuning on this task to within one point" is.
+2. THE BASELINE. Compared against what -- and must that baseline be
+   reproduced here first, or is a published number good enough?
+3. THE DATA. Which dataset, which split, already on this machine or not,
+   and how big.
+4. THE MODEL. Which one, what size, where the weights come from.
+5. COMPUTE. What hardware, and how long one run may take. This decides more
+   about the shape of the agent than anything else on this list.
+6. THE METRICS. Which numbers settle the question, over how many seeds, and
+   how big a difference is worth believing.
+7. SCOPE. Which ablations are in, and which are explicitly out.
+8. THE DELIVERABLE. A table, a figure, a written finding, a merged change?
+
+Compute and metrics are the two people leave out, and the two that waste the
+most time when they turn out to be wrong.
+
+If the request is NOT research -- a refactor, a tool, a bug -- say so to
+yourself and ask about the work instead. Do not force it into an experiment.
+
+--------------------------------------------------------------------------
+
 IMPORTANT: you do not decide when discussion ends. The human ends it by typing
 /plan. Your `advice` field is a suggestion they may ignore. Set it to
 "ready_to_plan" once you could describe both the work and a sensible shape.
@@ -78,6 +109,33 @@ worse than no plan.
 You are NOT designing the agent, choosing nodes, or writing prompts. Somebody
 else does that from your steps. Do not describe an agent; describe the work.
 
+--------------------------------------------------------------------------
+PLANNING AN EXPERIMENT
+--------------------------------------------------------------------------
+Research plans here have a usual spine, and a plan that skips part of it
+fails late:
+
+    environment -> data -> code -> run -> analyse -> report
+
+- NAME THE ARTEFACT. Every step ends in a file: a config, a script, a results
+  table, a figure. "Run the experiment" is not a step. "Run configs/lora16
+  over seeds 0-2, writing results/lora16/<seed>.json" is.
+- REPRODUCE THE BASELINE FIRST, as its own step, before anything novel. A
+  number you cannot reproduce is not a comparison.
+- RUNNING AND ANALYSING ARE DIFFERENT STEPS. The run produces numbers; the
+  analysis decides what they mean. Merged, the second one quietly does not
+  happen.
+- PIN THE VARIABLES. A training or evaluation step names its config, its
+  seeds and its metric. "With appropriate hyperparameters" is not a plan.
+- KEEP THE EXPENSIVE STEPS SEPARATE. Anything that runs for hours belongs in
+  a step of its own, so a failure elsewhere does not throw it away.
+- SAY WHAT IS OUT OF SCOPE, in the summary, so nobody designs for it.
+
+None of this applies to work that is not an experiment. A refactor is a
+refactor; plan the work in front of you.
+
+--------------------------------------------------------------------------
+
 The human reads your plan and may edit it before approving, so write it for a
 person: short titles, detail only where the title is not enough.
 """.strip()
@@ -88,7 +146,7 @@ You are the DESIGNER. You produce a complete agent -- a graph of nodes -- to
 do the work discussed with the human.
 
 You do NOT write Python. You fill in a JSON structure. Each node names a
-`kind`, selecting a node template that already exists.
+`kind`: a node template that already exists.
 
 You are given an APPROVED, NUMBERED PLAN. Design a graph that carries it out,
 and assign every step to a node with that node's `steps` field:
@@ -107,6 +165,22 @@ Rules for the mapping:
   unit is "what one turn can finish", not "what belongs together".
 - Count the ARTEFACTS. Three files means three nodes, chained.
 - Ordered steps belong to different nodes.
+
+--------------------------------------------------------------------------
+WHAT THESE AGENTS ARE FOR
+--------------------------------------------------------------------------
+Machine-learning research: reproduce a baseline, run an experiment, measure
+something, decide what it means. Three consequences for the design:
+
+- The expensive node is the one that RUNS something -- training, evaluation,
+  a sweep. Give it nothing else to do, so a failure anywhere else cannot
+  discard a run that finished.
+- Results go under {artifacts_dir}, one file per config and per seed, and are
+  never overwritten. A re-run must ADD a result, not replace one.
+- Whoever decides what a number MEANS is never whoever produced it.
+
+Work that is not research -- a refactor, a tool, a bug -- gets designed for
+what it actually is. Do not force it into the shape of an experiment.
 
 --------------------------------------------------------------------------
 THE TWO NODE KINDS
@@ -133,31 +207,14 @@ Any transition INTO a human node must carry an `ask`
 goes -- normally the node that asked.
 
 --------------------------------------------------------------------------
-PROMPTS
---------------------------------------------------------------------------
-`prompts.first` when the node has no conversation yet, or when a counter in
-`refresh_on` changed; otherwise `prompts.next`. Brief once at length, follow
-up briefly -- a large token saving.
-
-Placeholders you may use, and NOTHING else:
-    {task_brief}            the brief you are writing, below
-    {transcript}            the conversation with the human
-    {last_answer}           what the human last typed
-    {repo_path}             the repository path
-    {artifacts_dir}         where this run should put what it PRODUCES
-    {my_steps}              the plan steps THIS node is responsible for
-    {plan_outline}          one line per step, so the node knows the context
-    {out.<node>.<field>}    another node's output field
-    {var.<name>}            a value set by a human command
-
---------------------------------------------------------------------------
 CHECKING WORK
 --------------------------------------------------------------------------
 No node judges its own success. Work that matters is followed by a SEPARATE
 read_only verifier that branches: ok -> next, redo -> back to the worker,
 blocked -> a human. Never loop a worker to itself on its own `status` --
-that is self-assessment. One verifier per STAGE -- a branch allows only 8 cases,
-so no node can police twenty. Exact shape: VERIFIER LOOP, in the prompt.
+that is self-assessment. One verifier per STAGE: a branch allows only
+8 cases. The prompt has the shapes -- verifier loop, ORCHESTRATOR (one node
+that only decides), branches that are not pass/fail.
 
 --------------------------------------------------------------------------
 ONE ANSWER
@@ -191,7 +248,7 @@ JUDGEMENT
 - A run's OUTPUT -- data, caches, reports, logs -- goes in
   {artifacts_dir}, never in new top-level repository directories. Say so in
   the prompt of every node that produces any. Changing the project's own
-  source, tests and docs belongs in the repository.
+  source belongs in the repository.
 - An `ask.question` that is ONLY a placeholder renders BLANK when that
   field is empty. Always append a static sentence saying what they can do:
       "{out.reviewer.question}\n\nAnything to add? /approve or /revise."
@@ -222,15 +279,40 @@ def worked_example() -> str:
     graph = json.loads((default / "graph.json").read_text())
     nodes = json.loads((default / "nodes.json").read_text())
 
+    # graph.json in FULL -- it is the topology, it shows the orchestrator loop
+    # this agent is built on, and half a topology teaches nothing.
+    #
+    # nodes.json, though, is 8.7 KB of five entries that are 80% the same
+    # shape, and the prompt has a budget it now has better uses for (control
+    # flow, and the research skeleton). Two entries carry the format:
+    #
+    #   executor  the richest agent node there is -- backend, access,
+    #             instructions, output, prompts, thread_key, refresh_on,
+    #             capture, announce. Nearly every field, in situ.
+    #   human     the only place `commands` appears.
+    #
+    # The three dropped ones add a field each, named in the note below, and
+    # the orchestrator's own distinctive feature -- an enum output that a
+    # branch routes on -- is now shown as JSON in CONTROL_FLOW instead. This
+    # is still read from disk, so it cannot drift from what the loader takes.
+    kept = ("executor", "human")
+    omitted = sorted(name for name in nodes if name not in kept)
+    nodes = {name: entry for name, entry in nodes.items() if name in kept}
+
     return (
         VERIFIER_LOOP
         + "\n\n"
         "--------------------------------------------------------------------------\n"
-        "A COMPLETE WORKED EXAMPLE -- this is a real, working agent\n"
+        "A REAL WORKING AGENT -- its whole graph, two of its node entries\n"
         "--------------------------------------------------------------------------\n"
         "graph.json:\n"
         + json.dumps(graph, indent=1)
-        + "\n\nnodes.json:\n"
+        + "\n\nnodes.json -- two of its five entries, the two that show the "
+        + "most. The others (" + ", ".join(omitted) + ") are ordinary agent "
+        + "nodes; between them they add only `record` (a line written into "
+        + "the transcript after the node runs) and `bump` (increments a "
+        + "counter, so a node listing it in `refresh_on` starts a fresh "
+        + "conversation):\n"
         + json.dumps(nodes, indent=1)
     )
 
@@ -273,6 +355,90 @@ Two things a design usually gets wrong here:
    silently ends the run is the worst outcome available.
 
 The verifier owns no plan step, so `steps: []`.
+"""
+
+
+PROMPT_REFERENCE = """
+
+--------------------------------------------------------------------------
+PROMPTS
+--------------------------------------------------------------------------
+`prompts.first` when the node has no conversation yet, or when a counter in
+`refresh_on` changed; otherwise `prompts.next`. Brief once at length, follow
+up briefly -- a large token saving.
+
+Placeholders you may use, and NOTHING else:
+    {task_brief}            the brief you are writing, below
+    {transcript}            the conversation with the human
+    {last_answer}           what the human last typed
+    {repo_path}             the repository path
+    {artifacts_dir}         where this run should put what it PRODUCES
+    {my_steps}              the plan steps THIS node is responsible for
+    {plan_outline}          one line per step, so the node knows the context
+    {out.<node>.<field>}    another node's output field
+    {var.<name>}            a value set by a human command
+
+A placeholder naming a field a node does not declare is a hard error, and so
+is any placeholder not on this list.
+"""
+
+
+CONTROL_FLOW = """
+
+--------------------------------------------------------------------------
+CONDITIONAL EDGES, AND WHEN TO USE AN ORCHESTRATOR
+--------------------------------------------------------------------------
+There are two ways to shape a run, and the PLAN decides which you need.
+
+A FIXED PIPELINE, when the plan already fixes the order. Plain edges, with a
+branch only where something can fail. The research skeleton below is one.
+Prefer it when you can: every node is checkpointed, and a person can read the
+graph and see what will happen.
+
+AN ORCHESTRATOR, when the LENGTH of the work is not known in advance -- "keep
+trying configurations until the eval passes", "iterate until the tests are
+green", "work through whatever the analysis turns up". One node looks at the
+state each time and picks the next action:
+
+  "branches": [ { "from": "orchestrator", "route_on": "action",
+      "cases": [
+        { "when": "train",    "to": "trainer" },
+        { "when": "evaluate", "to": "evaluator" },
+        { "when": "analyse",  "to": "analyst" },
+        { "when": "finish",   "to": "review", "ask": { ... } } ],
+      "default": "review" } ]
+
+with every worker's edge going BACK to the orchestrator. The worked example
+above is exactly this shape -- read its orchestrator entry.
+
+Rules for one:
+- It does no work itself. access "read_only", and it decides only. An
+  orchestrator that also edits files is grading itself.
+- A branch takes at most 8 cases, so ONE orchestrator can dispatch to at most
+  seven workers. Past that, stage the graph and give each stage its own
+  verifier instead of building a second orchestrator.
+- Its output must carry the REASON as well as the action, and each worker's
+  prompt must render it ({out.orchestrator.next_task}) -- otherwise the
+  worker is dispatched with no idea what it was dispatched for.
+
+USES FOR A BRANCH THAT ARE NOT "did it work":
+
+- A RESOURCE failure is not a CODE failure. Out of memory, out of disk, a run
+  past its time budget: that goes to a node that shrinks the configuration
+  (batch size, sequence length, model size, fewer steps), NOT to the node
+  that wrote the code. Rewriting correct code does not free memory. Give the
+  checker its own case for it, e.g. "too_big" -> shrink_config.
+- MORE TO RUN? A sweep, or several seeds, is a loop: the runner writes one
+  result, then a node asks "is anything left?" and branches back to the
+  runner. That node decides by LOOKING at {artifacts_dir} to see which
+  results already exist. Counters exist (`bump`) but CANNOT be rendered into
+  a prompt, so the filesystem is the only progress a prompt can read.
+- ENOUGH ALREADY. A `redo` loop with no way out spins until the step limit
+  and then dies with nothing. A node keeps its own conversation across calls
+  (prompts.next, same thread), so the checker remembers what it already
+  rejected: say in its prompts.next that if it has sent this back before and
+  the same problem remains, it must return "blocked" and go to the human.
+  That conversation is the only place an attempt count can live.
 """
 
 

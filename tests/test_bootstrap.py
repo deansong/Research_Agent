@@ -424,6 +424,181 @@ def _research_folder(tmp: pathlib.Path):
     return folder
 
 
+def test_every_design_phase_prompt_knows_this_is_ml_research():
+    """All three phases, not just the designer.
+
+    The failure this guards against is subtler than a missing rule: a
+    discussor that never asks about compute produces a plan with no compute
+    step, from which the designer builds a graph that runs out of GPU memory
+    on its first expensive node -- and the run dies three phases away from
+    the omission that caused it. So each phase has to know what kind of work
+    this is, and each one has a different thing to get right.
+    """
+    from agent.bootstrap.prompts import (DESIGNER_INSTRUCTIONS,
+                                         DISCUSSOR_INSTRUCTIONS,
+                                         PLANNER_INSTRUCTIONS)
+
+    discussor = DISCUSSOR_INSTRUCTIONS.lower()
+    # The two people leave out, and the two that waste the most time.
+    for essential in ("compute", "metric", "baseline", "seeds", "hardware"):
+        assert essential in discussor, f"the discussor never asks about {essential}"
+    assert "refute" in discussor, "a claim needs a way to be wrong"
+
+    planner = PLANNER_INSTRUCTIONS.lower()
+    assert "reproduce the baseline first" in planner, \
+        "a number you cannot reproduce is not a comparison"
+    assert "different steps" in planner, "running and analysing must split"
+    assert "seeds" in planner and "config" in planner, "the variables must be pinned"
+    assert "out of scope" in planner
+
+    designer = DESIGNER_INSTRUCTIONS.lower()
+    assert "never overwritten" in designer, "a re-run must add a result"
+    assert "per seed" in designer, "results are per config and per seed"
+    assert "runs something" in designer, "the expensive node must stand alone"
+
+    print("PASS  discussor, planner and designer all know this is ML research")
+
+
+def test_none_of_them_force_a_refactor_into_an_experiment():
+    """The other half of the same instruction, and the easier one to forget.
+
+    Pointing three prompts at machine-learning research is how every bug fix
+    starts getting a baseline and a seed sweep. Each phase needs an explicit
+    way out, or the research framing becomes a straitjacket for the work that
+    is not research -- which is still most of the work in any repository.
+    """
+    from agent.bootstrap.prompts import (DESIGNER_INSTRUCTIONS,
+                                         DISCUSSOR_INSTRUCTIONS,
+                                         PLANNER_INSTRUCTIONS)
+
+    for name, text in (("discussor", DISCUSSOR_INSTRUCTIONS),
+                       ("planner", PLANNER_INSTRUCTIONS),
+                       ("designer", DESIGNER_INSTRUCTIONS)):
+        lowered = text.lower()
+        assert "not research" in lowered or "not an experiment" in lowered, \
+            f"the {name} has no way out of the research framing"
+        assert "refactor" in lowered, \
+            f"the {name} should name the ordinary case it must not distort"
+    print("PASS  all three say what to do when the work is not an experiment")
+
+
+def test_the_designer_is_told_when_to_use_an_orchestrator():
+    """The choice the designer was never asked to make.
+
+    It had a worked example that IS an orchestrator loop and a skeleton that
+    is a fixed pipeline, and nothing telling it which shape suits which work.
+    The deciding question is whether the plan fixes the ORDER: if it does, a
+    pipeline; if the length of the work is unknown, an orchestrator.
+    """
+    from agent.bootstrap.prompts import CONTROL_FLOW
+
+    text = CONTROL_FLOW.lower()
+    assert "fixed pipeline" in text and "orchestrator" in text, text[:200]
+    assert "not known in advance" in text, "the deciding question is missing"
+
+    # The limits that make a central orchestrator impossible past a point --
+    # measured, not guessed: BranchSpec.cases has max_length=8.
+    assert "at most 8 cases" in text, "the branch limit must be stated"
+    assert "seven workers" in text, "8 cases minus the finish case"
+    assert "read_only" in text, "an orchestrator that edits files grades itself"
+
+    # And the JSON, because prose about a shape is not a shape.
+    assert '"route_on": "action"' in CONTROL_FLOW
+    assert '"when": "finish"' in CONTROL_FLOW
+    print("PASS  the designer is told which shape suits which work, with JSON")
+
+
+def test_the_eight_case_limit_the_prompt_states_is_the_real_one():
+    """A number in a prompt that nobody checks is a number that goes stale.
+
+    This one is load-bearing: it is the reason the project uses a verifier
+    per stage instead of one central orchestrator, and it is asserted in two
+    prompts. If BranchSpec ever allowed more, both would be quietly wrong.
+    """
+    from agent.agentfolder.schema import BranchSpec
+
+    limit = BranchSpec.model_fields["cases"].metadata
+    caps = [getattr(m, "max_length", None) for m in limit]
+    assert 8 in caps, f"BranchSpec.cases no longer caps at 8: {limit}"
+    print("PASS  the 8-case limit in the prompts is the schema's real limit")
+
+
+def test_the_designer_is_told_the_branch_uses_that_are_not_pass_fail():
+    """Three branch uses that a pass/fail framing misses entirely.
+
+    All three come from how experiments actually fail. A resource failure
+    sent back to the node that wrote the code is the worst of them: the code
+    is correct, rewriting it cannot free memory, and the loop will not
+    converge because nothing in it changes the thing that is wrong.
+    """
+    from agent.bootstrap.prompts import CONTROL_FLOW
+
+    text = CONTROL_FLOW.lower()
+
+    # 1. resource vs code
+    assert "out of memory" in text and "shrinks the configuration" in text
+    assert "not to the node" in text, "a resource failure must not go to the coder"
+
+    # 2. a sweep is a loop, and the filesystem is the only progress a prompt
+    #    can read -- counters exist but are not renderable.
+    assert "{artifacts_dir}" in CONTROL_FLOW, "the loop reads what already exists"
+    assert "cannot be rendered" in text, "counters are not placeholders"
+
+    # 3. an exit from the redo loop, which lives in the checker's own thread
+    assert "spins until the step limit" in text
+    assert "prompts.next" in text, "the attempt count lives in its conversation"
+    print("PASS  resource failures, sweep loops and redo exits are all covered")
+
+
+def test_the_claim_about_counters_is_still_true():
+    """The prompt tells the designer counters cannot be rendered. Check it.
+
+    This is the kind of statement that is true when written and silently
+    false a release later, at which point the prompt is teaching a
+    workaround for a limit that no longer exists.
+    """
+    from agent.agentfolder.render import SIMPLE_TOKENS
+    from agent.work.state import WorkState
+
+    assert "counters" in WorkState.__annotations__, "counters should still exist"
+    assert not [t for t in SIMPLE_TOKENS if "counter" in t], SIMPLE_TOKENS
+    # {var.*} reads `vars`, which only a human command's `sets` writes -- so
+    # there is genuinely no way for a node to publish a count into a prompt.
+    assert "vars" in WorkState.__annotations__
+    print("PASS  counters really are unrenderable, as the prompt claims")
+
+
+def test_the_worked_example_keeps_the_entries_that_teach_the_format():
+    """Trimmed for budget, so what survived has to be the useful part.
+
+    graph.json stays whole -- it is the orchestrator topology, and half a
+    topology teaches nothing. Of nodes.json, the executor is the richest
+    agent node in the project and the human node is the only place
+    `commands` appears. What was dropped is named rather than silently
+    missing, because a designer that notices three nodes referenced and two
+    defined has been handed a puzzle instead of an example.
+    """
+    from agent.bootstrap.prompts import worked_example
+
+    text = worked_example()
+
+    # graph.json entire: the orchestrator loop, every worker edge back to it.
+    assert '"route_on": "action"' in text, "the branch source is missing"
+    assert '"to": "orchestrator"' in text, \
+        "every worker's edge must be shown going back to the orchestrator"
+
+    # The two node entries, by their distinctive fields.
+    assert '"thread_key"' in text and '"refresh_on"' in text and '"capture"' in text, \
+        "the executor entry is what shows those fields"
+    assert '"commands"' in text, "the human entry is the only place commands appear"
+
+    # And the ones that are gone say so.
+    assert "discussor, orchestrator, planner" in text, text[:300]
+    assert "`record`" in text and "`bump`" in text, \
+        "what the dropped entries would have shown must be named"
+    print("PASS  the worked example kept the two entries that carry the format")
+
+
 def test_the_research_skeleton_is_a_valid_graph():
     """A skeleton in the prompt that does not validate teaches invalid graphs.
 
@@ -621,7 +796,9 @@ def test_the_designer_prompt_and_instructions_are_within_measured_limits():
     that the worked example is read from -- not in this file.
     """
     from agent.backends.codex import SAFE_INSTRUCTIONS_CHARS
-    from agent.bootstrap.prompts import DESIGNER_INSTRUCTIONS, worked_example
+    from agent.bootstrap.prompts import (CONTROL_FLOW, DESIGNER_INSTRUCTIONS,
+                                         PROMPT_REFERENCE, research_skeleton,
+                                         worked_example)
 
     instructions = len(DESIGNER_INSTRUCTIONS)
     assert instructions < SAFE_INSTRUCTIONS_CHARS, (
@@ -630,13 +807,25 @@ def test_the_designer_prompt_and_instructions_are_within_measured_limits():
         f"into worked_example() -- the prompt has no such limit."
     )
 
-    prompt = len(worked_example())
+    # Every piece designer.py appends, not just the first one. Measuring one
+    # of four is how a budget is quietly overspent: worked_example() shrank
+    # while the total grew, and a test on the part would have called that an
+    # improvement.
+    parts = {
+        "worked_example": len(worked_example()),
+        "PROMPT_REFERENCE": len(PROMPT_REFERENCE),
+        "CONTROL_FLOW": len(CONTROL_FLOW),
+        "research_skeleton": len(research_skeleton()),
+    }
+    prompt = sum(parts.values())
     assert prompt < 20_000, (
-        f"the per-turn prompt is {prompt} chars. No cliff is known there, but "
-        f"nothing this large has been verified either -- measure before raising."
+        f"the per-turn prompt is {prompt} chars ({parts}). No cliff is known "
+        f"there, but nothing this large has been verified either -- measure "
+        f"before raising."
     )
     print(f"PASS  instructions {instructions}/{SAFE_INSTRUCTIONS_CHARS} "
-          f"({SAFE_INSTRUCTIONS_CHARS - instructions} left), prompt {prompt}")
+          f"({SAFE_INSTRUCTIONS_CHARS - instructions} left), "
+          f"prompt {prompt}/20000 across {len(parts)} parts")
 
 
 def test_the_designer_is_told_to_split_work_across_nodes():

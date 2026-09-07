@@ -227,6 +227,63 @@ Every problem is reported **together**, so one repair round can fix them all.
 
 ---
 
+## What the design phase is told
+
+All three design-phase nodes are pointed at machine-learning research, and each
+at a different part of it (`agent/bootstrap/prompts.py`):
+
+| node | what it is told to get right |
+| --- | --- |
+| discussor | the claim and what would **refute** it, the baseline, the data, the model, **the compute budget**, the metrics and how many seeds, what is out of scope, what the deliverable is |
+| planner | `environment → data → code → run → analyse → report`; every step names the file it produces; reproduce the baseline as its own step; running and analysing are separate steps; pin the config and the seeds; keep the hours-long steps alone |
+| designer | the expensive node is the one that *runs* something and does nothing else; results go under `{artifacts_dir}`, one file per config and seed, never overwritten; whoever decides what a number means is not whoever produced it |
+
+Compute and metrics are the two a person leaves out, and the two that waste the
+most time when they are wrong — the discussor asks about both.
+
+**Each one also has an explicit way out.** A refactor, a tool, a bug fix is not
+an experiment, and pointing three prompts at research is exactly how every bug
+fix starts acquiring a baseline and a seed sweep. All three say so.
+
+### Two shapes, and which to use
+
+The designer is told to choose, rather than defaulting to whichever example it
+saw last:
+
+**A fixed pipeline** when the plan already fixes the order — plain edges, with
+a branch only where something can fail. The research skeleton below is one.
+Preferred: every node is checkpointed and a person can read the graph.
+
+**An orchestrator** when the *length* of the work is not known in advance —
+"keep trying configurations until the eval passes". One `read_only` node routes
+on its own `action` output and every worker's edge goes back to it. The shipped
+default agent is exactly this, and its `graph.json` is in the prompt.
+
+A branch takes **at most 8 cases** (`BranchSpec.cases`, `max_length=8`), so one
+orchestrator can dispatch to at most seven workers. Past that, stage the graph
+and give each stage a verifier — which is why this project uses verifiers per
+stage rather than one central orchestrator over twenty nodes.
+
+### Branches that are not "did it work"
+
+Three uses a pass/fail framing misses, all from how experiments really fail:
+
+- **A resource failure is not a code failure.** Out of memory, out of disk, a
+  run past its time budget — that goes to a node that shrinks the
+  configuration, *not* to the node that wrote the code. The code is correct;
+  rewriting it cannot free memory, and the loop cannot converge because nothing
+  in it changes the thing that is wrong.
+- **A sweep is a loop.** The runner writes one result, then a node asks "is
+  anything left?" and branches back. That node decides by **looking at
+  `{artifacts_dir}`** — counters exist (`bump`) but cannot be rendered into a
+  prompt, so the filesystem is the only progress a prompt can read.
+- **An exit from the redo loop.** A `redo` with no way out spins to the step
+  limit and dies with nothing. A node keeps its own conversation across calls
+  (`prompts.next`, same thread), so the checker remembers what it already
+  rejected — that conversation is the only place an attempt count can live.
+
+---
+
 ## The research skeleton
 
 Work in this project is computer-science research, so the designer is shown a
