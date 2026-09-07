@@ -60,10 +60,20 @@ function El(id) {
   this.scrollTop = 0; this.scrollHeight = 0; this.clientHeight = 0;
   this.tagName = 'DIV';
   this._listeners = {};
+  this._children = [];
 }
-El.prototype.appendChild = function () {};
-El.prototype.append = function () {};
-El.prototype.replaceChildren = function () {};
+// Appends are RECORDED, not ignored, so a test can ask "how many rows did
+// this produce?" -- which is the only way to tell a line that updates itself
+// from a line that repeats forty times.
+El.prototype.appendChild = function (c) { this._children.push(c) };
+El.prototype.append = function () {
+  for (var i = 0; i < arguments.length; i++) this._children.push(arguments[i]);
+  this.childElementCount = this._children.length;
+};
+El.prototype.replaceChildren = function () {
+  this._children = [];
+  this.childElementCount = 0;
+};
 El.prototype.remove = function () {};
 El.prototype.addEventListener = function (type) {
   __clicks[this.id + ':' + type] = (__clicks[this.id + ':' + type] || 0) + 1;
@@ -189,6 +199,37 @@ def build_script() -> str:
         calls.append(f"Object.assign(__ns, __mod_{stem}(__ns));")
     parts.append("\n".join(calls))
     return "\n".join(parts)
+
+
+def exercise(snippet: str, *, then: str | None = None):
+    """Load the modules, run `snippet`, and return a JSON-able value.
+
+    The load test above answers "does the app start?". This answers "does
+    this one behaviour do what it claims?" -- against the real module source
+    rather than a description of it.
+
+    `then` exists because half the front end is async. An `await` inside a
+    handler queues a microtask, and QuickJS runs the queue only when it is
+    pumped -- so a snippet that reads its own result immediately reads the
+    state from BEFORE the await, and the test fails for a reason that has
+    nothing to do with the code. Pass the action as `snippet` and the reading
+    as `then`, and the jobs are drained in between.
+    """
+    import quickjs
+
+    ctx = quickjs.Context()
+    ctx.eval(build_script())
+
+    if then is None:
+        return json.loads(ctx.eval(f"JSON.stringify((function () {{ {snippet} }})())"))
+
+    ctx.eval(f"var __state = (function () {{ {snippet} }})();")
+    # Bounded: a promise chain that never settles must fail the test, not hang
+    # it. Nothing here legitimately needs more than a handful of turns.
+    for _ in range(100):
+        if not ctx.execute_pending_job():
+            break
+    return json.loads(ctx.eval(f"JSON.stringify((function () {{ {then} }})())"))
 
 
 def run() -> tuple[str, list[str], dict]:

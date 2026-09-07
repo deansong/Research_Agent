@@ -20,9 +20,17 @@
 
 const el = (id) => document.getElementById(id);
 
+//: The heartbeat line, which is the one log line we treat as an update rather
+//: than an event. Matched on its own prefix; see codex.py::_heartbeat.
+const HEARTBEAT = /^\s*\.\.\.\s*working:/;
+
 export class Chat {
-  constructor({ onSend }) {
+  constructor({ onSend, onDetail }) {
     this.onSend = onSend;
+    /** Returns the turn running right now, for the expander. */
+    this.onDetail = onDetail;
+    this.beat = null;
+    this.detailOpen = false;
     this.log = el('chat-log');
     this.empty = el('chat-empty');
     this.input = el('composer-input');
@@ -76,10 +84,86 @@ export class Chat {
 
   /** A print() from inside a node, or a provider progress line. */
   logLine(text, kind) {
+    // The heartbeat is special: it repeats every thirty seconds for as long
+    // as a turn runs, so appending each one turns a long turn into a wall of
+    // near-identical lines. One row, updated in place, that expands.
+    if (!kind && HEARTBEAT.test(text)) {
+      this.heartbeat(text);
+      return;
+    }
     const node = document.createElement('div');
     node.className = `logline ${kind || classify(text)}`;
     node.textContent = text;
     this.append(node);
+  }
+
+  /**
+   * The "working: ..." row, replaced rather than repeated, with a disclosure
+   * that fetches the detail behind it.
+   *
+   * The detail is fetched on demand rather than streamed. A chatty turn can
+   * emit fifteen events a second -- one report had 14,885 in seventeen
+   * minutes -- and pushing those into the DOM would cost more than it tells
+   * you. So the summary streams and the detail waits to be asked for.
+   */
+  heartbeat(text) {
+    if (!this.beat) {
+      this.beat = document.createElement('div');
+      this.beat.className = 'logline heartbeat';
+
+      this.beatText = document.createElement('span');
+      this.beatText.className = 'beat-text';
+
+      this.beatButton = document.createElement('button');
+      this.beatButton.type = 'button';
+      this.beatButton.className = 'beat-more';
+      this.beatButton.textContent = 'show detail';
+      this.beatButton.addEventListener('click', () => this.toggleDetail());
+
+      this.beatDetail = document.createElement('div');
+      this.beatDetail.className = 'beat-detail';
+      this.beatDetail.hidden = true;
+
+      const head = document.createElement('div');
+      head.className = 'beat-head';
+      head.append(this.beatText, this.beatButton);
+      this.beat.append(head, this.beatDetail);
+      this.append(this.beat);
+    }
+
+    this.beatText.textContent = text.replace(/^\s*\.\.\.\s*/, '');
+    // If the detail is open, it follows the summary rather than needing its
+    // own timer: the two are the same turn seen at two zoom levels, and one
+    // clock for both is one thing that cannot fall out of step.
+    if (this.detailOpen) void this.refreshDetail();
+    // Keep it visible while it is the newest thing, but do not fight a reader
+    // who has scrolled up to look at something.
+    this.scroll();
+  }
+
+  /** A turn has finished: stop updating that row, and let the next one start
+   *  a fresh one rather than reusing a stale expander. */
+  endHeartbeat() {
+    if (this.beat) this.beat.classList.add('done');
+    this.beat = null;
+    this.detailOpen = false;
+  }
+
+  async toggleDetail() {
+    this.detailOpen = !this.detailOpen;
+    this.beatDetail.hidden = !this.detailOpen;
+    this.beatButton.textContent = this.detailOpen ? 'hide detail' : 'show detail';
+    if (this.detailOpen) await this.refreshDetail();
+  }
+
+  async refreshDetail() {
+    if (!this.detailOpen || !this.onDetail) return;
+    try {
+      const turn = await this.onDetail();
+      renderTurn(this.beatDetail, turn);
+    } catch (error) {
+      this.beatDetail.textContent = String(error);
+    }
   }
 
   append(node) {
@@ -96,6 +180,8 @@ export class Chat {
   clear() {
     this.log.replaceChildren();
     this.empty = null;
+    this.beat = null;
+    this.detailOpen = false;
     this.question(null);
   }
 
@@ -116,6 +202,7 @@ export class Chat {
     context.hidden = !pending.context;
     if (pending.context) el('question-context-body').textContent = pending.context;
 
+    this.endHeartbeat();
     this.questionBox.hidden = false;
     this.renderCommands(commands || []);
     this.setWaiting(true);
@@ -185,4 +272,74 @@ function classify(text) {
   if (/^\[[a-z_]+\]/.test(text)) return 'node';
   if (text.startsWith('!')) return 'error';
   return '';
+}
+
+
+/**
+ * The events of one turn, inside the expander.
+ *
+ * Newest LAST, matching the log above it -- an expander that reads in the
+ * opposite direction to the thing it hangs off is disorienting. Capped,
+ * because a long turn can hold thousands and the point is the recent shape
+ * of what it is doing.
+ */
+function renderTurn(container, payload) {
+  container.replaceChildren();
+
+  if (!payload || !payload.running || !payload.turn) {
+    container.textContent = 'Nothing running right now.';
+    return;
+  }
+
+  const turn = payload.turn;
+  const head = document.createElement('div');
+  head.className = 'beat-detail-head';
+  const counts = Object.entries(turn.counts || {})
+    .map(([k, n]) => `${n} ${k}`).join(' · ');
+  head.textContent = `${turn.node} — turn ${turn.index}${counts ? '  ·  ' + counts : ''}`;
+  container.append(head);
+
+  const events = (turn.events || []).filter(
+    (e) => e.phase !== 'started' || e.kind === 'command',
+  );
+  const shown = events.slice(-120);
+  if (shown.length < events.length) {
+    const note = document.createElement('div');
+    note.className = 'muted';
+    note.textContent = `(showing the last ${shown.length} of ${events.length})`;
+    container.append(note);
+  }
+
+  for (const event of shown) {
+    const row = document.createElement('div');
+    row.className = `beat-event beat-${event.kind}`;
+    const at = event.at != null ? `${String(event.at).padStart(6)}s  ` : '';
+    row.textContent = at + describeEvent(event);
+    container.append(row);
+  }
+}
+
+function describeEvent(event) {
+  switch (event.kind) {
+    case 'command': {
+      const code = event.exit_code;
+      const mark = event.phase === 'started' ? '$' : (code ? '!' : '$');
+      const tail = code ? `  (exit ${code})` : '';
+      return `${mark} ${event.command || ''}${tail}`;
+    }
+    case 'file_change':
+      return `~ ${(event.changes || []).map((c) => c.path).join(', ')}`;
+    case 'reasoning':
+      return `· ${(event.summary || []).slice(-1)[0] || ''}`;
+    case 'message':
+      return event.is_final_json ? '> (final answer)' : `> ${firstLine(event.text)}`;
+    case 'web_search': return `? ${event.query || ''}`;
+    case 'plan': return `= ${firstLine(event.text)}`;
+    case 'error': return `! ${event.message || ''}`;
+    default: return `* ${event.kind}`;
+  }
+}
+
+function firstLine(text) {
+  return String(text || '').split('\n')[0];
 }

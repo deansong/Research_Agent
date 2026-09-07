@@ -181,5 +181,27 @@ def test_css_variables_are_defined_before_use():
     print(f"PASS  all {len(used)} CSS variables are defined")
 
 
+def test_classes_the_js_creates_are_styled():
+    """An unstyled class is invisible rather than broken.
+
+    The heartbeat expander is the case that prompted this: a `beat-more`
+    button with no rule is a default grey browser button in the middle of a
+    monospace log, and a `beat-detail` with no rule is an unbounded wall of
+    text. Both "work" -- neither is usable -- and nothing anywhere complains.
+
+    Deliberately a named list rather than every class scraped out of the JS:
+    plenty of those are set for behaviour (`selected`, `dirty`) and are
+    legitimately unstyled, so a scraped version would have to carry an
+    exclusion list as long as the check.
+    """
+    css = (STATIC / "css" / "app.css").read_text()
+    for name in [
+        "logline", "heartbeat", "beat-head", "beat-text", "beat-more",
+        "beat-detail", "beat-detail-head", "beat-event",
+    ]:
+        assert re.search(rf"\.{re.escape(name)}\b", css), f"no CSS rule for .{name}"
+    print("PASS  every class the heartbeat expander creates has a rule")
+
+
 if __name__ == "__main__":
     sys.exit(pytest.main([__file__, "-q"]))

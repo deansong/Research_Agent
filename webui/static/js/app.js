@@ -28,7 +28,13 @@ const state = {
   selected: null,    // the node name being inspected
 };
 
-const chat = new Chat({ onSend: answer });
+const chat = new Chat({
+  onSend: answer,
+  // Fetched on demand, not streamed: one reported turn held 14,885 events in
+  // seventeen minutes, and pushing those down the event stream would evict the
+  // transcript from the ring buffer to show you something nobody asked for.
+  onDetail: () => (state.session ? api.currentActivity(state.session.id) : null),
+});
 
 const graph = new GraphPanel(el('tab-graph'), {
   onSelect: (name) => selectNode(name),

@@ -14,9 +14,10 @@ from __future__ import annotations
 from typing import Any
 
 from agent import activity
+from agent.activity import arm_progress, disarm_progress
 from agent.agentfolder.render import render
 from agent.agentfolder.schema import END_TARGET, AgentNodeConfig, BranchSpec, EdgeSpec
-from agent.backends.base import Access, BackendError
+from agent.backends.base import Access
 from agent.git_utils import snapshot
 from agent.telemetry import record_usage, usage_to_dict
 from agent.work.state import WorkState, render_context
@@ -73,14 +74,23 @@ def make_agent_node(
         prompt = render(template, context)
 
         # ---- step 3: call the model ---------------------------------------
-        run = backend.run_structured(
-            thread_id=thread_id,
-            repo_path=state["repo_path"],
-            access=Access(config.access),
-            developer_instructions=config.instructions,
-            prompt=prompt,
-            output_model=output_model,
-        )
+        # Armed per call, because only the node knows which node and which
+        # session this turn belongs to. See CodexBackend.on_progress for why
+        # per-call is safe here (no fan-out) -- and note it is cleared in the
+        # finally, so a backend shared with another node never keeps a stale
+        # callback pointing at this one.
+        arm_progress(backend, session_dir, name)
+        try:
+            run = backend.run_structured(
+                thread_id=thread_id,
+                repo_path=state["repo_path"],
+                access=Access(config.access),
+                developer_instructions=config.instructions,
+                prompt=prompt,
+                output_model=output_model,
+            )
+        finally:
+            disarm_progress(backend, session_dir, name)
         data = run.data.model_dump()
 
         # ---- step 4: capture anything the model does not report -----------

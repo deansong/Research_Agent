@@ -73,6 +73,92 @@ def test_every_control_gets_its_listener():
     print(f"PASS  all {len(listeners)} listeners wired, including pause and stop")
 
 
+def test_a_long_turn_makes_one_row_not_forty():
+    """The heartbeat line must replace itself, not accumulate.
+
+    A twenty-minute turn prints one of these every thirty seconds. Appended,
+    that is forty near-identical rows shoving the conversation off the screen;
+    replaced, it is one line that stays current. The difference is invisible
+    until you watch a real turn, so it is asserted here instead.
+    """
+    try:
+        import quickjs  # noqa: F401
+    except ImportError:  # pragma: no cover
+        pytest.skip("quickjs not installed")
+    from jsdom_harness import exercise
+
+    result = exercise("""
+      var chat = new __ns.Chat({ onSend() {}, onDetail() {} });
+      chat.logLine('    ... working: 30s \u00b7 4 reasoning \u00b7 quiet 12s');
+      chat.logLine('    ... working: 60s \u00b7 9 command \u00b7 quiet 3s');
+      chat.logLine('    ... working: 90s \u00b7 21 command \u00b7 quiet 1s');
+      chat.logLine('[executor] done');
+      return {
+        rows: chat.log._children.length,
+        shown: chat.beatText.textContent,
+        expander: chat.beatButton.textContent,
+        collapsed: chat.beatDetail.hidden,
+      };
+    """)
+
+    # Three heartbeats and one ordinary line -> two rows, not four.
+    assert result["rows"] == 2, result
+    assert result["shown"] == "working: 90s \u00b7 21 command \u00b7 quiet 1s", result
+    assert result["expander"] == "show detail"
+    assert result["collapsed"] is True
+    print("PASS  three heartbeats collapse into one row, expander closed")
+
+
+def test_the_expander_shows_the_turns_events():
+    """What the row expands INTO: the events the summary was counting.
+
+    The user's complaint verbatim was that "313 events" was reported and the
+    313 events were not. So this asserts the commands and the reasoning come
+    back out of the expander, not just that it opens.
+    """
+    try:
+        import quickjs  # noqa: F401
+    except ImportError:  # pragma: no cover
+        pytest.skip("quickjs not installed")
+    from jsdom_harness import exercise
+
+    result = exercise("""
+      var turn = {
+        running: true,
+        turn: {
+          node: 'evidence_design', index: 3,
+          counts: { command: 2, reasoning: 1 },
+          events: [
+            { kind: 'reasoning', at: 4, summary: ['reading the repository'] },
+            { kind: 'command', phase: 'completed', at: 9,
+              command: 'pytest -q', exit_code: 1 },
+            { kind: 'file_change', at: 12, changes: [{ path: 'docs/study.md' }] },
+          ],
+        },
+      };
+      var chat = new __ns.Chat({ onSend() {}, onDetail() { return turn } });
+      chat.logLine('    ... working: 30s \u00b7 3 events \u00b7 quiet 2s');
+      chat.toggleDetail();
+      return chat;
+    """, then="""
+      var chat = __state;
+      return {
+        open: !chat.beatDetail.hidden,
+        expander: chat.beatButton.textContent,
+        rendered: chat.beatDetail._children.map(function (c) { return c.textContent }),
+      };
+    """)
+
+    assert result["open"] is True
+    assert result["expander"] == "hide detail"
+    rendered = " | ".join(result["rendered"])
+    assert "evidence_design" in rendered and "turn 3" in rendered
+    assert "pytest -q" in rendered and "exit 1" in rendered
+    assert "reading the repository" in rendered
+    assert "docs/study.md" in rendered
+    print("PASS  the expander renders the turn's actual commands and reasoning")
+
+
 def test_the_harness_would_notice_a_broken_lookup():
     """A test that cannot fail is worse than no test.
 

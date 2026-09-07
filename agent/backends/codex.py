@@ -107,6 +107,23 @@ class CodexBackend:
         self.client = client
         self.model = model
 
+        self.on_progress = None
+        """Optional callback, invoked while a long turn is still running.
+
+        Signature: `on_progress(events, elapsed, idle, kinds, last)`.
+
+        Set per call by whoever is about to run a turn -- the node template
+        does it, because it knows which node and session this is and the
+        backend does not. Safe because these graphs never run two nodes at
+        once; the validator refuses fan-out precisely so that this kind of
+        assumption holds.
+
+        It exists so the detail behind a "still working" line is available
+        BEFORE the turn ends. Without it the record was written only on
+        completion, so during a twenty-minute turn -- exactly when you want to
+        look -- there was nothing to look at.
+        """
+
         self.cancel = None
         """An optional threading.Event meaning "stop, I have changed my mind".
 
@@ -299,6 +316,7 @@ class CodexBackend:
         # why these are two different functions rather than one with a flag.
         recorded: list[dict] = []
         last_printed = [""]
+        last_flush = [0.0]
         kinds: dict[str, int] = {}
         last_seen = [""]
 
@@ -378,6 +396,18 @@ class CodexBackend:
             # Only speak up if the provider itself has said nothing for a while,
             # and say what we are actually waiting on. "still working (400s)" is
             # ambiguous between thinking and hung; the idle figure is not.
+            # Flushed more often than the heartbeat prints: the point is that
+            # the detail is THERE when somebody expands the line, and they
+            # will expand it at a moment of their choosing rather than ours.
+            if self.on_progress is not None and now - last_flush[0] >= 5.0:
+                last_flush[0] = now
+                try:
+                    self.on_progress(list(recorded), elapsed, idle,
+                                     dict(kinds), last_seen[0])
+                except Exception:  # noqa: BLE001
+                    # Reporting progress must never break the turn it reports.
+                    pass
+
             if now - last_line[0] >= 30.0:
                 print(_heartbeat(elapsed, idle, events[0], kinds, last_seen[0]),
                       flush=True)

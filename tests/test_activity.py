@@ -132,6 +132,60 @@ def test_counts_do_not_double_started_completed_pairs():
         print("PASS  a started/completed pair counts once")
 
 
+def test_a_running_turn_is_readable_before_it_finishes():
+    """The whole reason the in-flight record exists.
+
+    Before it, a record was written only when a turn ENDED -- so during a
+    twenty-minute turn, which is exactly when you want to know what is going
+    on, there was nothing on disk to look at.
+    """
+    with tempfile.TemporaryDirectory() as tmp:
+        activity.write_in_flight(tmp, "designer", [
+            {"kind": "reasoning", "phase": "completed", "summary": ["reading"]},
+        ], elapsed=30.0)
+
+        running = activity.in_flight(tmp)
+        assert running is not None, "a turn in flight must be visible"
+        assert running.node == "designer" and running.partial is True
+
+        # More events arrive: the record is rewritten, not appended to, so the
+        # reader always gets a whole document.
+        activity.write_in_flight(tmp, "designer", [
+            {"kind": "reasoning", "phase": "completed", "summary": ["reading"]},
+            {"kind": "command", "phase": "completed", "command": "ls", "exit_code": 0},
+        ], elapsed=60.0)
+        assert len(activity.in_flight(tmp).events) == 2
+
+        # And when the turn really ends it becomes turn 1, exactly once --
+        # leaving the in-flight file behind would show it twice, once as
+        # itself and once as "still running".
+        activity.write(tmp, "designer", [{"kind": "message", "text": "done"}])
+        activity.clear_in_flight(tmp, "designer")
+        assert activity.in_flight(tmp) is None
+        found = activity.turns(tmp, "designer")
+        assert [t.partial for t in found] == [False], found
+        assert found[0].index == 1
+        print("PASS  a turn is readable while it runs, then becomes one turn")
+
+
+def test_a_half_written_record_is_skipped_not_fatal():
+    """The in-flight file is rewritten while somebody may be reading it.
+
+    A whole-file write is not atomic, so a reader can catch it mid-write. The
+    right answer is to skip that file -- the next poll gets a whole one a
+    second later -- rather than to raise at the person watching a long turn.
+    """
+    with tempfile.TemporaryDirectory() as tmp:
+        activity.write(tmp, "worker", [{"kind": "message", "text": "finished"}])
+        folder = activity.directory(tmp, "worker")
+        (folder / activity.IN_FLIGHT).write_text('{"node": "worker", "eve')
+
+        found = activity.turns(tmp, "worker")
+        assert [t.index for t in found] == [1], found
+        assert activity.in_flight(tmp) is None
+        print("PASS  a truncated in-flight file is skipped, not raised")
+
+
 def test_writing_never_raises():
     """A node's real work must not fail because a log about it could not be
     written -- the failure would arrive as a mysterious node error rather than

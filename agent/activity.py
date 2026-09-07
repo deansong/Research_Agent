@@ -37,6 +37,11 @@ from pathlib import Path
 #: the recent turns are the ones anybody looks at.
 DEFAULT_LIMIT = 20
 
+#: The turn currently in flight, rewritten as it goes. A fixed name rather
+#: than the next number, because it is not a turn yet -- it becomes one when
+#: it finishes, and until then there must be exactly one of it.
+IN_FLIGHT = "current.json"
+
 
 @dataclass(frozen=True)
 class Turn:
@@ -49,6 +54,14 @@ class Turn:
     events: list[dict]
     usage: dict | None = None
     summary: dict | None = None
+    partial: bool = False
+    """True while the turn is still running.
+
+    The reason this exists at all: the record used to be written only when a
+    turn ENDED, so during a twenty-minute turn -- exactly when you want to
+    know what is happening -- there was nothing to look at. A UI needs to say
+    "still going" rather than presenting an unfinished turn as a finished one.
+    """
 
     def counts(self) -> dict[str, int]:
         """How many of each kind of event -- the one-line version."""
@@ -69,6 +82,7 @@ class Turn:
             "index": self.index,
             "started": self.started,
             "counts": self.counts(),
+            "partial": self.partial,
             "events": self.events,
             "usage": self.usage,
             "summary": self.summary,
@@ -112,18 +126,67 @@ def write(session_dir: str | Path, node: str, events: list[dict], *,
         return None
 
 
+def write_in_flight(session_dir: str | Path, node: str, events: list[dict],
+                    **extra) -> Path | None:
+    """Rewrite the record of the turn currently running.
+
+    Called periodically while a turn is in flight, so the detail behind a
+    "still working" line exists BEFORE the turn ends. Same never-raises
+    contract as write(): a node's real work must not fail over a log.
+
+    Rewriting the whole file each time rather than appending, because an
+    append-only file that is being read concurrently can be read halfway
+    through a line. A whole-file write is not atomic either, so readers
+    tolerate a JSONDecodeError -- see turns().
+    """
+    if not events or not str(session_dir).strip():
+        return None
+    try:
+        folder = directory(session_dir, node)
+        folder.mkdir(parents=True, exist_ok=True)
+        path = folder / IN_FLIGHT
+        path.write_text(json.dumps({
+            "node": node,
+            "index": _next_index(folder),
+            "started": _now(),
+            "events": events,
+            **extra,
+        }, indent=1) + "\n")
+        return path
+    except Exception:  # noqa: BLE001 -- see the docstring
+        return None
+
+
+def clear_in_flight(session_dir: str | Path, node: str) -> None:
+    """Drop the in-flight record once the turn has become a real one."""
+    try:
+        (directory(session_dir, node) / IN_FLIGHT).unlink(missing_ok=True)
+    except Exception:  # noqa: BLE001
+        pass
+
+
 def turns(session_dir: str | Path, node: str, *,
           limit: int = DEFAULT_LIMIT) -> list[Turn]:
-    """Recorded turns for one node, newest first."""
+    """Recorded turns for one node, newest first, in-flight turn included."""
     folder = directory(session_dir, node)
     if not folder.is_dir():
         return []
 
     out: list[Turn] = []
-    for path in sorted(folder.glob("*.json"), reverse=True)[:limit]:
+    numbered = sorted((p for p in folder.glob("*.json") if p.stem.isdigit()),
+                      reverse=True)
+    # The in-flight turn first: it is the newest, and it is the one somebody
+    # watching a long turn actually came for.
+    paths = [folder / IN_FLIGHT] + numbered[:limit]
+
+    for path in paths:
+        if not path.exists():
+            continue
         try:
             raw = json.loads(path.read_text())
         except (OSError, json.JSONDecodeError):
+            # A partial file can be caught mid-write. Skipping it is right:
+            # the next poll gets a whole one, a second apart.
             continue
         out.append(Turn(
             node=node,
@@ -133,6 +196,7 @@ def turns(session_dir: str | Path, node: str, *,
             events=list(raw.get("events") or []),
             usage=raw.get("usage"),
             summary=raw.get("summary"),
+            partial=path.name == IN_FLIGHT,
         ))
     return out
 
@@ -149,6 +213,21 @@ def nodes_with_activity(session_dir: str | Path) -> list[str]:
     return sorted(p.name for p in root.iterdir() if p.is_dir())
 
 
+def in_flight(session_dir: str | Path) -> Turn | None:
+    """Whichever node is mid-turn right now, if any.
+
+    The UI needs this because the "still working" line does not say which node
+    it belongs to -- and asking the human to know is asking them to hold state
+    the server already has. Only one node runs at a time (the validator
+    refuses fan-out), so "the one in-flight record" is well defined.
+    """
+    for node in nodes_with_activity(session_dir):
+        for turn in turns(session_dir, node, limit=1):
+            if turn.partial:
+                return turn
+    return None
+
+
 def _next_index(folder: Path) -> int:
     existing = [int(p.stem) for p in folder.glob("*.json") if p.stem.isdigit()]
     return (max(existing) + 1) if existing else 1
@@ -163,3 +242,36 @@ def _now() -> str:
 def _safe(name: str) -> str:
     """Node names are already `[a-z][a-z0-9_]*`, but this is a path."""
     return "".join(c if c.isalnum() or c in "-_." else "-" for c in name) or "node"
+
+
+def arm_progress(backend, session_dir: str | Path, node: str) -> None:
+    """Point a backend's progress callback at this node's in-flight record.
+
+    A one-liner with a docstring because the ownership is the interesting
+    part: the BACKEND knows what happened, and only the NODE knows where it
+    belongs. Rather than teaching the backend about sessions, or threading a
+    sink through the whole call chain, the node hands over a closure for the
+    duration of its own call.
+    """
+    if not hasattr(backend, "on_progress"):
+        return
+
+    def flush(events, elapsed, idle, kinds, last) -> None:
+        write_in_flight(session_dir, node, events,
+                        elapsed=round(elapsed, 1), idle=round(idle, 1),
+                        counts=kinds, last=last)
+
+    backend.on_progress = flush
+
+
+def disarm_progress(backend, session_dir: str | Path, node: str) -> None:
+    """Unhook the callback and drop the in-flight file.
+
+    Both matter. A backend instance is shared between roles, so a stale
+    closure would write another node's events into this node's folder. And
+    leaving the in-flight file behind would show a finished turn twice --
+    once as itself and once as "still running".
+    """
+    if hasattr(backend, "on_progress"):
+        backend.on_progress = None
+    clear_in_flight(session_dir, node)

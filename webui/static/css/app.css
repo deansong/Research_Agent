@@ -243,6 +243,79 @@ body {
 .logline.tokens { color: var(--text-faint); }
 .logline.error  { color: var(--danger); }
 
+/* The heartbeat row: one line that rewrites itself for as long as a turn runs,
+   with the turn's real events folded up behind it.
+
+   The whole point is that it does NOT grow. A twenty-minute turn prints a
+   "still working" line every thirty seconds, so appended they become forty
+   near-identical rows that push the conversation off the screen -- while the
+   thing you actually wanted (what it is DOING) was never on screen at all. */
+.logline.heartbeat {
+  border-left: 2px solid var(--accent-dim);
+  padding-left: 6px;
+  margin: 2px 0;
+}
+
+.logline.heartbeat.done {
+  border-left-color: var(--line);
+  color: var(--text-faint);
+}
+
+.beat-head {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+}
+
+.beat-text { flex: 1 1 auto; }
+
+.beat-more {
+  flex: 0 0 auto;
+  font: inherit;
+  font-size: 10.5px;
+  color: var(--accent);
+  background: none;
+  border: 0;
+  padding: 0;
+  cursor: pointer;
+  text-decoration: underline dotted;
+}
+
+.beat-more:hover { color: var(--text); }
+
+/* Capped and scrollable, not "as tall as the turn". An open expander that
+   grows without bound is a second log inside the log. */
+.beat-detail {
+  margin-top: 5px;
+  padding: 6px 7px;
+  max-height: 40vh;
+  overflow-y: auto;
+  background: var(--bg-input);
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+}
+
+.beat-detail-head {
+  color: var(--accent);
+  margin-bottom: 4px;
+  position: sticky;
+  top: -6px;
+  background: var(--bg-input);
+  padding: 2px 0;
+}
+
+.beat-event {
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  padding: 1px 0;
+}
+
+.beat-command   { color: var(--text); }
+.beat-reasoning { color: var(--text-dim); }
+.beat-message   { color: var(--ok); }
+.beat-file_change { color: var(--human); }
+.beat-error     { color: var(--danger); }
+
 .chat-question {
   flex: 0 0 auto;
   margin: 0 12px;

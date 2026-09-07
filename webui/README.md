@@ -108,6 +108,34 @@ which is true and useless; see `agent/activity.py`.
 
 ---
 
+## The "still working" line
+
+A long turn prints one of these every thirty seconds:
+
+```
+    ... working: 1016s · 412 command · 98 reasoning · quiet 0s
+      last: re-running the failing test with -x to see the first failure
+```
+
+**One row, rewritten in place** — not one row per heartbeat. Forty of them
+appended is how a twenty-minute turn pushes the conversation off the screen
+while still telling you nothing about what it is doing.
+
+`show detail` on that row expands it into the turn's real events: each command
+with its exit code, each file touched, the model's own reasoning. That is
+fetched from `/api/sessions/{id}/activity` when you ask for it, and **not**
+streamed — one reported turn held 14,885 events in seventeen minutes, and
+pushing those down the event stream would evict the conversation from the
+ring buffer to show you something nobody had asked to see.
+
+The detail exists mid-turn because `agent/activity.py` writes a `current.json`
+as the turn runs (`write_in_flight`), rewritten whole each time so a reader
+never catches half a record. Before that, a turn's record was written only
+when it *ended* — so during the twenty minutes you actually wanted to look,
+there was nothing on disk to look at.
+
+---
+
 ## The Repository field
 
 It is **the project the agent works on**, and it decides three things:
@@ -276,6 +304,7 @@ signature, and about when to do it properly instead.
 | `POST` | `/api/sessions/{id}/agent/validate` | check an edit without writing it |
 | `GET` | `/api/sessions/{id}/nodes/{name}/context` | the prompt that node will really get |
 | `GET` | `/api/sessions/{id}/nodes/{name}/activity` | every provider event for that node's turns |
+| `GET` | `/api/sessions/{id}/activity` | the turn running *right now*, whichever node it is |
 | `GET` | `/api/schema` | node kinds, field types, access levels, providers |
 | `GET` | `/api/config` | the resolved backend for each role |
 | `GET` | `/api/defaults` | the repo this server was started for, and its flags |

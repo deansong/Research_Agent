@@ -393,6 +393,22 @@ def _register(app: FastAPI) -> None:
             "nodes_with_activity": activity.nodes_with_activity(runner.paths.session),
         }
 
+    @app.get("/api/sessions/{session_id}/activity")
+    def get_current_activity(session_id: str):
+        """The turn running right now, in full.
+
+        This is what the "still working" line expands into. It exists as its
+        own endpoint because the line does not say which node it belongs to,
+        and making the browser track that would be asking it to hold state the
+        server already has.
+        """
+        from agent import activity
+
+        runner = _runner(session_id)
+        turn = activity.in_flight(runner.paths.session)
+        return {"running": turn is not None,
+                "turn": turn.as_dict() if turn else None}
+
     # ---- the event stream ------------------------------------------------
 
     @app.get("/api/sessions/{session_id}/events")

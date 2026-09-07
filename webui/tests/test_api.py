@@ -330,6 +330,45 @@ def test_pause_and_stop_are_refused_when_nothing_is_running():
             assert response.json()["detail"] == "not running", response.json()
         print("PASS  pause and stop say 'not running' rather than pretending")
 
+def test_the_running_turn_is_served_while_it_runs():
+    """What the "still working" line expands into.
+
+    The endpoint has to answer without being told which node is busy: the
+    heartbeat line does not say, and making the browser track it would be
+    asking it to hold state the server already has.
+    """
+    from agent import activity
+
+    with tempfile.TemporaryDirectory() as tmp:
+        repo = pathlib.Path(tmp)
+        client = _client(repo)
+        sid = client.post("/api/sessions", json={
+            "repo": str(repo), "task": "idle", "backend": "fake", "start": False,
+        }).json()["id"]
+
+        # Nothing running yet: an honest "no", not a 404 and not an empty turn
+        # dressed up as a real one.
+        quiet = client.get(f"/api/sessions/{sid}/activity")
+        assert quiet.status_code == 200, quiet.text
+        assert quiet.json() == {"running": False, "turn": None}, quiet.json()
+
+        session_dir = server._RUNNERS[sid].paths.session
+        activity.write_in_flight(session_dir, "evidence_design", [
+            {"kind": "command", "phase": "completed", "at": 9,
+             "command": "pytest -q", "exit_code": 1},
+        ], elapsed=310.0)
+
+        live = client.get(f"/api/sessions/{sid}/activity").json()
+        assert live["running"] is True, live
+        assert live["turn"]["node"] == "evidence_design"
+        assert live["turn"]["partial"] is True
+        assert live["turn"]["counts"] == {"command": 1}, live["turn"]["counts"]
+        # The point of the whole exercise: the command itself comes back, not
+        # a count of commands.
+        assert live["turn"]["events"][0]["command"] == "pytest -q"
+        print("PASS  the in-flight turn is served with its actual events")
+
+
 if __name__ == "__main__":
     for name, fn in sorted(globals().items()):
         if name.startswith("test_"):

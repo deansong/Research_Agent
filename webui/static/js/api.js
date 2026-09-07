@@ -85,6 +85,9 @@ export const api = {
     request('GET', `/api/sessions/${encodeURIComponent(id)}/nodes/${encodeURIComponent(name)}/context`),
   nodeActivity:  (id, name) =>
     request('GET', `/api/sessions/${encodeURIComponent(id)}/nodes/${encodeURIComponent(name)}/activity`),
+  // The turn running right now, whichever node it belongs to -- what the
+  // "still working" line expands into.
+  currentActivity: (id) => request('GET', `/api/sessions/${encodeURIComponent(id)}/activity`),
   config:        ()     => request('GET', '/api/config'),
   schema:        ()     => request('GET', '/api/schema'),
   defaults:      ()     => request('GET', '/api/defaults'),

@@ -49,6 +49,7 @@ def make_designer(backend):
             )
 
         try:
+            activity.arm_progress(backend, state.get('session_dir', ''), 'designer')
             run = backend.run_structured(
                 thread_id=thread_id,
                 repo_path=state["repo_path"],
@@ -60,6 +61,7 @@ def make_designer(backend):
             # Keep what the provider did, beside the work-phase nodes' records.
             # session_dir is already in BootstrapState, so no plumbing is needed --
             # see agent/activity.py for why this goes to disk and not to state.
+            activity.disarm_progress(backend, state.get("session_dir", ""), "designer")
             activity.write(state.get("session_dir", ""), "designer", run.events,
                            usage=usage_to_dict(run.usage) if run.usage else None)
         except BackendOutputError as exc:
