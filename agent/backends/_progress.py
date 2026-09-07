@@ -42,79 +42,89 @@ def _unwrap(item: Any) -> Any:
 def describe(event: Any) -> str | None:
     """One progress line for one stream event, or None to stay quiet.
 
-    Returning None for most events is the point: the stream carries a great
-    deal that is not worth a line, and a progress report that prints
-    everything is just noise with extra steps.
+    Derived from record() rather than matching events itself, and that is the
+    fix for a specific complaint: a turn reported "137 events, last one 11s
+    ago" and printed almost nothing, because this function knew about three
+    notification types and six item kinds while the stream carries far more.
+    Two independent matchers meant the narrower one silently decided what you
+    were allowed to see.
+
+    Now record() decides what an event IS and this decides how to say it, so
+    an item kind nobody has taught us about still gets a line with its name on
+    it -- which is how you find out it exists.
     """
-    payload = getattr(event, "payload", event)
-    name = type(payload).__name__
-
-    if name == "ItemStartedNotification":
-        return _started(getattr(payload, "item", None))
-    if name == "ItemCompletedNotification":
-        return _completed(getattr(payload, "item", None))
-    if name == "ErrorNotification":
-        return _line("!", getattr(payload, "message", "error"))
-    return None
+    return headline(record(event))
 
 
-def _started(item: Any) -> str | None:
-    """Announce slow things WHEN THEY START, not when they finish.
+#: Kinds that would be noise rather than progress.
+#:  turn_started/turn_completed  bracket the turn we already announced
+#:  token_count                  arrives constantly and says nothing
+_QUIET_KINDS = frozenset({"turn_started", "turn_completed", "token_count"})
 
-    A command is the one thing worth showing up front: if it hangs, you want
-    to know what it was.
-    """
-    if item is None:
-        return None
-    item = _unwrap(item)
-    if type(item).__name__ == "CommandExecutionThreadItem":
-        return _line("$", getattr(item, "command", ""))
-    return None
+_MARKERS = {
+    "command": "$",
+    "file_change": "~",
+    "reasoning": "·",
+    "message": ">",
+    "web_search": "?",
+    "plan": "=",
+    "error": "!",
+}
 
 
-def _completed(item: Any) -> str | None:
-    if item is None:
-        return None
-    item = _unwrap(item)
-    kind = type(item).__name__
-
-    if kind == "CommandExecutionThreadItem":
-        code = getattr(item, "exit_code", None)
-        # The command was already printed when it started; only say something
-        # more if it failed.
-        if code not in (None, 0):
-            return _line("!", f"exited {code}: {getattr(item, 'command', '')}")
+def headline(entry: dict | None) -> str | None:
+    """A printable line for one recorded event, or None to stay quiet."""
+    if not entry:
         return None
 
-    if kind == "FileChangeThreadItem":
-        paths = []
-        for change in getattr(item, "changes", None) or []:
-            path = getattr(change, "path", None) or getattr(change, "file_path", None)
-            if path:
-                paths.append(str(path).rsplit("/", 1)[-1])
-        return _line("~", ", ".join(paths) or "edited files") if paths else None
-
-    if kind == "ReasoningThreadItem":
-        summary = getattr(item, "summary", None) or []
-        if summary:
-            return _line("·", str(summary[0]))
+    kind = entry.get("kind", "")
+    phase = entry.get("phase", "")
+    if kind in _QUIET_KINDS:
         return None
 
-    if kind == "AgentMessageThreadItem":
-        text = (getattr(item, "text", "") or "").strip()
-        # The final structured answer comes back through the normal return
-        # path; echoing a big JSON blob here would bury everything else.
-        if text.startswith("{"):
-            return None
-        return _line(">", text) if text else None
+    if kind == "command":
+        # Announced when it STARTS, because that is when you want to know what
+        # is taking so long. On completion, only a failure is worth a line.
+        if phase == "started":
+            return _line("$", entry.get("command", ""))
+        code = entry.get("exit_code")
+        if phase == "completed" and code not in (None, 0):
+            return _line("!", f"exited {code}: {entry.get('command', '')}")
+        return None
 
-    if kind == "WebSearchThreadItem":
-        return _line("?", f"searched: {getattr(item, 'query', '')}")
+    if phase == "started":
+        # Everything else is only interesting once it has some content.
+        return None
 
-    if kind == "PlanThreadItem":
-        return _line("=", getattr(item, "text", ""))
+    if kind == "file_change":
+        names = [str(c.get("path", "")).rsplit("/", 1)[-1]
+                 for c in entry.get("changes") or []]
+        return _line("~", ", ".join(n for n in names if n) or "edited files")
 
-    return None
+    if kind == "reasoning":
+        summary = entry.get("summary") or []
+        # The LAST line, not the first. On an update the tail is the new part,
+        # and on completion it is the conclusion -- either way it is the bit
+        # you did not already see.
+        return _line("·", summary[-1]) if summary else None
+
+    if kind == "message":
+        if entry.get("is_final_json"):
+            return None       # comes back through the normal return path
+        return _line(">", entry.get("text", ""))
+
+    if kind == "web_search":
+        return _line("?", f"searched: {entry.get('query', '')}")
+
+    if kind == "plan":
+        return _line("=", entry.get("text", ""))
+
+    if kind == "error":
+        return _line("!", entry.get("message", "error"))
+
+    # An unrecognised kind, named. Better a line saying "something happened,
+    # and here is what it was called" than silence.
+    return _line("*", kind.replace("_", " "))
 
 
 def _line(marker: str, text: str) -> str | None:
@@ -161,10 +171,23 @@ def record(event: Any) -> dict | None:
         return _item(getattr(payload, "item", None), "started")
     if name == "ItemCompletedNotification":
         return _item(getattr(payload, "item", None), "completed")
+    if name == "ItemUpdatedNotification":
+        # Progressive updates to an item already in flight -- a command's
+        # output arriving, reasoning being extended. Previously ignored
+        # entirely by both functions, which is a large part of why a turn with
+        # 137 events showed almost nothing: the interesting middle of a long
+        # turn is mostly updates.
+        return _item(getattr(payload, "item", None), "updated")
     if name == "ErrorNotification":
         return {"kind": "error", "phase": "completed",
                 "message": str(getattr(payload, "message", "error"))}
-    return None
+
+    # Anything else, by name. Returning None here is how a whole class of
+    # event stays invisible -- and "137 events, 4 of them printed" is what
+    # that looks like from the outside.
+    if getattr(payload, "item", None) is not None:
+        return _item(payload.item, "other")
+    return {"kind": _snake(name), "phase": "other"}
 
 
 def _item(item: Any, phase: str) -> dict | None:

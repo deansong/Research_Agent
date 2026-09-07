@@ -13,7 +13,7 @@ import time
 
 from openai_codex import Codex, Sandbox
 
-from agent.backends._progress import describe, record
+from agent.backends._progress import headline, record
 from agent.backends._schema import strict_json_schema
 from agent.backends.base import (
     BackendCancelled,
@@ -298,20 +298,41 @@ class CodexBackend:
         # The full record, kept as well as printed. See _progress.record for
         # why these are two different functions rather than one with a flag.
         recorded: list[dict] = []
+        last_printed = [""]
+        kinds: dict[str, int] = {}
+        last_seen = [""]
 
         def report(event) -> None:
             events[0] += 1
             last_event[0] = time.monotonic()
 
             entry = record(event)
-            if entry is not None:
-                entry["at"] = round(time.monotonic() - started_at, 2)
-                recorded.append(entry)
+            if entry is None:
+                return
 
-            line = describe(event)
-            if line:
-                print(line, flush=True)
-                last_line[0] = time.monotonic()
+            entry["at"] = round(time.monotonic() - started_at, 2)
+            recorded.append(entry)
+
+            kind = str(entry.get("kind", "?"))
+            if entry.get("phase") != "started":
+                kinds[kind] = kinds.get(kind, 0) + 1
+
+            line = headline(entry)
+            if not line:
+                return
+
+            # Remembered even when the print is suppressed, so a quiet stretch
+            # can still say what it is quiet ABOUT.
+            last_seen[0] = line.strip()
+
+            # Identical consecutive lines are the price of following updates as
+            # well as completions: a reasoning item extended three times can
+            # produce the same tail three times. Print the change, not the tick.
+            if line == last_printed[0]:
+                return
+            last_printed[0] = line
+            print(line, flush=True)
+            last_line[0] = time.monotonic()
 
         def drain() -> None:
             stream = handle.stream()
@@ -358,8 +379,8 @@ class CodexBackend:
             # and say what we are actually waiting on. "still working (400s)" is
             # ambiguous between thinking and hung; the idle figure is not.
             if now - last_line[0] >= 30.0:
-                print(f"    ... still working ({elapsed:.0f}s elapsed, "
-                      f"{events[0]} events, last one {idle:.0f}s ago)", flush=True)
+                print(_heartbeat(elapsed, idle, events[0], kinds, last_seen[0]),
+                      flush=True)
                 last_line[0] = now
 
         if "error" in outcome:
@@ -534,3 +555,35 @@ def login_chatgpt() -> None:
         print()
         login.wait()
         print("ChatGPT/Codex login successful.")
+
+
+def _heartbeat(elapsed: float, idle: float, total: int,
+               kinds: dict[str, int], last: str) -> str:
+    """What to say during a quiet stretch of a long turn.
+
+    "still working (55s elapsed, 137 events, last one 11s ago)" is three
+    numbers and no information: it says the turn is alive, which you could
+    already see, and nothing about what it is doing, which you could not.
+    Every one of those 137 events had a kind, and most had text.
+
+    So: a breakdown by kind, and the last line worth printing -- usually a
+    reasoning summary, which is the model's own account of what it is busy
+    with. That turns a progress bar back into a progress report.
+    """
+    parts = [f"{elapsed:.0f}s"]
+    if kinds:
+        parts.append(", ".join(
+            f"{count} {kind}" for kind, count in
+            sorted(kinds.items(), key=lambda kv: -kv[1])[:4]
+        ))
+    else:
+        parts.append(f"{total} events")
+    parts.append(f"quiet {idle:.0f}s")
+
+    line = f"    ... working: {' · '.join(parts)}"
+    if last:
+        # Trimmed hard: this repeats every thirty seconds, and a wrapped
+        # paragraph in the middle of a log is worse than a short one.
+        trimmed = last[:88] + ("\u2026" if len(last) > 88 else "")
+        line += f"\n      last: {trimmed}"
+    return line

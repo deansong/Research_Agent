@@ -352,11 +352,17 @@ def _drain(items, turn_id):
 
 
 def _quiet_event():
-    """An event describe() deliberately does not print.
+    """An event that counts as activity but deliberately prints nothing.
 
-    This is the whole crux. A turn that is reasoning steadily emits plenty of
-    these, and the old code only reset its clock on PRINTABLE events -- so
-    thinking hard looked exactly like hanging.
+    This is the crux of the idle-timeout tests: a healthy turn emits plenty of
+    events that are not worth a line, and the old code only reset its clock on
+    PRINTABLE ones -- so thinking hard looked exactly like hanging.
+
+    `token_count` is one of the few kinds _progress deliberately keeps quiet,
+    because it arrives constantly and says nothing. It used to be enough to
+    hand describe() an unrecognised object, but unrecognised events are now
+    reported by name rather than swallowed -- which was the point of that
+    change, and means this fixture has to name a genuinely quiet kind.
     """
     from agent.backends._progress import describe
 
@@ -364,7 +370,7 @@ def _quiet_event():
         pass
 
     class Event:
-        payload = Payload()
+        payload = type("TokenCountNotification", (Payload,), {})()
 
     assert describe(Event()) is None, "this fixture must be a non-printing event"
     return Event()
