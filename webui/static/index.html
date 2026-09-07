@@ -32,6 +32,16 @@
   </div>
 
   <div class="topbar-actions">
+    <!--
+      Two stops, because there are two honest answers. Pause waits for the
+      node in flight and loses nothing; Stop interrupts the provider and
+      discards that one node's turn. Both are disabled unless a run is
+      actually in flight -- see syncRunControls in app.js.
+    -->
+    <button id="btn-pause" class="btn" disabled
+            title="Finish the current step, then stop. Nothing is lost.">Pause</button>
+    <button id="btn-stop" class="btn danger" disabled
+            title="Stop now, abandoning the step in flight. That step's work is discarded.">Stop</button>
     <button id="btn-new" class="btn">New session</button>
     <button id="btn-open" class="btn ghost">Open&hellip;</button>
   </div>

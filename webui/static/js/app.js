@@ -121,7 +121,7 @@ async function openSession(detail) {
       setPhase(e.error ? 'error' : 'finished');
       chat.question(null);
       chat.status(e.error || 'finished');
-      refresh();
+      refresh();          // refresh() calls syncRunControls()
     },
     onerror: () => chat.status('reconnecting...'),
   });
@@ -304,6 +304,7 @@ function renderSession(detail) {
 
   state.problems = detail.problems || [];
   renderProblems();
+  syncRunControls();
 }
 
 function facts(pairs) {
@@ -323,6 +324,48 @@ function setPhase(phase) {
   const pill = el('session-phase');
   pill.textContent = phase;
   pill.className = `pill phase-${phase}`;
+}
+
+/**
+ * Enable Pause and Stop only while something is actually running.
+ *
+ * A stop button that is clickable when nothing is running teaches you to
+ * distrust it. `busy` comes from the server -- whether a worker thread is
+ * alive -- rather than from anything this tab guessed.
+ */
+function syncRunControls() {
+  const running = Boolean(state.session?.busy);
+  el('btn-pause').disabled = !running;
+  el('btn-stop').disabled = !running;
+}
+
+function wireRunControls() {
+  el('btn-pause').addEventListener('click', async () => {
+    if (!state.session) return;
+    el('btn-pause').disabled = true;
+    try {
+      const result = await api.pauseSession(state.session.id);
+      chat.status(result.detail || 'stopping after this step');
+    } catch (error) {
+      showError(error);
+      syncRunControls();
+    }
+  });
+
+  el('btn-stop').addEventListener('click', async () => {
+    if (!state.session) return;
+    // No confirmation dialog: the button says what it does, and the cost is
+    // one node's turn rather than anything irreversible. Everything the graph
+    // had already finished is checkpointed.
+    el('btn-stop').disabled = true;
+    try {
+      const result = await api.stopSession(state.session.id);
+      chat.status(result.detail || 'stopping');
+    } catch (error) {
+      showError(error);
+      syncRunControls();
+    }
+  });
 }
 
 function activity(text) {
@@ -578,6 +621,7 @@ api.schema().then((schema) => inspector.setSchema(schema)).catch(() => {
 wireTabs('canvas-tabs');
 wireTabs('inspector-tabs');
 wireJson();
+wireRunControls();
 wireResize();
 wireDialogs();
 

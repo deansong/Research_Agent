@@ -113,6 +113,7 @@ class Runtime:
         self.paths = paths
         self._stack = stack
         self._codex = None
+        self._built: dict[str, Any] = {}
 
         # SqliteSaver.from_conn_string does NOT create parent directories, but
         # session_paths() has already made them -- see storage.py.
@@ -142,8 +143,31 @@ class Runtime:
     def backends(self, needed) -> dict[str, Any]:
         """Build one backend per role. Raises BackendError, which is a real
         error condition rather than a presentation choice, so it stays an
-        exception."""
-        return build_backends(self.cfg, needed, codex_client=self.codex_client(needed))
+        exception.
+
+        Every backend built through here is remembered, so a caller can reach
+        them all later -- which is what `arm_cancel` needs. build_backends
+        caches identically-configured roles onto one instance, so the same
+        object legitimately appears under several role names.
+        """
+        built = build_backends(self.cfg, needed, codex_client=self.codex_client(needed))
+        self._built.update(built)
+        return built
+
+    def arm_cancel(self, event) -> None:
+        """Give every backend a way to be told to stop mid-turn.
+
+        Only the provider can stop a turn that is already running, so the
+        signal has to reach that far. Setting an attribute rather than passing
+        a constructor argument on purpose: backends are cached by their config,
+        so one instance is shared across roles, and cancellation belongs to the
+        RUN rather than to the configuration.
+        """
+        for backend in self._built.values():
+            # A backend that does not know about cancellation just carries an
+            # attribute nothing reads -- harmless, and better than each caller
+            # having to know which providers support it.
+            backend.cancel = event
 
     # ---- phase 1: designing an agent -------------------------------------
 

@@ -52,6 +52,7 @@ from langgraph.types import Command
 
 from agent import commands, storage
 from agent.config import AgentConfig
+from agent.backends.base import BackendCancelled
 from agent.runtime import Runtime, open_runtime
 from agent.terminal import _interrupt_payload
 from webui import capture
@@ -106,6 +107,19 @@ class SessionRunner:
         self._worker: threading.Thread | None = None
         self._lock = threading.Lock()
 
+        # Two different stops, because there are two honest answers to "stop".
+        #
+        # `_pause` is checked BETWEEN nodes. The graph checkpoints after every
+        # completed node, so stopping there loses nothing at all -- you resume
+        # and carry on from the next one. It can take as long as the current
+        # node takes, though.
+        #
+        # `_cancel` reaches the provider and abandons the turn in flight. It is
+        # immediate, and it throws away whatever that one node was doing --
+        # a node is atomic, so there is no half-finished result to keep.
+        self._pause = threading.Event()
+        self._cancel = threading.Event()
+
         # The runtime owns the checkpointer, so it must outlive every request.
         # ExitStack normally closes on leaving a `with`; here we drive the
         # context manager by hand and close it in `shutdown()`.
@@ -127,13 +141,13 @@ class SessionRunner:
         """Close the checkpointer and the provider client."""
         self.bus.close()
         if self._worker is not None and self._worker.is_alive():
-            # Unblock a worker parked on the answer queue so its thread can end.
+            # Same two signals as stop(): unblock a worker parked on a question,
+            # and interrupt one that is mid-turn.
+            self._cancel.set()
+            self._pause.set()
             with self._lock:
                 self.pending = None
-            try:
-                self._answers.put_nowait(_STOP)
-            except queue.Full:
-                pass
+            self._offer(_STOP)
             self._worker.join(timeout=5.0)
         try:
             self._runtime_cm.__exit__(None, None, None)
@@ -148,6 +162,8 @@ class SessionRunner:
             raise RuntimeError("This session is already running.")
         self.bus.reopen()
         self.error = ""
+        self._pause.clear()
+        self._cancel.clear()
         self._drain_answers()
         self._worker = threading.Thread(
             target=self._run,
@@ -175,6 +191,43 @@ class SessionRunner:
             self.pending = None
         self._answers.put(text)
 
+    def pause(self) -> str:
+        """Stop after the current node finishes. Nothing is lost."""
+        if not self.busy:
+            return "not running"
+        self._pause.set()
+        # A worker parked on a question is not going to reach the check on its
+        # own, so wake it. _STOP unwinds the pump the same way ctrl-D does in
+        # the terminal, leaving the graph parked on its interrupt.
+        if self.pending is not None:
+            self._offer(_STOP)
+        self.bus.emit("status", phase=self.phase,
+                      detail="stopping after this step...")
+        return "will stop after the current step"
+
+    def stop(self) -> str:
+        """Stop now, abandoning the turn in flight.
+
+        Sets both flags: `_cancel` so the provider's own wait loop interrupts
+        the turn, and `_pause` so the pump does not simply start the next node
+        once that turn has unwound.
+        """
+        if not self.busy:
+            return "not running"
+        self._cancel.set()
+        self._pause.set()
+        if self.pending is not None:
+            self._offer(_STOP)
+        self.bus.emit("status", phase=self.phase, detail="stopping now...")
+        return "stopping"
+
+    def _offer(self, value) -> None:
+        """Put something on the answer queue without blocking on a full one."""
+        try:
+            self._answers.put_nowait(value)
+        except queue.Full:
+            pass
+
     # ---- the worker ------------------------------------------------------
 
     def _run(self, task_brief: str, pre_build_agent: str | None) -> None:
@@ -186,6 +239,11 @@ class SessionRunner:
         with capture.routed_to(lambda line: self.bus.emit("log", text=line)):
             try:
                 self._phases(task_brief, pre_build_agent)
+            except BackendCancelled as exc:
+                # You asked for this, so it is not an error. Report it as the
+                # calm fact it is, and leave `error` empty so the UI does not
+                # paint the session red.
+                self.bus.emit("status", phase="finished", detail=str(exc))
             except BaseException as exc:  # noqa: BLE001
                 # A worker thread that dies silently is the worst failure mode
                 # here: the browser sits on a spinner forever with no clue why.
@@ -216,7 +274,12 @@ class SessionRunner:
             if not task_brief:
                 raise RuntimeError("No task supplied.")
             self._set_phase("designing")
-            values = self._pump(runtime.bootstrap_session(task_brief))
+            session = runtime.bootstrap_session(task_brief)
+            # Armed after bootstrap_session, because that is what builds the
+            # design phase's backends. Stop has to work during a designer turn
+            # too -- those are the long ones.
+            runtime.arm_cancel(self._cancel)
+            values = self._pump(session)
             if values is _STOP:
                 return
             if values.get("outcome") != "ready":
@@ -243,6 +306,7 @@ class SessionRunner:
         from agent.runtime import needed_for
 
         backends = runtime.backends(needed_for(loaded.folder))
+        runtime.arm_cancel(self._cancel)
         self._set_phase("running", agent=loaded.folder.graph.name)
         self._work_loop(loaded.folder, backends, task_brief)
 
@@ -296,6 +360,13 @@ class SessionRunner:
             result = graph.invoke(session.initial_state, config=config)
 
         while True:
+            if self._pause.is_set():
+                # Between nodes, and everything up to here is checkpointed.
+                # Returning _STOP unwinds without setting an outcome, so the
+                # graph stays exactly where it is and Start resumes it.
+                self.bus.emit("status", phase=self.phase,
+                              detail="stopped. Start to carry on where it left off.")
+                return _STOP
             payload = _interrupt_payload(result)
             if payload is None:
                 break

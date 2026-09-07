@@ -279,6 +279,57 @@ def test_two_threads_do_not_cross_streams():
     print("PASS  two concurrent sessions never see each other's output")
 
 
+
+def test_pause_stops_the_run_and_start_resumes_it():
+    """Pause has to be a pause, not a quiet abort.
+
+    It stops between nodes, which is exactly where the graph checkpoints, so
+    the guarantee is that Start carries on from the same question rather than
+    beginning again. That is the whole difference between this and /exit.
+    """
+    with tempfile.TemporaryDirectory() as tmp:
+        repo = pathlib.Path(tmp)
+        client = _client(repo)
+        sid = client.post("/api/sessions", json={
+            "repo": str(repo), "task": "pause me", "backend": "fake",
+        }).json()["id"]
+
+        first = _wait_for_question(client, sid)
+        question = first["pending"]["question"]
+
+        paused = client.post(f"/api/sessions/{sid}/pause")
+        assert paused.status_code == 200, paused.text
+        assert "stop" in paused.json()["detail"], paused.json()
+
+        done = _wait_until_done(client, sid)
+        assert not done["busy"], done
+        # NOT an error: stopping on purpose is not a failure.
+        assert not done["error"], done["error"]
+
+        restarted = client.post(f"/api/sessions/{sid}/start", json={})
+        assert restarted.status_code == 200, restarted.text
+        again = _wait_for_question(client, sid)
+        assert again["pending"]["question"] == question, \
+            "resuming must come back to the same question, not start over"
+        print("PASS  pause stops between nodes and start resumes the same question")
+
+
+def test_pause_and_stop_are_refused_when_nothing_is_running():
+    """A control that reports success while doing nothing is worse than one
+    that is disabled -- so the server says so plainly."""
+    with tempfile.TemporaryDirectory() as tmp:
+        repo = pathlib.Path(tmp)
+        client = _client(repo)
+        sid = client.post("/api/sessions", json={
+            "repo": str(repo), "task": "idle", "backend": "fake", "start": False,
+        }).json()["id"]
+
+        for verb in ("pause", "stop"):
+            response = client.post(f"/api/sessions/{sid}/{verb}")
+            assert response.status_code == 200, response.text
+            assert response.json()["detail"] == "not running", response.json()
+        print("PASS  pause and stop say 'not running' rather than pretending")
+
 if __name__ == "__main__":
     for name, fn in sorted(globals().items()):
         if name.startswith("test_"):

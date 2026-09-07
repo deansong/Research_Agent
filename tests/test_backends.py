@@ -453,6 +453,93 @@ def test_the_absolute_cap_catches_a_runaway():
     assert handle.interrupted
     print("PASS  a runaway hits the cap, and is told to split the node")
 
+
+def test_stop_interrupts_a_turn_that_is_still_streaming():
+    """The whole point of reaching the provider rather than waiting for it.
+
+    A run can only be stopped between nodes unless something can interrupt the
+    turn in flight -- and with a Codex turn measured in minutes, "stop after
+    this node" during a long executor step looks exactly like a broken button.
+
+    Note this turn is NOT idle and NOT over its cap: a chatty, healthy,
+    long-running turn is precisely the case that has to be interruptible.
+    """
+    import threading
+
+    from unittest.mock import MagicMock, patch
+
+    from agent.backends.base import BackendCancelled
+    from agent.backends.codex import CodexBackend
+
+    stream = _Stream([_quiet_event() for _ in range(200)], gap=0.02)
+    handle = _Handle(stream)
+    backend = CodexBackend(MagicMock(), timeout=30, max_seconds=30)
+
+    cancel = threading.Event()
+    backend.cancel = cancel
+    threading.Timer(0.15, cancel.set).start()
+
+    with patch("agent.backends.codex._collect", _drain):
+        try:
+            backend._run_turn(_Thread(handle), "go", {})
+            raise AssertionError("expected BackendCancelled")
+        except BackendCancelled as exc:
+            assert "Stopped by request" in str(exc), str(exc)
+            # It must say what survives, or the user cannot tell what it cost.
+            assert "checkpointed" in str(exc), str(exc)
+
+    assert handle.interrupted, "the provider's turn must actually be interrupted"
+    print("PASS  stop interrupts a healthy, streaming turn rather than waiting it out")
+
+
+def test_cancellation_is_checked_before_the_timeout():
+    """If you have asked to stop, no other verdict about the turn matters.
+
+    Reporting a timeout to somebody who pressed Stop is confusing -- it reads
+    as a failure when it was a decision.
+    """
+    import threading
+
+    from unittest.mock import MagicMock, patch
+
+    from agent.backends.base import BackendCancelled
+    from agent.backends.codex import CodexBackend
+
+    # Silent AND cancelled: both conditions true at once.
+    stream = _Stream([_quiet_event(), _quiet_event()], gap=5.0)
+    handle = _Handle(stream)
+    backend = CodexBackend(MagicMock(), timeout=0.2, max_seconds=30)
+    backend.cancel = threading.Event()
+    backend.cancel.set()
+
+    with patch("agent.backends.codex._collect", _drain):
+        try:
+            backend._run_turn(_Thread(handle), "go", {})
+            raise AssertionError("expected BackendCancelled")
+        except BackendCancelled:
+            pass
+        except Exception as exc:  # noqa: BLE001
+            raise AssertionError(f"got {type(exc).__name__}, wanted cancellation") from None
+    print("PASS  a cancelled turn reports cancellation, not a timeout")
+
+
+def test_a_backend_with_no_cancel_set_is_unaffected():
+    """`cancel` defaults to None, and the check must not fire on that."""
+    from unittest.mock import MagicMock, patch
+
+    from agent.backends.codex import CodexBackend
+
+    stream = _Stream([_quiet_event() for _ in range(4)], gap=0.02)
+    handle = _Handle(stream)
+    backend = CodexBackend(MagicMock(), timeout=5, max_seconds=30)
+    assert backend.cancel is None
+
+    with patch("agent.backends.codex._collect", _drain):
+        result, _ = backend._run_turn(_Thread(handle), "go", {})
+    assert result == "collected"
+    assert not handle.interrupted
+    print("PASS  an un-armed backend runs normally")
+
 if __name__ == "__main__":
     for name, fn in sorted(globals().items()):
         if name.startswith("test_"):

@@ -58,6 +58,19 @@ one only depends on what came before.
 Drag either divider to resize. The app switches tabs for you: clicking a node
 jumps to Configure, and a save that broke something jumps to Problems.
 
+**Pause and Stop** are in the topbar, and they are two different things
+because there are two honest answers:
+
+| | |
+| --- | --- |
+| **Pause** | Stops after the current node finishes. Loses nothing — the graph checkpoints there anyway — so **Start** carries on from the same question. Can take as long as the node in flight. |
+| **Stop** | Interrupts the provider mid-turn. Immediate, at the cost of that one node's work: a node is atomic, so there is no half-finished result to keep. Everything earlier is still checkpointed. |
+
+Both are disabled unless a run is actually in flight. Stop reaches all the way
+to the provider's own wait loop, which is the only thing that can end a turn
+already running — without that, pressing it during a ten-minute executor step
+would look like a broken button.
+
 **Conversation.** The transcript, plus everything the nodes print — which
 command the executor ran, which file it touched, what a turn cost. When the
 graph stops to ask you something the composer unlocks; the chips above it are
@@ -87,8 +100,11 @@ the entry node.
 **JSON.** `graph.json` and `nodes.json` as text, parsed as you type. The escape
 hatch for anything the forms do not cover.
 
-**Configure / Context.** The selected node's settings, and the prompt it will
-actually receive.
+**Configure / Context / Activity.** The selected node's settings, the prompt it
+will actually receive, and what the provider *did* — every command with its
+exit code and output, every file it touched, and its own reasoning. That last
+one exists because the terminal only ever said "313 events, last one 7s ago",
+which is true and useless; see `agent/activity.py`.
 
 ---
 
@@ -251,12 +267,15 @@ signature, and about when to do it properly instead.
 | `GET` | `/api/sessions/{id}` | phase, pending question, problems |
 | `POST` | `/api/sessions/{id}/start` | run a session that is idle |
 | `POST` | `/api/sessions/{id}/answer` | `{"text": "/plan"}` |
+| `POST` | `/api/sessions/{id}/pause` | stop after the current node; resumable |
+| `POST` | `/api/sessions/{id}/stop` | stop now, abandoning the turn in flight |
 | `DELETE` | `/api/sessions/{id}` | close the runner; the folder is untouched |
 | `GET` | `/api/sessions/{id}/events` | **SSE**; honours `Last-Event-ID` and `?after_seq=` |
 | `GET`/`PUT` | `/api/sessions/{id}/plan` | `plan.json` |
 | `GET`/`PUT` | `/api/sessions/{id}/agent` | `graph.json` + `nodes.json`, plus a drawable view |
 | `POST` | `/api/sessions/{id}/agent/validate` | check an edit without writing it |
 | `GET` | `/api/sessions/{id}/nodes/{name}/context` | the prompt that node will really get |
+| `GET` | `/api/sessions/{id}/nodes/{name}/activity` | every provider event for that node's turns |
 | `GET` | `/api/schema` | node kinds, field types, access levels, providers |
 | `GET` | `/api/config` | the resolved backend for each role |
 | `GET` | `/api/defaults` | the repo this server was started for, and its flags |

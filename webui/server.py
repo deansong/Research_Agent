@@ -193,6 +193,26 @@ def _register(app: FastAPI) -> None:
             raise _bad("not_waiting", session_id, str(exc), status=409)
         return Ok(detail="delivered")
 
+    @app.post("/api/sessions/{session_id}/pause", response_model=Ok)
+    def pause(session_id: str):
+        """Stop after the current node finishes. Nothing is lost.
+
+        Separate verb from /stop because the trade-off is real and the user
+        should get to pick it: this waits for the node in flight, which may be
+        minutes, but loses nothing at all.
+        """
+        return Ok(detail=_runner(session_id).pause())
+
+    @app.post("/api/sessions/{session_id}/stop", response_model=Ok)
+    def stop(session_id: str):
+        """Stop now, abandoning the turn in flight.
+
+        Reaches the provider, so it takes effect during a long turn -- at the
+        cost of that one node's work, since a node is atomic and has no
+        half-finished result to keep.
+        """
+        return Ok(detail=_runner(session_id).stop())
+
     @app.delete("/api/sessions/{session_id}", response_model=Ok)
     def close_session(session_id: str):
         """Close the runner. The session folder is untouched -- everything that

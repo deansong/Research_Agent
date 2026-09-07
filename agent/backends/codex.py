@@ -16,6 +16,7 @@ from openai_codex import Codex, Sandbox
 from agent.backends._progress import describe, record
 from agent.backends._schema import strict_json_schema
 from agent.backends.base import (
+    BackendCancelled,
     Access,
     BackendBusy,
     BackendError,
@@ -105,6 +106,20 @@ class CodexBackend:
     ):
         self.client = client
         self.model = model
+
+        self.cancel = None
+        """An optional threading.Event meaning "stop, I have changed my mind".
+
+        Set by whoever owns this backend -- the web runner arms the backends it
+        built when you press Stop. Checked in the same loop as the timeout,
+        because it needs exactly the same machinery: the SDK gives us a
+        TurnHandle with interrupt(), and that is the only way to stop a turn
+        that is already running.
+
+        Without it, Stop could only take effect between nodes, so pressing it
+        during a ten-minute executor turn would appear to do nothing at all --
+        which is not a stop button, it is a suggestion.
+        """
         self.credit_wait_attempts = int(credit_wait_attempts)
         """How many times to wait for credits to appear before giving up.
         20 x 60s is twenty minutes, which is enough time to notice, top up and
@@ -321,6 +336,16 @@ class CodexBackend:
             idle = now - last_event[0]
             elapsed = now - started
 
+            # Checked FIRST: if you have asked to stop, no other verdict about
+            # this turn is interesting.
+            if self.cancel is not None and self.cancel.is_set():
+                self._abandon(handle, worker)
+                raise BackendCancelled(
+                    f"Stopped by request after {elapsed:.0f}s "
+                    f"({events[0]} events). Everything the graph had already "
+                    f"finished is checkpointed; this node's turn is discarded."
+                )
+
             if idle >= self.timeout:
                 self._abandon(handle, worker)
                 raise BackendTimeout(self._silent_message(idle, elapsed, events[0]))
@@ -352,7 +377,14 @@ class CodexBackend:
         first in a test, and a limit that silently cannot trigger is worth
         ruling out in the code rather than in the test setup.
         """
-        return max(0.02, min(5.0, self.timeout / 4, self.max_seconds / 4))
+        limit = min(5.0, self.timeout / 4, self.max_seconds / 4)
+        if self.cancel is not None:
+            # Armed for cancellation, so responsiveness is the point. Five
+            # seconds between checks means a Stop button that takes up to five
+            # seconds to do anything, which is long enough to make someone
+            # press it again. A join timeout costs nothing to shorten.
+            limit = min(limit, 0.25)
+        return max(0.02, limit)
 
     def _abandon(self, handle, worker) -> None:
         """Stop a turn we have given up on, and wait for its thread to notice."""

@@ -144,6 +144,16 @@ class BackendBusy(BackendError):
     """The provider is overloaded. Transient; retrying shortly usually works."""
 
 
+class BackendCancelled(BackendError):
+    """You asked for the run to stop while a turn was in flight.
+
+    Distinct from BackendTimeout, which is the same mechanism reached for the
+    opposite reason: a timeout means something went wrong and is worth
+    explaining, whereas this is exactly what you asked for and should be
+    reported as calmly as possible.
+    """
+
+
 class BackendTimeout(BackendError):
     """The provider did not finish within the configured time.
 
