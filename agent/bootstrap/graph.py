@@ -47,7 +47,7 @@ from __future__ import annotations
 from langgraph.graph import END, START, StateGraph
 
 from agent.bootstrap.nodes import (
-    human_input,
+    make_human,
     make_designer,
     make_discussor,
     make_planner,
@@ -61,7 +61,7 @@ def build_bootstrap_graph(backends, paths, checkpointer, *, max_attempts: int):
     builder = StateGraph(BootstrapState)
 
     builder.add_node("discussor", make_discussor(backends["discussor"]))
-    builder.add_node("human", human_input)
+    builder.add_node("human", make_human(paths))
     builder.add_node("planner", make_planner(backends["planner"], paths))
     builder.add_node("designer", make_designer(backends["designer"]))
     builder.add_node("writer", make_writer(paths))
@@ -120,6 +120,6 @@ def _route_after_validator(state: BootstrapState) -> str:
     """
     if state.get("outcome") == "ready":
         return "end"
-    if state.get("human", {}).get("purpose") == "design_failed":
+    if state.get("human", {}).get("purpose") in ("design_review", "design_failed"):
         return "human"
     return "designer"

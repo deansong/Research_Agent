@@ -65,6 +65,7 @@ def validate_folder(
     folder: AgentFolder,
     *,
     backends: Mapping[str, object] | None = None,
+    strict: bool = False,
 ) -> list[Problem]:
     """Return every problem with `folder`. Empty list means it is safe to compile.
 
@@ -251,6 +252,81 @@ def validate_folder(
         problems.append(Problem("no_exit", "graph.json",
                                 "no human command routes to \"__end__\", so there is no way to "
                                 "stop the agent by hand.", warning=True))
+
+    problems.extend(_verification_problems(folder, kinds, strict=strict))
+
+    return problems
+
+
+def _verification_problems(folder: AgentFolder, kinds: dict[str, str], *,
+                           strict: bool):
+    """Who checks the work -- and specifically, does anything check itself?
+
+    Two checks, because prompt guidance turned out not to be enough. A real
+    generated design had four nodes branching on their OWN status field, three
+    of them straight back to themselves:
+
+        smoke_validation  retryable -> smoke_validation
+
+    That is the same model, in the same conversation, deciding twice whether it
+    succeeded. It is the one loop shape that cannot catch the failure it exists
+    to catch, and it looks perfectly reasonable in a diagram -- which is why it
+    needs to be named by the validator rather than left to good intentions.
+
+    `strict` decides how loudly, and the split is deliberate rather than timid.
+    At DESIGN time it is an error, so the designer's repair loop fixes it before
+    a human ever sees the graph -- which is the whole point of catching it in
+    code rather than in a prompt. At RUN time it is a warning, because agents
+    designed before this check existed must not suddenly become unrunnable: an
+    old graph that works is worth more than a consistent rule.
+
+    The missing-verifier check is always a warning. A small agent, or one whose
+    output is self-evident, legitimately needs no separate checker.
+    """
+    problems: list[Problem] = []
+
+    for branch in folder.graph.branches:
+        config = folder.nodes.get(branch.from_)
+        if not isinstance(config, AgentNodeConfig):
+            continue
+
+        # A branch reads one of its OWN node's output fields, so any case
+        # pointing back at that node is the node grading itself.
+        back = [case.when for case in branch.cases if case.to == branch.from_]
+        if back:
+            problems.append(Problem(
+                "self_assessment",
+                f"node {branch.from_!r}",
+                f"branches on its own {branch.route_on!r} back to itself for "
+                f"{', '.join(repr(w) for w in back)}. A node that just failed "
+                f"is the worst judge of whether it failed. Add a separate "
+                f"read_only verifier after it and send the retry from there.",
+                warning=not strict,
+            ))
+
+    writers = [n for n, c in folder.nodes.items()
+               if isinstance(c, AgentNodeConfig) and c.access == "write"]
+    # A verifier is recognisable by what it does, not by its name: read_only,
+    # owns no plan step of its own, and decides where the run goes next.
+    branching = {b.from_ for b in folder.graph.branches}
+    verifiers = [
+        name for name, config in folder.nodes.items()
+        if isinstance(config, AgentNodeConfig)
+        and config.access == "read_only"
+        and not config.steps
+        and name in branching
+    ]
+
+    if len(writers) >= 3 and not verifiers:
+        problems.append(Problem(
+            "no_verifier",
+            "graph.json",
+            f"{len(writers)} nodes change files and none of them is checked by "
+            f"another node. Add a read_only node with no steps of its own that "
+            f"branches on a verdict -- ok to continue, redo back to the worker, "
+            f"blocked to a human.",
+            warning=True,
+        ))
 
     return problems
 

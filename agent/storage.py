@@ -98,6 +98,7 @@ class SessionPaths:
     request: Path
     artifacts: Path
     plan: Path
+    approved: Path
     meta: Path
     agents_dir: Path
     external: bool = False
@@ -109,6 +110,23 @@ class SessionPaths:
     def has_agent(self) -> bool:
         """True once a validated agent has been written for this session."""
         return (self.agent_dir / "graph.json").exists()
+
+    def is_approved(self) -> bool:
+        """True once you have looked at that agent and said yes.
+
+        Separate from has_agent() on purpose. The folder exists as soon as the
+        validator renames it -- which is what makes it editable, and what lets
+        a resumed session find it -- but existing is not the same as being
+        agreed to. Only this decides whether the work phase may start.
+        """
+        return self.approved.exists()
+
+    def approve(self, note: str = "") -> None:
+        self.approved.write_text(note or "approved\n")
+
+    def unapprove(self) -> None:
+        """Send an agent back for review -- after editing it, say."""
+        self.approved.unlink(missing_ok=True)
 
 
 def session_paths(
@@ -163,6 +181,12 @@ def session_paths(
         request=root / "request.txt",
         artifacts=root / "artifacts",
         plan=root / "plan.json",
+        # Written when you approve the designed agent. A marker FILE rather
+        # than a state flag because it has to survive the process: the review
+        # gate lives in the bootstrap graph, and without a durable record a
+        # resumed run sees a folder on disk, concludes the session has an
+        # agent, and skips straight past the gate to execution.
+        approved=root / "approved",
         meta=root / "meta.json",
         # Promoted agents stay with the REPOSITORY even for an external
         # session: they are reusable across sessions, which is the point of

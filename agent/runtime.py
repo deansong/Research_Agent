@@ -192,9 +192,15 @@ class Runtime:
         this session runs.
         """
         if pre_build_agent:
+            # An agent you named explicitly needs no review: you chose it, and
+            # it is not this session's own design.
             return storage.resolve_agent(pre_build_agent, self.paths)
-        if self.paths.has_agent():
+        if self.paths.has_agent() and self.paths.is_approved():
             return self.paths.agent_dir
+        # A designed but unapproved agent deliberately returns None, so the
+        # caller re-enters the design phase -- where the bootstrap checkpoint
+        # is still parked at the review question. Coming back to a session
+        # mid-review puts you back at the same gate.
         return None
 
     def fallback_folder(self) -> Path:

@@ -123,8 +123,48 @@ def test_plan_is_the_only_door_to_the_designer():
     print("PASS  the designer cannot start on its own; only /plan starts it")
 
 
-def test_a_valid_design_is_written_and_promoted():
+def test_a_valid_design_stops_for_review_before_it_runs():
+    """The design phase must NOT flow straight into execution.
+
+    It used to: the validator set outcome="ready" and the work graph started,
+    so the first time you saw a generated agent was while it was already
+    running -- with write access to your repository. The folder is on disk by
+    then, which is exactly when looking at it and editing it is free.
+    """
     backend, graph, config, paths = _run([_MINIMAL_AGENT], ["/plan", "/approve"])
+    values = graph.get_state(config).values
+
+    assert graph.get_state(config).next == ("human",), "should be parked on a question"
+    assert values["human"]["purpose"] == "design_review", values["human"]
+    assert not values.get("outcome"), "must not be ready until a human approves"
+    assert paths.has_agent(), "the folder should exist and be editable now"
+    assert not paths.is_approved(), "nothing approved it yet"
+    # The summary shown at the gate must actually describe the agent.
+    assert "fake-generated" in values["human"]["context"], values["human"]["context"]
+    print("PASS  a valid design parks for review instead of executing")
+
+
+def test_approving_a_design_records_it_durably():
+    """Approval has to outlive the process.
+
+    The gate lives in the bootstrap graph, but "may this run?" is asked again
+    by cli.py and by the web server on every later start. Without a durable
+    record, a resumed session sees a folder on disk, concludes it has an agent,
+    and skips the gate -- which is the bug this test exists to prevent.
+    """
+    backend, graph, config, paths = _run(
+        [_MINIMAL_AGENT], ["/plan", "/approve", "/approve"])
+    values = graph.get_state(config).values
+
+    assert values["outcome"] == "ready", values.get("outcome")
+    assert paths.is_approved(), "approval must be on disk, not only in state"
+    assert "fake-generated" in paths.approved.read_text()
+    print("PASS  approving writes a marker that survives the process")
+
+
+def test_a_valid_design_is_written_and_promoted():
+    backend, graph, config, paths = _run(
+        [_MINIMAL_AGENT], ["/plan", "/approve", "/approve"])
     values = graph.get_state(config).values
 
     assert values["outcome"] == "ready", values.get("outcome")
@@ -157,7 +197,8 @@ def test_the_brief_is_handed_over():
 def test_repair_loop_recovers():
     """Two bad designs then a good one: it should retry and succeed."""
     backend, graph, config, paths = _run(
-        [_broken_design(), _broken_design(), _MINIMAL_AGENT], ["/plan", "/approve"]
+        [_broken_design(), _broken_design(), _MINIMAL_AGENT],
+        ["/plan", "/approve", "/approve"],
     )
     values = graph.get_state(config).values
 

@@ -63,6 +63,10 @@ def _session_with_an_agent(client, repo: pathlib.Path) -> str:
     client.post(f"/api/sessions/{sid}/answer", json={"text": "/plan"})
     _wait(client, sid)
     client.post(f"/api/sessions/{sid}/answer", json={"text": "/approve"})
+    # A second /approve: the plan, then the designed agent. The design review
+    # gate is deliberate -- see test_bootstrap.
+    _wait(client, sid)
+    client.post(f"/api/sessions/{sid}/answer", json={"text": "/approve"})
     _wait(client, sid)
     client.post(f"/api/sessions/{sid}/answer", json={"text": "/exit"})
     deadline = time.monotonic() + TIMEOUT

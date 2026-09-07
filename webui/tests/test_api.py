@@ -101,14 +101,14 @@ def test_a_whole_session_over_http():
         # server-side from the registry, so it never has to guess.
         assert first["phase"] == "designing"
 
-        # /plan, then /approve: the two human gates in the bootstrap graph.
+        # /plan is the first gate: the human's decision, never the model's.
         assert client.post(f"/api/sessions/{sid}/answer",
                            json={"text": "/plan"}).status_code == 200
         review = _wait_for_question(client, sid)
         assert review["pending"]["purpose"] == "plan_review", review["pending"]
 
         # The plan was written to disk BEFORE approval -- that is the hook the
-        # web plan editor will use.
+        # web plan editor uses.
         plan_file = pathlib.Path(review["folder"]) / "plan.json"
         assert plan_file.exists(), "planner should have written plan.json"
         assert json.loads(plan_file.read_text())["steps"], "plan has no steps"
@@ -116,11 +116,27 @@ def test_a_whole_session_over_http():
         assert client.post(f"/api/sessions/{sid}/answer",
                            json={"text": "/approve"}).status_code == 200
 
-        # Now the designed agent is running, and asks its own question.
+        # THE SECOND GATE. The agent is designed and on disk, but it must not
+        # be running yet: this is the point at which you look at the graph, and
+        # can rewire it, before anything with write access starts.
+        design = _wait_for_question(client, sid)
+        assert design["pending"]["purpose"] == "design_review", design["pending"]
+        assert design["phase"] == "designing", design["phase"]
+        assert design["has_agent"], "the folder must exist so it can be edited"
+        assert design["agent_name"] == "fake-generated", design["agent_name"]
+        assert not (pathlib.Path(design["folder"]) / "approved").exists()
+        # The graph endpoint must work HERE -- reviewing it is the whole point.
+        assert client.get(f"/api/sessions/{sid}/agent").status_code == 200
+
+        assert client.post(f"/api/sessions/{sid}/answer",
+                           json={"text": "/approve"}).status_code == 200
+
+        # Only now is the designed agent running, and asking its own question.
         work = _wait_for_question(client, sid)
         assert work["phase"] == "running", work
-        assert work["has_agent"], "the validator should have renamed agent.tmp -> agent"
         assert work["agent_name"] == "fake-generated", work["agent_name"]
+        assert (pathlib.Path(work["folder"]) / "approved").exists(), \
+            "approval must be recorded on disk"
 
         assert client.post(f"/api/sessions/{sid}/answer",
                            json={"text": "/exit"}).status_code == 200
@@ -128,7 +144,7 @@ def test_a_whole_session_over_http():
         assert done["phase"] == "finished", done
         assert not done["error"], done["error"]
 
-        print("PASS  discuss -> /plan -> /approve -> design -> run -> /exit, over HTTP")
+        print("PASS  discuss -> /plan -> plan_review -> design_review -> run, over HTTP")
 
 
 def test_answering_when_nothing_asked_is_refused():

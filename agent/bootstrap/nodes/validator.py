@@ -36,9 +36,29 @@ def make_validator(paths, *, max_attempts: int):
                 shutil.rmtree(target)
             staging.rename(target)
             print(f"\n[validator] the design is valid. Agent written to {target}")
+
+            # STOP HERE. This used to set outcome="ready", which ended phase 1
+            # and started executing immediately -- so the first time you saw
+            # the graph was while it was already running. A designed agent is
+            # exactly the artifact most worth looking at before it touches
+            # anything, and the folder is on disk now, so this is the moment
+            # when editing it is both possible and free.
+            summary, warnings = _describe(target)
             return {
                 "design": merge_section(design, written_to=str(target), problems=""),
-                "outcome": "ready",
+                "human": merge_section(
+                    state.get("human"),
+                    purpose="design_review",
+                    question=(
+                        "The agent is designed and written to disk. Look it over "
+                        "before it runs.\n\n/approve to execute it, /retry to "
+                        "design again, /discuss to talk it through, or /exit.\n\n"
+                        "You can also edit the graph first -- in the web UI, or "
+                        "by hand in the folder. /approve re-reads it from disk."
+                    ),
+                    context=summary + warnings,
+                    return_to="human",
+                ),
             }
 
         print(f"\n[validator] the design has problems:\n{problems_text}")
@@ -67,6 +87,44 @@ def make_validator(paths, *, max_attempts: int):
     return validator
 
 
+def _describe(folder_path: Path) -> tuple[str, str]:
+    """A readable summary of the agent, plus any warnings, for the review gate.
+
+    Warnings are shown HERE and nowhere else in the flow. They are not
+    blocking by definition, so without a pause they would scroll past while
+    the agent was already running -- which is the same as not reporting them.
+    """
+    from agent.agentfolder.load import load_agent_folder
+    from agent.agentfolder.render import mermaid
+    from agent.agentfolder.schema import AgentNodeConfig
+    from agent.agentfolder.validate import validate_folder
+
+    try:
+        folder = load_agent_folder(folder_path)
+    except Exception as exc:  # noqa: BLE001 -- the summary is a nicety
+        return f"(could not summarise: {exc})", ""
+
+    lines = [f"{folder.graph.name}: {len(folder.graph.nodes)} nodes", ""]
+    for ref in folder.graph.nodes:
+        config = folder.nodes[ref.name]
+        if isinstance(config, AgentNodeConfig):
+            detail = f"{config.backend}/{config.access}"
+            if config.steps:
+                detail += f" steps {','.join(config.steps)}"
+        else:
+            detail = "commands " + ", ".join(f"/{c.name}" for c in config.commands)
+        lines.append(f"  {ref.name:22} {ref.kind:6} {detail}")
+
+    lines += ["", mermaid(folder)]
+
+    warnings = [p for p in validate_folder(folder) if p.warning]
+    if not warnings:
+        return "\n".join(lines), ""
+    return "\n".join(lines), "\n\nWORTH A LOOK:\n" + "\n".join(
+        f"  [{p.code}] {p.where}: {p.message}" for p in warnings
+    )
+
+
 def _check(staging: Path) -> str:
     """Load and validate from disk. Returns "" when the folder is good."""
     if not (staging / "graph.json").exists():
@@ -77,7 +135,11 @@ def _check(staging: Path) -> str:
     except AgentFolderError as exc:
         return f"The folder could not be read:\n{exc}"
 
-    problems = [p for p in validate_folder(folder) if not p.warning]
+    # strict=True: a design that lets a node grade its own work is rejected
+    # here and sent back to the designer, rather than reaching the human. The
+    # run-time gate stays lenient so agents designed before that check existed
+    # keep working -- see _verification_problems in agentfolder/validate.py.
+    problems = [p for p in validate_folder(folder, strict=True) if not p.warning]
     if problems:
         return format_problems(problems)
 
