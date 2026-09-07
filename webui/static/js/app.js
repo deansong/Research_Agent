@@ -10,7 +10,7 @@
   useState hooks. Panels are separate files here for exactly that reason.
 */
 
-import { api, Problem, subscribe } from './api.js';
+import { api, subscribe } from './api.js';
 import { Chat } from './chat.js';
 import { GraphPanel } from './graph.js';
 import { Inspector } from './inspector.js';
@@ -387,9 +387,7 @@ function selectFromProblem(problem) {
 }
 
 function showError(error) {
-  const message = error instanceof Problem
-    ? `${error.code}: ${error.message}`
-    : String(error);
+  const message = String(error);
   chat.logLine(message, 'error');
   chat.status(message);
 }
@@ -492,8 +490,7 @@ function wireDialogs() {
       openSession(detail);
     } catch (error) {
       const box = el('new-error');
-      box.textContent = error instanceof Problem
-        ? `${error.code}: ${error.message}` : String(error);
+      box.textContent = String(error);
       box.hidden = false;
     }
   });

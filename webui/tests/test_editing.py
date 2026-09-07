@@ -130,6 +130,53 @@ def test_an_absolute_repo_is_honoured_as_typed():
         print("PASS  an absolute repo path points the session at that project")
 
 
+def test_a_missing_repo_says_which_path_and_what_exists_nearby():
+    """"Not a directory" is true and useless.
+
+    The real confusion this fixes: the browser showed "bad_repo: Not a
+    directory" and dropped `where`, which held the path the server actually
+    resolved -- so the one fact that identifies the mistake was the one fact
+    not on screen. And for a path that does not exist, the sibling names are
+    almost always the answer, because the mistake is nearly always a typo.
+    """
+    with tempfile.TemporaryDirectory() as tmp:
+        root = pathlib.Path(tmp)
+        (root / "launched").mkdir()
+        (root / "emotion_analysis").mkdir()
+        (root / "sunday_agent").mkdir()
+        client = _client(root / "launched")
+
+        response = client.post("/api/sessions", json={
+            "repo": str(root / "my_actual_project"), "task": "x", "backend": "fake",
+        })
+        assert response.status_code == 400, response.text
+        detail = response.json()["detail"]
+        assert detail["code"] == "bad_repo"
+        # The path it tried, so you can see the typo.
+        assert detail["where"] == str(root / "my_actual_project"), detail
+        # And what is really there.
+        assert "emotion_analysis" in detail["message"], detail["message"]
+        assert "sunday_agent" in detail["message"], detail["message"]
+        print("PASS  a missing repo names the path tried and its real siblings")
+
+
+def test_a_file_given_as_a_repo_says_so():
+    """The other way to reach bad_repo, with a different fix."""
+    with tempfile.TemporaryDirectory() as tmp:
+        root = pathlib.Path(tmp)
+        (root / "launched").mkdir()
+        (root / "notes.txt").write_text("hello")
+        client = _client(root / "launched")
+
+        response = client.post("/api/sessions", json={
+            "repo": str(root / "notes.txt"), "task": "x", "backend": "fake",
+        })
+        assert response.status_code == 400, response.text
+        message = response.json()["detail"]["message"]
+        assert "is a file" in message, message
+        print("PASS  a file given as a repo is distinguished from a missing one")
+
+
 def test_defaults_endpoint_reports_the_launched_repo():
     """The browser prefills its field from this, so a "." never reaches the
     server from the UI in the first place."""

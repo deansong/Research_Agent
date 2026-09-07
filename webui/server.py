@@ -134,7 +134,7 @@ def _register(app: FastAPI) -> None:
         """
         repo = _resolve_repo(body.repo)
         if not repo.is_dir():
-            raise _bad("bad_repo", str(repo), "Not a directory.")
+            raise _bad("bad_repo", str(repo), _why_not_a_repo(repo))
 
         cfg = load_config(repo_path=repo, cli=_Overrides(body, _DEFAULTS["cli_args"]))
 
@@ -512,6 +512,29 @@ class _Overrides:
         if value in (None, [], ""):
             return getattr(self._defaults, name, None)
         return value
+
+
+def _why_not_a_repo(repo: Path) -> str:
+    """Say what is wrong AND what exists nearby.
+
+    "Not a directory" is true and useless. The two ways to get here are a path
+    that does not exist and a path that is a file, and the fix differs -- and
+    for the first, the sibling names are almost always the answer, because the
+    mistake is nearly always a typo or a stale path.
+    """
+    if repo.exists():
+        return f"{repo.name} exists but is a file, not a directory."
+
+    parent = repo.parent
+    if not parent.is_dir():
+        return (f"Neither {repo} nor its parent {parent} exists. "
+                f"Check the path from the top.")
+
+    siblings = sorted(p.name for p in parent.iterdir() if p.is_dir())[:12]
+    if not siblings:
+        return f"{repo} does not exist, and {parent} has no subdirectories."
+    return (f"{repo} does not exist. Directories in {parent}: "
+            f"{', '.join(siblings)}")
 
 
 def _resolve_repo(value: str | None) -> Path:

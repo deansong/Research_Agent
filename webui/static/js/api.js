@@ -20,6 +20,20 @@ export class Problem extends Error {
     this.where = where || '';
     this.status = status;
   }
+
+  /**
+   * The whole problem in one line, `where` included.
+   *
+   * `where` carries the thing the problem is ABOUT -- the path that was tried,
+   * the node that is unreachable -- and leaving it out is how "bad_repo: Not a
+   * directory" happens: technically complete, and it does not tell you which
+   * directory the server actually looked at.
+   */
+  toString() {
+    return this.where
+      ? `${this.code}: ${this.where} — ${this.message}`
+      : `${this.code}: ${this.message}`;
+  }
 }
 
 async function request(method, path, body) {
