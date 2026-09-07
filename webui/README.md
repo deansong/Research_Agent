@@ -116,6 +116,26 @@ actually want worked on is the normal case.
 
 ---
 
+## The task field
+
+**It is the opening line of a conversation, not a specification.** The
+discussor's first prompt is:
+
+> The human wants this done: *&lt;your task&gt;*. Begin discovery. Ask exactly one
+> high-value question about either the work itself or the shape of agent that
+> should do it. The human ends the discussion by typing `/plan`; you only advise.
+
+So one sentence is enough. You then discuss — it asks a question, you answer,
+repeat — and **you** decide when to stop by typing `/plan`. The LLM never makes
+that call; that is enforced by the graph's topology, not by asking it nicely.
+
+It is required for a second reason: `session_name_for()` derives the session's
+folder name from it, so an empty task means there is nowhere to put the session.
+The name is slug + hash, so two tasks that start with the same words still get
+separate sessions.
+
+---
+
 ## Three things worth understanding
 
 ### 1. The Context tab is the point

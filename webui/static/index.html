@@ -151,8 +151,18 @@
     <label class="required">
       What do you want to build or change?
       <span class="required-mark">required</span>
-      <textarea name="task" id="new-task" rows="5"
-                placeholder="e.g. Add pytest coverage for parser.py, error paths only."></textarea>
+      <!--
+        Worded as an opening line rather than a specification, because it is
+        one: the discussor's first prompt is "The human wants this done: <this>.
+        Begin discovery. Ask exactly one high-value question." Someone read the
+        old label as "write the whole brief here" and wondered what the
+        discussion was then for.
+      -->
+      <span class="muted">One sentence is enough &mdash; it is the first thing
+        you say, and the agent will ask you questions from there. It also names
+        the session.</span>
+      <textarea name="task" id="new-task" rows="4"
+                placeholder="e.g. Add tests for the parser"></textarea>
     </label>
     <label>
       Session folder <span class="muted">(optional &mdash; otherwise derived from the task)</span>
