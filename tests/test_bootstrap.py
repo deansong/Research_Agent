@@ -547,6 +547,25 @@ def test_the_planner_is_told_what_a_check_is_and_is_not():
     print("PASS  the planner knows what a check is, and what a gate costs")
 
 
+def _designer_turn() -> str:
+    """Everything the designer is sent, whitespace-normalised.
+
+    Instructions AND prompt, because which of the two a rule sits in is an
+    artefact of one measured limit -- developer_instructions hang a turn past
+    ~6 KB, prompts have no known cliff -- and material has moved across that
+    line four times now. Both arrive in the same turn, so a test that pins a
+    rule to one of them fails on a reorganisation that changed nothing about
+    what the designer is told.
+    """
+    from agent.bootstrap.prompts import (CONTROL_FLOW, DESIGNER_INSTRUCTIONS,
+                                         PROMPT_REFERENCE, RESEARCH_CONTEXT,
+                                         VERIFIER_LOOP, research_skeleton)
+
+    return " ".join((DESIGNER_INSTRUCTIONS + RESEARCH_CONTEXT + VERIFIER_LOOP
+                     + PROMPT_REFERENCE + CONTROL_FLOW
+                     + research_skeleton()).lower().split())
+
+
 def test_every_design_phase_prompt_knows_this_is_ml_research():
     """All three phases, not just the designer.
 
@@ -574,10 +593,11 @@ def test_every_design_phase_prompt_knows_this_is_ml_research():
     assert "seeds" in planner and "config" in planner, "the variables must be pinned"
     assert "out of scope" in planner
 
-    # Whitespace-normalised: these are wrapped prose, and three of these
-    # assertions have already failed on a reflow that changed nothing about
-    # what the rule says. A line break is not a missing rule.
-    designer = " ".join(DESIGNER_INSTRUCTIONS.lower().split())
+    # Whitespace-normalised, and over the whole turn rather than one field:
+    # these are wrapped prose, and these assertions have failed twice on a
+    # reflow and once on a move between the two halves of the prompt --
+    # neither of which changed anything about what the designer is told.
+    designer = _designer_turn()
     assert "never overwritten" in designer, "a re-run must add a result"
     assert "per config and seed" in designer, "results are per config and seed"
     assert "runs something" in designer, "the expensive node must stand alone"
@@ -597,15 +617,49 @@ def test_none_of_them_force_a_refactor_into_an_experiment():
                                          DISCUSSOR_INSTRUCTIONS,
                                          PLANNER_INSTRUCTIONS)
 
-    for name, text in (("discussor", DISCUSSOR_INSTRUCTIONS),
-                       ("planner", PLANNER_INSTRUCTIONS),
-                       ("designer", DESIGNER_INSTRUCTIONS)):
-        lowered = " ".join(text.lower().split())
+    for name, lowered in (("discussor", " ".join(DISCUSSOR_INSTRUCTIONS.lower().split())),
+                          ("planner", " ".join(PLANNER_INSTRUCTIONS.lower().split())),
+                          ("designer", _designer_turn())):
         assert "not research" in lowered or "not an experiment" in lowered, \
             f"the {name} has no way out of the research framing"
         assert "refactor" in lowered, \
             f"the {name} should name the ordinary case it must not distort"
     print("PASS  all three say what to do when the work is not an experiment")
+
+
+def test_the_designer_is_told_it_is_building_a_langgraph():
+    """It was never told what it was producing for.
+
+    The format was described as if it were bespoke -- edges, branches,
+    "__end__" -- when it is a thin declarative layer over StateGraph, and the
+    model has a great deal of knowledge about StateGraph that it was being
+    kept from using.
+
+    More than a label: four of the rules were arbitrary-sounding assertions
+    until the runtime explained them. A node is atomic BECAUSE the checkpoint
+    is per node; a human node does no work BECAUSE interrupt() re-runs it
+    from the first line; a loop needs an exit BECAUSE the recursion limit
+    kills it rather than hanging.
+    """
+    from agent.bootstrap.prompts import DESIGNER_INSTRUCTIONS
+
+    text = DESIGNER_INSTRUCTIONS
+    assert "LangGraph" in text or "LANGGRAPH" in text, "name the framework"
+
+    # The mapping, so the model can use what it knows about each call.
+    for api in ("add_node", "add_edge", "add_conditional_edges", "END",
+                "interrupt()", "Command(resume=...)"):
+        assert api in text, f"{api} is not mapped to anything in the format"
+
+    lowered = " ".join(text.lower().split())
+    # The four consequences, each of which justifies a rule elsewhere.
+    assert "one shared state" in lowered
+    assert "checkpointed after every node" in lowered, \
+        "this is why a node is atomic"
+    assert "re-runs the node" in lowered, \
+        "this is why a human node does no work of its own"
+    assert "recursion_limit" in lowered, "this is why a loop needs an exit"
+    print("PASS  the designer knows it is building a LangGraph StateGraph")
 
 
 def test_the_designer_is_told_when_to_use_an_orchestrator():

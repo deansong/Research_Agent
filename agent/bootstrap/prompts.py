@@ -203,58 +203,63 @@ do the work discussed with the human.
 You do NOT write Python. You fill in a JSON structure. Each node names a
 `kind`: a node template that already exists.
 
+--------------------------------------------------------------------------
+IT IS A LANGGRAPH StateGraph
+--------------------------------------------------------------------------
+Your two files are compiled into one, and that answers most questions about
+what is allowed:
+
+    a node          add_node, wrapping ONE model turn
+    `edges`         add_edge
+    `branches`      add_conditional_edges, with a path_map
+    "__end__"       END
+    a "human" node  interrupt(), resumed with Command(resume=...)
+
+Four consequences to design around:
+
+- ONE SHARED STATE. A node's `output` fields merge into it, and
+  {out.<node>.<field>} is how a later node reads them. Nothing else passes
+  between nodes.
+- CHECKPOINTED AFTER EVERY NODE. A failure discards that node's turn and
+  nothing before it -- which is why nodes are ATOMIC, and why eight small
+  ones beat three big ones: the retry is cheaper.
+- interrupt() RE-RUNS THE NODE FROM ITS FIRST LINE when the human answers.
+  A human node therefore does no work of its own; it asks, and routes.
+- A STEP BUDGET (recursion_limit). Every node visit spends one, so a loop
+  with no exit does not hang -- it dies at the limit with nothing to show.
+
 You are given an APPROVED, NUMBERED PLAN. Design a graph that carries it out,
 and assign every step to a node with that node's `steps` field:
 
     {"name": "scorer", "steps": ["3", "4.1"], ...}
 
-Not bookkeeping: a node gets ONLY its own steps in full via {my_steps},
-plus a one-line outline of the rest via {plan_outline}. Use both in its
-prompts.
+That is the context control: a node is sent only its own steps, in full.
 
 Rules for the mapping:
-- Every step id must be assigned to some node.
 - ONE top-level step per node. Two only if genuinely one piece of work;
-  three is almost always wrong.
-- A node is ATOMIC: one turn, and if it fails its output is discarded. The
-  unit is "what one turn can finish", not "what belongs together".
-- Count the ARTEFACTS. Three files means three nodes, chained.
-- Ordered steps belong to different nodes.
-
---------------------------------------------------------------------------
-WHAT THESE AGENTS ARE FOR
---------------------------------------------------------------------------
-Machine-learning research: reproduce a baseline, run an experiment, measure
-something, decide what it means. Three consequences:
-
-- The expensive node is the one that RUNS something. Give it nothing else
-  to do, so a failure elsewhere cannot discard a finished run.
-- Results go under {artifacts_dir}, one file per config and seed,
-  never overwritten: a re-run ADDS a result.
-- Whoever decides what a number MEANS is never whoever produced it.
-
-Work that is not research -- a refactor, a tool, a bug -- gets designed for
-what it is. Do not force it into an experiment.
+  three is almost always wrong, and ordered steps always belong apart.
+- The unit is "what one turn can finish", not "what belongs together".
+  Count the ARTEFACTS: three files means three nodes, chained.
 
 --------------------------------------------------------------------------
 THE TWO NODE KINDS
 --------------------------------------------------------------------------
-"agent"  One structured model turn. You give it instructions, an `output`
-         (the fields it must return), and `prompts` (what to send it). It can
-         read or write the repository depending on its `access`.
+"agent"  One structured model turn: `instructions`, an `output` (the
+         fields it must return), `prompts` (what to send it), and `access`
+         (none / read_only / write).
 
-"human"  Pauses and asks the person. You give it `commands` -- the slash
-         commands it accepts and where each one goes. Plain text goes back
-         to whichever node asked, so you need not configure that.
+"human"  Asks the person. You give it `commands`: the slash commands it
+         accepts and where each goes. Plain text goes back to whichever node
+         asked, so you need not configure that.
 
 --------------------------------------------------------------------------
 HOW CONTROL FLOWS
 --------------------------------------------------------------------------
 `edges`     unconditional: after A, always go to B.
-`branches`  conditional: look at ONE enum output field of a node and pick a
-            target per value. It must be type "enum", and every choice needs
-            a case or a default.
-`"__end__"` as a target finishes the run.
+`branches`  conditional: switch on ONE of the node's own output fields. It
+            must be type "enum", and every choice needs a case or a default.
+
+Exactly one edge OR one branch per node -- never both, never two edges.
 
 Any transition INTO a human node must carry an `ask`
 ({purpose, resume_to, question, context}). `resume_to` is where plain text
@@ -267,8 +272,8 @@ No node judges its own success. Work that matters is followed by a SEPARATE
 read_only verifier that branches: ok -> next, redo -> back to the worker,
 blocked -> a human. Never loop a worker to itself on its own `status` --
 that is self-assessment. One verifier per STAGE: a branch allows only
-8 cases. The prompt has the shapes -- verifier loop, ORCHESTRATOR (one node
-that only decides), branches that are not pass/fail.
+8 cases. The prompt has the shapes, including an ORCHESTRATOR: one node
+that only decides.
 
 --------------------------------------------------------------------------
 ONE ANSWER, AND ALL OF IT
@@ -288,19 +293,14 @@ history; the nodes you design do that.
 --------------------------------------------------------------------------
 JUDGEMENT
 --------------------------------------------------------------------------
-- Size by TURNS, not tidiness. Never merge nodes to make a neat diagram.
 - No node that interviews the human about requirements: that already
   happened. Your agent starts knowing what to do.
 - A human node only where a person must genuinely decide, or to stop the run.
   Always give them a way to exit.
 - Only give a node "write" access if it must change files.
-- A run's OUTPUT -- data, caches, reports, logs -- goes in
-  {artifacts_dir}, never in new top-level repository directories. Say so in
-  the prompt of every node that produces any. Changing the project's own
-  source belongs in the repository.
-- An `ask.question` that is ONLY a placeholder renders BLANK when that
-  field is empty. Always append a static sentence saying what they can do:
-      "{out.reviewer.question}\n\nAnything to add? /approve or /revise."
+- Say the {artifacts_dir} rule above IN THE PROMPT of every node that
+  produces output: a node cannot follow a rule it is never given. Changing
+  the project's own source is different, and belongs in the repository.
 - The `task_brief` is the ONLY thing the new agent knows; it never sees this
   conversation. Self-contained: no "as we discussed". State the goal, the
   constraints, and what done looks like.
@@ -328,10 +328,42 @@ DESIGNER_INSTRUCTIONS = _DESIGNER_PREAMBLE
 # to disk and runs validate_folder(strict=True) over the result, which is a
 # stronger guarantee than being read from a file that happens to be correct.
 #
+# RESEARCH_CONTEXT above moved out of DESIGNER_INSTRUCTIONS for the same
+# reason, after that file hit two characters of headroom for the fifth time
+# in a row. It is domain framing rather than format reference, so it is the
+# one piece here that is arguably in the wrong file -- but the instruction
+# limit is a MEASURED cliff at ~6 KB where a turn never completes, the prompt
+# has no known one, and both arrive in the same turn either way. The split
+# exists only because of that cliff.
+#
+# One real difference: developer_instructions are re-sent on every call, so
+# a repair turn still carries them, while the prompt is only sent once and
+# the repair relies on the provider conversation remembering it. That is
+# already true of the worked shapes and of the plan itself.
+#
 # Dropping it also bought back the instruction budget: RULES THAT WILL GET
 # YOUR DESIGN REJECTED could then move into PROMPT_REFERENCE above, where a
 # list mirroring the validator belongs, leaving DESIGNER_INSTRUCTIONS with
 # room for a rule again instead of three characters.
+
+RESEARCH_CONTEXT = """
+
+--------------------------------------------------------------------------
+WHAT THESE AGENTS ARE FOR
+--------------------------------------------------------------------------
+Machine-learning research: reproduce a baseline, run an experiment, measure
+something, decide what it means. Three consequences:
+
+- The expensive node is the one that RUNS something. Give it nothing else
+  to do, so a failure elsewhere cannot discard a finished run.
+- Results go under {artifacts_dir}, one file per config and seed,
+  never overwritten: a re-run ADDS a result.
+- Whoever decides what a number MEANS is never whoever produced it.
+
+Work that is not research -- a refactor, a tool, a bug -- gets designed for
+what it is, not forced into an experiment.
+"""
+
 
 VERIFIER_LOOP = """
 
@@ -388,6 +420,12 @@ Placeholders you may use, and NOTHING else:
 
 A placeholder naming a field a node does not declare is a hard error, and so
 is any placeholder not on this list.
+
+An `ask.question` that is ONLY a placeholder renders BLANK when that field
+happens to be empty, and the person then sees nothing to act on. Always
+append a static sentence saying what they can do:
+
+    "{out.reviewer.question}\n\nAnything to add? /approve or /revise."
 
 Five fields that no example below happens to use, because each is one line:
 

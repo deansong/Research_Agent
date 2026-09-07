@@ -13,7 +13,8 @@ from agent import activity
 from agent.backends.base import Access, BackendOutputError
 from agent.bootstrap.prompts import (CONTROL_FLOW, DESIGNER_INSTRUCTIONS,
                                      PROMPT_REFERENCE, REPAIR_PREFIX,
-                                     VERIFIER_LOOP, research_skeleton)
+                                     RESEARCH_CONTEXT, VERIFIER_LOOP,
+                                     research_skeleton)
 from agent.bootstrap.schemas import DesignerOutput
 from agent.bootstrap.state import BootstrapState, transcript_text
 from agent.statelib import merge_section
@@ -63,6 +64,7 @@ def make_designer(backend):
                 # All of this rides in the PROMPT, not the instructions:
                 # over ~6 KB of developer_instructions a Codex turn never
                 # completes. See agent/bootstrap/prompts.py.
+                + RESEARCH_CONTEXT
                 + VERIFIER_LOOP
                 + PROMPT_REFERENCE
                 + CONTROL_FLOW

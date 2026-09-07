@@ -291,6 +291,32 @@ many branches a graph has at all.
 
 ## What the design phase is told
 
+The designer's standing instructions now open by naming the runtime, because
+the format is a thin declarative layer over `StateGraph` and the model knows a
+great deal about `StateGraph`:
+
+| the format | LangGraph |
+| --- | --- |
+| a node | `add_node`, wrapping one model turn |
+| `edges` | `add_edge` |
+| `branches` | `add_conditional_edges` with a `path_map` |
+| `"__end__"` | `END` |
+| a `human` node | `interrupt()`, resumed with `Command(resume=...)` |
+
+That is not just a label. Four of the rules were arbitrary-sounding assertions
+until the runtime explained them:
+
+- a node is **atomic** *because* the checkpoint is per node — a failure
+  discards that node's turn and nothing before it, which is also why eight
+  small nodes beat three big ones;
+- a human node **does no work of its own** *because* `interrupt()` re-runs the
+  node from its first line when the answer arrives;
+- every loop **needs an exit** *because* `recursion_limit` kills it rather than
+  hanging, having produced nothing;
+- `{out.<node>.<field>}` is the **only** way anything passes between nodes,
+  because there is one shared state and `output` fields merge into it.
+
+
 All three design-phase nodes are pointed at machine-learning research, and each
 at a different part of it (`agent/bootstrap/prompts.py`):
 
