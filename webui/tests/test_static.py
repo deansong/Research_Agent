@@ -210,7 +210,7 @@ def test_classes_the_js_creates_are_styled():
     css = (STATIC / "css" / "app.css").read_text()
     for name in [
         "logline", "heartbeat", "beat-head", "beat-text", "beat-more",
-        "beat-detail", "beat-detail-head", "beat-event",
+        "beat-detail", "beat-detail-head", "beat-event", "beat-live",
     ]:
         assert re.search(rf"\.{re.escape(name)}\b", css), f"no CSS rule for .{name}"
     print("PASS  every class the heartbeat expander creates has a rule")

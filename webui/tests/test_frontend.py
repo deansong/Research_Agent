@@ -128,6 +128,8 @@ def test_the_expander_shows_the_turns_events():
         turn: {
           node: 'evidence_design', index: 3,
           counts: { command: 2, reasoning: 1 },
+          progress: { elapsed: 310, streamed: 16608,
+                      live: { message: '{"task_brief": "Compare hotel' } },
           events: [
             { kind: 'reasoning', at: 4, summary: ['reading the repository'] },
             { kind: 'command', phase: 'completed', at: 9,
@@ -156,6 +158,9 @@ def test_the_expander_shows_the_turns_events():
     assert "pytest -q" in rendered and "exit 1" in rendered
     assert "reading the repository" in rendered
     assert "docs/study.md" in rendered
+    # The live tail, and the figure that explains a quiet expander.
+    assert '{"task_brief": "Compare hotel' in rendered, rendered
+    assert "writing 16.6k" in rendered, rendered
     print("PASS  the expander renders the turn's actual commands and reasoning")
 
 

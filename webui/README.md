@@ -194,6 +194,20 @@ A long turn prints one of these every thirty seconds:
 appended is how a twenty-minute turn pushes the conversation off the screen
 while still telling you nothing about what it is doing.
 
+A long answer produces **no events at all** — the model is writing one
+document, not running commands — so the line shows what it is writing instead:
+
+```
+    ... working: 861s · writing 16.6k · quiet 3s
+      last: message: {"task_brief": "Compare hotel-employee skill associations
+```
+
+That text comes from the `delta` field on the provider's streaming
+notifications, accumulated into a bounded tail per stream (message, reasoning,
+plan, command output). It was being discarded for a while, which is how a turn
+that wrote 16,608 tokens of a finished design could report `5 events,
+last: * user message` and then be killed for going quiet.
+
 `show detail` on that row expands it into the turn's real events: each command
 with its exit code, each file touched, the model's own reasoning. That is
 fetched from `/api/sessions/{id}/activity` when you ask for it, and **not**

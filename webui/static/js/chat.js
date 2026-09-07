@@ -306,6 +306,18 @@ function renderTurn(container, payload) {
     + (parts.length ? `  ·  ${parts.join(' · ')}` : '');
   container.append(head);
 
+  // What it is writing RIGHT NOW, above the event list. During a long answer
+  // the events stop entirely -- the model is producing one document, not
+  // running commands -- so without this the expander is empty at exactly the
+  // moment somebody opens it to find out what is happening.
+  for (const [name, text] of Object.entries(turn.progress?.live || {})) {
+    if (!text) continue;
+    const row = document.createElement('div');
+    row.className = `beat-live beat-live-${name}`;
+    row.textContent = `${name} ▸ ${text}`;
+    container.append(row);
+  }
+
   const events = (turn.events || []).filter(
     (e) => e.phase !== 'started' || e.kind === 'command',
   );

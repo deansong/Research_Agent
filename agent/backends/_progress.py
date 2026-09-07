@@ -180,6 +180,69 @@ MAX_OUTPUT = 4000
 #
 # So they are counted, not kept: the tally becomes "writing 31.0k" in the
 # heartbeat, which says the same thing in a way that is true.
+#
+# What they are NOT is contentless. AgentMessageDeltaNotification carries
+# `delta: str` -- the actual text -- and so do the reasoning, plan and
+# command-output delta streams. That was discarded along with the events for
+# a while, which is how a turn that streamed 16,608 tokens of a finished
+# design could report "5 events, last: * user message" and then be killed for
+# going quiet. The text is now accumulated into a bounded tail per stream and
+# the count stays a count.
+
+#: delta kind -> which running text it belongs to. Several notification types
+#: feed the same buffer: the model's reasoning arrives as both
+#: `reasoning_text` and `reasoning_summary_text`, and there is no useful
+#: distinction when what you want is "what is it saying right now".
+_DELTA_STREAMS = {
+    "agent_message_delta": "message",
+    "reasoning_text_delta": "reasoning",
+    "reasoning_summary_text_delta": "reasoning",
+    "plan_delta": "plan",
+    "command_execution_output_delta": "output",
+    "command_exec_output_delta": "output",
+}
+
+#: Per stream. Enough to see what is being written without holding a whole
+#: turn's output in memory -- the point is the recent tail, not a transcript.
+LIVE_TAIL = 2000
+
+
+class _LiveText:
+    """The tail of each text stream a turn is producing, as it produces it.
+
+    Deliberately a tail and not a log: a design turn writes tens of thousands
+    of tokens, and the question this answers is "what is it doing NOW", which
+    the last couple of thousand characters answer completely.
+    """
+
+    def __init__(self, limit: int = LIVE_TAIL):
+        self.limit = limit
+        self.streams: dict[str, str] = {}
+
+    def add(self, stream: str, text: str) -> None:
+        if not text:
+            return
+        current = self.streams.get(stream, "") + text
+        self.streams[stream] = current[-self.limit:]
+
+    def tail(self, chars: int = 120) -> str:
+        """The most useful single line: what it is writing, right now.
+
+        `message` wins over `reasoning` when both are live, because by then
+        the model has stopped thinking and started answering.
+        """
+        for stream in ("message", "plan", "reasoning", "output"):
+            text = self.streams.get(stream, "").strip()
+            if text:
+                flat = " ".join(text.split())
+                return f"{stream}: {flat[-chars:]}"
+        return ""
+
+    def snapshot(self) -> dict[str, str]:
+        return dict(self.streams)
+
+    def total(self) -> int:
+        return sum(len(v) for v in self.streams.values())
 
 
 def record(event: Any) -> dict | None:
@@ -214,10 +277,13 @@ def record(event: Any) -> dict | None:
 
     kind = _snake(name)
     if kind.endswith("_delta"):
-        # A token of the answer being typed. Marked TRANSIENT rather than
-        # returned as a record, because keeping these was actively harmful in
-        # three ways at once -- see the note below.
-        return {"kind": kind, "phase": "other", "transient": True}
+        # A chunk of text being written. TRANSIENT -- not kept as a record,
+        # for the three reasons in the note above -- but its TEXT is carried
+        # out, because that text is the answer being written and we were
+        # dropping it on the floor. See _LiveText.
+        return {"kind": kind, "phase": "other", "transient": True,
+                "stream": _DELTA_STREAMS.get(kind, "other"),
+                "text": str(getattr(payload, "delta", "") or "")}
     return {"kind": kind, "phase": "other"}
 
 

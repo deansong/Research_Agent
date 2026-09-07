@@ -304,6 +304,24 @@ body {
   padding: 2px 0;
 }
 
+/* The text streaming out of the model, above the event list. Scrolls to its
+   own end rather than growing: it is a tail, and the interesting end is the
+   bottom. */
+.beat-live {
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  max-height: 12em;
+  overflow-y: auto;
+  margin: 3px 0 5px;
+  padding: 4px 6px;
+  border-left: 2px solid var(--accent-dim);
+  background: var(--bg-panel);
+  color: var(--text);
+}
+
+.beat-live-reasoning { color: var(--text-dim); }
+.beat-live-output    { color: var(--text-faint); }
+
 .beat-event {
   white-space: pre-wrap;
   overflow-wrap: anywhere;

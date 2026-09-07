@@ -58,10 +58,12 @@ class Turn:
     """How the turn is going, as the backend last reported it.
 
     Only present while it runs: elapsed, idle, the counts by kind, and
-    `streamed` -- how many tokens of answer have been typed. That last one is
-    the honest answer to "why is this taking so long" for a node whose output
-    is a 12,000-token document, and it is not derivable from the events,
-    because typed tokens are deliberately counted rather than kept.
+    `streamed` -- how many tokens of answer have been typed -- and `live`,
+    the tail of each text stream as it is written. Those last two are the
+    honest answer to "why is this taking so long" for a node whose output is
+    a 12,000-token document, and neither is derivable from the events: typed
+    tokens are deliberately counted rather than kept, and their text is
+    accumulated into a bounded tail rather than a record apiece.
     """
 
     partial: bool = False
@@ -209,7 +211,8 @@ def turns(session_dir: str | Path, node: str, *,
             summary=raw.get("summary"),
             partial=path.name == IN_FLIGHT,
             progress={k: raw[k] for k in
-                      ("elapsed", "idle", "streamed", "last") if k in raw} or None,
+                      ("elapsed", "idle", "streamed", "last", "live")
+                      if k in raw} or None,
         ))
     return out
 
@@ -269,10 +272,21 @@ def arm_progress(backend, session_dir: str | Path, node: str) -> None:
     if not hasattr(backend, "on_progress"):
         return
 
-    def flush(events, elapsed, idle, kinds, last, streamed=0) -> None:
-        write_in_flight(session_dir, node, events,
-                        elapsed=round(elapsed, 1), idle=round(idle, 1),
-                        counts=kinds, last=last, streamed=streamed)
+    def flush(report: dict) -> None:
+        # One dict rather than positional arguments, which had grown twice and
+        # were about to a third time. A mismatch here is a TypeError inside a
+        # try/except that exists so reporting cannot break the turn -- so it
+        # would show up as the detail silently not appearing, with nothing
+        # said anywhere.
+        write_in_flight(
+            session_dir, node, report.get("events") or [],
+            elapsed=round(report.get("elapsed", 0.0), 1),
+            idle=round(report.get("idle", 0.0), 1),
+            counts=report.get("counts") or {},
+            last=report.get("last", ""),
+            streamed=report.get("streamed", 0),
+            live=report.get("live") or {},
+        )
 
     backend.on_progress = flush
 

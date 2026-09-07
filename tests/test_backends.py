@@ -455,7 +455,10 @@ def test_a_turn_that_goes_quiet_is_abandoned():
         except BackendTimeout as exc:
             assert "went silent" in str(exc), str(exc)
             # The advice must be about silence, not about the task being big.
-            assert "SILENCE, not on total time" in str(exc), str(exc)
+            # The no-output branch: nothing arrived, so silence is the whole
+            # story. The other branch is test_a_stall_after_a_long_answer...
+            assert "Nothing arrived at all" in str(exc), str(exc)
+            assert "SILENCE" in str(exc), str(exc)
 
     assert handle.interrupted, "a wedged turn must be interrupted"
     print("PASS  a turn that stops sending events is abandoned, and says why")
@@ -487,13 +490,20 @@ def test_the_absolute_cap_catches_a_runaway():
     print("PASS  a runaway hits the cap, and is told to split the node")
 
 
-def _delta_event():
-    """One token of the answer being typed."""
+def _delta_event(text: str = "tok"):
+    """One token of the answer being typed, carrying its text.
+
+    `delta: str` is a real field on AgentMessageDeltaNotification -- checked
+    against the installed SDK -- so the fixture has to have it or the tests
+    would be describing an event shape that does not exist.
+    """
     class Payload:
         pass
 
+    cls = type("AgentMessageDeltaNotification", (Payload,), {"delta": text})
+
     class Event:
-        payload = type("AgentMessageDeltaNotification", (Payload,), {})()
+        payload = cls()
 
     return Event()
 
@@ -512,9 +522,12 @@ def test_streamed_tokens_are_counted_but_not_kept():
     from agent.backends._progress import record
     from agent.backends.codex import CodexBackend
 
-    assert record(_delta_event()) == {
-        "kind": "agent_message_delta", "phase": "other", "transient": True,
-    }, record(_delta_event())
+    kept = record(_delta_event())
+    assert kept["kind"] == "agent_message_delta" and kept["transient"] is True
+    # The TEXT rides out even though the event does not: a delta carries
+    # `delta: str`, and dropping it is how a turn that wrote 16,608 tokens
+    # reported "last: * user message".
+    assert kept["stream"] == "message" and kept["text"] == "tok", kept
 
     stream = _Stream([_delta_event() for _ in range(40)]
                      + [_quiet_event() for _ in range(2)], gap=0.001)
@@ -545,8 +558,15 @@ def test_the_progress_callback_and_its_only_caller_agree():
     with tempfile.TemporaryDirectory() as tmp:
         backend = Backend()
         activity.arm_progress(backend, tmp, "worker")
-        backend.on_progress([{"kind": "command", "phase": "completed"}],
-                            310.0, 0.0, {"command": 1}, "$ pytest -q", 14885)
+        # ONE dict, not positional arguments: they had grown twice and were
+        # about to a third time, and each growth broke this contract silently.
+        backend.on_progress({
+            "events": [{"kind": "command", "phase": "completed"}],
+            "elapsed": 310.0, "idle": 0.0, "counts": {"command": 1},
+            "last": "message: {\"task_brief\": \"Compare hotel",
+            "streamed": 14885,
+            "live": {"message": '{"task_brief": "Compare hotel'},
+        })
 
         turn = activity.in_flight(tmp)
         assert turn is not None and turn.node == "worker", turn
@@ -554,7 +574,72 @@ def test_the_progress_callback_and_its_only_caller_agree():
         raw = json.loads((activity.directory(tmp, "worker")
                           / activity.IN_FLIGHT).read_text())
         assert raw["streamed"] == 14885, raw
+        assert raw["live"]["message"].startswith('{"task_brief"'), raw["live"]
+        # And it survives the read back, which is what the browser gets.
+        assert turn.progress["live"]["message"], turn.progress
     print("PASS  the progress callback matches the sink that receives it")
+
+
+def test_the_live_tail_shows_what_is_being_written():
+    """The answer to "why can I not see what it is saying".
+
+    The text was arriving the whole time -- AgentMessageDeltaNotification
+    carries `delta: str`, and so do the reasoning, plan and command-output
+    streams -- and record() was reducing each one to its own name. So a turn
+    could write a complete design and report "last: * user message".
+    """
+    from agent.backends._progress import LIVE_TAIL, _LiveText
+
+    live = _LiveText()
+    for chunk in ('{"task_brief": "Compare hotel-employee ', 'skill associations',
+                  ' across model families"'):
+        live.add("message", chunk)
+    live.add("reasoning", "mapping the plan onto stages")
+
+    tail = live.tail()
+    assert tail.startswith("message: "), tail
+    assert "Compare hotel-employee skill associations" in tail, tail
+    # message beats reasoning: by the time it is answering, what it was
+    # thinking is the less useful of the two.
+    assert "mapping the plan" not in tail, tail
+
+    # A tail, not a transcript. A design turn writes tens of thousands of
+    # tokens and the question is what it is doing NOW.
+    live.add("message", "x" * 50_000)
+    assert len(live.streams["message"]) == LIVE_TAIL
+    assert live.tail().endswith("x"), live.tail()[:80]
+    print("PASS  the live tail carries the text, bounded, message first")
+
+
+def test_a_stall_after_a_long_answer_is_not_reported_as_never_starting():
+    """Two failures that look identical through a counter, and are not.
+
+    The measured run: 863 seconds, 5 events, and the message concluded "a
+    request that stopped responding rather than one that was slow". It had
+    streamed 16,608 tokens of a finished design. Both halves of that message
+    were true and together they pointed at the wrong remedy -- raising the
+    timeout, when there was nothing left to wait for.
+    """
+    from unittest.mock import MagicMock
+
+    from agent.backends._progress import _LiveText
+    from agent.backends.codex import CodexBackend
+
+    backend = CodexBackend(MagicMock())
+
+    live = _LiveText()
+    live.add("message", '{"task_brief": "Compare hotel-employee skill assoc')
+    stalled = backend._silent_message(300, 863, 5, 16608, live)
+    assert "16,608 tokens" in stalled, stalled
+    assert "stall after the work" in stalled, stalled
+    assert "Raising the timeout will not help" in stalled, stalled
+    assert "task_brief" in stalled, "show what it had already written"
+
+    never = backend._silent_message(300, 340, 2, 0, _LiveText())
+    assert "Nothing arrived at all" in never, never
+    assert "tokens" not in never.split("config.json")[0], \
+        "do not claim tokens were written when none were"
+    print("PASS  a stall after writing is told apart from one before")
 
 
 def test_the_heartbeat_reports_typing_as_typing():

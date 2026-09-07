@@ -13,7 +13,7 @@ import time
 
 from openai_codex import Codex, Sandbox
 
-from agent.backends._progress import headline, record
+from agent.backends._progress import _LiveText, headline, record
 from agent.backends._schema import strict_json_schema
 from agent.backends.base import (
     BackendCancelled,
@@ -340,6 +340,12 @@ class CodexBackend:
         # conflating the two went wrong.
         streamed = [0]
 
+        # The TEXT of those tokens, as a bounded tail per stream. Counting
+        # them was half the job: a turn that streamed 16,608 tokens of a
+        # finished design still reported "last: * user message", because the
+        # only thing with a headline was our own request.
+        live = _LiveText()
+
         def report(event) -> None:
             last_event[0] = time.monotonic()
 
@@ -348,6 +354,7 @@ class CodexBackend:
                 return
             if entry.get("transient"):
                 streamed[0] += 1
+                live.add(entry.get("stream", "other"), entry.get("text", ""))
                 return
 
             events[0] += 1
@@ -410,7 +417,8 @@ class CodexBackend:
 
             if idle >= self.timeout:
                 self._abandon(handle, worker)
-                raise BackendTimeout(self._silent_message(idle, elapsed, events[0]))
+                raise BackendTimeout(self._silent_message(
+                    idle, elapsed, events[0], streamed[0], live))
 
             if elapsed >= self.max_seconds:
                 self._abandon(handle, worker)
@@ -429,15 +437,25 @@ class CodexBackend:
             if self.on_progress is not None and now - last_flush[0] >= 5.0:
                 last_flush[0] = now
                 try:
-                    self.on_progress(list(recorded), elapsed, idle,
-                                     dict(kinds), last_seen[0], streamed[0])
+                    self.on_progress({
+                        "events": list(recorded),
+                        "elapsed": elapsed,
+                        "idle": idle,
+                        "counts": dict(kinds),
+                        "last": live.tail() or last_seen[0],
+                        "streamed": streamed[0],
+                        "live": live.snapshot(),
+                    })
                 except Exception:  # noqa: BLE001
                     # Reporting progress must never break the turn it reports.
                     pass
 
             if now - last_line[0] >= 30.0:
+                # live.tail() first: "message: {\"task_brief\": \"Compare
+                # hotel-employee skill..." beats the last line worth printing,
+                # which during a long answer is whatever came before it.
                 print(_heartbeat(elapsed, idle, events[0], kinds,
-                                 last_seen[0], streamed[0]),
+                                 live.tail() or last_seen[0], streamed[0]),
                       flush=True)
                 last_line[0] = now
 
@@ -470,19 +488,51 @@ class CodexBackend:
         handle.interrupt()
         worker.join(timeout=30.0)
 
-    def _silent_message(self, idle: float, elapsed: float, events: int) -> str:
+    def _silent_message(self, idle: float, elapsed: float, events: int,
+                        streamed: int = 0, live=None) -> str:
+        """What went quiet, and -- the part that was missing -- what it had
+        already said.
+
+        The first version of this reported "5 events" and concluded "a request
+        that stopped responding rather than one that was slow". Both true and
+        together misleading: that turn had streamed 16,608 tokens of a
+        finished design, which the counters could not see because tokens are
+        not events. Stalling AFTER writing an answer and never starting one
+        are different failures with different remedies, so the message has to
+        tell them apart.
+        """
+        head = (f"Codex went silent for {idle:.0f}s (turn ran {elapsed:.0f}s, "
+                f"{events} events")
+        head += f", {streamed:,} tokens written).\n\n" if streamed else ").\n\n"
+
+        if streamed:
+            body = (
+                f"It was NOT idle for most of that: it wrote {streamed:,} "
+                f"tokens and then stopped, which is a stall after the work "
+                f"rather than a request that never started. Raising the "
+                f"timeout will not help -- there was nothing left to wait "
+                f"for. Run it again.\n\n"
+            )
+            tail = (live.tail(400) if live is not None else "")
+            if tail:
+                body += f"The last thing it wrote:\n    {tail}\n\n"
+        else:
+            body = (
+                f"Nothing arrived at all, so this is a request that stopped "
+                f"responding rather than one that was slow -- the limit is on "
+                f"SILENCE, and a turn that keeps streaming is never killed "
+                f"for taking long.\n\n"
+            )
+
         return (
-            f"Codex went silent for {idle:.0f}s (turn ran {elapsed:.0f}s, "
-            f"{events} events).\n\n"
-            f"The limit is on SILENCE, not on total time -- a turn that keeps "
-            f"streaming is never killed for taking long. So this is a request "
-            f"that stopped responding rather than one that was slow.\n\n"
-            f"Usually worth simply running it again; the graph checkpoints after "
-            f"every completed node, so nothing before this is lost.\n\n"
-            f"To allow longer silences, put this in <repo>/.agent/config.json:\n"
-            f'    {{"roles": {{"<role>": {{"options": {{"timeout": 600}}}}}}}}\n'
-            f"using the role name this node declares as its `backend` -- which "
-            f"may well be shared with other nodes."
+            head + body
+            + f"The graph checkpoints after every completed node, so nothing "
+              f"before this is lost.\n\n"
+              f"To allow longer silences, put this in "
+              f"<repo>/.agent/config.json:\n"
+              f'    {{"roles": {{"<role>": {{"options": {{"timeout": 600}}}}}}}}\n'
+              f"using the role name this node declares as its `backend` -- "
+              f"which may well be shared with other nodes."
         )
 
     def _flood_message(self, streamed: int, elapsed: float) -> str:
