@@ -28,6 +28,7 @@ from langgraph.types import Command
 from agent import storage
 from agent.backends.base import Access, StructuredRun, Usage
 from agent.backends.fake import _MINIMAL_AGENT
+from agent.bootstrap.prompts import REPAIR_PREFIX
 from agent.bootstrap.graph import build_bootstrap_graph
 from agent.bootstrap.state import initial_bootstrap_state
 
@@ -58,7 +59,12 @@ class ScriptedBackend:
         elif {"task_brief", "graph", "nodes"} <= fields:
             index = min(self.design_calls, len(self.designs) - 1)
             self.design_calls += 1
-            if "rejected" in prompt:
+            # Matched on the actual marker, not on the word "rejected"
+            # appearing somewhere in the prompt: the designer's first prompt
+            # carries the worked example and the research skeleton, and the
+            # moment either of those mentioned a rejected design, every first
+            # attempt was counted as a repair.
+            if prompt.startswith(REPAIR_PREFIX[:32]):
                 self.repair_prompts.append(prompt)
             data = output_model.model_validate(self.designs[index])
         else:
@@ -345,6 +351,178 @@ def test_designer_schema_survives_strict_mode():
 
     print("PASS  designer and discussor schemas are strict-mode clean")
 
+
+
+def _research_folder(tmp: pathlib.Path):
+    """Write the research skeleton to disk as a real agent folder.
+
+    The skeleton ships as a graph only -- nodes.json is nine entries the
+    worked example already teaches, and sending them would cost thousands of
+    prompt tokens to say nothing new. So the node entries are synthesised
+    here, from RESEARCH_ROLES plus the output fields the graph's own
+    placeholders demand, which is exactly what the designer has to do when it
+    reads the skeleton. If that synthesis cannot produce a valid folder,
+    neither can the designer.
+    """
+    from agent.agentfolder.schema import graph_document, node_entry
+    from agent.bootstrap.prompts import RESEARCH_GRAPH, RESEARCH_ROLES
+
+    specs = {name: (access, backend)
+             for name, access, backend, _ in RESEARCH_ROLES}
+    # The skeleton shows one triple in the table and says "b, c, d repeat a's
+    # three rows", so b's specs come from a's -- the same reading.
+    for stem in ("write_code", "run_exp", "check"):
+        specs[f"{stem}_b"] = specs[f"{stem}_a"]
+
+    # Fields the graph's own {out.<node>.<field>} placeholders reference. A
+    # placeholder naming a field the node does not declare is a hard error,
+    # so this is the graph telling us what the nodes must return.
+    outputs = {
+        "check_a": [
+            {"name": "verdict", "type": "enum",
+             "choices": ["ok", "redo", "blocked"], "required": True},
+            {"name": "problem", "type": "string"},
+            {"name": "detail", "type": "string"},
+        ],
+        "report": [
+            {"name": "summary", "type": "string", "required": True},
+            {"name": "findings", "type": "string"},
+        ],
+    }
+    outputs["check_b"] = outputs["check_a"]
+
+    nodes: dict[str, dict] = {}
+    for entry in RESEARCH_GRAPH["nodes"]:
+        name = entry["name"]
+        if entry["kind"] == "human":
+            nodes[name] = node_entry("human", {"commands": [
+                {"name": "revise", "to": "report", "purposes": ["findings"],
+                 "argument": "[what to change]",
+                 "summary": "Rewrite the report",
+                 "sets": {"review_feedback": "{argument}"}},
+                {"name": "exit", "to": "__end__", "aliases": ["quit", "q"],
+                 "summary": "End the run"},
+            ]})
+            continue
+
+        access, backend = specs[name]
+        nodes[name] = node_entry("agent", {
+            "backend": backend,
+            "access": access,
+            "steps": [],
+            "instructions": f"You are {name}.",
+            "output": outputs.get(name, [
+                {"name": "summary", "type": "string", "required": True},
+            ]),
+            "prompts": {"first": "{my_steps}", "next": "{my_steps}"},
+        })
+
+    folder = tmp / "agent"
+    folder.mkdir(parents=True, exist_ok=True)
+    (folder / "graph.json").write_text(json.dumps(graph_document(RESEARCH_GRAPH)))
+    (folder / "nodes.json").write_text(json.dumps(nodes))
+    return folder
+
+
+def test_the_research_skeleton_is_a_valid_graph():
+    """A skeleton in the prompt that does not validate teaches invalid graphs.
+
+    This is the whole reason the skeleton is a Python structure rather than a
+    block of prose with some JSON in it: prose cannot be run through the
+    validator, so an error in it would surface as the designer's repair loop
+    fighting an example we gave it.
+
+    Checked at `strict=True`, the design-time setting -- which is where
+    `self_assessment` is an error rather than a warning, and therefore where
+    the skeleton's write -> run -> check -> write retry has to prove it is not
+    a node grading itself.
+    """
+    from agent.agentfolder.load import load_agent_folder
+    from agent.agentfolder.validate import validate_folder
+
+    with tempfile.TemporaryDirectory() as tmp:
+        folder = load_agent_folder(_research_folder(pathlib.Path(tmp)))
+        problems = validate_folder(folder, strict=True)
+
+        errors = [p for p in problems if not p.warning]
+        assert not errors, [f"{p.code} at {p.where}: {p.message}" for p in errors]
+
+        codes = {p.code for p in problems}
+        assert "self_assessment" not in codes, "the retry loop grades itself"
+        assert "no_verifier" not in codes, "check_* should count as verifiers"
+        print(f"PASS  the research skeleton validates strictly "
+              f"({len(problems)} warning(s))")
+
+
+def test_the_research_skeleton_compiles_and_can_run():
+    """Valid on paper is not the same as runnable.
+
+    compile() is what catches an unreachable node or a dead end that the
+    static checks miss, and it is cheap here because the backends are mocks --
+    nothing is called, the graph is only built.
+    """
+    from unittest.mock import MagicMock
+
+    from agent.agentfolder.commands import build_registry
+    from agent.agentfolder.load import load_agent_folder
+    from agent.work.compile import backends_needed, compile_agent
+
+    with tempfile.TemporaryDirectory() as tmp:
+        folder = load_agent_folder(_research_folder(pathlib.Path(tmp)))
+        # Every role the folder asks for, so a typo in the skeleton's backend
+        # names shows up as a KeyError here rather than at run time.
+        assert set(backends_needed(folder)) == {"coder", "runner", "checker"}, \
+            sorted(backends_needed(folder))
+        compile_agent(
+            folder,
+            backends={role: MagicMock() for role in backends_needed(folder)},
+            checkpointer=InMemorySaver(),
+            registry=build_registry(folder),
+        )
+        print("PASS  the research skeleton compiles into a runnable graph")
+
+
+def test_the_skeleton_offers_a_cheaper_backend_for_running_experiments():
+    """The point of naming three roles instead of one.
+
+    "runner" and "checker" exist so experiment runs can be pointed at a
+    smaller model from .agent/config.json without editing the graph. If the
+    skeleton put everything on one role that option would not exist, and the
+    only way to get it would be to hand-edit every node.
+    """
+    from agent.bootstrap.prompts import RESEARCH_ROLES, research_skeleton
+
+    by_node = {name: backend for name, _, backend, _ in RESEARCH_ROLES}
+    assert by_node["run_exp_a"] == "runner", by_node
+    assert by_node["check_a"] == "checker", by_node
+    assert by_node["write_code_a"] == "coder", by_node
+    assert by_node["run_exp_a"] != by_node["write_code_a"], \
+        "running and writing must be separately configurable"
+
+    # And the designer is told what those names are FOR -- an undocumented
+    # role name is one the human never discovers and never configures.
+    text = research_skeleton()
+    assert "config.json" in text and "cheaper model" in text, \
+        "the skeleton must say why the roles are separate"
+    print("PASS  experiment runs are on their own configurable role")
+
+
+def test_the_skeleton_says_it_is_a_starting_point():
+    """A template that must be obeyed is worse than no template.
+
+    It would produce a graph shaped like the example instead of like the
+    work -- three experiment types crammed into two nodes because the example
+    had two. So the skeleton has to say, in the prompt, that it is to be
+    checked and changed.
+    """
+    from agent.bootstrap.prompts import research_skeleton
+
+    text = research_skeleton().lower()
+    assert "check it" in text or "check it fits" in text, text[:200]
+    assert "rationale" in text, "it must be asked to report what it changed"
+    assert "drop" in text, "it must be told it can remove nodes"
+    assert "add nodes" in text, "it must be told it can add nodes"
+    print("PASS  the skeleton presents itself as a starting point")
 
 
 def test_designer_instructions_stay_under_the_measured_size_cliff():

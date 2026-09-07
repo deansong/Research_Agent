@@ -264,6 +264,18 @@ mkdir -p .agent && cp agent.example.json .agent/config.json
 | `max_design_attempts` | `3` | how many times the designer may retry a rejected folder |
 | `default_agent` | `"default"` | folder used by `/use` and by `--pre-build-agent` with no name |
 
+Role names are **not a fixed set.** The five above are the design phase's own;
+a designed agent invents its own and declares one per node. The research
+skeleton uses `coder`, `runner` and `checker` — `runner` deliberately separate
+so experiment runs can go to a cheaper model without touching the graph:
+
+```json
+{ "roles": { "runner": { "model": "gpt-5.4-mini" } } }
+```
+
+An unconfigured role falls back to `default`, and says so at startup rather
+than letting you assume otherwise. See `docs/AGENT_FOLDER.md`.
+
 A **role** is any name a node declares as its `backend`. The built-in ones are
 `discussor`, `planner`, `designer` (design phase) and `orchestrator`,
 `executor` (the `default` agent) — but a generated agent invents its own, and

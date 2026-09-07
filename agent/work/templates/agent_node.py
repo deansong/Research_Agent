@@ -171,7 +171,37 @@ def _resolve_transition(transition, data: dict) -> tuple[str, Any]:
     for case in transition.cases:
         if case.when == value:
             return value, case.ask
-    return DEFAULT_ROUTE, None
+
+    # No case matched, so the run takes `default` -- which the designer is
+    # told to point at a human node, precisely so an unexpected value reaches
+    # a person instead of quietly ending the run.
+    #
+    # `default` has nowhere to put an `ask`, though, and returning None here
+    # meant the human node fell back to whatever `pending` still held: the
+    # PREVIOUS question, from earlier in the run, with the previous
+    # `resume_to`. So the person was asked something stale and their answer
+    # went somewhere unrelated. Blank would have been better; this is better
+    # still, because the only thing worth saying is what actually happened.
+    return DEFAULT_ROUTE, _unrouted_ask(transition, value)
+
+
+def _unrouted_ask(transition, value: str):
+    """An ask block for a branch that fell through to its default."""
+    from agent.agentfolder.schema import AskSpec
+
+    handled = ", ".join(repr(case.when) for case in transition.cases) or "nothing"
+    return AskSpec(
+        purpose="unrouted",
+        # Back to the node that produced the unexpected value: it is the only
+        # place that can produce a different one.
+        resume_to=transition.from_,
+        question=(
+            f"{transition.from_} returned {transition.route_on}="
+            f"{value!r}, which has no case (handled: {handled}).\n\n"
+            f"Tell me how to proceed, or /exit."
+        ),
+        context="",
+    )
 
 
 def _usage_dict(usage) -> dict:

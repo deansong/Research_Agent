@@ -227,6 +227,62 @@ Every problem is reported **together**, so one repair round can fix them all.
 
 ---
 
+## The research skeleton
+
+Work in this project is computer-science research, so the designer is shown a
+starting shape for it, alongside the worked example
+(`agent/bootstrap/prompts.py::research_skeleton`):
+
+```
+setup_env -> inspect_data -> write_code_a -> run_exp_a -> check_a
+                                                            |
+       ok -> write_code_b -> run_exp_b -> check_b -> report -> review
+     redo -> write_code_a          (carrying {out.check_a.problem})
+  blocked -> review
+```
+
+One **write / run / check** triple per experiment *type*, chained
+sequentially — `check_a`'s `ok` goes to `write_code_b`, never to two nodes at
+once, because the validator refuses fan-out. `inspect_data` is dropped when
+there is no dataset; the code node writes its own tests, so there is no
+separate test-writing node.
+
+Two details in it are load-bearing:
+
+**The retry is judged by a third node.** `write_code → run_exp → check →
+write_code`, not `write_code → run_exp → write_code`. A run node deciding
+whether its own run was any good is `self_assessment`, which the validator
+rejects at design time. `check_*` is `read_only` with no plan steps, which is
+also exactly what the missing-verifier warning looks for — so the shape
+satisfies both rules by construction.
+
+**Experiment runs are on their own backend role.** `run_exp_*` declares
+`"backend": "runner"` and `check_*` declares `"checker"`, separate from the
+`"coder"` that writes code. Nothing configures those roles, so they fall back
+to the default until you say otherwise:
+
+```json
+{
+  "roles": {
+    "runner":  { "provider": "codex", "model": "gpt-5.4-mini" },
+    "checker": { "provider": "codex", "model": "gpt-5.4-mini" }
+  }
+}
+```
+
+Until then the run prints
+`[config] checker, runner not configured, using the default (codex/gpt-5.4)`
+— because a silent fallback here would have you believing experiments run on a
+small model while every turn goes to the big one.
+
+It is a **skeleton, not a mould.** The designer is told to check it against
+the plan first, drop what does not apply, add what the plan needs (a baseline
+to reproduce, an ablation, a figure builder) and say in `rationale` what it
+changed. A template that must be obeyed produces a graph shaped like the
+example instead of like the work.
+
+---
+
 ## Where output goes
 
 A write-access node changes two very different kinds of thing, and conflating

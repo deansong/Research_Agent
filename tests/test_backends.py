@@ -109,6 +109,33 @@ def test_configured_options_reach_the_backend():
     print("PASS  configured options reach the backend (timeout included)")
 
 
+def test_an_unconfigured_role_says_it_is_using_the_default(capsys):
+    """The silence that would make the cheap-model option a lie.
+
+    A designed agent invents its own role names, and backend_for() falls back
+    to the default for any it does not recognise. The research skeleton puts
+    experiment runs on a role called "runner" precisely so they can be pointed
+    at a smaller model -- so if nobody says the role is unconfigured, the
+    human believes they are saving money while every turn goes to the default.
+    """
+    from agent.backends import build_backends
+    from agent.backends.base import Access
+    from agent.config import AgentConfig, BackendConfig
+
+    cfg = AgentConfig(default=BackendConfig(provider="fake", model="m-1"),
+                      roles={"checker": BackendConfig(provider="fake", model="m-2")})
+    build_backends(cfg, {"runner": Access.WRITE, "checker": Access.READ_ONLY,
+                         "executor": Access.WRITE})
+
+    printed = capsys.readouterr().out
+    assert "runner" in printed and "m-1" in printed, printed
+    # Configured roles are not mentioned, and neither are the built-ins --
+    # a line that fires five times a run is one everybody learns to skip.
+    assert "checker" not in printed, printed
+    assert "executor" not in printed, printed
+    print("PASS  an unconfigured role says which model it fell back to")
+
+
 def test_stub_backends_fail_loudly_at_construction():
     """A stub must refuse at startup, not halfway through a task."""
     from agent.backends.base import BackendUnavailable

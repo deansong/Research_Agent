@@ -229,9 +229,9 @@ def worked_example() -> str:
         "A COMPLETE WORKED EXAMPLE -- this is a real, working agent\n"
         "--------------------------------------------------------------------------\n"
         "graph.json:\n"
-        + json.dumps(graph, indent=2)
+        + json.dumps(graph, indent=1)
         + "\n\nnodes.json:\n"
-        + json.dumps(nodes, indent=2)
+        + json.dumps(nodes, indent=1)
     )
 
 
@@ -282,3 +282,168 @@ complete corrected design -- not a patch, the whole thing again.
 
 Problems:
 """.strip()
+
+
+# ---------------------------------------------------------------------------
+# THE RESEARCH SKELETON
+# ---------------------------------------------------------------------------
+# A starting shape for the work this project is actually for: computer-science
+# research. It rides in the PROMPT next to the worked example, for the same
+# reason -- instructions have a measured size cliff and prompts do not.
+#
+# It is a SKELETON, not a mould, and the prose below says so to the model.
+# A template that must be obeyed is worse than no template: it produces a
+# graph shaped like the example instead of like the work. So the designer is
+# told to check it against the plan FIRST, drop what does not apply, and say
+# in `rationale` what it changed.
+#
+# Two things here are load-bearing beyond the shape:
+#
+# 1. `run_exp_*` declares backend "runner" -- a role nobody has configured.
+#    That is the hook for running experiments on a cheaper model: config.py's
+#    backend_for() falls back to the default until `.agent/config.json` names
+#    it, so the skeleton costs nothing and makes the option available.
+#
+# 2. The retry runs code -> run -> CHECK -> back to code, not code -> run ->
+#    back to code. A run node that decides whether its own run was any good is
+#    self-assessment, which validate.py rejects outright at design time. The
+#    check node is read_only with no plan steps of its own, which is precisely
+#    what the missing-verifier warning looks for -- so the skeleton satisfies
+#    both rules by construction rather than by being careful.
+# ---------------------------------------------------------------------------
+
+RESEARCH_GRAPH = {
+    "format_version": 1,
+    "name": "research_skeleton",
+    "description": (
+        "Set up, inspect the data, then one write-code/run/check triple per "
+        "experiment type, then a report. A failure goes back to the node that "
+        "wrote the code, with the checker's complaint."
+    ),
+    "entry": "setup_env",
+    "nodes": [
+        {"name": "setup_env", "kind": "agent"},
+        {"name": "inspect_data", "kind": "agent"},
+        {"name": "write_code_a", "kind": "agent"},
+        {"name": "run_exp_a", "kind": "agent"},
+        {"name": "check_a", "kind": "agent"},
+        {"name": "write_code_b", "kind": "agent"},
+        {"name": "run_exp_b", "kind": "agent"},
+        {"name": "check_b", "kind": "agent"},
+        {"name": "report", "kind": "agent"},
+        {"name": "review", "kind": "human"},
+    ],
+    "edges": [
+        {"from": "setup_env", "to": "inspect_data"},
+        {"from": "inspect_data", "to": "write_code_a"},
+        {"from": "write_code_a", "to": "run_exp_a"},
+        {"from": "run_exp_a", "to": "check_a"},
+        {"from": "write_code_b", "to": "run_exp_b"},
+        {"from": "run_exp_b", "to": "check_b"},
+        {"from": "report", "to": "review", "ask": {
+            "purpose": "findings",
+            "resume_to": "report",
+            "question": "{out.report.summary}\n\nAnything to change? "
+                        "/revise <what> or /exit.",
+            "context": "{out.report.findings}",
+        }},
+    ],
+    "branches": [
+        {"from": "check_a", "route_on": "verdict",
+         "cases": [
+             {"when": "ok", "to": "write_code_b"},
+             {"when": "redo", "to": "write_code_a"},
+             {"when": "blocked", "to": "review", "ask": {
+                 "purpose": "blocked",
+                 "resume_to": "write_code_a",
+                 "question": "{out.check_a.problem}\n\nHow should I proceed? "
+                             "Type guidance, or /exit.",
+                 "context": "{out.check_a.detail}",
+             }},
+         ],
+         "default": "review"},
+        {"from": "check_b", "route_on": "verdict",
+         "cases": [
+             {"when": "ok", "to": "report"},
+             {"when": "redo", "to": "write_code_b"},
+             {"when": "blocked", "to": "review", "ask": {
+                 "purpose": "blocked",
+                 "resume_to": "write_code_b",
+                 "question": "{out.check_b.problem}\n\nHow should I proceed? "
+                             "Type guidance, or /exit.",
+                 "context": "{out.check_b.detail}",
+             }},
+         ],
+         "default": "review"},
+    ],
+}
+
+
+#: node -> (access, backend, what it is for). Sent as a table rather than as
+#: nine nodes.json entries: the worked example already shows what an entry
+#: looks like, and repeating it nine times would cost thousands of prompt
+#: tokens to teach nothing new. Access and backend are the two fields the
+#: skeleton is actually making a claim about.
+RESEARCH_ROLES: tuple[tuple[str, str, str, str], ...] = (
+    ("setup_env",    "write",     "coder",   "install deps, pin versions, record what the environment is"),
+    ("inspect_data", "read_only", "coder",   "find and inspect the data -- DROP THIS NODE if there is none"),
+    ("write_code_a", "write",     "coder",   "write the code for ONE experiment type"),
+    ("run_exp_a",    "write",     "runner",  "run it; results and logs into {artifacts_dir}"),
+    ("check_a",      "read_only", "checker", "judge the run AND the results; route ok/redo/blocked"),
+    ("report",       "write",     "coder",   "summarise findings across every experiment"),
+)
+
+
+def research_skeleton() -> str:
+    """The skeleton, as it is sent to the designer."""
+    table = "\n".join(
+        f"  {name:<13} access {access:<9} backend {backend!r:<10} {purpose}"
+        for name, access, backend, purpose in RESEARCH_ROLES
+    )
+    return (
+        "\n\n"
+        "--------------------------------------------------------------------------\n"
+        "THE RESEARCH SKELETON -- start here, then check it fits\n"
+        "--------------------------------------------------------------------------\n"
+        "Work in this project is computer-science research, and it nearly always\n"
+        "has this shape:\n"
+        "\n"
+        "  setup_env -> inspect_data -> write_code_a -> run_exp_a -> check_a\n"
+        "                                                             |\n"
+        "        ok -> write_code_b -> run_exp_b -> check_b -> report -> review\n"
+        "      redo -> write_code_a          (with {out.check_a.problem})\n"
+        "   blocked -> review\n"
+        "\n"
+        "BEFORE using it, check it against the plan and say in `rationale` what\n"
+        "you changed and why. It is a starting point, not a form to fill in:\n"
+        "\n"
+        "- ONE write_code/run_exp/check triple PER EXPERIMENT TYPE. Two types\n"
+        "  means a and b; four means a to d. One type means just a.\n"
+        "- Chain the triples SEQUENTIALLY -- check_a's `ok` goes to write_code_b.\n"
+        "  Never fan out to two nodes at once; the validator refuses it.\n"
+        "- Drop inspect_data when there is no dataset. Drop setup_env only if\n"
+        "  the plan says the environment already exists.\n"
+        "- Add nodes the plan needs and this does not have: a baseline to\n"
+        "  reproduce, an ablation, a figure/table builder, a literature check.\n"
+        "- The code node writes the code AND its tests; do not add a node whose\n"
+        "  only job is to test code. The provider does that inside one turn.\n"
+        "- check_* is the retry judge, and it must be a SEPARATE read_only node.\n"
+        "  A run node routing on its own output back to itself is rejected.\n"
+        "- `redo` must carry the complaint: put {out.check_a.problem} in\n"
+        "  write_code_a's prompts.next, or it makes the same mistake again.\n"
+        "\n"
+        "Nodes, with the two fields that matter:\n"
+        "\n"
+        f"{table}\n"
+        "\n"
+        "  (b, c, d ... repeat a's three rows. review is the human node.)\n"
+        "\n"
+        "`backend` names a ROLE, not a model. \"runner\" and \"checker\" are\n"
+        "deliberately separate from \"coder\" so the human can point experiment\n"
+        "runs at a cheaper model in .agent/config.json without touching the\n"
+        "graph. Use these names, and access exactly as above -- read_only for\n"
+        "anything that only looks.\n"
+        "\n"
+        "graph.json for the two-experiment case, complete and valid:\n"
+        + json.dumps(RESEARCH_GRAPH, indent=1)
+    )

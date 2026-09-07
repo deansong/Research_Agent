@@ -236,6 +236,43 @@ def test_write_nodes_are_told_where_output_goes():
     print("PASS  write nodes are told to put output in the run's artifacts dir")
 
 
+def test_an_unrouted_branch_asks_about_itself_not_about_the_last_thing():
+    """The hole under "default is a human node, never __end__".
+
+    That advice is right -- an unexpected value should reach a person rather
+    than silently end the run -- but `default` has nowhere to put an `ask`,
+    and the code returned None for it. The human node then fell back to
+    whatever `pending` still held: the PREVIOUS question, from earlier in the
+    run, with the previous `resume_to`. So the person was shown a stale
+    question and their answer was routed somewhere unrelated to why they were
+    being asked.
+    """
+    from agent.agentfolder.schema import BranchSpec
+    from agent.work.templates.agent_node import _resolve_transition
+
+    branch = BranchSpec(**{
+        "from": "check_a", "route_on": "verdict",
+        "cases": [{"when": "ok", "to": "report"},
+                  {"when": "redo", "to": "write_code_a"}],
+        "default": "review",
+    })
+
+    route, ask = _resolve_transition(branch, {"verdict": "partially_ok"})
+    assert route == "__default__", route
+    assert ask is not None, "a default into a human node must carry an ask"
+    assert ask.purpose == "unrouted", ask.purpose
+    # Back to the node that produced the value: it is the only place a
+    # different one can come from.
+    assert ask.resume_to == "check_a", ask.resume_to
+    assert "verdict='partially_ok'" in ask.question, ask.question
+    assert "'ok'" in ask.question and "'redo'" in ask.question, ask.question
+
+    # A matched case is untouched, and its own ask still wins.
+    route, ask = _resolve_transition(branch, {"verdict": "ok"})
+    assert route == "ok" and ask is None, (route, ask)
+    print("PASS  an unrouted value asks about itself, naming the cases it has")
+
+
 if __name__ == "__main__":
     for name, fn in sorted(globals().items()):
         if name.startswith("test_"):

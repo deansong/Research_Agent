@@ -11,7 +11,8 @@ from __future__ import annotations
 
 from agent import activity
 from agent.backends.base import Access, BackendOutputError
-from agent.bootstrap.prompts import DESIGNER_INSTRUCTIONS, REPAIR_PREFIX, worked_example
+from agent.bootstrap.prompts import (DESIGNER_INSTRUCTIONS, REPAIR_PREFIX,
+                                     research_skeleton, worked_example)
 from agent.bootstrap.schemas import DesignerOutput
 from agent.bootstrap.state import BootstrapState, transcript_text
 from agent.statelib import merge_section
@@ -40,12 +41,22 @@ def make_designer(backend):
                 f"{state.get('discussion', {}).get('requirements', '(none)')}\n\n"
                 f"Extra guidance given with /plan:\n"
                 f"{state.get('human', {}).get('last_answer', '') or '(none)'}\n\n"
-                f"Inspect the repository, then design the agent. Return the task_brief and "
-                f"the complete folder."
-                # The example rides in the PROMPT, not the instructions: over
+                # NOT "inspect the repository, then design the agent", which
+                # is what this said and is what a measured run spent its first
+                # minutes doing -- `git show` of a deletion commit, auditing a
+                # tree it does not need to read to lay out a graph. The plan is
+                # the input. DESIGNER_INSTRUCTIONS says so too; an instruction
+                # contradicted by the prompt is not an instruction.
+                f"Design the agent from the plan above. Return the task_brief "
+                f"and the complete folder."
+                # Both examples ride in the PROMPT, not the instructions: over
                 # ~6 KB of developer_instructions a Codex turn never completes.
                 # See agent/bootstrap/prompts.py.
                 + worked_example()
+                # Last, deliberately. It is the most specific and most
+                # actionable thing the designer is shown, and the end of a
+                # prompt is where that belongs.
+                + research_skeleton()
             )
 
         try:

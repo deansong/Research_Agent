@@ -87,7 +87,36 @@ def build_backends(
 
         built[role] = cache[key]
 
+    _warn_unconfigured(cfg, needed)
     return built
+
+
+def _warn_unconfigured(cfg, needed) -> None:
+    """Say when a node's backend role falls back to the default.
+
+    A generated agent invents its own role names, and backend_for() falls back
+    to the default for any it does not recognise -- silently, which is the
+    problem. The research skeleton puts experiment runs on a role called
+    "runner" precisely so they CAN be pointed at a cheaper model; if nobody
+    ever says that the role is unconfigured, the human believes they are
+    running on a small model while every turn goes to the default one.
+
+    A notice rather than an error: falling back is legitimate, and it is what
+    should happen until somebody chooses otherwise. Built-in roles are left
+    out -- they are unconfigured in most projects, and saying so five times a
+    run would train everyone to ignore the line.
+    """
+    from agent import roles
+
+    unset = sorted(role for role in needed
+                   if role not in cfg.roles and role not in roles.ALL_ROLES)
+    if not unset:
+        return
+
+    spec = cfg.default
+    print(f"[config] {', '.join(unset)} not configured, using the default "
+          f"({spec.provider}/{spec.model}). Set a different model per role in "
+          f"<repo>/.agent/config.json.")
 
 
 def _instantiate(spec, *, role: str, codex_client):
