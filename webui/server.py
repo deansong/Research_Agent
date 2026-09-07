@@ -135,6 +135,9 @@ def _register(app: FastAPI) -> None:
         repo = _resolve_repo(body.repo)
         if not repo.is_dir():
             raise _bad("bad_repo", str(repo), _why_not_a_repo(repo))
+        infrastructure = _infrastructure_warning(repo)
+        if infrastructure:
+            raise _bad("repo_is_infrastructure", str(repo), infrastructure)
 
         cfg = load_config(repo_path=repo, cli=_Overrides(body, _DEFAULTS["cli_args"]))
 
@@ -146,8 +149,11 @@ def _register(app: FastAPI) -> None:
             task = task or _saved_task(paths)
         else:
             if not task:
-                raise _bad("no_task", "task",
-                           "Supply a task, a session name, or a session folder.")
+                raise _bad(
+                    "no_task", "task",
+                    "Say what you want built or changed, in the big box. "
+                    "(Or name an existing session to resume instead.)",
+                )
             paths = storage.session_paths(repo, storage.session_name_for(task))
 
         if not task:
@@ -512,6 +518,35 @@ class _Overrides:
         if value in (None, [], ""):
             return getattr(self._defaults, name, None)
         return value
+
+
+def _infrastructure_warning(repo: Path) -> str:
+    """Refuse a repo that is, or is inside, an `.agent/` directory.
+
+    An easy and entirely reasonable mistake, because the name suggests the
+    session files go there -- but the relationship is the other way round:
+    `.agent/` is CREATED INSIDE the repo. Point the repo at it and you get
+    `.agent/.agent/sessions/...`, with the real project nowhere in sight.
+
+    Worth refusing rather than warning. It would otherwise succeed, design an
+    agent, and point that agent's read and write access at the checkpoint
+    database and the folder describing the agent itself -- exactly what
+    `work/compile.py::infrastructure_rules` spends three rules telling a write
+    node never to touch.
+    """
+    parts = repo.parts
+    if storage.DOT_AGENT not in parts:
+        return ""
+
+    index = parts.index(storage.DOT_AGENT)
+    project = Path(*parts[:index]) if index else Path(repo.anchor)
+    return (
+        f"{storage.DOT_AGENT}/ is where this tool keeps its own files -- "
+        f"sessions, checkpoints and designed agents -- and it is created "
+        f"INSIDE the repository, not instead of it. Point this at the project "
+        f"you want worked on and {storage.DOT_AGENT}/ appears there by itself."
+        + (f" You probably meant {project}." if str(project) not in ("", "/") else "")
+    )
 
 
 def _why_not_a_repo(repo: Path) -> str:

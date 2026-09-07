@@ -177,6 +177,47 @@ def test_a_file_given_as_a_repo_says_so():
         print("PASS  a file given as a repo is distinguished from a missing one")
 
 
+def test_pointing_the_repo_at_dot_agent_is_refused():
+    """An easy mistake with a silent, bad outcome.
+
+    The name suggests session files go in `.agent/`, but it is created INSIDE
+    the repo -- so this would succeed and give you `.agent/.agent/sessions/`,
+    with the agent's read and write access aimed at its own checkpoint and
+    definition. Refused rather than warned for that reason.
+    """
+    with tempfile.TemporaryDirectory() as tmp:
+        root = pathlib.Path(tmp)
+        (root / "launched").mkdir()
+        dot_agent = root / "myproject" / ".agent"
+        dot_agent.mkdir(parents=True)
+        client = _client(root / "launched")
+
+        response = client.post("/api/sessions", json={
+            "repo": str(dot_agent), "task": "do a thing", "backend": "fake",
+        })
+        assert response.status_code == 400, response.text
+        detail = response.json()["detail"]
+        assert detail["code"] == "repo_is_infrastructure", detail
+        # It should name the directory you almost certainly meant.
+        assert str(root / "myproject") in detail["message"], detail["message"]
+
+        # Nothing was created -- in particular, no nested .agent/.agent.
+        assert not (dot_agent / ".agent").exists()
+        print("PASS  a repo pointing at .agent/ is refused, and names what you meant")
+
+
+def test_an_empty_task_says_what_to_do_about_it():
+    """The message a first-time user actually hits."""
+    with tempfile.TemporaryDirectory() as tmp:
+        root = pathlib.Path(tmp)
+        client = _client(root)
+        response = client.post("/api/sessions", json={"repo": str(root), "task": ""})
+        assert response.status_code == 400, response.text
+        message = response.json()["detail"]["message"]
+        assert "want built or changed" in message, message
+        print("PASS  an empty task says what to type, not just what is missing")
+
+
 def test_defaults_endpoint_reports_the_launched_repo():
     """The browser prefills its field from this, so a "." never reaches the
     server from the UI in the first place."""
