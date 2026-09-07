@@ -245,6 +245,53 @@ most time when they are wrong — the discussor asks about both.
 an experiment, and pointing three prompts at research is exactly how every bug
 fix starts acquiring a baseline and a seed sweep. All three say so.
 
+### The interview, and what it produces
+
+The discussor works through two lists, one question per turn. The first settles
+what the experiment *is* (above). The second settles what the **steps** are,
+and its answers become plan steps and then nodes, close to one each:
+
+| | |
+| --- | --- |
+| **data** | needed at all? downloaded or on disk? preprocessed into what file? |
+| **environment** | what must be installed or built first, and what is already done |
+| **code** | what has to be *written*, split by kind — training, evaluation, loading, analysis — and what already exists in the repo |
+| **experiments** | which models, baselines, ablations, hyperparameters, how many seeds. Be pedantic: "a few configurations" becomes a graph that cannot say when it is finished |
+| **checks** | for each of the above, how would you *tell* it worked |
+| **gates** | which of them must a **person** approve before the run continues |
+
+The last two are why the plan's steps carry `check` and `gate`:
+
+```json
+{
+  "id": "4",
+  "title": "Run the LoRA sweep over 3 seeds",
+  "check": "8 files under results/sweep/, each with a top1 field",
+  "gate": true
+}
+```
+
+`check` is how you would tell the step worked, concretely enough that somebody
+else could apply it — `"pytest tests/test_loader.py passes"`, not `"the code is
+correct"`. The designer turns it into the node that applies it, so a vague check
+produces a node that rubber-stamps. It's rendered into the owning node's own
+prompt too, so the node doing the work knows how it will be judged.
+
+`gate` is `true` only when a person must approve before the run goes on —
+expensive or irreversible. Each gate halts the whole run until somebody comes
+back to it, so three gates in a ten-step plan is a run that mostly sits waiting.
+
+Both are editable in the web UI's plan panel, and both reach disk, which is what
+`/approve` re-reads.
+
+**A gated step that cannot reach a human node is a design error**, caught before
+you ever see the graph (`bootstrap/nodes/validator.py::_gate_problems`). It
+checks *reachability* from the node that owns the step, not "is there a human
+node anywhere" — a graph almost always has one for its exit, and passing on that
+basis would make the check decorative. Without it the failure is the worst shape
+available: the run goes straight through, looks successful, and the approval
+nobody asked for is discovered afterwards if at all.
+
 ### Two shapes, and which to use
 
 The designer is told to choose, rather than defaulting to whichever example it
@@ -263,6 +310,31 @@ A branch takes **at most 8 cases** (`BranchSpec.cases`, `max_length=8`), so one
 orchestrator can dispatch to at most seven workers. Past that, stage the graph
 and give each stage a verifier — which is why this project uses verifiers per
 stage rather than one central orchestrator over twenty nodes.
+
+### Example nodes the designer can copy
+
+A topology is not a design: `graph.json` says a node called `run_exp_a` runs an
+experiment and says nothing about what its prompt must contain for that to
+happen. So the prompt carries four complete `nodes.json` entries
+(`prompts.py::RESEARCH_NODES`) — `write_code_a`, `run_exp_a`, `check_a` and the
+`review` human node. The b, c, d triples are those with the names and steps
+changed.
+
+They are **validated**: `tests/test_bootstrap.py` runs them through
+`NodeProposal` (the designer's own strict output model) and then the real
+`writer._entry_for`, writes them to disk and validates the folder strictly. So
+every `{out.x.y}` in them names a field node `x` really declares. An exemplar
+with a broken placeholder would teach the designer to write broken
+placeholders, and its repair loop would then fight the example it was handed.
+
+Three details in them are the point:
+
+- `write_code_a`'s `prompts.next` carries `{out.check_a.problem}`. Without it a
+  `redo` repeats the mistake it was never told about.
+- `run_exp_a` may not edit code; `check_a` is `read_only`. Three nodes, one job
+  each, and the judge is not whoever did the work.
+- `check_a`'s `prompts.next` is where the loop can **end** — it has its own
+  conversation, so a second identical complaint becomes `blocked`.
 
 ### Branches that are not "did it work"
 

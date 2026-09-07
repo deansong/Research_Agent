@@ -356,53 +356,52 @@ def test_designer_schema_survives_strict_mode():
 def _research_folder(tmp: pathlib.Path):
     """Write the research skeleton to disk as a real agent folder.
 
-    The skeleton ships as a graph only -- nodes.json is nine entries the
-    worked example already teaches, and sending them would cost thousands of
-    prompt tokens to say nothing new. So the node entries are synthesised
-    here, from RESEARCH_ROLES plus the output fields the graph's own
-    placeholders demand, which is exactly what the designer has to do when it
-    reads the skeleton. If that synthesis cannot produce a valid folder,
-    neither can the designer.
+    Four of the ten node entries are REAL -- RESEARCH_NODES, exactly as the
+    designer is shown them -- so this checks the exemplars themselves, not a
+    paraphrase of them. Every {out.x.y} in those prompts has to name a field
+    the node x really declares, and only writing them out and validating
+    catches it. An exemplar with a broken placeholder teaches the designer to
+    write broken placeholders, and its repair loop then fights the example.
+
+    The other six are synthesised from RESEARCH_ROLES, the same reading of
+    the skeleton the designer has to make: "b, c, d are the same with
+    different names and steps".
     """
     from agent.agentfolder.schema import graph_document, node_entry
-    from agent.bootstrap.prompts import RESEARCH_GRAPH, RESEARCH_ROLES
+    from agent.bootstrap.nodes.writer import _entry_for
+    from agent.bootstrap.prompts import (RESEARCH_GRAPH, RESEARCH_NODES,
+                                         RESEARCH_ROLES)
+    from agent.bootstrap.schemas import NodeProposal
 
     specs = {name: (access, backend)
              for name, access, backend, _ in RESEARCH_ROLES}
-    # The skeleton shows one triple in the table and says "b, c, d repeat a's
-    # three rows", so b's specs come from a's -- the same reading.
-    for stem in ("write_code", "run_exp", "check"):
-        specs[f"{stem}_b"] = specs[f"{stem}_a"]
-
-    # Fields the graph's own {out.<node>.<field>} placeholders reference. A
-    # placeholder naming a field the node does not declare is a hard error,
-    # so this is the graph telling us what the nodes must return.
-    outputs = {
-        "check_a": [
-            {"name": "verdict", "type": "enum",
-             "choices": ["ok", "redo", "blocked"], "required": True},
-            {"name": "problem", "type": "string"},
-            {"name": "detail", "type": "string"},
-        ],
-        "report": [
-            {"name": "summary", "type": "string", "required": True},
-            {"name": "findings", "type": "string"},
-        ],
-    }
-    outputs["check_b"] = outputs["check_a"]
+    outputs = {"report": [
+        {"name": "summary", "type": "string", "required": True},
+        {"name": "findings", "type": "string"},
+    ]}
 
     nodes: dict[str, dict] = {}
     for entry in RESEARCH_GRAPH["nodes"]:
-        name = entry["name"]
-        if entry["kind"] == "human":
-            nodes[name] = node_entry("human", {"commands": [
-                {"name": "revise", "to": "report", "purposes": ["findings"],
-                 "argument": "[what to change]",
-                 "summary": "Rewrite the report",
-                 "sets": {"review_feedback": "{argument}"}},
-                {"name": "exit", "to": "__end__", "aliases": ["quit", "q"],
-                 "summary": "End the run"},
-            ]})
+        name, kind = entry["name"], entry["kind"]
+
+        # The b triple is a's entries with the names swapped -- the same
+        # reading of "b, c, d are the same with different names and steps"
+        # that the designer is asked to make.
+        source = RESEARCH_NODES.get(name)
+        if source is None and name.endswith("_b"):
+            source = json.loads(
+                json.dumps(RESEARCH_NODES[name[:-2] + "_a"])
+                .replace("_a.", "_b."))
+
+        if source is not None:
+            # Through the designer's own strict model and then the REAL
+            # writer, not a hand-rolled equivalent. That is what makes this
+            # a test of the exemplars: they have to be emittable by the
+            # designer (NodeProposal) and convertible to disk (_entry_for),
+            # and `sets` alone differs between those two shapes -- pairs in
+            # the proposal, an object on disk.
+            proposal = NodeProposal.model_validate({"name": name, **source})
+            nodes[name] = _entry_for(kind, proposal.model_dump())
             continue
 
         access, backend = specs[name]
@@ -422,6 +421,127 @@ def _research_folder(tmp: pathlib.Path):
     (folder / "graph.json").write_text(json.dumps(graph_document(RESEARCH_GRAPH)))
     (folder / "nodes.json").write_text(json.dumps(nodes))
     return folder
+
+
+def test_a_step_carries_its_own_check_and_gate():
+    """The two fields that turn a plan into a design.
+
+    Before them, "how do we know this worked" lived in prose in `detail` if
+    it was written down at all, and "a person must approve this" was nowhere
+    -- so the designer had to infer both, and inferred neither. They are
+    separate fields because they are separate questions: a check is what a
+    machine can decide, a gate is what it must not.
+    """
+    from agent.bootstrap.nodes.planner import outline, steps_for
+    from agent.bootstrap.schemas import PlanStep, PlannerOutput
+
+    step = PlanStep.model_validate({
+        "id": "4", "title": "Launch the sweep",
+        "check": "8 files under results/sweep, each with a top1 field",
+        "gate": True,
+    })
+    assert step.check.startswith("8 files")
+    assert step.gate is True
+    assert PlanStep.model_validate({"id": "1", "title": "x"}).gate is False, \
+        "a gate must be opt-in -- it stops the whole run"
+
+    plan = PlannerOutput.model_validate({
+        "summary": "s",
+        "steps": [
+            {"id": "3", "title": "Write the sweep", "check": "pytest passes"},
+            step.model_dump(),
+        ],
+    }).model_dump()
+
+    # The outline is one line per step, and a gate still shows: where the run
+    # STOPS for a person is topology, so every node should see it.
+    assert "[human gate]" in outline(plan), outline(plan)
+    assert "[human gate]" not in outline(plan).splitlines()[0], \
+        "only the gated step is marked"
+
+    # And the owning node is told how its own work will be judged.
+    own = steps_for(plan, ["3"])
+    assert "check: pytest passes" in own, own
+    assert "human gate" not in own, "step 3 is not gated"
+    print("PASS  a step carries its check and its gate, and both are rendered")
+
+
+def test_a_gated_step_with_no_human_node_is_rejected():
+    """The promise a design can silently break.
+
+    `gate: true` is a person saying "ask me before going past this". A graph
+    that owns the step and cannot reach a human node does not fail -- it runs
+    straight through, and the approval nobody asked for is discovered later,
+    if at all. The run LOOKS successful, which is the worst shape available.
+    """
+    from agent.agentfolder.load import load_agent_folder
+    from agent.bootstrap.nodes.validator import _gate_problems
+
+    plan = {"steps": [
+        {"id": "3", "title": "Write the sweep", "check": "pytest"},
+        {"id": "4", "title": "Launch the sweep", "gate": True},
+    ]}
+
+    with tempfile.TemporaryDirectory() as tmp:
+        folder = load_agent_folder(_research_folder(pathlib.Path(tmp)))
+
+        # The skeleton's run_exp_a owns step 4 and does reach `review`.
+        assert _gate_problems(folder, plan) == "", _gate_problems(folder, plan)
+
+        # Nobody owns step 9, so nobody will ever ask about it.
+        orphan = {"steps": [{"id": "9", "title": "Publish", "gate": True}]}
+        problem = _gate_problems(folder, orphan)
+        assert "Step 9" in problem and "no node lists it" in problem, problem
+
+        # And a gate is only satisfied by REACHING a human, not by one
+        # existing somewhere -- a graph almost always has one for its exit,
+        # so passing on that basis would make the check decorative.
+        for node in folder.graph.nodes:
+            if node.kind == "human":
+                node.kind = "agent"
+        blind = _gate_problems(folder, plan)
+        assert "Step 4" in blind and "reaches a human node" in blind, blind
+    print("PASS  a human-gated step must reach a human, not merely coexist")
+
+
+def test_the_discussor_asks_about_the_shape_of_the_work_too():
+    """The second half of the interview, which is what the graph is built from.
+
+    The research questions settle what the experiment IS. These settle what
+    the STEPS are -- and the answers become plan steps and then nodes, close
+    to one each, so a vague answer here is a vague node two phases later.
+    """
+    from agent.bootstrap.prompts import DISCUSSOR_INSTRUCTIONS
+
+    text = DISCUSSOR_INSTRUCTIONS.lower()
+    for topic in ("data", "environment", "code", "experiments",
+                  "checks", "gates"):
+        assert topic in text, f"the discussor never asks about {topic}"
+
+    # The pedantic one: "a few configurations" is what produces a graph that
+    # cannot say when it is finished.
+    assert "ablations" in text and "hyperparameters" in text and "seeds" in text
+    assert "one question per turn" in text, "it must not interrogate in bulk"
+    # The answers have to land somewhere the planner reads.
+    assert "requirements" in text, "the planner reads that field, not reasoning"
+    print("PASS  the discussor walks data, env, code, experiments, checks, gates")
+
+
+def test_the_planner_is_told_what_a_check_is_and_is_not():
+    """A check nobody could apply produces a verifier that rubber-stamps.
+
+    Which is worse than no verifier: the graph gains a node, a turn and a
+    branch, and still nothing decides whether the work counts.
+    """
+    from agent.bootstrap.prompts import PLANNER_INSTRUCTIONS
+
+    text = PLANNER_INSTRUCTIONS.lower()
+    assert "`check`" in text and "`gate`" in text
+    assert "not \"the code is correct\"" in text or "not \"it works\"" in text, \
+        "the planner needs the negative examples, not just the rule"
+    assert "rubber-stamp" in text, "say what a vague check costs"
+    assert "default false" in text, "a gate stops the whole run"
+    print("PASS  the planner knows what a check is, and what a gate costs")
 
 
 def test_every_design_phase_prompt_knows_this_is_ml_research():
@@ -568,35 +688,57 @@ def test_the_claim_about_counters_is_still_true():
     print("PASS  counters really are unrenderable, as the prompt claims")
 
 
-def test_the_worked_example_keeps_the_entries_that_teach_the_format():
-    """Trimmed for budget, so what survived has to be the useful part.
+def test_every_field_the_designer_can_emit_is_in_its_prompt():
+    """Nothing the designer is allowed to produce may be undiscoverable.
 
-    graph.json stays whole -- it is the orchestrator topology, and half a
-    topology teaches nothing. Of nodes.json, the executor is the richest
-    agent node in the project and the human node is the only place
-    `commands` appears. What was dropped is named rather than silently
-    missing, because a designer that notices three nodes referenced and two
-    defined has been handed a puzzle instead of an example.
+    This replaced a test that asserted particular entries survived in
+    worked_example(), which broke the moment the budget was reallocated --
+    and broke for the wrong reason: the fields it was really checking for had
+    simply moved somewhere better. So it asks the question that actually
+    matters instead. If a field is in NodeProposal, the designer can emit it,
+    and it has to be either DEMONSTRATED in an example or DOCUMENTED in the
+    reference. `record` was already missing when this was written.
     """
-    from agent.bootstrap.prompts import worked_example
+    from agent.bootstrap.prompts import (CONTROL_FLOW, PROMPT_REFERENCE,
+                                         research_skeleton, worked_example)
+    from agent.bootstrap.schemas import NodeProposal
 
-    text = worked_example()
+    prompt = (worked_example() + PROMPT_REFERENCE + CONTROL_FLOW
+              + research_skeleton())
 
-    # graph.json entire: the orchestrator loop, every worker edge back to it.
-    assert '"route_on": "action"' in text, "the branch source is missing"
-    assert '"to": "orchestrator"' in text, \
-        "every worker's edge must be shown going back to the orchestrator"
+    missing = [field for field in NodeProposal.model_fields
+               if field != "name" and f'"{field}"' not in prompt]
+    assert not missing, (
+        f"the designer can emit {missing} and its prompt never mentions them. "
+        f"Demonstrate them in an example, or add a line to PROMPT_REFERENCE."
+    )
+    print(f"PASS  all {len(NodeProposal.model_fields) - 1} emittable node "
+          f"fields appear in the prompt")
 
-    # The two node entries, by their distinctive fields.
-    assert '"thread_key"' in text and '"refresh_on"' in text and '"capture"' in text, \
-        "the executor entry is what shows those fields"
-    assert '"commands"' in text, "the human entry is the only place commands appear"
 
-    # And the ones that are gone say so.
-    assert "discussor, orchestrator, planner" in text, text[:300]
-    assert "`record`" in text and "`bump`" in text, \
-        "what the dropped entries would have shown must be named"
-    print("PASS  the worked example kept the two entries that carry the format")
+def test_the_prompt_still_shows_the_shapes_that_need_showing():
+    """Three JSON shapes prose cannot substitute for.
+
+    Each is a thing the designer has to emit exactly right and would
+    otherwise be guessing at: the orchestrator topology (every worker's edge
+    going back), a human node's `commands`, and a branch with an `ask` on one
+    of its cases.
+    """
+    from agent.bootstrap.prompts import (CONTROL_FLOW, research_skeleton,
+                                         worked_example)
+
+    example = worked_example()
+    assert '"route_on": "action"' in example, "the orchestrator branch is gone"
+    assert '"to": "orchestrator"' in example, \
+        "workers must be shown returning to the orchestrator"
+
+    skeleton = research_skeleton()
+    assert '"commands"' in skeleton, "a human node's commands must be shown"
+    assert '"sets"' in skeleton, "setting a var from a command must be shown"
+    assert '"ask"' in skeleton, "a branch case with an ask must be shown"
+
+    assert '"when": "finish"' in CONTROL_FLOW, "the orchestrator's exit case"
+    print("PASS  orchestrator, commands and a branch ask are all shown as JSON")
 
 
 def test_the_research_skeleton_is_a_valid_graph():
@@ -665,9 +807,10 @@ def test_the_skeleton_offers_a_cheaper_backend_for_running_experiments():
     skeleton put everything on one role that option would not exist, and the
     only way to get it would be to hand-edit every node.
     """
-    from agent.bootstrap.prompts import RESEARCH_ROLES, research_skeleton
+    from agent.bootstrap.prompts import RESEARCH_NODES, research_skeleton
 
-    by_node = {name: backend for name, _, backend, _ in RESEARCH_ROLES}
+    by_node = {name: entry.get("backend")
+               for name, entry in RESEARCH_NODES.items()}
     assert by_node["run_exp_a"] == "runner", by_node
     assert by_node["check_a"] == "checker", by_node
     assert by_node["write_code_a"] == "coder", by_node

@@ -273,6 +273,47 @@ def test_plan_round_trips_and_validates():
         print("PASS  a plan edit round-trips through HTTP and lands on disk")
 
 
+def test_a_check_and_a_gate_survive_the_round_trip():
+    """The two fields the browser is the best place to fix.
+
+    The planner writes a check from what it can infer; the person knows the
+    command that actually decides, and knows which steps they want to be
+    asked about. So both have to be editable here -- and they have to reach
+    disk, because /approve re-reads plan.json and the designer reads it from
+    there.
+    """
+    with tempfile.TemporaryDirectory() as tmp:
+        repo = pathlib.Path(tmp)
+        client = _client(repo)
+        sid = client.post("/api/sessions", json={
+            "repo": str(repo), "task": "run an experiment", "backend": "fake",
+        }).json()["id"]
+        _wait(client, sid)
+        client.post(f"/api/sessions/{sid}/answer", json={"text": "/plan"})
+        _wait(client, sid)
+
+        plan = copy.deepcopy(client.get(f"/api/sessions/{sid}/plan").json()["plan"])
+        plan["steps"][0]["check"] = "pytest tests/test_sweep.py passes"
+        plan["steps"][0]["gate"] = True
+
+        saved = client.put(f"/api/sessions/{sid}/plan", json={"plan": plan})
+        assert saved.status_code == 200, saved.text
+
+        folder = pathlib.Path(client.get(f"/api/sessions/{sid}").json()["folder"])
+        on_disk = json.loads((folder / "plan.json").read_text())["steps"][0]
+        assert on_disk["check"] == "pytest tests/test_sweep.py passes", on_disk
+        assert on_disk["gate"] is True, on_disk
+
+        # And the node that owns the step is told both, which is the whole
+        # point of putting them in the plan rather than in a comment.
+        from agent.bootstrap.nodes.planner import steps_for
+        rendered = steps_for(json.loads((folder / "plan.json").read_text()),
+                             [on_disk["id"]])
+        assert "check: pytest tests/test_sweep.py passes" in rendered, rendered
+        assert "human gate" in rendered, rendered
+        print("PASS  a check and a gate reach disk and reach the node's prompt")
+
+
 def test_a_malformed_plan_is_refused_rather_than_written():
     """Refusing here is safe -- a plan has no half-finished state to pass
     through -- and the alternative is a session whose plan.json cannot be read

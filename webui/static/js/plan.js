@@ -79,7 +79,7 @@ export class PlanPanel {
     const add = button('Add step', 'btn tiny ghost', () => {
       this.plan.steps.push({
         id: String(this.plan.steps.length + 1),
-        title: 'New step', detail: '', substeps: [],
+        title: 'New step', detail: '', check: '', gate: false, substeps: [],
       });
       this.markDirty();
       this.draw();
@@ -138,6 +138,12 @@ export class PlanPanel {
 
     item.append(row, detail);
 
+    // `check` and `gate` are editable here because they are the two fields a
+    // person is best placed to fix. The planner writes a check from what it
+    // can infer; you know the command that actually decides, and you know
+    // which steps you want to be asked about before they run.
+    if (!parent) item.append(this.checkRow(step));
+
     if (!parent) {
       const subs = document.createElement('ol');
       subs.className = 'plan-substeps';
@@ -158,6 +164,37 @@ export class PlanPanel {
     if (this.selected === step.id) item.classList.add('selected');
     if (this.ownedByNode?.has(step.id)) item.classList.add('owned');
     return item;
+  }
+
+  /** The step's own check, and whether it stops for a person. */
+  checkRow(step) {
+    const wrap = document.createElement('div');
+    wrap.className = 'plan-check-row';
+
+    const check = document.createElement('input');
+    check.className = 'plan-check';
+    check.placeholder = 'check: how would you tell this step worked?';
+    check.title = 'Concrete enough that somebody else could apply it. The '
+                + 'designer turns this into a node whose only job is to apply '
+                + 'it, so a vague check becomes a node that rubber-stamps.';
+    check.value = step.check || '';
+    check.addEventListener('input', () => { step.check = check.value; this.markDirty(); });
+
+    const gateLabel = document.createElement('label');
+    gateLabel.className = 'plan-gate';
+    gateLabel.title = 'Stop and ask a person before the run continues past '
+                    + 'this step. Reserve it for the expensive and the '
+                    + 'irreversible -- each gate halts the whole run until '
+                    + 'somebody comes back to it.';
+
+    const gate = document.createElement('input');
+    gate.type = 'checkbox';
+    gate.checked = Boolean(step.gate);
+    gate.addEventListener('change', () => { step.gate = gate.checked; this.markDirty(); });
+
+    gateLabel.append(gate, document.createTextNode('human gate'));
+    wrap.append(check, gateLabel);
+    return wrap;
   }
 
   selectStep(id) {

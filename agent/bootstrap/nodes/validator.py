@@ -87,6 +87,78 @@ def make_validator(paths, *, max_attempts: int):
     return validator
 
 
+def _gate_problems(folder, plan: dict) -> str:
+    """Every human-gated plan step must actually reach a human.
+
+    `gate: true` means a person said "stop and ask me before going past
+    this". A design that owns that step but has no way to a human node does
+    not fail -- it runs straight through, and the approval nobody was asked
+    for is discovered afterwards, if at all. Which is the worst shape a bug
+    can have: the run looks successful.
+
+    The plan is not part of the folder, so validate_folder cannot see it and
+    this check has to live here -- it is the only place both documents are in
+    hand.
+
+    Reachability rather than "is there a human node anywhere", because a
+    graph usually has one for its exit, and passing on that basis would make
+    the check decorative.
+    """
+    gated = [step for step in plan.get("steps", []) if step.get("gate")]
+    if not gated:
+        return ""
+
+    kinds = {ref.name: ref.kind for ref in folder.graph.nodes}
+    humans = {name for name, kind in kinds.items() if kind == "human"}
+
+    after: dict[str, set[str]] = {name: set() for name in kinds}
+    for edge in folder.graph.edges:
+        after.setdefault(edge.from_, set()).add(edge.to)
+    for branch in folder.graph.branches:
+        after.setdefault(branch.from_, set()).update(
+            {case.to for case in branch.cases} | {branch.default})
+    # A human node's commands are transitions too, so a gate satisfied only
+    # further along a command edge is still satisfied.
+    for name in humans:
+        config = folder.nodes.get(name)
+        for command in getattr(config, "commands", None) or []:
+            after.setdefault(name, set()).add(command.to)
+
+    def reaches_human(start: str) -> bool:
+        seen, queue = {start}, [start]
+        while queue:
+            for nxt in after.get(queue.pop(), ()):
+                if nxt in humans:
+                    return True
+                if nxt not in seen:
+                    seen.add(nxt)
+                    queue.append(nxt)
+        return False
+
+    lines = []
+    for step in gated:
+        step_id = str(step.get("id", "?"))
+        title = str(step.get("title", "")).strip()
+        owners = [name for name, config in folder.nodes.items()
+                  if step_id in (getattr(config, "steps", None) or [])]
+
+        if not owners:
+            lines.append(
+                f"- Step {step_id} ({title}) needs a person's approval, and "
+                f"no node lists it in `steps`. Give it to a node, and put a "
+                f"human node after that node.")
+        elif not any(reaches_human(name) for name in owners):
+            lines.append(
+                f"- Step {step_id} ({title}) needs a person's approval, but "
+                f"nothing after {', '.join(sorted(owners))} reaches a human "
+                f"node. Add one, with an `ask`, offering /approve and /exit.")
+
+    if not lines:
+        return ""
+    return ("The plan marks steps as needing human approval, and the graph "
+            "does not provide it:\n\n" + "\n".join(lines))
+
+
 def _describe(folder_path: Path) -> tuple[str, str]:
     """A readable summary of the agent, plus any warnings, for the review gate.
 

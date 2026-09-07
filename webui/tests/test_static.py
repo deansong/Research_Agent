@@ -181,6 +181,19 @@ def test_css_variables_are_defined_before_use():
     print(f"PASS  all {len(used)} CSS variables are defined")
 
 
+def test_the_plan_editors_new_fields_are_styled():
+    """`check` and `gate` are new columns in the plan editor.
+
+    An unstyled text input inside a monospace list is a full-width browser
+    default that shoves the layout around, and an unstyled checkbox has no
+    label spacing -- both "work" and neither is usable.
+    """
+    css = (STATIC / "css" / "app.css").read_text()
+    for name in ("plan-check-row", "plan-check", "plan-gate"):
+        assert re.search(rf"\.{re.escape(name)}\b", css), f"no CSS rule for .{name}"
+    print("PASS  the plan editor's check and gate fields have rules")
+
+
 def test_classes_the_js_creates_are_styled():
     """An unstyled class is invisible rather than broken.
 

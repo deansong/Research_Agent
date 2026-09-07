@@ -126,8 +126,17 @@ def render_plan(plan: dict) -> str:
 
 
 def outline(plan: dict) -> str:
-    """One line per top-level step -- what OTHER nodes are handling."""
-    return "\n".join(f"  {s['id']}. {s['title']}" for s in (plan or {}).get("steps", []))
+    """One line per top-level step -- what OTHER nodes are handling.
+
+    Gated steps are marked, even here where everything else collapses to a
+    title. A node does not need the detail of somebody else's step, but where
+    the run STOPS for a person is topology: it changes what comes after, so
+    every node reading the outline should be able to see it.
+    """
+    return "\n".join(
+        f"  {s['id']}. {s['title']}" + ("  [human gate]" if s.get("gate") else "")
+        for s in (plan or {}).get("steps", [])
+    )
 
 
 def steps_for(plan: dict, ids: list[str]) -> str:
@@ -146,6 +155,14 @@ def steps_for(plan: dict, ids: list[str]) -> str:
             lines.append(f"{step['id']}. {step['title']}")
             if step.get("detail"):
                 lines.append(f"   {step['detail']}")
+            # The check is rendered to the node that OWNS the step, not just to
+            # whatever verifies it: a node told how its work will be judged can
+            # aim at that, and one that is not has to guess.
+            if step.get("check"):
+                lines.append(f"   check: {step['check']}")
+            if step.get("gate"):
+                lines.append("   human gate: a person must approve this "
+                             "before the run continues.")
             subs = step.get("substeps", [])          # own the whole step
         elif not subs:
             continue

@@ -813,6 +813,54 @@ dialog menu {
   border-color: var(--line);
 }
 
+/* A step's check and its gate, on one line under the detail. Quieter than
+   the title, because most steps have a check and it is reference rather than
+   the thing you scan for. */
+.plan-check-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-top: 3px;
+}
+
+.plan-check {
+  flex: 1 1 auto;
+  min-width: 0;
+  font-family: var(--mono);
+  font-size: 11px;
+  color: var(--text-dim);
+  background: var(--bg-input);
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  padding: 3px 6px;
+}
+
+.plan-check:focus {
+  color: var(--text);
+  border-color: var(--line-bright);
+  outline: none;
+}
+
+.plan-gate {
+  flex: 0 0 auto;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 10.5px;
+  color: var(--text-faint);
+  cursor: pointer;
+  user-select: none;
+}
+
+.plan-gate:hover { color: var(--text-dim); }
+
+/* A gated step is where the run stops for you, so it is worth seeing without
+   reading every row. */
+.plan-step:has(.plan-gate input:checked) > .plan-row {
+  border-left: 2px solid var(--human);
+  padding-left: 5px;
+}
+
 .plan-actions {
   display: flex;
   align-items: center;

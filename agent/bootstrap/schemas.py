@@ -92,6 +92,26 @@ class PlanStep(StrictModel):
     detail: str = ""
     substeps: list[SubStep] = Field(default_factory=list, max_length=8)
 
+    check: str = ""
+    """How to tell this step actually worked -- concretely.
+
+    Here rather than buried in `detail` because it is the one thing the
+    designer needs in order to build a verifier, and because writing it forces
+    the question at planning time, when it is cheap. "Run pytest
+    tests/test_loader.py" is a check; "make sure it works" is not.
+
+    A step with no check is a step nobody will notice failing."""
+
+    gate: bool = False
+    """True when a PERSON must approve before the run continues past this step.
+
+    Separate from `check` because they are different questions -- a check is
+    something a machine can decide, a gate is something it must not. The
+    designer turns this into a human node, and it is expensive: a gated step
+    stops the run until somebody comes back to it. Reserve it for what is
+    costly or irreversible -- launching a long training run, publishing a
+    result, changing shared data."""
+
 
 class PlannerOutput(StrictModel):
     """The plan, produced BEFORE any graph is designed.

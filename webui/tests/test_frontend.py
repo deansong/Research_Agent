@@ -159,6 +159,46 @@ def test_the_expander_shows_the_turns_events():
     print("PASS  the expander renders the turn's actual commands and reasoning")
 
 
+def test_the_plan_editor_offers_a_check_and_a_gate_per_step():
+    """The plan's two new fields have to be reachable in the browser.
+
+    They are the two a person is best placed to fix: the planner writes a
+    check from what it can infer, but you know the command that actually
+    decides, and you know which steps you want to be asked about before they
+    run. A field that only exists in the JSON is a field nobody edits.
+    """
+    try:
+        import quickjs  # noqa: F401
+    except ImportError:  # pragma: no cover
+        pytest.skip("quickjs not installed")
+    from jsdom_harness import exercise
+
+    result = exercise("""
+      var panel = new __ns.PlanPanel(document.getElementById('tab-plan'),
+                                     { onSave() {}, onSelectStep() {} });
+      panel.render({ summary: 's', steps: [
+        { id: '3', title: 'Write the sweep', check: 'pytest passes', gate: false },
+        { id: '4', title: 'Launch it', check: '8 result files', gate: true },
+      ] }, new Map());
+
+      // Walk what was actually built, rather than trusting a call count.
+      var found = { checks: [], gates: 0 };
+      (function walk(node) {
+        for (var i = 0; i < (node._children || []).length; i++) {
+          var child = node._children[i];
+          if (child.className === 'plan-check') found.checks.push(child.value);
+          if (child.type === 'checkbox' && child.checked) found.gates++;
+          walk(child);
+        }
+      })(panel.container);
+      return found;
+    """)
+
+    assert result["checks"] == ["pytest passes", "8 result files"], result
+    assert result["gates"] == 1, "only the gated step's box is ticked"
+    print("PASS  every step gets an editable check, and the gate reflects it")
+
+
 def test_the_harness_would_notice_a_broken_lookup():
     """A test that cannot fail is worse than no test.
 
