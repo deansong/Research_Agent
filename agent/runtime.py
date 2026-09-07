@@ -219,6 +219,8 @@ class Runtime:
             # An agent you named explicitly needs no review: you chose it, and
             # it is not this session's own design.
             return storage.resolve_agent(pre_build_agent, self.paths)
+        if self.paths.has_agent() and not self.paths.is_approved():
+            self._grandfather_pre_review_approval()
         if self.paths.has_agent() and self.paths.is_approved():
             return self.paths.agent_dir
         # A designed but unapproved agent deliberately returns None, so the
@@ -226,6 +228,38 @@ class Runtime:
         # is still parked at the review question. Coming back to a session
         # mid-review puts you back at the same gate.
         return None
+
+    def _grandfather_pre_review_approval(self) -> None:
+        """Treat an agent from before the review gate as already approved.
+
+        Adding the gate would otherwise break every session that already had a
+        working agent: no marker on disk means "not approved", so opening one
+        would send it back through the design phase -- and since its bootstrap
+        graph had already finished, that means starting the discussion again
+        from nothing. A change that improves the next run must not do that to
+        the last one.
+
+        The signal is exact rather than a guess about dates. Before the gate
+        existed, the validator set `outcome = "ready"` the moment a design
+        passed, and that is what ended the design phase. So a bootstrap thread
+        whose state already says "ready" was approved under the old rules. A
+        session genuinely parked at the new gate has no outcome yet, so it
+        keeps its gate.
+        """
+        try:
+            snapshot = self.checkpointer.get_tuple(
+                {"configurable": {"thread_id": f"{self.paths.session.name}:bootstrap"}}
+            )
+        except Exception:  # noqa: BLE001 -- a missing or odd checkpoint is not fatal
+            return
+        if snapshot is None:
+            return
+        values = snapshot.checkpoint.get("channel_values") or {}
+        if values.get("outcome") == "ready":
+            self.paths.approve(
+                "approved before the design-review gate existed; "
+                "grandfathered on first open\n"
+            )
 
     def fallback_folder(self) -> Path:
         """The agent to use when the design phase finished without writing one

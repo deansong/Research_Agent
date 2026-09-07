@@ -464,6 +464,91 @@ def test_the_designer_is_told_to_split_work_across_nodes():
         "the contradictory 'smallest graph' advice is back"
     print("PASS  the designer is told to split, with the reason, and not to un-split")
 
+
+def test_an_agent_from_before_the_gate_is_grandfathered():
+    """Adding the review gate must not break sessions that already worked.
+
+    No marker on disk means "not approved", so without this an existing
+    session would be sent back through the design phase -- and since its
+    bootstrap graph had already finished, that means restarting the discussion
+    from nothing. A change that improves the next run must not do that to the
+    last one.
+
+    The signal is exact: before the gate, the validator set outcome="ready" the
+    moment a design passed. A bootstrap thread already saying "ready" was
+    approved under the old rules.
+    """
+    from agent.config import AgentConfig, BackendConfig
+    from agent.runtime import open_runtime
+
+    with tempfile.TemporaryDirectory() as tmp:
+        repo = pathlib.Path(tmp)
+        paths = storage.session_paths(repo, "old")
+        # An agent on disk, as the old validator would have left it...
+        paths.agent_dir.mkdir(parents=True, exist_ok=True)
+        for name in ("graph.json", "nodes.json"):
+            source = storage.builtin_agents_dir() / "default" / name
+            (paths.agent_dir / name).write_text(source.read_text())
+        assert paths.has_agent() and not paths.is_approved()
+
+        cfg = AgentConfig(default=BackendConfig(provider="fake"), roles={})
+        with open_runtime(cfg, paths) as runtime:
+            # ...but no bootstrap checkpoint at all: nothing to grandfather on,
+            # so the safe answer is to review it.
+            assert runtime.resolve_folder(None) is None
+            assert not paths.is_approved()
+
+            # Now give it the state the old code would have left behind.
+            saver = runtime.checkpointer
+            config = {"configurable": {"thread_id": "old:bootstrap",
+                                       "checkpoint_ns": ""}}
+            saver.put(
+                config,
+                {"v": 1, "id": "x", "ts": "2026-01-01T00:00:00+00:00",
+                 "channel_values": {"outcome": "ready"}, "channel_versions": {},
+                 "versions_seen": {}},
+                {"source": "loop", "step": 1, "parents": {}},
+                {},
+            )
+            folder = runtime.resolve_folder(None)
+
+        assert folder == paths.agent_dir, folder
+        assert paths.is_approved(), "an already-ready session must be grandfathered"
+        assert "grandfathered" in paths.approved.read_text()
+        print("PASS  an agent that was already running keeps running")
+
+
+def test_a_session_parked_at_the_gate_is_not_grandfathered():
+    """The other half. A design waiting for review has no outcome yet, so it
+    must keep its gate -- otherwise the feature would grandfather away the very
+    thing it exists to do."""
+    from agent.config import AgentConfig, BackendConfig
+    from agent.runtime import open_runtime
+
+    with tempfile.TemporaryDirectory() as tmp:
+        repo = pathlib.Path(tmp)
+        paths = storage.session_paths(repo, "pending")
+        paths.agent_dir.mkdir(parents=True, exist_ok=True)
+        for name in ("graph.json", "nodes.json"):
+            source = storage.builtin_agents_dir() / "default" / name
+            (paths.agent_dir / name).write_text(source.read_text())
+
+        cfg = AgentConfig(default=BackendConfig(provider="fake"), roles={})
+        with open_runtime(cfg, paths) as runtime:
+            runtime.checkpointer.put(
+                {"configurable": {"thread_id": "pending:bootstrap",
+                                  "checkpoint_ns": ""}},
+                {"v": 1, "id": "y", "ts": "2026-01-01T00:00:00+00:00",
+                 "channel_values": {"outcome": "",
+                                    "human": {"purpose": "design_review"}},
+                 "channel_versions": {}, "versions_seen": {}},
+                {"source": "loop", "step": 2, "parents": {}},
+                {},
+            )
+            assert runtime.resolve_folder(None) is None, "the gate must hold"
+        assert not paths.is_approved()
+        print("PASS  a design still awaiting review keeps its gate")
+
 if __name__ == "__main__":
     for name, fn in sorted(globals().items()):
         if name.startswith("test_"):

@@ -22,3 +22,6 @@ uvicorn[standard]
 #   httpx                 # FastAPI's TestClient needs it
 #   tree-sitter
 #   tree-sitter-javascript
+#   quickjs               # actually EXECUTES the browser modules against a
+#                         # stub DOM, which is the only way to catch a runtime
+#                         # error at startup without a browser

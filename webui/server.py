@@ -84,9 +84,32 @@ def create_app(repo: Path, cli_args=None) -> FastAPI:
     _register(app)
 
     # Mounted last so /api/* wins. html=True serves index.html at "/".
-    app.mount("/", StaticFiles(directory=str(STATIC), html=True), name="static")
+    app.mount("/", _NoCacheStatic(directory=str(STATIC), html=True), name="static")
 
     return app
+
+
+class _NoCacheStatic(StaticFiles):
+    """Serve the UI with caching switched off.
+
+    There is no build step here, so no content hashes in filenames -- app.js is
+    always app.js. Browsers then revalidate on their own schedule, and you can
+    end up running a NEW index.html against a CACHED app.js. The symptom is a
+    page that renders perfectly and responds to nothing, which is
+    indistinguishable from a bug in the code and was in fact reported as one.
+
+    A local development tool has nothing to gain from caching and everything
+    to lose, so: no-store, and a reload is always a reload.
+    """
+
+    def is_not_modified(self, response_headers, request_headers) -> bool:
+        # Refuse to answer 304, which is the other half of the same problem.
+        return False
+
+    async def get_response(self, path: str, scope):
+        response = await super().get_response(path, scope)
+        response.headers["Cache-Control"] = "no-store, must-revalidate"
+        return response
 
 
 @asynccontextmanager
