@@ -614,7 +614,13 @@ function headline(event) {
     case 'file_change':
       return (event.changes || []).map((c) => c.path).join(', ') || 'edited files';
     case 'reasoning': return (event.summary || [])[0] || 'thinking';
-    case 'message': return event.is_final_json ? '(final structured answer)' : firstLine(event.text);
+    case 'message':
+      // Still labelled, because knowing it is THE answer is useful -- but the
+      // size too, so an empty-looking row is distinguishable from a big one
+      // you have not expanded yet.
+      return event.is_final_json
+        ? `the final answer (${(event.text || '').length.toLocaleString()} chars)`
+        : firstLine(event.text);
     case 'web_search': return `searched: ${event.query || ''}`;
     case 'plan': return firstLine(event.text);
     case 'error': return event.message || 'error';
@@ -625,9 +631,27 @@ function headline(event) {
 function detail(event) {
   if (event.kind === 'command') return event.output || '';
   if (event.kind === 'reasoning') return (event.summary || []).join('\n\n');
-  if (event.kind === 'message' && !event.is_final_json) return event.text || '';
+  // The final structured answer INCLUDED. It used to be skipped as "a
+  // duplicate of the normal return path", which is true for the designer --
+  // its answer becomes graph.json, two tabs away -- and false for every
+  // other node, whose answer becomes state you cannot read anywhere. Either
+  // way, hiding the one artefact the turn produced is the wrong default.
+  if (event.kind === 'message') return prettyIfJson(event.text || '');
   if (event.kind === 'plan') return event.text || '';
   return '';
+}
+
+/** Pretty-print JSON, or hand back the text unchanged. */
+function prettyIfJson(text) {
+  const trimmed = String(text || '').trim();
+  if (!trimmed.startsWith('{') && !trimmed.startsWith('[')) return trimmed;
+  try {
+    return JSON.stringify(JSON.parse(trimmed), null, 2);
+  } catch {
+    // A clipped or half-written document. Showing it raw beats showing
+    // nothing, which is what happened before.
+    return trimmed;
+  }
 }
 
 function firstLine(text) {

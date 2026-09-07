@@ -152,10 +152,18 @@ def _line(marker: str, text: str) -> str | None:
 # read back later. The two are deliberately separate functions rather than one
 # with a flag, because the line format is allowed to stay terse and opinionated.
 
-#: Output longer than this is truncated in the RECORD too. A single pytest run
-#: can emit megabytes, and the point is to be readable afterwards, not to be a
-#: second copy of the terminal.
+#: COMMAND output longer than this is truncated in the record. A single pytest
+#: run can emit megabytes, and the point is to be readable afterwards, not to
+#: be a second copy of the terminal.
 MAX_OUTPUT = 4000
+
+#: A MESSAGE is different, and sharing the 4 KB cap with command output was
+#: wrong. It is the model's answer -- the thing most worth reading in full --
+#: and it is bounded by the provider's own output limit rather than by how
+#: chatty a test suite is. A 16,608-token design clipped to 4 KB loses the
+#: middle of the only artefact anybody wanted to see, and the clip is silent
+#: apart from a "...[N characters omitted]..." nobody expects mid-JSON.
+MAX_MESSAGE = 200_000
 
 # --------------------------------------------------------------------------
 # WHY STREAMING DELTAS ARE MARKED TRANSIENT
@@ -202,9 +210,14 @@ _DELTA_STREAMS = {
     "command_exec_output_delta": "output",
 }
 
-#: Per stream. Enough to see what is being written without holding a whole
-#: turn's output in memory -- the point is the recent tail, not a transcript.
-LIVE_TAIL = 2000
+#: Per stream, while the turn is still running. The full text arrives in the
+#: record when the turn ends; this is what there is to look at before then.
+#:
+#: 8 KB rather than the 2 KB it started at: the cost is 8 KB per stream in the
+#: in-flight file, rewritten every five seconds, which is nothing next to the
+#: multi-megabyte rewrites that came of keeping one record per token -- and
+#: two kilobytes of a document being written is about four paragraphs.
+LIVE_TAIL = 8000
 
 
 class _LiveText:
@@ -326,7 +339,8 @@ def _item(item: Any, phase: str) -> dict | None:
         text = (getattr(item, "text", "") or "").strip()
         if not text:
             return None
-        return {"kind": "message", "phase": phase, "text": _clip(text),
+        return {"kind": "message", "phase": phase,
+                "text": _clip(text, MAX_MESSAGE),
                 # The final structured answer comes back through the normal
                 # return path; flagged so a reader can skip the duplicate.
                 "is_final_json": text.startswith("{")}
@@ -344,11 +358,11 @@ def _item(item: Any, phase: str) -> dict | None:
     return {"kind": _snake(kind), "phase": phase}
 
 
-def _clip(text: str) -> str:
-    if len(text) <= MAX_OUTPUT:
+def _clip(text: str, limit: int = MAX_OUTPUT) -> str:
+    if len(text) <= limit:
         return text
-    half = MAX_OUTPUT // 2
-    return f"{text[:half]}\n...[{len(text) - MAX_OUTPUT} characters omitted]...\n{text[-half:]}"
+    half = limit // 2
+    return f"{text[:half]}\n...[{len(text) - limit} characters omitted]...\n{text[-half:]}"
 
 
 def _snake(class_name: str) -> str:

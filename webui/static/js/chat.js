@@ -351,7 +351,9 @@ function describeEvent(event) {
     case 'reasoning':
       return `· ${(event.summary || []).slice(-1)[0] || ''}`;
     case 'message':
-      return event.is_final_json ? '> (final answer)' : `> ${firstLine(event.text)}`;
+      return event.is_final_json
+        ? `> the final answer (${(event.text || '').length.toLocaleString()} chars)`
+        : `> ${firstLine(event.text)}`;
     case 'web_search': return `? ${event.query || ''}`;
     case 'plan': return `= ${firstLine(event.text)}`;
     case 'error': return `! ${event.message || ''}`;

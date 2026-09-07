@@ -204,6 +204,55 @@ def test_the_plan_editor_offers_a_check_and_a_gate_per_step():
     print("PASS  every step gets an editable check, and the gate reflects it")
 
 
+def test_the_final_answer_is_shown_rather_than_labelled_away():
+    """It was rendered as "(final answer)" and nothing else.
+
+    The rationale was that it duplicates the normal return path -- true for
+    the designer, whose answer becomes graph.json two tabs away, and false for
+    every other node, whose answer becomes state you cannot read anywhere in
+    the UI. Either way, hiding the one artefact a turn produced is the wrong
+    default: a person looking at a node's activity is looking for what it
+    SAID.
+    """
+    try:
+        import quickjs  # noqa: F401
+    except ImportError:  # pragma: no cover
+        pytest.skip("quickjs not installed")
+    from jsdom_harness import exercise
+
+    result = exercise("""
+      var answer = JSON.stringify({ task_brief: "Compare skill associations",
+                                    graph: { entry: "audit" } });
+      var events = [{ kind: 'message', phase: 'completed', at: 861,
+                      text: answer, is_final_json: true }];
+      var host = document.getElementById('tab-activity');
+      __ns.renderActivity(host, { turns: [
+        { node: 'designer', index: 2, started: '', counts: { message: 1 },
+          events: events },
+      ] });
+
+      var found = [];
+      (function walk(node) {
+        for (var i = 0; i < (node._children || []).length; i++) {
+          var child = node._children[i];
+          if (child.className === 'event-output') found.push(child.textContent);
+          if (child.className === 'event-label') found.push(child.textContent);
+          walk(child);
+        }
+      })(host);
+      return found;
+    """)
+
+    joined = "\n".join(result)
+    # The label still says it is THE answer, and now says how big.
+    assert "the final answer" in joined, joined[:200]
+    assert "chars" in joined, "say the size, so an unexpanded row is legible"
+    # And the body is there, pretty-printed rather than a one-line blob.
+    assert "task_brief" in joined and "Compare skill associations" in joined, joined[:300]
+    assert '"graph"' in joined, "the whole document, not the first key"
+    print("PASS  a node's final answer is readable in the activity panel")
+
+
 def test_the_harness_would_notice_a_broken_lookup():
     """A test that cannot fail is worse than no test.
 

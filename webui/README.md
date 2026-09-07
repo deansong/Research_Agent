@@ -208,6 +208,31 @@ plan, command output). It was being discarded for a while, which is how a turn
 that wrote 16,608 tokens of a finished design could report `5 events,
 last: * user message` and then be killed for going quiet.
 
+### Where the complete text is
+
+Three different views, and it is worth knowing which answers which question:
+
+| | shows | how much |
+| --- | --- | --- |
+| the heartbeat line | what it is writing right now | last ~120 chars |
+| `show detail` on that line | the live streams + the turn's events | last 8 KB per stream, newest 120 events |
+| **Configure ▸ a node ▸ Activity** | every recorded turn, expandable | **the whole message**, up to 200 KB |
+
+So: complete text, yes — in the node inspector's Activity tab, once the turn
+has ended. The heartbeat and its expander are deliberately tails, because
+while a turn is running there is no end yet.
+
+Two things used to prevent this and no longer do. A message shared the 4 KB
+clip with command output, so a 66 KB answer arrived with its middle replaced
+by `...[N characters omitted]...`; messages now have their own 200 KB cap and
+command output keeps the small one, because a pytest run really is unbounded
+and a model's answer is not. And the *final structured answer* was rendered as
+`(final answer)` and nothing else — skipped as a duplicate of the normal
+return path, which is true for the designer, whose answer becomes `graph.json`
+two tabs away, and false for every other node, whose answer becomes state you
+cannot read anywhere. It is now shown, pretty-printed, with its size in the
+label.
+
 `show detail` on that row expands it into the turn's real events: each command
 with its exit code, each file touched, the model's own reasoning. That is
 fetched from `/api/sessions/{id}/activity` when you ask for it, and **not**

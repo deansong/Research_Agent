@@ -80,6 +80,35 @@ def test_record_keeps_every_reasoning_line_and_prints_the_latest():
     print("PASS  the newest reasoning line prints; all of them are recorded")
 
 
+def test_a_message_is_kept_whole_where_command_output_is_not():
+    """They shared a 4 KB cap, and they are not the same kind of thing.
+
+    Command output is unbounded -- a pytest run is megabytes -- and the record
+    exists to be readable afterwards rather than to be a second copy of the
+    terminal. A message is the model's ANSWER, bounded by the provider's own
+    output limit, and it is the thing most worth reading in full. A
+    16,608-token design clipped to 4 KB loses the middle of the only artefact
+    anybody wanted, and says so with an "...omitted..." in the middle of what
+    was valid JSON.
+    """
+    from agent.backends._progress import MAX_MESSAGE, MAX_OUTPUT, record
+
+    assert MAX_MESSAGE > MAX_OUTPUT * 10, "a message needs its own, larger cap"
+
+    big = '{"task_brief": "' + "x" * 66_000 + '"}'
+    kept = record(_event("ItemCompletedNotification",
+                         _Item("AgentMessageThreadItem", text=big)))
+    assert kept["text"] == big, "a 66 KB answer must survive whole"
+    assert kept["is_final_json"] is True
+
+    # Command output still is not, for the reason it never was.
+    ran = record(_event("ItemCompletedNotification",
+                        _Item("CommandExecutionThreadItem", command="pytest",
+                              aggregated_output="y" * 66_000, exit_code=0)))
+    assert "omitted" in ran["output"] and len(ran["output"]) < MAX_OUTPUT + 200
+    print("PASS  a message is kept whole; command output is still clipped")
+
+
 def test_huge_output_is_clipped_from_the_middle():
     """A pytest run can be megabytes. Clipping the MIDDLE keeps both the
     command's first output and its final failure, which are the two ends you
