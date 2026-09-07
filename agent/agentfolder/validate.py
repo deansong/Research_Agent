@@ -61,6 +61,12 @@ def format_problems(problems: Sequence[Problem]) -> str:
     return "\n".join(lines)
 
 
+#: How many missing node entries mean "this answer stopped early" rather than
+#: "somebody forgot one". Below it each gap is named; at or above it they are
+#: one problem, because they have one cause and one fix.
+_INCOMPLETE_AT = 3
+
+
 def validate_folder(
     folder: AgentFolder,
     *,
@@ -89,9 +95,39 @@ def validate_folder(
                                     "declared more than once in graph.json."))
         seen.add(name)
 
-    for name in name_set - set(folder.nodes):
-        problems.append(Problem("config_missing", f"node {name!r}",
-                                "listed in graph.json but has no entry in nodes.json."))
+    # An INCOMPLETE answer, reported as one problem instead of forty.
+    #
+    # A real design came back with 20 node names, no edges, no branches and a
+    # single node entry. That produced 19 config_missing + 8 dead_end + 15
+    # unreachable = 42 errors, every one of them true and every one of them
+    # the same fact: the designer stopped early. The repair prompt is built
+    # from this list, so it arrived flooded with derived noise and the actual
+    # instruction -- write the other 19 entries -- was buried in it.
+    #
+    # So: past a few, say it once, and skip the checks whose answers are
+    # already determined by the gap. Below the threshold nothing changes,
+    # because two missing entries is an omission rather than a truncation and
+    # naming them is the most useful thing to do.
+    missing = sorted(name_set - set(folder.nodes))
+    incomplete = len(missing) >= _INCOMPLETE_AT
+
+    if incomplete:
+        shown = ", ".join(repr(n) for n in missing[:5])
+        problems.append(Problem(
+            "incomplete_design", "nodes.json",
+            f"graph.json lists {len(name_set)} nodes and nodes.json has "
+            f"{len(folder.nodes)}. {len(missing)} have no entry: {shown}"
+            f"{', ...' if len(missing) > 5 else ''}.\n"
+            f"  This is one answer that stopped early, not many separate "
+            f"problems. Send the WHOLE design: one entry in `nodes` for every "
+            f"name in `graph.nodes`, and every node appearing once as the "
+            f"`from` of an edge or a branch. Count both before answering.\n"
+            f"  Further checks (dead ends, reachability) are skipped until "
+            f"the design is complete -- their answers follow from the gap."))
+    else:
+        for name in missing:
+            problems.append(Problem("config_missing", f"node {name!r}",
+                                    "listed in graph.json but has no entry in nodes.json."))
     for name in set(folder.nodes) - name_set:
         problems.append(Problem("config_extra", f"node {name!r}",
                                 "configured in nodes.json but not listed in graph.json. "
@@ -153,20 +189,22 @@ def validate_folder(
             problems.append(Problem("fan_out", f"node {name!r}",
                                     "has more than one plain outgoing edge. Parallel branches "
                                     "are not supported yet; use a branch to choose one."))
-        if not out_edges and not branch and kinds.get(name) != "human":
+        if (not out_edges and not branch and kinds.get(name) != "human"
+                and not incomplete):
             problems.append(Problem("dead_end", f"node {name!r}",
                                     "has no outgoing edge or branch, so the run stops there. "
                                     'Add an edge, or route it to "__end__" explicitly.'))
 
     # ---- reachability ----------------------------------------------------
     reachable, reaches_end = _reachability(folder, edges_by_source, branch_by_source)
-    for name in sorted(name_set - reachable):
-        problems.append(Problem("unreachable", f"node {name!r}",
-                                f"nothing leads to it from the entry node {graph.entry!r}."))
-    if not reaches_end:
-        problems.append(Problem("end_unreachable", "graph.json",
-                                'no path from the entry node reaches "__end__", so the agent '
-                                "can never finish. It would run until the step limit."))
+    if not incomplete:
+        for name in sorted(name_set - reachable):
+            problems.append(Problem("unreachable", f"node {name!r}",
+                                    f"nothing leads to it from the entry node {graph.entry!r}."))
+        if not reaches_end:
+            problems.append(Problem("end_unreachable", "graph.json",
+                                    'no path from the entry node reaches "__end__", so the agent '
+                                    "can never finish. It would run until the step limit."))
 
     # ---- branches switch on a real enum ----------------------------------
     for branch in graph.branches:
@@ -355,13 +393,33 @@ def _check_agent_node(problems, name, config, name_set, variables, counters, fol
 
 
 def _check_human_node(problems, name, config, name_set, variables, check_target):
-    seen: set[str] = set()
+    # A name may repeat across DISJOINT purposes, so this collects the
+    # contexts each label is claimed in rather than just the labels.
+    #
+    # It used to reject any repeat, and a real design was refused for doing
+    # the obvious thing: /approve valid at "design_approval" going to the
+    # implementation node, and /approve valid at "findings" going to
+    # "__end__". Same word, same meaning to whoever types it, two
+    # transitions -- which is exactly what `purposes` is for. The clash worth
+    # refusing is a name whose contexts OVERLAP, because then which
+    # transition you get depends on list order.
+    claimed: dict[str, list[frozenset[str] | None]] = {}
     for command in config.commands:
+        contexts = frozenset(command.purposes) if command.purposes else None
         for label in (command.name, *command.aliases):
-            if label in seen:
-                problems.append(Problem("duplicate_command", f"node {name!r}",
-                                        f"/{label} is defined more than once."))
-            seen.add(label)
+            for existing in claimed.get(label, []):
+                # None means "valid everywhere", so it overlaps with anything.
+                if existing is None or contexts is None or (existing & contexts):
+                    where = ("everywhere" if existing is None or contexts is None
+                             else ", ".join(sorted(existing & contexts)))
+                    problems.append(Problem(
+                        "duplicate_command", f"node {name!r}",
+                        f"/{label} is defined more than once for the same "
+                        f"purpose ({where}), so which one runs depends on the "
+                        f"order they happen to be in. Give each a distinct "
+                        f"`purposes` list, or one name each."))
+                    break
+            claimed.setdefault(label, []).append(contexts)
         check_target(command.to, f"node {name!r} command /{command.name}", "to")
         _check_tokens(problems, f"node {name!r} command /{command.name} record",
                       command.record, name_set, variables, allow_argument=True)

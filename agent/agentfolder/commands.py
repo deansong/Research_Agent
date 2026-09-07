@@ -22,18 +22,27 @@ def build_registry(folder: AgentFolder) -> tuple[SlashCommand, ...]:
     gets them. Everything else comes from the folder.
     """
     rows: list[SlashCommand] = [c for c in REGISTRY if c.scope == "terminal"]
-    seen = {c.name for c in rows}
+    reserved = {c.name for c in rows}
+    # (name, purpose) rather than name: the same command name is allowed in
+    # DIFFERENT contexts, which is how /approve can mean "start implementing"
+    # at a design gate and "finish" at a findings gate. Two rows with the
+    # same name AND an overlapping context is the real clash, and validate.py
+    # reports it -- see _check_human_node.
+    seen: set[tuple[str, str]] = set()
 
     for config in folder.nodes.values():
         if not isinstance(config, HumanNodeConfig):
             continue
         for command in config.commands:
-            if command.name in seen:
+            if command.name in reserved:
                 # A folder may not shadow /help or /usage. Silently skipping is
                 # right: the folder is still usable, and validate.py has
                 # already told the designer about the clash.
                 continue
-            seen.add(command.name)
+            keys = {(command.name, p) for p in (command.purposes or [""])}
+            if keys & seen:
+                continue
+            seen |= keys
             rows.append(
                 SlashCommand(
                     name=command.name,

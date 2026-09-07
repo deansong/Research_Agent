@@ -133,9 +133,12 @@ class GraphProposal(StrictModel):
     name: str
     description: str = ""
     entry: str
-    nodes: list[NodeRef] = Field(min_length=1, max_length=20)
+    nodes: list[NodeRef] = Field(min_length=1, max_length=30)
     edges: list[EdgeSpec] = Field(default_factory=list)
-    branches: list[BranchSpec] = Field(default_factory=list, max_length=8)
+    branches: list[BranchSpec] = Field(default_factory=list, max_length=16)
+    """Must match agentfolder.schema.GraphFile, which has the reasoning.
+    A cap here that is tighter than the one on disk is a design the designer
+    cannot express but a human could hand-write."""
 
 
 class NodeProposal(StrictModel):
@@ -189,4 +192,7 @@ class DesignerOutput(StrictModel):
 
     rationale: str = ""
     graph: GraphProposal
-    nodes: list[NodeProposal] = Field(min_length=1, max_length=20)
+    nodes: list[NodeProposal] = Field(min_length=1, max_length=30)
+    """One per name in `graph.nodes`, and the same cap, because a shorter
+    list here is exactly the failure this cap once caused: 20 names and one
+    entry."""

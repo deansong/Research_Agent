@@ -225,17 +225,16 @@ Rules for the mapping:
 WHAT THESE AGENTS ARE FOR
 --------------------------------------------------------------------------
 Machine-learning research: reproduce a baseline, run an experiment, measure
-something, decide what it means. Three consequences for the design:
+something, decide what it means. Three consequences:
 
-- The expensive node is the one that RUNS something -- training, evaluation,
-  a sweep. Give it nothing else to do, so a failure anywhere else cannot
-  discard a run that finished.
-- Results go under {artifacts_dir}, one file per config and per seed, and are
-  never overwritten. A re-run must ADD a result, not replace one.
+- The expensive node is the one that RUNS something. Give it nothing else
+  to do, so a failure elsewhere cannot discard a finished run.
+- Results go under {artifacts_dir}, one file per config and seed,
+  never overwritten: a re-run ADDS a result.
 - Whoever decides what a number MEANS is never whoever produced it.
 
 Work that is not research -- a refactor, a tool, a bug -- gets designed for
-what it actually is. Do not force it into the shape of an experiment.
+what it is. Do not force it into an experiment.
 
 --------------------------------------------------------------------------
 THE TWO NODE KINDS
@@ -272,24 +271,19 @@ that is self-assessment. One verifier per STAGE: a branch allows only
 that only decides), branches that are not pass/fail.
 
 --------------------------------------------------------------------------
-ONE ANSWER
+ONE ANSWER, AND ALL OF IT
 --------------------------------------------------------------------------
-Send the document ONCE, complete. Never send a draft, or empty fields and a
-"placeholder" node, to narrate what you will do: every message costs the
-whole document again -- thousands of tokens.
+Answer once, with the WHOLE design. Count two things first:
 
-The plan is your input and it is enough. Do not audit the repository or read
-its git history -- the nodes you design do that.
+- `nodes` has ONE entry per name in `graph.nodes`. Same length.
+- every node is the `from` of exactly one edge or branch.
 
---------------------------------------------------------------------------
-RULES THAT WILL GET YOUR DESIGN REJECTED
---------------------------------------------------------------------------
-- Every node reachable from `entry`, and some path must reach "__end__".
-- Every node needs exactly one outgoing edge OR one branch, never both, never
-  two edges.
-- No output field called git_status or git_diff; use `capture` for those.
-- Node names: lowercase letters, digits, underscores; start with a letter.
-- `nodes` must contain exactly one entry per node in `graph.nodes`.
+20 names with 3 entries is not a short design, it is a broken one, and it
+costs an attempt. Send no drafts and no "placeholder" nodes -- but what to
+avoid is a SECOND message, not length. Be as long as the design needs.
+
+The plan is your input. Do not audit the repository or read its git
+history; the nodes you design do that.
 
 --------------------------------------------------------------------------
 JUDGEMENT
@@ -318,50 +312,26 @@ JUDGEMENT
 DESIGNER_INSTRUCTIONS = _DESIGNER_PREAMBLE
 
 
-def worked_example() -> str:
-    """The shipped default agent, for appending to the designer's PROMPT.
-
-    Read from disk so it cannot drift from the format the loader accepts. Sent
-    per-turn rather than as standing instructions because instructions have a
-    size cliff and prompts do not (module docstring).
-
-    Only the first turn needs it: the repair prompt continues the same provider
-    conversation, which already has it.
-    """
-    from agent.storage import builtin_agents_dir
-
-    default = builtin_agents_dir() / "default"
-    graph = json.loads((default / "graph.json").read_text())
-    nodes = json.loads((default / "nodes.json").read_text())
-
-    # graph.json in FULL -- it is the topology, it shows the orchestrator loop
-    # this agent is built on, and half a topology teaches nothing.
-    #
-    # nodes.json is NOT sent. It was 8.7 KB of five entries that are 80% the
-    # same shape, and RESEARCH_NODES now does that job properly: four
-    # complete entries, for nodes that run experiments rather than ones that
-    # orchestrate a conversation, including the human node and its
-    # `commands`. Two examples of the same file would mostly teach that
-    # there are two examples.
-    #
-    # graph.json still is, whole: it is the orchestrator topology, this is
-    # the only place it appears, and half a topology teaches nothing. Read
-    # from disk, so it cannot drift from what the loader accepts.
-    omitted = sorted(nodes)
-
-    return (
-        VERIFIER_LOOP
-        + "\n\n"
-        "--------------------------------------------------------------------------\n"
-        "A REAL WORKING AGENT -- its whole graph, two of its node entries\n"
-        "--------------------------------------------------------------------------\n"
-        "graph.json:\n"
-        + json.dumps(graph, indent=1)
-        + "\n\nIts nodes.json is not shown -- its five entries ("
-        + ", ".join(omitted) + ") are ordinary ones, and there are four "
-        + "complete entries below that do research rather than conversation."
-    )
-
+# The default agent's own graph.json used to be sent here too, as "a real,
+# working agent". It has been dropped, and what replaced it is better on
+# every count:
+#
+#   - CONTROL_FLOW shows the orchestrator branch as JSON, which was the only
+#     thing that topology uniquely taught;
+#   - RESEARCH_GRAPH is a complete, valid graph.json for the shape this
+#     project actually builds;
+#   - RESEARCH_NODES is four complete node entries that run experiments,
+#     rather than five that hold a conversation.
+#
+# Its justification was "read from disk, so it cannot drift from what the
+# loader accepts". The replacements are validated by a test that writes them
+# to disk and runs validate_folder(strict=True) over the result, which is a
+# stronger guarantee than being read from a file that happens to be correct.
+#
+# Dropping it also bought back the instruction budget: RULES THAT WILL GET
+# YOUR DESIGN REJECTED could then move into PROMPT_REFERENCE above, where a
+# list mirroring the validator belongs, leaving DESIGNER_INSTRUCTIONS with
+# room for a rule again instead of three characters.
 
 VERIFIER_LOOP = """
 
@@ -433,6 +403,16 @@ Five fields that no example below happens to use, because each is one line:
 
 A counter is NOT a placeholder: `bump` and `refresh_on` are the only things
 that read one, and no prompt can render its value.
+
+--------------------------------------------------------------------------
+RULES THAT WILL GET YOUR DESIGN REJECTED
+--------------------------------------------------------------------------
+- Every node reachable from `entry`, and some path must reach "__end__".
+- Every node needs exactly one outgoing edge OR one branch, never both, never
+  two edges.
+- No output field called git_status or git_diff; use `capture` for those.
+- Node names: lowercase letters, digits, underscores; start with a letter.
+- `nodes` must contain exactly one entry per node in `graph.nodes`.
 """
 
 
@@ -461,8 +441,11 @@ state each time and picks the next action:
         { "when": "finish",   "to": "review", "ask": { ... } } ],
       "default": "review" } ]
 
-with every worker's edge going BACK to the orchestrator. The worked example
-above is exactly this shape -- read its orchestrator entry.
+and every worker's edge going BACK to it, which is what makes it a loop:
+
+  "edges": [ { "from": "trainer",   "to": "orchestrator" },
+             { "from": "evaluator", "to": "orchestrator" },
+             { "from": "analyst",   "to": "orchestrator" } ]
 
 Rules for one:
 - It does no work itself. access "read_only", and it decides only. An

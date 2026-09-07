@@ -571,9 +571,12 @@ def test_every_design_phase_prompt_knows_this_is_ml_research():
     assert "seeds" in planner and "config" in planner, "the variables must be pinned"
     assert "out of scope" in planner
 
-    designer = DESIGNER_INSTRUCTIONS.lower()
+    # Whitespace-normalised: these are wrapped prose, and three of these
+    # assertions have already failed on a reflow that changed nothing about
+    # what the rule says. A line break is not a missing rule.
+    designer = " ".join(DESIGNER_INSTRUCTIONS.lower().split())
     assert "never overwritten" in designer, "a re-run must add a result"
-    assert "per seed" in designer, "results are per config and per seed"
+    assert "per config and seed" in designer, "results are per config and seed"
     assert "runs something" in designer, "the expensive node must stand alone"
 
     print("PASS  discussor, planner and designer all know this is ML research")
@@ -594,7 +597,7 @@ def test_none_of_them_force_a_refactor_into_an_experiment():
     for name, text in (("discussor", DISCUSSOR_INSTRUCTIONS),
                        ("planner", PLANNER_INSTRUCTIONS),
                        ("designer", DESIGNER_INSTRUCTIONS)):
-        lowered = text.lower()
+        lowered = " ".join(text.lower().split())
         assert "not research" in lowered or "not an experiment" in lowered, \
             f"the {name} has no way out of the research framing"
         assert "refactor" in lowered, \
@@ -700,10 +703,10 @@ def test_every_field_the_designer_can_emit_is_in_its_prompt():
     reference. `record` was already missing when this was written.
     """
     from agent.bootstrap.prompts import (CONTROL_FLOW, PROMPT_REFERENCE,
-                                         research_skeleton, worked_example)
+                                         VERIFIER_LOOP, research_skeleton)
     from agent.bootstrap.schemas import NodeProposal
 
-    prompt = (worked_example() + PROMPT_REFERENCE + CONTROL_FLOW
+    prompt = (VERIFIER_LOOP + PROMPT_REFERENCE + CONTROL_FLOW
               + research_skeleton())
 
     missing = [field for field in NodeProposal.model_fields
@@ -724,12 +727,13 @@ def test_the_prompt_still_shows_the_shapes_that_need_showing():
     going back), a human node's `commands`, and a branch with an `ask` on one
     of its cases.
     """
-    from agent.bootstrap.prompts import (CONTROL_FLOW, research_skeleton,
-                                         worked_example)
+    from agent.bootstrap.prompts import CONTROL_FLOW, research_skeleton
 
-    example = worked_example()
-    assert '"route_on": "action"' in example, "the orchestrator branch is gone"
-    assert '"to": "orchestrator"' in example, \
+    # The orchestrator shape now lives only in CONTROL_FLOW. The default
+    # agent's graph.json used to carry it too, and carrying it twice was what
+    # the prompt budget was being spent on.
+    assert '"route_on": "action"' in CONTROL_FLOW, "the orchestrator branch is gone"
+    assert '"to": "orchestrator"' in CONTROL_FLOW, \
         "workers must be shown returning to the orchestrator"
 
     skeleton = research_skeleton()
@@ -863,7 +867,7 @@ def test_designer_instructions_stay_under_the_measured_size_cliff():
     assert size < SAFE_INSTRUCTIONS_CHARS, (
         f"DESIGNER_INSTRUCTIONS is {size} chars, over the {SAFE_INSTRUCTIONS_CHARS} "
         f"limit. Turns will hang rather than fail. Move material into the "
-        f"per-turn prompt (worked_example) instead of growing this."
+        f"per-turn prompt instead of growing this."
     )
     print(f"PASS  DESIGNER_INSTRUCTIONS is {size} chars, "
           f"{SAFE_INSTRUCTIONS_CHARS - size} under the cliff")
@@ -884,7 +888,7 @@ def test_the_designer_is_told_not_to_draft_and_not_to_explore():
     """
     from agent.bootstrap.prompts import DESIGNER_INSTRUCTIONS as text
 
-    lowered = text.lower()
+    lowered = " ".join(text.lower().split())
     assert "placeholder" in lowered and "once" in lowered, \
         "the rule against draft/placeholder documents is gone"
     assert "git history" in lowered, \
@@ -905,7 +909,7 @@ def test_the_designer_is_told_not_to_let_a_node_check_itself():
     orchestrator: no single node can route back to twenty others.
     """
     from agent.bootstrap.prompts import (DESIGNER_INSTRUCTIONS,
-                                         research_skeleton, worked_example)
+                                         VERIFIER_LOOP, research_skeleton)
 
     rule = DESIGNER_INSTRUCTIONS.lower()
     assert "no node judges its own success" in rule, "the rule is missing"
@@ -919,7 +923,7 @@ def test_the_designer_is_told_not_to_let_a_node_check_itself():
     # names in VERIFIER_LOOP, once with real ones and complete node entries
     # in the research skeleton. The second is strictly better, so the first
     # gave up its JSON; what matters is that the shape is shown SOMEWHERE.
-    shape = worked_example() + research_skeleton()
+    shape = VERIFIER_LOOP + research_skeleton()
     # Whitespace-normalised, because the JSON is rendered by json.dumps and
     # pinning its exact indentation makes this a test of the indent level.
     flat = " ".join(shape.split())
@@ -951,22 +955,22 @@ def test_the_designer_prompt_and_instructions_are_within_measured_limits():
     """
     from agent.backends.codex import SAFE_INSTRUCTIONS_CHARS
     from agent.bootstrap.prompts import (CONTROL_FLOW, DESIGNER_INSTRUCTIONS,
-                                         PROMPT_REFERENCE, research_skeleton,
-                                         worked_example)
+                                         PROMPT_REFERENCE, VERIFIER_LOOP,
+                                         research_skeleton)
 
     instructions = len(DESIGNER_INSTRUCTIONS)
     assert instructions < SAFE_INSTRUCTIONS_CHARS, (
         f"DESIGNER_INSTRUCTIONS is {instructions} chars, over the measured "
         f"{SAFE_INSTRUCTIONS_CHARS} cliff. Turns will HANG, not fail. Move it "
-        f"into worked_example() -- the prompt has no such limit."
+        f"into the per-turn prompt -- it has no such limit."
     )
 
     # Every piece designer.py appends, not just the first one. Measuring one
-    # of four is how a budget is quietly overspent: worked_example() shrank
-    # while the total grew, and a test on the part would have called that an
+    # of four is how a budget is quietly overspent: one part shrank while
+    # the total grew, and a test on that part would have called it an
     # improvement.
     parts = {
-        "worked_example": len(worked_example()),
+        "VERIFIER_LOOP": len(VERIFIER_LOOP),
         "PROMPT_REFERENCE": len(PROMPT_REFERENCE),
         "CONTROL_FLOW": len(CONTROL_FLOW),
         "research_skeleton": len(research_skeleton()),

@@ -236,6 +236,61 @@ def test_write_nodes_are_told_where_output_goes():
     print("PASS  write nodes are told to put output in the run's artifacts dir")
 
 
+def test_one_command_name_routes_by_the_gate_it_was_typed_at():
+    """Static validity is not the same as routing correctly at run time.
+
+    Two /approve rows with disjoint `purposes` pass validation and compile
+    into two edges out of the human node. The question this answers is which
+    one a typed "/approve" actually takes -- and before the fix the human
+    node keyed its commands by NAME alone, so the second row was
+    unreachable: every /approve went wherever the first one pointed,
+    whichever gate you were standing at.
+    """
+    import json
+    import tempfile
+
+    graph_doc = json.loads((DEFAULT / "graph.json").read_text())
+    nodes_doc = json.loads((DEFAULT / "nodes.json").read_text())
+
+    # Two gates, one word. /approve after the discussor starts the planner;
+    # /approve at the orchestrator's finish gate ends the run.
+    nodes_doc["human"]["commands"] = [
+        {"name": "approve", "to": "planner", "purposes": ["discussion"],
+         "summary": "Approve the requirements and plan them"},
+        {"name": "approve", "to": "__end__", "purposes": ["next_task"],
+         "summary": "Accept the work and finish"},
+        {"name": "exit", "to": "__end__", "aliases": ["quit"], "summary": "Stop"},
+    ]
+
+    tmp = pathlib.Path(tempfile.mkdtemp())
+    (tmp / "graph.json").write_text(json.dumps(graph_doc))
+    (tmp / "nodes.json").write_text(json.dumps(nodes_doc))
+    folder = load_agent_folder(tmp)
+
+    backend = RecordingBackend()
+    compiled = compile_agent(
+        folder, backends={r: backend for r in backends_needed(folder)},
+        checkpointer=InMemorySaver(), registry=build_registry(folder))
+    config = {"configurable": {"thread_id": "gates"}, "recursion_limit": 100}
+    compiled.invoke(initial_work_state(repo_path="/tmp", task_brief="do it",
+                                       agent_dir=str(tmp)), config=config)
+
+    # Gate one: purpose "discussion". This /approve must reach the planner.
+    assert compiled.get_state(config).values["pending"]["purpose"] == "discussion"
+    compiled.invoke(Command(resume="/approve"), config=config)
+    assert backend.ran("PlannerOutput"), \
+        "/approve at the discussion gate did not reach the planner"
+
+    # Gate two: purpose "next_task", reached after the orchestrator finishes.
+    # The SAME word must end the run here instead.
+    state = compiled.get_state(config)
+    assert state.values["pending"]["purpose"] == "next_task", state.values["pending"]
+    compiled.invoke(Command(resume="/approve"), config=config)
+    assert compiled.get_state(config).next == (), \
+        "/approve at the findings gate did not end the run"
+    print("PASS  the same command name routes by the gate it was typed at")
+
+
 def test_an_unrouted_branch_asks_about_itself_not_about_the_last_thing():
     """The hole under "default is a human node, never __end__".
 

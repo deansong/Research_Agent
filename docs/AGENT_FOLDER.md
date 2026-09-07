@@ -143,6 +143,32 @@ a plan; `refresh_on` on the executor means "when that counter moves, resend the
 whole plan instead of just the next task". Together they are the declarative
 form of what used to be a hand-written generation check.
 
+### One command name, two gates
+
+The same command name may appear more than once in a human node, as long as
+its `purposes` do not overlap:
+
+```json
+{"name": "approve", "to": "implement_study", "purposes": ["design_approval"]},
+{"name": "approve", "to": "__end__",         "purposes": ["findings"]}
+```
+
+`/approve` at a design review starts the implementation; `/approve` at a
+findings review finishes the run. Same word, same meaning to whoever types it,
+two transitions — which is exactly what `purposes` is for. This was refused on
+the name alone until a real design asked for it, and the workaround
+(`/approve_design`, `/approve_report`) makes the person learn the graph's
+internals to say yes.
+
+Resolution is by name **and** the current purpose, in `commands.lookup()` and
+in the human node itself: a row naming this purpose wins, then a row valid
+everywhere, then the first by name so a wrong-context message can still say
+where the command *is* valid.
+
+What is still refused is a name whose contexts **overlap** — including one row
+valid everywhere alongside one for a single purpose. Ambiguity resolved by
+list position is the kind of bug that works until somebody reorders a file.
+
 ### A `human` node
 
 ```json
@@ -224,6 +250,42 @@ nodes, unknown placeholders, reserved output fields, a `refresh_on` naming a
 counter nothing bumps, and a node's `access` exceeding its backend.
 
 Every problem is reported **together**, so one repair round can fix them all.
+
+### One incomplete answer is one problem
+
+With one exception, which a real failure earned. A design came back with 20
+node names, no edges, no branches and a single node entry. That is one fact —
+it stopped early — and it was reported as 19 `config_missing` + 8 `dead_end` +
+15 `unreachable` = **42 errors**. The repair prompt is built from that list, so
+the next attempt arrived flooded with derived noise, and the human's screen was
+42 lines of wreckage rather than the cause.
+
+So past three missing entries it becomes one `incomplete_design` error that
+states the counts, and the dead-end and reachability checks are skipped —
+their answers follow from the gap rather than from a second mistake. Below
+three, each gap is still named, because two missing entries is an omission and
+naming them is the most useful thing to say.
+
+### Node and branch caps
+
+| | |
+| --- | --- |
+| nodes per graph | **30** |
+| branches per graph | **16** |
+| cases per branch | 8 |
+| plan steps | 20 |
+
+The first two were 20 and 8, and 8 was the one that broke. Every stage now
+grows a `read_only` checker, and each checker spends **one branch** — so 8
+branches meant at most 8 checked stages, and a 13-step plan needs more. The
+designer got no clear refusal for this: it emitted 20 node names and almost
+nothing else, an answer shaped like the graph it could not express. 13 stages
+of worker + checker plus a human node is 27 nodes and 13 branches, which now
+fits.
+
+Note the two different 8s: `cases` caps the fan-out of *one* branch (and is
+why an orchestrator dispatches to at most seven workers); `branches` caps how
+many branches a graph has at all.
 
 ---
 

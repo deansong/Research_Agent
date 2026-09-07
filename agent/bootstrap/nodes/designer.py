@@ -13,7 +13,7 @@ from agent import activity
 from agent.backends.base import Access, BackendOutputError
 from agent.bootstrap.prompts import (CONTROL_FLOW, DESIGNER_INSTRUCTIONS,
                                      PROMPT_REFERENCE, REPAIR_PREFIX,
-                                     research_skeleton, worked_example)
+                                     VERIFIER_LOOP, research_skeleton)
 from agent.bootstrap.schemas import DesignerOutput
 from agent.bootstrap.state import BootstrapState, transcript_text
 from agent.statelib import merge_section
@@ -50,10 +50,10 @@ def make_designer(backend):
                 # contradicted by the prompt is not an instruction.
                 f"Design the agent from the plan above. Return the task_brief "
                 f"and the complete folder."
-                # Both examples ride in the PROMPT, not the instructions: over
-                # ~6 KB of developer_instructions a Codex turn never completes.
-                # See agent/bootstrap/prompts.py.
-                + worked_example()
+                # All of this rides in the PROMPT, not the instructions:
+                # over ~6 KB of developer_instructions a Codex turn never
+                # completes. See agent/bootstrap/prompts.py.
+                + VERIFIER_LOOP
                 + PROMPT_REFERENCE
                 + CONTROL_FLOW
                 # Last, deliberately. It is the most specific and most

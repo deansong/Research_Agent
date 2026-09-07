@@ -106,9 +106,22 @@ class GraphFile(FolderModel):
     name: str = Field(min_length=1, max_length=64)
     description: str = ""
     entry: str = Field(pattern=NODE_NAME)
-    nodes: list[NodeRef] = Field(min_length=1, max_length=20)
+    nodes: list[NodeRef] = Field(min_length=1, max_length=30)
+    """30, raised from 20 -- see BranchSpec below for the arithmetic that
+    made 20 too small once every stage grew a verifier."""
     edges: list[EdgeSpec] = Field(default_factory=list)
-    branches: list[BranchSpec] = Field(default_factory=list, max_length=8)
+    branches: list[BranchSpec] = Field(default_factory=list, max_length=16)
+    """16, raised from 8, and the two 8s were easy to confuse: `cases` above
+    caps the fan-out of ONE branch, this capped how many branches a graph may
+    have at all.
+
+    8 branches meant at most 8 checked stages, because the design pattern the
+    designer is now told to use spends one branch per stage (worker -> checker
+    -> branch). A 13-step plan needs 13, and what actually happened was worse
+    than a clear refusal: the designer emitted 20 node names, no edges, no
+    branches and one node entry -- an answer shaped like the graph it could
+    not express -- and the human got 42 validation errors describing the
+    wreckage rather than the cause."""
 
 
 # ---------------------------------------------------------------------------

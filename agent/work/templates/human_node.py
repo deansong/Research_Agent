@@ -32,10 +32,20 @@ from agent.work.state import WorkState, render_context
 def make_human_node(name: str, config: HumanNodeConfig, *, registry):
     """Build the node function for one `kind: "human"` entry."""
 
-    by_name = {c.name: c for c in config.commands}
+    # (label, purpose) -> command, plus (label, "") for the rows valid
+    # everywhere. Keyed on both because one name may appear twice with
+    # disjoint `purposes`: /approve at a design gate and /approve at a
+    # findings gate are different transitions, and keying on the name alone
+    # silently gave the second one the first one's target.
+    by_label: dict[tuple[str, str], object] = {}
     for command in config.commands:
-        for alias in command.aliases:
-            by_name[alias] = command
+        for label in (command.name, *command.aliases):
+            for purpose in (command.purposes or [""]):
+                by_label.setdefault((label, purpose), command)
+
+    def resolve(label: str, purpose: str):
+        return (by_label.get((label, purpose))
+                or by_label.get((label, "")))
 
     def human_node(state: WorkState) -> dict[str, Any]:
         # ---- step 1: what are we asking? (runs again on every resume) -----
@@ -66,7 +76,7 @@ def make_human_node(name: str, config: HumanNodeConfig, *, registry):
             return {"route": {name: name}}
 
         if parsed.kind == "command":
-            command = by_name.get(parsed.command.name)
+            command = resolve(parsed.command.name, purpose)
             if command is None:
                 # A terminal-scope command reached the graph. Should not happen
                 # via our REPL, but a different driver might do it.

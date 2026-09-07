@@ -193,13 +193,33 @@ REGISTRY: tuple[SlashCommand, ...] = (
 )
 
 
-def lookup(name: str, registry: Sequence[SlashCommand] = REGISTRY) -> SlashCommand | None:
-    """Find a command by its name or any of its aliases.  Case-insensitive."""
+def lookup(name: str, registry: Sequence[SlashCommand] = REGISTRY,
+           *, purpose: str = "") -> SlashCommand | None:
+    """Find a command by its name or any of its aliases.  Case-insensitive.
+
+    One NAME may appear more than once when the rows are valid in different
+    contexts, so the purpose picks between them. A designed agent asked for
+    this the first time it had two gates: /approve at a design review goes to
+    the implementation node, /approve at the findings review goes to
+    "__end__". Same word, same meaning to the person typing it, two targets.
+
+    Order matters. A row naming this purpose wins; then a row valid
+    everywhere; then the first match by name, so Rule 6 in parse() can still
+    say where the command IS valid instead of "unknown command".
+    """
     wanted = name.strip().lower()
-    for command in registry:
-        if wanted == command.name or wanted in command.aliases:
+    matches = [c for c in registry
+               if wanted == c.name or wanted in c.aliases]
+    if not matches:
+        return None
+
+    for command in matches:
+        if command.contexts is not None and purpose in command.contexts:
             return command
-    return None
+    for command in matches:
+        if command.contexts is None:
+            return command
+    return matches[0]
 
 
 def all_names(registry: Sequence[SlashCommand] = REGISTRY) -> list[str]:
@@ -267,7 +287,7 @@ def parse(
     name = parts[0].lower()
     argument = parts[1].strip() if len(parts) > 1 else ""
 
-    command = lookup(name, registry)
+    command = lookup(name, registry, purpose=purpose)
 
     # Rule 5 -- unknown command.  Never forward it to the model: a typo would
     # silently become an expensive answer.  Suggest the closest real name.
