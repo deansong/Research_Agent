@@ -27,7 +27,11 @@ def make_validator(paths, *, max_attempts: int):
         problems_text = design.get("problems", "").strip()
 
         if not problems_text:
-            problems_text = _check(staging)
+            # state["design"]["plan"], NOT state["plan"] -- the plan lives
+            # inside the design section (planner.py writes it there, human.py
+            # re-reads it from disk into the same place).
+            problems_text = _check(
+                staging, (state.get("design") or {}).get("plan") or {})
 
         if not problems_text:
             # Success. The rename is what makes this durable -- see writer.py.
@@ -197,7 +201,7 @@ def _describe(folder_path: Path) -> tuple[str, str]:
     )
 
 
-def _check(staging: Path) -> str:
+def _check(staging: Path, plan: dict | None = None) -> str:
     """Load and validate from disk. Returns "" when the folder is good."""
     if not (staging / "graph.json").exists():
         return "The designer did not produce a folder."
@@ -214,6 +218,15 @@ def _check(staging: Path) -> str:
     problems = [p for p in validate_folder(folder, strict=True) if not p.warning]
     if problems:
         return format_problems(problems)
+
+    # The plan is not part of the folder, so validate_folder cannot see it and
+    # this call has to be here. It is the only place both documents are in
+    # hand -- and it was missing: _gate_problems shipped with nothing calling
+    # it, which its own test did not catch because the test called it
+    # directly.
+    gates = _gate_problems(folder, plan or {})
+    if gates:
+        return gates
 
     # Final smoke test: it must actually compile. Backends are not built yet,
     # so this catches structural problems only -- which is exactly what is

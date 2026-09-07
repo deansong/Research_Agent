@@ -154,7 +154,13 @@ _MINIMAL_AGENT = {
             "name": "worker",
             "backend": "worker",
             "access": "read_only",
-            "steps": ["1"],
+            # Every step the plan has, not just the first. A design that
+            # owns only step 1 leaves the rest assigned to nobody, which is
+            # now a validation error for any step the human marked as
+            # needing their approval -- and the fake agent should be a valid
+            # design, since it is what --backend fake exercises everything
+            # with. 1 and 2 cover the fake planner's own two steps.
+            "steps": ["1", "2"],
             "instructions": "You are a worker. Do exactly what the brief asks and report back.",
             "output": [
                 {"name": "summary", "type": "string", "required": True},

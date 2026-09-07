@@ -44,6 +44,7 @@ class ScriptedBackend:
         self.designs = designs
         self.design_calls = 0
         self.repair_prompts: list[str] = []
+        self.design_prompts: list[str] = []
         self.revise_prompts: list[str] = []
         self.turn = 0
 
@@ -59,6 +60,7 @@ class ScriptedBackend:
         elif {"task_brief", "graph", "nodes"} <= fields:
             index = min(self.design_calls, len(self.designs) - 1)
             self.design_calls += 1
+            self.design_prompts.append(prompt)
             # Matched on the actual marker, not on the word "rejected"
             # appearing somewhere in the prompt: the designer's first prompt
             # carries the worked example and the research skeleton, and the
@@ -84,8 +86,9 @@ _PLAN = {
     "summary": "Two steps: look, then write.",
     "steps": [
         {"id": "1", "title": "Survey the repo", "detail": "find conventions",
-         "substeps": []},
-        {"id": "2", "title": "Write the thing", "detail": "",
+         "check": "notes.md names three conventions", "substeps": []},
+        {"id": "2", "title": "Write the thing", "detail": "", "gate": True,
+         "check": "pytest passes",
          "substeps": [{"id": "2.1", "title": "draft", "detail": "first pass"},
                       {"id": "2.2", "title": "verify", "detail": ""}]},
     ],
@@ -743,6 +746,96 @@ def test_the_prompt_still_shows_the_shapes_that_need_showing():
 
     assert '"when": "finish"' in CONTROL_FLOW, "the orchestrator's exit case"
     print("PASS  orchestrator, commands and a branch ask are all shown as JSON")
+
+
+def test_the_prompt_size_test_covers_the_part_that_actually_varies():
+    """The static budget was guarding the smaller half.
+
+    The four static sections are 18 KB and the test asserted they stay under
+    20 KB. On a real session the assembled prompt was 40 KB: the transcript
+    and the plan are session-derived, and together they were bigger than
+    everything the test measured. Nothing was wrong with the 20 KB figure --
+    it was answering a different question from the one it looked like it was
+    answering.
+    """
+    from agent.bootstrap.nodes.designer import TRANSCRIPT_BUDGET, _conversation
+
+    # The transcript is the only unbounded input: it grows with every turn
+    # for the rest of the session, so it is the one that needs a ceiling.
+    entries = [{"role": "human", "text": "x" * 5000} for _ in range(20)]
+    kept = _conversation({"transcript": entries})
+    assert len(kept) < TRANSCRIPT_BUDGET + 2000, len(kept)
+    assert "earliest message(s) are omitted" in kept, \
+        "a prompt that has quietly lost context is worse than a short one"
+
+    # Newest kept, because the plan already carries what the early
+    # conversation produced.
+    entries = [{"role": "human", "text": f"message {i}"} for i in range(5)]
+    kept = _conversation({"transcript": entries})
+    assert "message 4" in kept and "earliest" not in kept, kept
+    print(f"PASS  the transcript is capped at {TRANSCRIPT_BUDGET} chars, "
+          f"and says when it trimmed")
+
+
+def test_the_designer_is_actually_sent_the_plan():
+    """The one input the designer exists to work from, and it was missing.
+
+    Measured on a real 13-step session: 0 of the 13 plan step titles appeared
+    anywhere in the designer's prompt, which nonetheless ended "design the
+    agent from the plan above". So it was inventing stages from the
+    conversation, and every `steps: [...]` it wrote named ids it had never
+    read -- which makes {my_steps}, the per-step `check` and the human gates
+    all point at nothing.
+
+    Driven through the real graph rather than by calling the renderer,
+    because the renderer was never the broken part: the prompt simply did not
+    interpolate it.
+    """
+    backend, graph, config, _ = _run([_MINIMAL_AGENT], ["/plan", "/approve"])
+
+    assert backend.design_prompts, "the designer never ran"
+    prompt = backend.design_prompts[0]
+
+    for step in _PLAN["steps"]:
+        assert step["title"] in prompt, f"step {step['id']} is not in the prompt"
+    assert "2.1" in prompt and "draft" in prompt, "substep ids must be there too"
+
+    # The two fields that turn the plan into a design, not just its titles.
+    assert "check: notes.md names three conventions" in prompt, prompt[:400]
+    assert "human gate" in prompt, "a gated step must be visible as gated"
+
+    # And the brief is sent ONCE. It is byte-identical to the transcript's
+    # first entry, and both were being interpolated -- 6.5 KB twice on the
+    # measured run.
+    assert prompt.count("do the thing") <= 1, \
+        "the request is in the transcript already; do not send it twice"
+    print("PASS  the designer receives the plan it is told to design from")
+
+
+def test_the_gate_check_is_wired_into_the_validator():
+    """A test that calls a function nothing else calls proves nothing.
+
+    _gate_problems shipped with no caller: the line meant to invoke it was
+    lost in a failed edit, and its own test passed because it called the
+    function directly. So this one goes through _check -- the function the
+    validator node actually uses -- and the earlier test keeps the detail.
+    """
+    from agent.bootstrap.nodes.validator import _check
+
+    with tempfile.TemporaryDirectory() as tmp:
+        folder = _research_folder(pathlib.Path(tmp))
+
+        # A gated step nobody owns: nothing will ever ask about it.
+        gated = {"steps": [{"id": "99", "title": "Publish the results",
+                            "gate": True}]}
+        problem = _check(folder, gated)
+        assert "Step 99" in problem, problem
+        assert "Publish the results" in problem, problem
+
+        # And with no gates the same folder passes, so the check above is
+        # about the gate and not about the folder.
+        assert _check(folder, {"steps": [{"id": "99", "title": "x"}]}) == ""
+    print("PASS  the gate check runs from _check, where the validator calls it")
 
 
 def test_the_research_skeleton_is_a_valid_graph():
