@@ -13,11 +13,12 @@ from __future__ import annotations
 
 from typing import Any
 
+from agent import activity
 from agent.agentfolder.render import render
 from agent.agentfolder.schema import END_TARGET, AgentNodeConfig, BranchSpec, EdgeSpec
 from agent.backends.base import Access, BackendError
 from agent.git_utils import snapshot
-from agent.telemetry import record_usage
+from agent.telemetry import record_usage, usage_to_dict
 from agent.work.state import WorkState, render_context
 
 # Written into `route` when a node's routing value matched no case. The
@@ -32,6 +33,7 @@ def make_agent_node(
     backend,
     output_model,
     transition: EdgeSpec | BranchSpec | None,
+    session_dir: str = "",
 ):
     """Build the node function for one `kind: "agent"` entry.
 
@@ -88,6 +90,17 @@ def make_agent_node(
                 data["git_status"] = git.status
             if "git_diff" in config.capture:
                 data["git_diff"] = git.diff_stat
+
+        # ---- step 4b: keep what the provider actually did ----------------
+        # Written to disk rather than into state -- see agent/activity.py for
+        # why. No guard needed: activity.write does nothing when there is no
+        # session_dir, which is the case for a folder driven outside a session.
+        activity.write(
+            session_dir, name, run.events,
+            usage=usage_to_dict(run.usage) if run.usage else None,
+            summary={k: v for k, v in data.items()
+                     if isinstance(v, (str, int, float, bool))},
+        )
 
         _print_summary(name, config, data)
 

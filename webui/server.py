@@ -332,6 +332,24 @@ def _register(app: FastAPI) -> None:
         except KeyError:
             raise _bad("no_node", name, f"No node named {name!r} in this agent.", 404)
 
+    @app.get("/api/sessions/{session_id}/nodes/{name}/activity")
+    def get_node_activity(session_id: str, name: str, limit: int = 20):
+        """Every provider event for this node's turns, newest turn first.
+
+        Separate from /context because it is the big one: a single executor
+        turn can be hundreds of events with command output attached, and the
+        Configure panel should not have to wait for that to render a form.
+        """
+        from agent import activity
+
+        runner = _runner(session_id)
+        turns = activity.turns(runner.paths.session, name, limit=limit)
+        return {
+            "node": name,
+            "turns": [turn.as_dict() for turn in turns],
+            "nodes_with_activity": activity.nodes_with_activity(runner.paths.session),
+        }
+
     # ---- the event stream ------------------------------------------------
 
     @app.get("/api/sessions/{session_id}/events")

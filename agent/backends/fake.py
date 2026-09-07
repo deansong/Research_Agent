@@ -77,6 +77,7 @@ class FakeBackend:
             is_new_thread=thread_id is None,
             usage=Usage(input_tokens=100 * turn, cached_input_tokens=40 * turn,
                         output_tokens=10, context_window=200_000),
+            events=_fake_events(turn),
         )
 
     def _canned(self, output_model, payload: dict, turn: int, what: str):
@@ -93,6 +94,7 @@ class FakeBackend:
             thread_id=f"fake-{turn}",
             is_new_thread=True,
             usage=Usage(input_tokens=500, cached_input_tokens=100, output_tokens=200),
+            events=_fake_events(turn),
         )
 
     def close(self) -> None:
@@ -225,3 +227,36 @@ def _choices(output_model, field_name: str) -> tuple:
     if typing.get_origin(field.annotation) is typing.Literal:
         return typing.get_args(field.annotation)
     return ()
+
+
+def _fake_events(turn: int) -> list[dict]:
+    """A plausible turn's worth of provider events.
+
+    Not decoration. The activity record -- what the provider actually ran, and
+    what came back -- is the part of this system that most needs testing, and
+    without these it could only be exercised against a real paid provider.
+    A test double that omits the interesting channel is not much of a double.
+
+    Shapes match agent/backends/_progress.py::record exactly, including the
+    started/completed pairing that `Turn.counts()` has to collapse.
+    """
+    return [
+        {"kind": "reasoning", "phase": "completed", "at": 0.4,
+         "summary": [f"[fake] working out what turn {turn} needs",
+                     "[fake] second summary line, which describe() drops"]},
+        {"kind": "command", "phase": "started", "at": 0.5,
+         "command": "ls -la"},
+        {"kind": "command", "phase": "completed", "at": 0.9,
+         "command": "ls -la", "exit_code": 0,
+         "output": "total 8\ndrwxr-xr-x  2 fake fake 4096 .\n"},
+        {"kind": "command", "phase": "started", "at": 1.0,
+         "command": "python -m pytest -q"},
+        {"kind": "command", "phase": "completed", "at": 2.2,
+         "command": "python -m pytest -q", "exit_code": 1,
+         "output": "1 failed, 3 passed\nE   AssertionError: [fake] a failure "
+                   "you can only see in the activity record\n"},
+        {"kind": "file_change", "phase": "completed", "at": 2.4,
+         "changes": [{"path": "fake/module.py", "kind": "modified"}]},
+        {"kind": "message", "phase": "completed", "at": 2.5,
+         "text": f"[fake] finished turn {turn}", "is_final_json": False},
+    ]

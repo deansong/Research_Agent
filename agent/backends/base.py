@@ -19,7 +19,7 @@ what "read-only" means -- is the provider's problem, not the node's.
 
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from enum import Enum
 from typing import Generic, Protocol, TypeVar
 
@@ -96,6 +96,18 @@ class StructuredRun(Generic[OutputT]):
 
     is_new_thread: bool
     usage: Usage | None
+
+    events: list[dict] = field(default_factory=list)
+    """Everything the provider reported during the turn, in order.
+
+    Optional and empty by default -- a backend that has no notion of a stream
+    (api.py, fake.py) simply does not fill it, and nothing downstream cares.
+
+    Why keep it at all, when the terminal already prints a line per interesting
+    event: because the printing throws almost everything away. No command
+    output, no reasoning past the first summary line, nothing at all for a
+    command that succeeded. "313 events, last one 7s ago" was true and useless.
+    """
 
 
 # ---------------------------------------------------------------------------

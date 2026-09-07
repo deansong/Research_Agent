@@ -44,6 +44,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
+from agent import activity
 from agent.agentfolder.load import AgentFolderError, load_agent_folder
 from agent.agentfolder.schema import (
     END_TARGET,
@@ -357,6 +358,10 @@ def node_context(folder, name: str, *, state: dict, artifacts_dir: str = "",
         "last_output": (state.get("outputs") or {}).get(name, {}),
         "usage": {k: v for k, v in (state.get("usage") or {}).items()
                   if k.startswith(f"{name}/")},
+        # What the provider actually DID, not a count of it. Read from disk
+        # rather than state -- see agent/activity.py.
+        "turns": [turn.as_dict() for turn in activity.turns(session_dir, name)]
+                 if session_dir else [],
     }
 
 

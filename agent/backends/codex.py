@@ -13,7 +13,7 @@ import time
 
 from openai_codex import Codex, Sandbox
 
-from agent.backends._progress import describe
+from agent.backends._progress import describe, record
 from agent.backends._schema import strict_json_schema
 from agent.backends.base import (
     Access,
@@ -161,7 +161,9 @@ class CodexBackend:
         # schema whose `required` omits any property, and Pydantic omits every
         # field that has a default. Measured against a live call --
         #   invalid_json_schema: ... Missing 'question'.
-        result = self._run_with_recovery(thread, prompt, strict_json_schema(output_model))
+        result, events = self._run_with_recovery(
+            thread, prompt, strict_json_schema(output_model)
+        )
 
         if not result.final_response:
             raise BackendError("Codex returned no final response.")
@@ -175,6 +177,7 @@ class CodexBackend:
             thread_id=thread.id,
             is_new_thread=is_new,
             usage=_to_usage(result.usage),
+            events=events,
         )
 
     def close(self) -> None:
@@ -264,6 +267,7 @@ class CodexBackend:
         """
         handle = thread.turn(prompt, output_schema=output_schema)
         outcome: dict[str, object] = {}
+        started_at = time.monotonic()
 
         # Two clocks, and the distinction is the whole point. `last_event` is
         # touched by EVERY event, so it answers "is the provider still alive?".
@@ -276,9 +280,19 @@ class CodexBackend:
         last_line = [time.monotonic()]
         events = [0]
 
+        # The full record, kept as well as printed. See _progress.record for
+        # why these are two different functions rather than one with a flag.
+        recorded: list[dict] = []
+
         def report(event) -> None:
             events[0] += 1
             last_event[0] = time.monotonic()
+
+            entry = record(event)
+            if entry is not None:
+                entry["at"] = round(time.monotonic() - started_at, 2)
+                recorded.append(entry)
+
             line = describe(event)
             if line:
                 print(line, flush=True)
@@ -325,7 +339,7 @@ class CodexBackend:
 
         if "error" in outcome:
             raise outcome["error"]  # type: ignore[misc]
-        return outcome["result"]
+        return outcome["result"], recorded
 
 
     def _poll_seconds(self) -> float:

@@ -128,6 +128,7 @@ def compile_agent(
                 backend=backends[config.backend],
                 output_model=build_output_model(ref.name, config.output),
                 transition=transitions.get(ref.name),
+                session_dir=session_dir,
             ),
         )
 

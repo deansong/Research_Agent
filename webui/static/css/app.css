@@ -1006,3 +1006,83 @@ textarea::placeholder {
 }
 
 dialog label.required .field-note { color: var(--accent); }
+
+/* ---------- activity: what the provider actually did ---------- */
+
+.turn {
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  padding: 8px 10px;
+  margin-bottom: 10px;
+  background: #0f1522;
+}
+
+.turn-head {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  margin-bottom: 6px;
+  font-family: var(--mono);
+  font-size: 12px;
+}
+
+.event {
+  border-top: 1px solid var(--line);
+  padding: 5px 0 4px;
+}
+
+.event:first-of-type { border-top: 0; }
+
+.event-head {
+  display: flex;
+  align-items: baseline;
+  gap: 7px;
+  font-family: var(--mono);
+  font-size: 11.5px;
+}
+
+.event-mark {
+  flex: 0 0 auto;
+  width: 9px;
+  text-align: center;
+  color: var(--text-faint);
+}
+
+.event-label {
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.event-command  .event-mark { color: var(--accent); }
+.event-file_change .event-mark { color: var(--human); }
+.event-error    .event-mark,
+.event-error    .event-label { color: var(--danger); }
+.event-reasoning .event-label { color: var(--text-dim); font-style: italic; }
+
+.event-fail {
+  flex: 0 0 auto;
+  color: var(--danger);
+  font-size: 10.5px;
+}
+
+.event details summary {
+  cursor: pointer;
+  color: var(--text-faint);
+  font-size: 10.5px;
+  margin: 3px 0 0 16px;
+}
+
+.event-output {
+  margin: 4px 0 2px 16px;
+  padding: 6px 8px;
+  background: var(--bg-input);
+  border-left: 2px solid var(--line-bright);
+  font-family: var(--mono);
+  font-size: 11px;
+  color: var(--text-dim);
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  max-height: 320px;
+  overflow-y: auto;
+}

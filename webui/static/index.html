@@ -120,6 +120,7 @@
       <button class="tab active" data-tab="run">Run</button>
       <button class="tab" data-tab="configure">Configure</button>
       <button class="tab" data-tab="context">Context</button>
+      <button class="tab" data-tab="activity">Activity</button>
       <button class="tab" data-tab="problems">Problems <span class="badge" id="problem-count" hidden>0</span></button>
     </div>
     <div class="tab-body active" id="tab-run">
@@ -133,6 +134,12 @@
     <div class="tab-body" id="tab-context">
       <div class="empty-state">
         <p class="muted">Select a node to see the prompt it will actually receive.</p>
+      </div>
+    </div>
+    <div class="tab-body" id="tab-activity">
+      <div class="empty-state">
+        <p class="muted">Select a node to see what the provider actually did &mdash;
+          the commands it ran, their output, and the files it touched.</p>
       </div>
     </div>
     <div class="tab-body" id="tab-problems">

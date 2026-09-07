@@ -13,7 +13,7 @@
 import { api, subscribe } from './api.js';
 import { Chat } from './chat.js';
 import { GraphPanel } from './graph.js';
-import { Inspector } from './inspector.js';
+import { Inspector, renderActivity } from './inspector.js';
 import { PlanPanel, ownersByStep } from './plan.js';
 import { TopologyPanel } from './topology.js';
 
@@ -188,6 +188,14 @@ async function selectNode(name) {
     inspector.showContext(await api.nodeContext(state.session.id, name));
   } catch (error) {
     showError(error);
+  }
+
+  // Fetched separately from the context: one executor turn can be hundreds of
+  // events with command output attached, and the form should not wait for it.
+  try {
+    renderActivity(el('tab-activity'), await api.nodeActivity(state.session.id, name));
+  } catch (error) {
+    if (error.status !== 404) showError(error);
   }
 }
 

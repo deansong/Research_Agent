@@ -502,3 +502,141 @@ function section(title, hint, body) {
   if (body) box.append(body);
   return box;
 }
+
+// ---------------------------------------------------------------------------
+// Activity: what the provider actually did
+// ---------------------------------------------------------------------------
+
+/*
+  This is the panel the whole activity record exists for. The terminal reports
+  "313 events, last one 7s ago", which tells you a turn is alive and nothing
+  about it. Every one of those events is here instead: the commands, their exit
+  codes, their OUTPUT -- which the terminal never shows at all -- the files
+  touched, and the model's own account of what it was doing.
+
+  Rendered newest turn first, because a node in a retry loop has many and the
+  last one is why you came looking.
+*/
+
+const KIND_MARK = {
+  command: '$',
+  file_change: '~',
+  reasoning: '·',
+  message: '>',
+  web_search: '?',
+  plan: '=',
+  error: '!',
+};
+
+export function renderActivity(container, payload) {
+  container.replaceChildren();
+
+  const turns = payload?.turns || [];
+  if (!turns.length) {
+    const hint = payload?.nodes_with_activity?.length
+      ? `Nothing recorded for this node yet. Recorded: ${payload.nodes_with_activity.join(', ')}.`
+      : 'Nothing recorded yet. Events appear once a node has run against a '
+        + 'real provider (the fake backend emits a sample turn).';
+    container.innerHTML = `<div class="empty-state"><p class="muted">${hint}</p></div>`;
+    return;
+  }
+
+  for (const turn of turns) {
+    const box = document.createElement('div');
+    box.className = 'turn';
+
+    const head = document.createElement('div');
+    head.className = 'turn-head';
+    const counts = Object.entries(turn.counts || {})
+      .map(([kind, n]) => `${n} ${kind}`).join(' · ');
+    head.innerHTML = `<strong>turn ${turn.index}</strong>`;
+    head.append(muted(`${turn.started}${counts ? '  —  ' + counts : ''}`));
+    box.append(head);
+
+    for (const event of turn.events || []) {
+      // Only the completion of a started/completed pair is worth a row: the
+      // start carries nothing the completion does not, and showing both makes
+      // every command appear twice.
+      if (event.phase === 'started' && event.kind !== 'error') continue;
+      box.append(eventRow(event));
+    }
+
+    container.append(box);
+  }
+}
+
+function eventRow(event) {
+  const row = document.createElement('div');
+  row.className = `event event-${event.kind}`;
+
+  const head = document.createElement('div');
+  head.className = 'event-head';
+
+  const mark = document.createElement('span');
+  mark.className = 'event-mark';
+  mark.textContent = KIND_MARK[event.kind] || '•';
+
+  const label = document.createElement('span');
+  label.className = 'event-label';
+  label.textContent = headline(event);
+
+  head.append(mark, label);
+  if (event.at != null) head.append(muted(`${event.at}s`));
+  if (event.exit_code != null && event.exit_code !== 0) {
+    const code = document.createElement('span');
+    code.className = 'event-fail';
+    code.textContent = `exit ${event.exit_code}`;
+    head.append(code);
+  }
+  row.append(head);
+
+  // The output is the part the terminal never shows, so it is the part most
+  // worth having here. Collapsed, because a pytest run is hundreds of lines.
+  const body = detail(event);
+  if (body) {
+    const details = document.createElement('details');
+    // A failure is opened by default; nobody wants to click to see why.
+    details.open = event.exit_code != null && event.exit_code !== 0;
+    const summary = document.createElement('summary');
+    summary.textContent = event.kind === 'command' ? 'output' : 'detail';
+    const pre = document.createElement('pre');
+    pre.className = 'event-output';
+    pre.textContent = body;
+    details.append(summary, pre);
+    row.append(details);
+  }
+  return row;
+}
+
+function headline(event) {
+  switch (event.kind) {
+    case 'command': return event.command || '(command)';
+    case 'file_change':
+      return (event.changes || []).map((c) => c.path).join(', ') || 'edited files';
+    case 'reasoning': return (event.summary || [])[0] || 'thinking';
+    case 'message': return event.is_final_json ? '(final structured answer)' : firstLine(event.text);
+    case 'web_search': return `searched: ${event.query || ''}`;
+    case 'plan': return firstLine(event.text);
+    case 'error': return event.message || 'error';
+    default: return event.kind;
+  }
+}
+
+function detail(event) {
+  if (event.kind === 'command') return event.output || '';
+  if (event.kind === 'reasoning') return (event.summary || []).join('\n\n');
+  if (event.kind === 'message' && !event.is_final_json) return event.text || '';
+  if (event.kind === 'plan') return event.text || '';
+  return '';
+}
+
+function firstLine(text) {
+  return String(text || '').split('\n')[0].slice(0, 120);
+}
+
+function muted(text) {
+  const node = document.createElement('span');
+  node.className = 'muted';
+  node.textContent = text;
+  return node;
+}

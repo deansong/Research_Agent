@@ -390,9 +390,14 @@ def test_a_turn_that_keeps_streaming_is_never_killed_for_being_slow():
     backend = CodexBackend(MagicMock(), timeout=0.25, max_seconds=30)
 
     with patch("agent.backends.codex._collect", _drain):
-        result = backend._run_turn(_Thread(handle), "go", {})
+        result, recorded = backend._run_turn(_Thread(handle), "go", {})
 
     assert result == "collected", result
+    # _run_turn returns the full event record alongside the result. These
+    # fixture events are the non-printing kind, so they contribute nothing --
+    # which is the point: a turn's record must not depend on what was worth
+    # printing. Real content is checked in test_progress_records_everything.
+    assert isinstance(recorded, list)
     assert not handle.interrupted, "a productive turn must not be interrupted"
     assert stream.closed
     print("PASS  a turn streaming events is not killed for running long")

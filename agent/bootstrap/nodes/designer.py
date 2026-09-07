@@ -9,12 +9,13 @@ CONCEPT: A node whose OUTPUT is another graph. Note it produces data only; the
 
 from __future__ import annotations
 
+from agent import activity
 from agent.backends.base import Access, BackendOutputError
 from agent.bootstrap.prompts import DESIGNER_INSTRUCTIONS, REPAIR_PREFIX, worked_example
 from agent.bootstrap.schemas import DesignerOutput
 from agent.bootstrap.state import BootstrapState, transcript_text
 from agent.statelib import merge_section
-from agent.telemetry import record_usage
+from agent.telemetry import record_usage, usage_to_dict
 
 
 def make_designer(backend):
@@ -56,6 +57,11 @@ def make_designer(backend):
                 prompt=prompt,
                 output_model=DesignerOutput,
             )
+            # Keep what the provider did, beside the work-phase nodes' records.
+            # session_dir is already in BootstrapState, so no plumbing is needed --
+            # see agent/activity.py for why this goes to disk and not to state.
+            activity.write(state.get("session_dir", ""), "designer", run.events,
+                           usage=usage_to_dict(run.usage) if run.usage else None)
         except BackendOutputError as exc:
             # The model produced something that is not even a valid
             # DesignerOutput. Same repair path as a structurally bad design:

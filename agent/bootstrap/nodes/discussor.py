@@ -10,12 +10,13 @@ CONCEPT: A node is a function (state) -> partial update. Note it has a single
 
 from __future__ import annotations
 
+from agent import activity
 from agent.backends.base import Access
 from agent.bootstrap.prompts import DISCUSSOR_INSTRUCTIONS
 from agent.bootstrap.schemas import DiscussorOutput
 from agent.bootstrap.state import BootstrapState
 from agent.statelib import merge_section
-from agent.telemetry import record_usage
+from agent.telemetry import record_usage, usage_to_dict
 
 
 def make_discussor(backend):
@@ -51,6 +52,11 @@ def make_discussor(backend):
             prompt=prompt,
             output_model=DiscussorOutput,
         )
+        # Keep what the provider did, beside the work-phase nodes' records.
+        # session_dir is already in BootstrapState, so no plumbing is needed --
+        # see agent/activity.py for why this goes to disk and not to state.
+        activity.write(state.get("session_dir", ""), "discussor", run.events,
+                       usage=usage_to_dict(run.usage) if run.usage else None)
 
         role_threads["discussor"] = run.thread_id
         providers["role_threads"] = role_threads

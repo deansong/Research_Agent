@@ -81,6 +81,8 @@ export const api = {
   validateAgent: (id, doc) => request('POST', `/api/sessions/${encodeURIComponent(id)}/agent/validate`, doc),
   nodeContext:   (id, name) =>
     request('GET', `/api/sessions/${encodeURIComponent(id)}/nodes/${encodeURIComponent(name)}/context`),
+  nodeActivity:  (id, name) =>
+    request('GET', `/api/sessions/${encodeURIComponent(id)}/nodes/${encodeURIComponent(name)}/activity`),
   config:        ()     => request('GET', '/api/config'),
   schema:        ()     => request('GET', '/api/schema'),
   defaults:      ()     => request('GET', '/api/defaults'),
