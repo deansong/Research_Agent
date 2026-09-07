@@ -148,19 +148,20 @@
       Repository <span class="muted">&mdash; the project the agent works on</span>
       <input name="repo" id="new-repo" value="." spellcheck="false">
     </label>
-    <label>
+    <label class="required">
       What do you want to build or change?
+      <span class="required-mark">required</span>
       <textarea name="task" id="new-task" rows="5"
-                placeholder="Add pytest coverage for parser.py, error paths only."></textarea>
+                placeholder="e.g. Add pytest coverage for parser.py, error paths only."></textarea>
     </label>
     <label>
       Session folder <span class="muted">(optional &mdash; otherwise derived from the task)</span>
       <input name="session_dir" id="new-session-dir" spellcheck="false"
-             placeholder="~/experiments/parser-tests">
+             placeholder="e.g. ~/experiments/parser-tests — leave empty for a derived name">
     </label>
     <label>
       Pre-built agent <span class="muted">(optional &mdash; skips the design phase)</span>
-      <input name="pre_build_agent" id="new-prebuilt" spellcheck="false" placeholder="default">
+      <input name="pre_build_agent" id="new-prebuilt" spellcheck="false" placeholder="e.g. default — leave empty to design a new agent">
     </label>
     <p class="dialog-error" id="new-error" hidden></p>
     <menu>

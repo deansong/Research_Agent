@@ -982,3 +982,27 @@ dialog menu {
   border-left-color: var(--accent-dim);
   background: #10201e;
 }
+
+
+/* ---------- hint text vs real text ---------- */
+
+/*
+  Placeholders were unstyled, so in a dark theme the browser's default -- a
+  faded version of the text colour -- came out close enough to real content to
+  be read as a filled-in value. Someone reported the New session dialog as
+  "already filled in" and could not see why it complained about a missing task.
+  Italic and clearly dimmer, so a hint looks like a hint.
+*/
+input::placeholder,
+textarea::placeholder {
+  color: var(--text-faint);
+  font-style: italic;
+  opacity: 1;              /* Firefox dims placeholders again on top of this */
+}
+
+.required-mark {
+  color: var(--accent);
+  font-style: normal;
+}
+
+dialog label.required .field-note { color: var(--accent); }

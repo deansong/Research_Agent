@@ -468,10 +468,19 @@ function wireDialogs() {
   const newDialog = el('dialog-new');
   const openDialog = el('dialog-open');
 
+  // Start stays disabled until there is a task, so the dialog cannot post
+  // something the server is bound to refuse. Better than explaining the
+  // refusal afterwards.
+  const taskBox = el('new-task');
+  const startButton = el('new-ok');
+  const syncStart = () => { startButton.disabled = !taskBox.value.trim(); };
+  taskBox.addEventListener('input', syncStart);
+
   el('btn-new').addEventListener('click', () => {
     el('new-error').hidden = true;
+    syncStart();
     newDialog.showModal();
-    el('new-task').focus();
+    taskBox.focus();
   });
   el('new-cancel').addEventListener('click', () => newDialog.close());
   el('open-cancel').addEventListener('click', () => openDialog.close());
