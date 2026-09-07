@@ -95,21 +95,18 @@ and assign every step to a node using that node's `steps` field:
 
     {"name": "scorer", "steps": ["3", "4.1"], ...}
 
-This is not bookkeeping -- it is how each node's context is kept small. A node
-receives ONLY its own steps, in full, via {my_steps}, plus a one-line outline
-of everything else via {plan_outline} so it knows where it sits. Use both in
-the prompts you write.
+Not bookkeeping -- it is how each node's context is kept small. A node gets
+ONLY its own steps, in full, via {my_steps}, plus a one-line outline of the
+rest via {plan_outline}. Use both in the prompts you write.
 
 Rules for the mapping:
-- Every step id in the plan must be assigned to some node.
-- ONE top-level step per node is the default. Two only when they are genuinely
+- Every step id must be assigned to some node.
+- ONE top-level step per node is the default. Two only if they are genuinely
   one piece of work. Three is almost always wrong.
-- A node is ATOMIC: one turn, and if it fails its whole output is discarded.
-  So the unit is "what one turn can finish", not "what belongs together".
-  Splitting costs an extra node; not splitting costs the whole turn.
-- Count the ARTEFACTS. A node that must write three files needs three nodes,
-  chained -- however related they are.
-- Steps that must happen in order belong to different nodes.
+- A node is ATOMIC: one turn, and if it fails its output is discarded. The
+  unit is "what one turn can finish", not "what belongs together".
+- Count the ARTEFACTS. Three files means three nodes, chained.
+- Ordered steps belong to different nodes.
 
 --------------------------------------------------------------------------
 THE TWO NODE KINDS
@@ -129,11 +126,11 @@ HOW CONTROL FLOWS
 --------------------------------------------------------------------------
 `edges`     unconditional: after A, always go to B.
 `branches`  conditional: look at ONE enum output field of a node and pick a
-            target per value. The field must be declared with type "enum" in
-            that node's `output`, and every choice needs a case or a default.
+            target per value. That field must be type "enum" in the node's
+            `output`, and every choice needs a case or a default.
 `"__end__"` as a target finishes the run.
 
-Any transition INTO a human node must carry an `ask` block saying what to show
+Any transition INTO a human node must carry an `ask`
 ({purpose, resume_to, question, context}). `resume_to` is where a plain-text
 answer goes -- normally the node that asked.
 
@@ -156,6 +153,15 @@ Placeholders you may use, and NOTHING else:
     {var.<name>}            a value set by a human command
 
 --------------------------------------------------------------------------
+CHECKING WORK
+--------------------------------------------------------------------------
+No node judges its own success. Work that matters is followed by a SEPARATE
+read_only verifier that branches: ok -> next, redo -> back to the worker,
+blocked -> a human. Never loop a worker to itself on its own `status`; that
+is self-assessment. One verifier per STAGE -- a branch allows only 8 cases,
+so no node can police twenty. Exact shape: VERIFIER LOOP, in the prompt.
+
+--------------------------------------------------------------------------
 RULES THAT WILL GET YOUR DESIGN REJECTED
 --------------------------------------------------------------------------
 - Every node reachable from `entry`, and some path must reach "__end__".
@@ -170,27 +176,25 @@ RULES THAT WILL GET YOUR DESIGN REJECTED
 --------------------------------------------------------------------------
 JUDGEMENT
 --------------------------------------------------------------------------
-- Size the graph by TURNS, not tidiness. Eight nodes doing one thing each beat
-  three doing three: same work, every step checkpointed and cheap to retry.
-  Never merge nodes to make the diagram look neat.
-- Do NOT include a node that interviews the human about requirements. That
-  already happened -- it is what produced the brief. Your agent starts knowing
-  what to do.
-- Include a human node only where a person must genuinely decide something, or
-  to let them stop the agent. Always give them a way to exit.
+- Size by TURNS, not tidiness. Eight nodes doing one thing each beat three
+  doing three: every step checkpointed and cheap to retry. Never merge nodes
+  to make the diagram look neat.
+- No node that interviews the human about requirements: that already happened
+  and produced the brief. Your agent starts knowing what to do.
+- A human node only where a person must genuinely decide, or to stop the run.
+  Always give them a way to exit.
 - Only give a node "write" access if it must change files.
-- A run's OUTPUT -- generated data, caches, reports, plots, logs -- belongs in
-  {artifacts_dir}, not in new top-level directories in the repository. Say so
-  in the prompt of any node that produces such output. Changing the project's
-  own source, tests and docs is different and belongs in the repository.
-- An `ask.question` that is ONLY a placeholder renders BLANK whenever that
-  field happens to be empty, and the human sees a useless generic prompt.
-  Always append a static sentence telling them what they can do, e.g.
+- A run's OUTPUT -- data, caches, reports, plots, logs -- goes in
+  {artifacts_dir}, never in new top-level repository directories. Say so in
+  the prompt of every node that produces any. Changing the project's own
+  source, tests and docs is different, and belongs in the repository.
+- An `ask.question` that is ONLY a placeholder renders BLANK when that field
+  is empty, and the human sees nothing useful. Always append a static
+  sentence saying what they can do, e.g.
       "{out.reviewer.question}\n\nAnything to add? /approve or /revise."
-- The `task_brief` you write is the ONLY thing the new agent knows about the
-  job. It never sees this conversation. Write it self-contained: no "as we
-  discussed", no "the user mentioned". State the goal, the constraints, and
-  what done looks like.
+- The `task_brief` is the ONLY thing the new agent knows; it never sees this
+  conversation. Self-contained: no "as we discussed". State the goal, the
+  constraints, and what done looks like.
 """.strip()
 
 
@@ -216,7 +220,8 @@ def worked_example() -> str:
     nodes = json.loads((default / "nodes.json").read_text())
 
     return (
-        "\n\n"
+        VERIFIER_LOOP
+        + "\n\n"
         "--------------------------------------------------------------------------\n"
         "A COMPLETE WORKED EXAMPLE -- this is a real, working agent\n"
         "--------------------------------------------------------------------------\n"
@@ -225,6 +230,47 @@ def worked_example() -> str:
         + "\n\nnodes.json:\n"
         + json.dumps(nodes, indent=2)
     )
+
+
+VERIFIER_LOOP = """
+
+--------------------------------------------------------------------------
+THE VERIFIER LOOP -- checking a stage, and sending it back
+--------------------------------------------------------------------------
+A node that just failed is the worst judge of whether it failed: same model,
+same conversation, grading itself. So a stage that matters is followed by a
+DIFFERENT node whose only job is to look at the result.
+
+    build_scorer -> verify_scorer -. ok      .-> run_study
+                                   -. redo    .-> build_scorer
+                                   -. blocked .-> human_review
+
+A plain edge INTO the verifier, a branch OUT of it:
+
+  "edges":    [ { "from": "build_scorer", "to": "verify_scorer" } ],
+  "branches": [ { "from": "verify_scorer", "route_on": "verdict",
+      "cases": [
+        { "when": "ok",   "to": "run_study" },
+        { "when": "redo", "to": "build_scorer" },
+        { "when": "blocked", "to": "human_review",
+          "ask": { "purpose": "blocked", "resume_to": "build_scorer",
+                   "question": "{out.verify_scorer.problem}",
+                   "context": "{out.verify_scorer.detail}" } } ],
+      "default": "human_review" } ]
+
+The verifier is access "read_only" -- it judges, it never fixes -- with
+`verdict` as an enum of ok/redo/blocked, and its prompt reading the worker's
+claim via {out.build_scorer.summary} so it checks rather than is told.
+
+Two things a design usually gets wrong here:
+
+1. `redo` points at the WORKER, which then uses prompts.next -- so put
+   {out.<verifier>.problem} in that prompt, or it repeats its mistake.
+2. `default` is a human node, never "__end__". An unhandled verdict that
+   silently ends the run is the worst outcome available.
+
+The verifier owns no plan step, so `steps: []`.
+"""
 
 
 REPAIR_PREFIX = """

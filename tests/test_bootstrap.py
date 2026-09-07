@@ -332,6 +332,71 @@ def test_designer_instructions_stay_under_the_measured_size_cliff():
           f"{SAFE_INSTRUCTIONS_CHARS - size} under the cliff")
 
 
+def test_the_designer_is_told_not_to_let_a_node_check_itself():
+    """A node that just failed is the worst judge of whether it failed.
+
+    A real design came back with `smoke_validation` routing "retryable" to
+    ITSELF, and three more nodes doing the same on their own `status` output.
+    That is the same model, in the same conversation, grading its own work --
+    it has every reason to report success. The fix is a separate read_only
+    verifier that branches ok / redo / blocked.
+
+    The 8-case branch limit is why this is per-STAGE rather than one central
+    orchestrator: no single node can route back to twenty others.
+    """
+    from agent.bootstrap.prompts import DESIGNER_INSTRUCTIONS, worked_example
+
+    rule = DESIGNER_INSTRUCTIONS.lower()
+    assert "no node judges its own success" in rule, "the rule is missing"
+    assert "read_only verifier" in rule, "the verifier must be read_only"
+    assert "self-assessment" in rule, "the failure mode must be named"
+    assert "8 cases" in rule, "the branch limit is why this is per-stage"
+
+    # The exact shape lives in the per-turn prompt, which has no size cliff.
+    shape = worked_example()
+    assert "THE VERIFIER LOOP" in shape, "the worked shape is missing"
+    assert '"when": "redo", "to": "build_scorer"' in shape, \
+        "redo must be shown pointing back at the WORKER, not onwards"
+    assert '"default": "human_review"' in shape, \
+        "an unhandled verdict must reach a human, not silently end the run"
+    print("PASS  the designer is told to use a separate verifier, and shown one")
+
+
+def test_the_designer_prompt_and_instructions_are_within_measured_limits():
+    """Two different budgets, and only one of them is a proven cliff.
+
+    `developer_instructions` above ~6 KB makes a Codex turn NEVER COMPLETE --
+    bisected live, and it is size not content: 13,940 characters of ordinary
+    prose hangs identically. That is why SAFE_INSTRUCTIONS_CHARS exists.
+
+    The per-turn PROMPT has no known cliff. 11,830 characters was measured
+    fine (34.2s), and a real 20-node design has since succeeded with a prompt
+    of about that size. This asserts a generous ceiling rather than a measured
+    one, so that a large addition has to be a deliberate decision.
+
+    Note how little instruction headroom is left. That is the useful signal
+    here: new designer guidance belongs in the prompt, or in the default agent
+    that the worked example is read from -- not in this file.
+    """
+    from agent.backends.codex import SAFE_INSTRUCTIONS_CHARS
+    from agent.bootstrap.prompts import DESIGNER_INSTRUCTIONS, worked_example
+
+    instructions = len(DESIGNER_INSTRUCTIONS)
+    assert instructions < SAFE_INSTRUCTIONS_CHARS, (
+        f"DESIGNER_INSTRUCTIONS is {instructions} chars, over the measured "
+        f"{SAFE_INSTRUCTIONS_CHARS} cliff. Turns will HANG, not fail. Move it "
+        f"into worked_example() -- the prompt has no such limit."
+    )
+
+    prompt = len(worked_example())
+    assert prompt < 20_000, (
+        f"the per-turn prompt is {prompt} chars. No cliff is known there, but "
+        f"nothing this large has been verified either -- measure before raising."
+    )
+    print(f"PASS  instructions {instructions}/{SAFE_INSTRUCTIONS_CHARS} "
+          f"({SAFE_INSTRUCTIONS_CHARS - instructions} left), prompt {prompt}")
+
+
 def test_the_designer_is_told_to_split_work_across_nodes():
     """The guidance used to contradict itself, and the wrong half won.
 
