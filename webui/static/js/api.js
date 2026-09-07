@@ -69,6 +69,7 @@ export const api = {
     request('GET', `/api/sessions/${encodeURIComponent(id)}/nodes/${encodeURIComponent(name)}/context`),
   config:        ()     => request('GET', '/api/config'),
   schema:        ()     => request('GET', '/api/schema'),
+  defaults:      ()     => request('GET', '/api/defaults'),
 };
 
 /**

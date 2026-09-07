@@ -112,7 +112,7 @@ def _register(app: FastAPI) -> None:
     @app.get("/api/sessions", response_model=list[SessionSummary])
     def list_sessions(repo: str | None = None):
         """Every session on disk, plus whether the server has one open."""
-        root = Path(repo).resolve() if repo else _DEFAULTS["repo"]
+        root = _resolve_repo(repo)
         out = []
         for name, task, has_agent in storage.list_sessions(root):
             runner = _RUNNERS.get(name)
@@ -132,7 +132,7 @@ def _register(app: FastAPI) -> None:
         The same three routes in the CLI has: an explicit folder, a named
         session, or a name derived from the task.
         """
-        repo = Path(body.repo).expanduser().resolve() if body.repo else _DEFAULTS["repo"]
+        repo = _resolve_repo(body.repo)
         if not repo.is_dir():
             raise _bad("bad_repo", str(repo), "Not a directory.")
 
@@ -366,7 +366,7 @@ def _register(app: FastAPI) -> None:
     @app.get("/api/config")
     def config(repo: str | None = None):
         """The resolved backend for each role the open sessions care about."""
-        root = Path(repo).resolve() if repo else _DEFAULTS["repo"]
+        root = _resolve_repo(repo)
         cfg = load_config(repo_path=root, cli=_DEFAULTS["cli_args"])
         roles = sorted({*cfg.roles, "discussor", "planner", "designer"})
         return {
@@ -408,6 +408,23 @@ def _register(app: FastAPI) -> None:
     @app.get("/api/health")
     def health():
         return {"ok": True, "open_sessions": sorted(_RUNNERS)}
+
+    @app.get("/api/defaults")
+    def defaults():
+        """What this server was started with.
+
+        The browser prefills its Repository field from `repo` rather than
+        showing ".", so the value on screen is the actual path. A dialog that
+        says "." is a dialog that does not tell you which project it is about
+        to design an agent for.
+        """
+        repo = _DEFAULTS["repo"]
+        return {
+            "repo": str(repo),
+            "sessions_dir": str(repo / storage.DOT_AGENT / "sessions"),
+            "backend": getattr(_DEFAULTS["cli_args"], "backend", None),
+            "model": getattr(_DEFAULTS["cli_args"], "model", None),
+        }
 
 
 # ---- streaming ------------------------------------------------------------
@@ -495,6 +512,28 @@ class _Overrides:
         if value in (None, [], ""):
             return getattr(self._defaults, name, None)
         return value
+
+
+def _resolve_repo(value: str | None) -> Path:
+    """Turn the Repository field into a path.
+
+    A relative path resolves against the repo this server was STARTED for, not
+    against the server process's working directory -- and that difference was a
+    real bug rather than a nicety. `python main.py web ../projectA` states which
+    project you mean; the browser then defaulted its field to ".", which
+    resolved to the cwd instead, so a session quietly put its `.agent/` beside
+    the wrong project. Anchoring relative paths to the launched repo makes "."
+    mean what the command line already said.
+
+    Absolute paths and `~` are honoured as typed, so you can still point one
+    server at several projects.
+    """
+    if not value or not value.strip():
+        return _DEFAULTS["repo"]
+    path = Path(value).expanduser()
+    if path.is_absolute():
+        return path.resolve()
+    return (_DEFAULTS["repo"] / path).resolve()
 
 
 def _open_runner(session_id: str, cfg, paths) -> SessionRunner:

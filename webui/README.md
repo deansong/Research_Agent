@@ -92,6 +92,30 @@ actually receive.
 
 ---
 
+## The Repository field
+
+It is **the project the agent works on**, and it decides three things:
+
+| | |
+| --- | --- |
+| where `.agent/` goes | sessions, `config.json`, and promoted agents all live under `<repo>/.agent/` |
+| what the nodes are pointed at | it becomes `repo_path`, so `{repo_path}` and every "inspect the repository" instruction mean this directory |
+| what a write node may change | a write-access node edits files here — everything it *produces* goes to the session's `artifacts/` instead |
+
+The field is prefilled with the absolute path the server was started for, so
+what is on screen is the real answer. A **relative** path is taken from that
+same repo, not from the server's working directory — `python main.py web
+../projectA` names the project, and the field must not quietly disagree. An
+absolute path or `~/...` is honoured as typed, so one server can serve several
+projects.
+
+**It does not have to be a git repository**, despite the name. It is just the
+directory the agent is allowed to look at and change; a plain folder works.
+It also does not have to be *this* project — pointing it at the codebase you
+actually want worked on is the normal case.
+
+---
+
 ## Three things worth understanding
 
 ### 1. The Context tab is the point
@@ -215,6 +239,7 @@ signature, and about when to do it properly instead.
 | `GET` | `/api/sessions/{id}/nodes/{name}/context` | the prompt that node will really get |
 | `GET` | `/api/schema` | node kinds, field types, access levels, providers |
 | `GET` | `/api/config` | the resolved backend for each role |
+| `GET` | `/api/defaults` | the repo this server was started for, and its flags |
 
 Errors use one shape, the same one validation uses:
 

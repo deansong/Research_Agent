@@ -74,6 +74,78 @@ def _session_with_an_agent(client, repo: pathlib.Path) -> str:
 
 
 # ---------------------------------------------------------------------------
+# which repository a session is about
+# ---------------------------------------------------------------------------
+
+
+def test_a_relative_repo_is_taken_from_the_launched_repo_not_the_cwd():
+    """`python main.py web ../projectA` states which project you mean.
+
+    The bug this pins down: the browser's Repository field defaulted to ".",
+    the server resolved that against its own working directory, and a session
+    quietly put its `.agent/` beside a different project than the one named on
+    the command line. Only visible if you happened to start the server from
+    somewhere other than the repo.
+    """
+    import os
+
+    with tempfile.TemporaryDirectory() as tmp:
+        root = pathlib.Path(tmp)
+        project = root / "projectA"
+        elsewhere = root / "elsewhere"
+        project.mkdir()
+        elsewhere.mkdir()
+
+        client = _client(project)          # server started FOR projectA
+        previous = os.getcwd()
+        os.chdir(elsewhere)                # ...but running from elsewhere
+        try:
+            detail = client.post("/api/sessions", json={
+                "repo": ".", "task": "with the default dot", "backend": "fake",
+            }).json()
+        finally:
+            os.chdir(previous)
+
+        assert detail["repo"] == str(project), detail["repo"]
+        assert detail["folder"].startswith(str(project)), detail["folder"]
+        assert "elsewhere" not in detail["folder"], detail["folder"]
+        print("PASS  a relative repo resolves against the launched repo, not the cwd")
+
+
+def test_an_absolute_repo_is_honoured_as_typed():
+    """One server, several projects -- so an absolute path must win."""
+    with tempfile.TemporaryDirectory() as tmp:
+        root = pathlib.Path(tmp)
+        launched, other = root / "launched", root / "other"
+        launched.mkdir()
+        other.mkdir()
+
+        client = _client(launched)
+        detail = client.post("/api/sessions", json={
+            "repo": str(other), "task": "a different project", "backend": "fake",
+        }).json()
+
+        assert detail["repo"] == str(other), detail["repo"]
+        assert (other / ".agent" / "sessions").is_dir(), "the session went elsewhere"
+        print("PASS  an absolute repo path points the session at that project")
+
+
+def test_defaults_endpoint_reports_the_launched_repo():
+    """The browser prefills its field from this, so a "." never reaches the
+    server from the UI in the first place."""
+    with tempfile.TemporaryDirectory() as tmp:
+        project = pathlib.Path(tmp) / "projectA"
+        project.mkdir()
+        client = _client(project)
+
+        got = client.get("/api/defaults").json()
+        assert got["repo"] == str(project), got
+        assert got["sessions_dir"].startswith(str(project)), got
+        assert got["backend"] == "fake", got
+        print("PASS  /api/defaults names the repo the server was started for")
+
+
+# ---------------------------------------------------------------------------
 # the plan
 # ---------------------------------------------------------------------------
 

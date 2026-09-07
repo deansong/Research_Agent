@@ -547,6 +547,14 @@ function wireDialogs() {
 
 // ---------------------------------------------------------------------------
 
+// Show the real path this server was started for, rather than a bare "."
+// that could mean two different directories.
+api.defaults().then((defaults) => {
+  el('new-repo').value = defaults.repo;
+  el('new-repo').title = 'Absolute path, so there is no doubt which project '
+    + 'this is. A relative path here is taken from ' + defaults.repo;
+}).catch(() => { /* leave the field as typed */ });
+
 api.schema().then((schema) => inspector.setSchema(schema)).catch(() => {
   // Not fatal: the inspector falls back to its built-in option lists. Worth
   // knowing about though, because it means /api/schema is broken.
