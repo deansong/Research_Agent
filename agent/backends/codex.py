@@ -100,6 +100,7 @@ class CodexBackend:
         model: str | None = None,
         timeout: float = 300.0,
         max_seconds: float = 7200.0,
+        max_output_tokens: int = 60000,
         credit_wait_attempts: int = 20,
         credit_wait_seconds: float = 60.0,
         busy_attempts: int = 4,
@@ -168,6 +169,19 @@ class CodexBackend:
         Idle detection alone would let a provider that emits a keepalive every
         thirty seconds run for ever. Two hours is far beyond any legitimate
         single turn, so hitting this means something is actually wrong."""
+
+        self.max_output_tokens = int(max_output_tokens)
+        """A cap on how much ANSWER one turn may type.
+
+        The failure this catches is invisible to both clocks above: a model
+        that emits a complete document, decides it was a draft, and emits
+        another. It is never idle and it can do that for an hour, well inside
+        `max_seconds`, with nothing to show at the end.
+
+        Grounded in a measurement rather than a guess: the largest design this
+        project has produced is 49 KB, about 12,000 tokens. Sixty thousand is
+        four times that -- comfortably past anything legitimate, and reached in
+        roughly an hour at the streaming rate actually observed."""
 
     def run_structured(
         self,
@@ -320,14 +334,23 @@ class CodexBackend:
         kinds: dict[str, int] = {}
         last_seen = [""]
 
+        # Tokens of the answer being typed, counted but not kept. `events` is
+        # therefore things the model DID, which is what everyone reading the
+        # number assumed it already meant. See _progress.py for the three ways
+        # conflating the two went wrong.
+        streamed = [0]
+
         def report(event) -> None:
-            events[0] += 1
             last_event[0] = time.monotonic()
 
             entry = record(event)
             if entry is None:
                 return
+            if entry.get("transient"):
+                streamed[0] += 1
+                return
 
+            events[0] += 1
             entry["at"] = round(time.monotonic() - started_at, 2)
             recorded.append(entry)
 
@@ -393,6 +416,10 @@ class CodexBackend:
                 self._abandon(handle, worker)
                 raise BackendTimeout(self._runaway_message(elapsed, events[0]))
 
+            if streamed[0] >= self.max_output_tokens:
+                self._abandon(handle, worker)
+                raise BackendTimeout(self._flood_message(streamed[0], elapsed))
+
             # Only speak up if the provider itself has said nothing for a while,
             # and say what we are actually waiting on. "still working (400s)" is
             # ambiguous between thinking and hung; the idle figure is not.
@@ -403,13 +430,14 @@ class CodexBackend:
                 last_flush[0] = now
                 try:
                     self.on_progress(list(recorded), elapsed, idle,
-                                     dict(kinds), last_seen[0])
+                                     dict(kinds), last_seen[0], streamed[0])
                 except Exception:  # noqa: BLE001
                     # Reporting progress must never break the turn it reports.
                     pass
 
             if now - last_line[0] >= 30.0:
-                print(_heartbeat(elapsed, idle, events[0], kinds, last_seen[0]),
+                print(_heartbeat(elapsed, idle, events[0], kinds,
+                                 last_seen[0], streamed[0]),
                       flush=True)
                 last_line[0] = now
 
@@ -455,6 +483,22 @@ class CodexBackend:
             f'    {{"roles": {{"<role>": {{"options": {{"timeout": 600}}}}}}}}\n'
             f"using the role name this node declares as its `backend` -- which "
             f"may well be shared with other nodes."
+        )
+
+    def _flood_message(self, streamed: int, elapsed: float) -> str:
+        return (
+            f"Codex typed {streamed:,} tokens of answer in one turn "
+            f"({elapsed:.0f}s) and hit the output cap.\n\n"
+            f"This is not slowness. Something makes the model emit a whole "
+            f"document, treat it as a draft, and emit another -- so it is "
+            f"never idle and never finishes. The largest legitimate design "
+            f"this project has produced is about 12,000 tokens.\n\n"
+            f"Most likely the plan asks one node for far too much, so the "
+            f"document it has to write is enormous. Split the biggest steps "
+            f"and design again.\n\n"
+            f"To raise the cap, in <repo>/.agent/config.json:\n"
+            f'    {{"roles": {{"<role>": {{"options": '
+            f'{{"max_output_tokens": 120000}}}}}}}}'
         )
 
     def _runaway_message(self, elapsed: float, events: int) -> str:
@@ -588,7 +632,7 @@ def login_chatgpt() -> None:
 
 
 def _heartbeat(elapsed: float, idle: float, total: int,
-               kinds: dict[str, int], last: str) -> str:
+               kinds: dict[str, int], last: str, streamed: int = 0) -> str:
     """What to say during a quiet stretch of a long turn.
 
     "still working (55s elapsed, 137 events, last one 11s ago)" is three
@@ -606,8 +650,14 @@ def _heartbeat(elapsed: float, idle: float, total: int,
             f"{count} {kind}" for kind, count in
             sorted(kinds.items(), key=lambda kv: -kv[1])[:4]
         ))
-    else:
+    elif total:
         parts.append(f"{total} events")
+    # Said separately from the work, because it is not work: a big design is
+    # ~12,000 tokens and streams at about fifteen a second, so "writing 12.0k"
+    # is the difference between a turn that is stuck and one that is typing --
+    # and it was previously reported as 12,000 "events".
+    if streamed:
+        parts.append(f"writing {streamed / 1000:.1f}k")
     parts.append(f"quiet {idle:.0f}s")
 
     line = f"    ... working: {' · '.join(parts)}"

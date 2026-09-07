@@ -294,9 +294,16 @@ function renderTurn(container, payload) {
   const turn = payload.turn;
   const head = document.createElement('div');
   head.className = 'beat-detail-head';
-  const counts = Object.entries(turn.counts || {})
-    .map(([k, n]) => `${n} ${k}`).join(' · ');
-  head.textContent = `${turn.node} — turn ${turn.index}${counts ? '  ·  ' + counts : ''}`;
+  const parts = Object.entries(turn.counts || {}).map(([k, n]) => `${n} ${k}`);
+  // Typed tokens, said separately from work done. For a node whose answer is
+  // a 12,000-token document this is most of the wait, and reporting it as
+  // "12000 events" -- which is what used to happen -- reads as activity.
+  const streamed = turn.progress?.streamed;
+  if (streamed) parts.push(`writing ${(streamed / 1000).toFixed(1)}k`);
+  if (turn.progress?.elapsed) parts.unshift(`${Math.round(turn.progress.elapsed)}s`);
+
+  head.textContent = `${turn.node} — turn ${turn.index}`
+    + (parts.length ? `  ·  ${parts.join(' · ')}` : '');
   container.append(head);
 
   const events = (turn.events || []).filter(

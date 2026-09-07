@@ -157,6 +157,30 @@ def _line(marker: str, text: str) -> str | None:
 #: second copy of the terminal.
 MAX_OUTPUT = 4000
 
+# --------------------------------------------------------------------------
+# WHY STREAMING DELTAS ARE MARKED TRANSIENT
+# --------------------------------------------------------------------------
+# `agent_message_delta` is one token of the answer being typed. A measured
+# designer turn emitted 31,001 "events" of which 30,900 were these, and
+# counting them broke three separate things:
+#
+# 1. **The number lied.** "31001 events" reads as furious activity. The real
+#    work was 12 commands and 4 reasoning steps; everything after 145s was the
+#    model typing. A 49 KB design document is ~12,000 tokens, and at the
+#    observed 15 tokens/second that is fourteen minutes of pure output -- which
+#    is the honest answer to "why is this suddenly so slow", and was invisible.
+#
+# 2. **The idle clock stopped working.** "last one 0s ago" for thirty-five
+#    minutes: a model streaming tokens is never silent, so silence-based
+#    timeouts cannot see this failure at all.
+#
+# 3. **The record became enormous.** Each delta carries nothing but its own
+#    name -- no text, no index -- and 31,000 of them made the in-flight record
+#    a multi-megabyte file rewritten every five seconds.
+#
+# So they are counted, not kept: the tally becomes "writing 31.0k" in the
+# heartbeat, which says the same thing in a way that is true.
+
 
 def record(event: Any) -> dict | None:
     """A structured record of one stream event, or None if it carries nothing.
@@ -187,7 +211,14 @@ def record(event: Any) -> dict | None:
     # that looks like from the outside.
     if getattr(payload, "item", None) is not None:
         return _item(payload.item, "other")
-    return {"kind": _snake(name), "phase": "other"}
+
+    kind = _snake(name)
+    if kind.endswith("_delta"):
+        # A token of the answer being typed. Marked TRANSIENT rather than
+        # returned as a record, because keeping these was actively harmful in
+        # three ways at once -- see the note below.
+        return {"kind": kind, "phase": "other", "transient": True}
+    return {"kind": kind, "phase": "other"}
 
 
 def _item(item: Any, phase: str) -> dict | None:

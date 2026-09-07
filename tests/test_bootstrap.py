@@ -373,6 +373,29 @@ def test_designer_instructions_stay_under_the_measured_size_cliff():
           f"{SAFE_INSTRUCTIONS_CHARS - size} under the cliff")
 
 
+def test_the_designer_is_told_not_to_draft_and_not_to_explore():
+    """Two rules that cost 35 minutes each to learn, and are one trim from
+    being lost.
+
+    The instructions sit a handful of characters under a hard limit, so the
+    way to add anything is to shorten something -- and these are prose in the
+    middle of prose. Both come from one measured run: the designer emitted a
+    complete document with empty fields and a node literally named
+    "placeholder" purely to narrate that it was about to start (every message
+    is charged as the whole document, ~12,000 tokens), and it spent its first
+    minutes on `git show` of a deletion commit, auditing a repository it does
+    not need to read to lay out a graph.
+    """
+    from agent.bootstrap.prompts import DESIGNER_INSTRUCTIONS as text
+
+    lowered = text.lower()
+    assert "placeholder" in lowered and "once" in lowered, \
+        "the rule against draft/placeholder documents is gone"
+    assert "git history" in lowered, \
+        "the rule against auditing the repository is gone"
+    print("PASS  the designer is still told to answer once and not to explore")
+
+
 def test_the_designer_is_told_not_to_let_a_node_check_itself():
     """A node that just failed is the worst judge of whether it failed.
 

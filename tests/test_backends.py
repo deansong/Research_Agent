@@ -460,6 +460,123 @@ def test_the_absolute_cap_catches_a_runaway():
     print("PASS  a runaway hits the cap, and is told to split the node")
 
 
+def _delta_event():
+    """One token of the answer being typed."""
+    class Payload:
+        pass
+
+    class Event:
+        payload = type("AgentMessageDeltaNotification", (Payload,), {})()
+
+    return Event()
+
+
+def test_streamed_tokens_are_counted_but_not_kept():
+    """The measured bug: 31,001 "events", 30,900 of them typing.
+
+    Every one of those was recorded as an event, which made the number read as
+    furious activity, made "last one 0s ago" true for thirty-five minutes so
+    the idle clock could never fire, and made the in-flight record a
+    multi-megabyte file rewritten every five seconds. They carry no text --
+    only their own name -- so keeping them bought nothing at all.
+    """
+    from unittest.mock import MagicMock, patch
+
+    from agent.backends._progress import record
+    from agent.backends.codex import CodexBackend
+
+    assert record(_delta_event()) == {
+        "kind": "agent_message_delta", "phase": "other", "transient": True,
+    }, record(_delta_event())
+
+    stream = _Stream([_delta_event() for _ in range(40)]
+                     + [_quiet_event() for _ in range(2)], gap=0.001)
+    handle = _Handle(stream)
+    backend = CodexBackend(MagicMock(), timeout=30, max_seconds=30)
+
+    with patch("agent.backends.codex._collect", _drain):
+        _, recorded = backend._run_turn(_Thread(handle), "go", {})
+
+    # Forty tokens typed and two things done: two records.
+    assert len(recorded) == 2, [e.get("kind") for e in recorded]
+    assert not any(e.get("kind") == "agent_message_delta" for e in recorded)
+    print("PASS  streamed tokens are tallied separately, not recorded as work")
+
+
+def test_the_progress_callback_and_its_only_caller_agree():
+    """A six-argument callback and a five-argument sink is a TypeError inside a
+    `try: ... except Exception: pass` -- so the detail behind a long turn would
+    simply stop appearing, with nothing said anywhere. Checked by calling it.
+    """
+    import tempfile
+
+    from agent import activity
+
+    class Backend:
+        on_progress = None
+
+    with tempfile.TemporaryDirectory() as tmp:
+        backend = Backend()
+        activity.arm_progress(backend, tmp, "worker")
+        backend.on_progress([{"kind": "command", "phase": "completed"}],
+                            310.0, 0.0, {"command": 1}, "$ pytest -q", 14885)
+
+        turn = activity.in_flight(tmp)
+        assert turn is not None and turn.node == "worker", turn
+        import json
+        raw = json.loads((activity.directory(tmp, "worker")
+                          / activity.IN_FLIGHT).read_text())
+        assert raw["streamed"] == 14885, raw
+    print("PASS  the progress callback matches the sink that receives it")
+
+
+def test_the_heartbeat_reports_typing_as_typing():
+    """31,000 tokens of output is the honest answer to "why so slow", and it
+    used to be reported as 31,000 events -- indistinguishable from work."""
+    from agent.backends.codex import _heartbeat
+
+    line = _heartbeat(2097, 0, 16, {"command": 12, "reasoning": 4},
+                      "auditing the repository", 31001)
+    assert "12 command" in line and "writing 31.0k" in line, line
+    assert "31001 events" not in line, line
+    print("PASS  the heartbeat separates what it did from what it is typing")
+
+
+def test_a_turn_that_only_types_is_stopped():
+    """The failure neither clock above can see.
+
+    A model that emits a whole document, decides it was a draft, and emits
+    another is never idle and is nowhere near the two-hour cap -- so it can
+    burn an hour producing nothing. The cap is on ANSWER, and the advice is
+    the advice that fixes it.
+    """
+    from unittest.mock import MagicMock, patch
+
+    from agent.backends.base import BackendTimeout
+    from agent.backends.codex import CodexBackend
+
+    # A short `timeout` only to shorten the poll interval -- _poll_seconds
+    # derives it from the time limits, and with the defaults the whole fixture
+    # stream drains before the loop looks even once. It cannot fire: the gap
+    # between events is a thousandth of the idle limit.
+    stream = _Stream([_delta_event() for _ in range(500)], gap=0.002)
+    handle = _Handle(stream)
+    backend = CodexBackend(MagicMock(), timeout=0.4, max_seconds=30,
+                           max_output_tokens=50)
+
+    with patch("agent.backends.codex._collect", _drain):
+        try:
+            backend._run_turn(_Thread(handle), "go", {})
+            raise AssertionError("expected BackendTimeout")
+        except BackendTimeout as exc:
+            assert "tokens of answer" in str(exc), str(exc)
+            assert "not slowness" in str(exc).lower(), str(exc)
+            assert "Split the biggest steps" in str(exc), str(exc)
+
+    assert handle.interrupted
+    print("PASS  a turn that only types hits the output cap and says why")
+
+
 def test_stop_interrupts_a_turn_that_is_still_streaming():
     """The whole point of reaching the provider rather than waiting for it.
 
