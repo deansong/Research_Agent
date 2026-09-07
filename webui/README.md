@@ -16,6 +16,79 @@ free before spending anything.
 
 ---
 
+## Reaching it from another machine: the SSH bridge
+
+The server binds `127.0.0.1` by default, and that default is load-bearing:
+**there is no authentication.** Anyone who can reach the port can start a
+session, and a session runs shell commands with write access to the repository
+as you. So the way to use it from a laptop is to forward the port over SSH
+rather than to open it up.
+
+On the machine that will run the browser:
+
+```bash
+ssh -N -L 8420:localhost:8420 you@the-run-host
+```
+
+Leave that running, and open **http://localhost:8420** on the laptop. Nothing
+about the server changes; `localhost` in the `-L` argument is resolved *on the
+run host*, which is exactly why the loopback bind still works.
+
+- `-N` — do not run a remote command, just forward. Drop it if you want a
+  shell in the same window.
+- `-L <local port>:localhost:<remote port>` — the two ports need not match.
+  If 8420 is taken on your laptop, `-L 9000:localhost:8420` and open
+  `http://localhost:9000`.
+- Add `-J jump-host` if you reach the run host through a bastion.
+
+Worth putting in `~/.ssh/config` on the laptop, so it is one word:
+
+```
+Host agent-ui
+    HostName the-run-host
+    User you
+    LocalForward 8420 localhost:8420
+    ServerAliveInterval 30
+    ServerAliveCountMax 3
+```
+
+then `ssh -N agent-ui`.
+
+**`ServerAliveInterval` matters more here than usual.** The UI holds an SSE
+stream open for the life of the session, so a tunnel that dies silently looks
+like the agent going quiet — which is the one thing this UI is built to tell
+you apart from a long turn. Fifteen minutes into a design turn you cannot tell
+a dead tunnel from a model that is thinking. With keepalives on, SSH drops the
+connection promptly, `EventSource` reconnects by itself once the tunnel is
+back, and `Last-Event-ID` replays the gap from the ring buffer — up to its
+last 5,000 events, so a very chatty outage can still lose the oldest of
+them.
+
+**Run the server so it outlives the tunnel.** Your SSH session and the server
+are separate things, and it is worth keeping them that way — a dropped
+connection should not kill a design turn twenty minutes in:
+
+```bash
+tmux new -s agentui           # on the run host
+python main.py web .          # inside it; C-b d to detach
+```
+
+Check it from the run host without a browser:
+
+```bash
+curl -s localhost:8420/api/health     # {"ok":true,"open_sessions":[...]}
+```
+
+### `--host 0.0.0.0`, and what it costs
+
+`python main.py web . --host 0.0.0.0` binds every interface, and there is no
+token, no password and no CSRF protection in front of it. On a shared machine
+that hands everyone who can route to the port the ability to run commands as
+you, in your repository. Use the tunnel unless you have put something in front
+of the server yourself.
+
+---
+
 ## What to read, in what order
 
 Six Python files and six JavaScript ones. If you read them in this order each
