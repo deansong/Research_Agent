@@ -904,7 +904,8 @@ def test_the_designer_is_told_not_to_let_a_node_check_itself():
     The 8-case branch limit is why this is per-STAGE rather than one central
     orchestrator: no single node can route back to twenty others.
     """
-    from agent.bootstrap.prompts import DESIGNER_INSTRUCTIONS, worked_example
+    from agent.bootstrap.prompts import (DESIGNER_INSTRUCTIONS,
+                                         research_skeleton, worked_example)
 
     rule = DESIGNER_INSTRUCTIONS.lower()
     assert "no node judges its own success" in rule, "the rule is missing"
@@ -913,12 +914,22 @@ def test_the_designer_is_told_not_to_let_a_node_check_itself():
     assert "8 cases" in rule, "the branch limit is why this is per-stage"
 
     # The exact shape lives in the per-turn prompt, which has no size cliff.
-    shape = worked_example()
-    assert "THE VERIFIER LOOP" in shape, "the worked shape is missing"
-    assert '"when": "redo", "to": "build_scorer"' in shape, \
+    # Asserted across the whole prompt rather than inside worked_example(),
+    # because the loop used to be spelled out twice -- once with invented
+    # names in VERIFIER_LOOP, once with real ones and complete node entries
+    # in the research skeleton. The second is strictly better, so the first
+    # gave up its JSON; what matters is that the shape is shown SOMEWHERE.
+    shape = worked_example() + research_skeleton()
+    # Whitespace-normalised, because the JSON is rendered by json.dumps and
+    # pinning its exact indentation makes this a test of the indent level.
+    flat = " ".join(shape.split())
+    assert "THE VERIFIER LOOP" in shape, "the rationale for the shape is missing"
+    assert '"when": "redo", "to": "write_code_a"' in flat, \
         "redo must be shown pointing back at the WORKER, not onwards"
-    assert '"default": "human_review"' in shape, \
+    assert '"default": "review"' in flat, \
         "an unhandled verdict must reach a human, not silently end the run"
+    assert '"name": "review", "kind": "human"' in flat, \
+        "and that target must be a human node"
     print("PASS  the designer is told to use a separate verifier, and shown one")
 
 

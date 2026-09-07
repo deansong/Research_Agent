@@ -376,22 +376,14 @@ DIFFERENT node whose only job is to look at the result.
                                    -. redo    .-> build_scorer
                                    -. blocked .-> human_review
 
-A plain edge INTO the verifier, a branch OUT of it:
-
-  "edges":    [ { "from": "build_scorer", "to": "verify_scorer" } ],
-  "branches": [ { "from": "verify_scorer", "route_on": "verdict",
-      "cases": [
-        { "when": "ok",   "to": "run_study" },
-        { "when": "redo", "to": "build_scorer" },
-        { "when": "blocked", "to": "human_review",
-          "ask": { "purpose": "blocked", "resume_to": "build_scorer",
-                   "question": "{out.verify_scorer.problem}",
-                   "context": "{out.verify_scorer.detail}" } } ],
-      "default": "human_review" } ]
+A plain edge INTO the verifier, a branch OUT of it. The research skeleton
+below is this exact shape with real names and complete node entries --
+write_code_a -> run_exp_a -> check_a -> branch -- so read it there rather
+than twice.
 
 The verifier is access "read_only" -- it judges, it never fixes -- with
 `verdict` as an enum of ok/redo/blocked, and its prompt reading the worker's
-claim via {out.build_scorer.summary} so it checks rather than is told.
+claim so it checks rather than is told.
 
 Two things a design usually gets wrong here:
 
