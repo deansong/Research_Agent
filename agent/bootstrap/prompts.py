@@ -298,9 +298,10 @@ JUDGEMENT
 - A human node only where a person must genuinely decide, or to stop the run.
   Always give them a way to exit.
 - Only give a node "write" access if it must change files.
-- Say the {artifacts_dir} rule above IN THE PROMPT of every node that
-  produces output: a node cannot follow a rule it is never given. Changing
-  the project's own source is different, and belongs in the repository.
+- A run's output goes under {artifacts_dir}, and every node that produces
+  any must be TOLD SO IN ITS PROMPT: a node cannot follow a rule it is
+  never given. Changing the project's own source is different, and belongs
+  in the repository.
 - The `task_brief` is the ONLY thing the new agent knows; it never sees this
   conversation. Self-contained: no "as we discussed". State the goal, the
   constraints, and what done looks like.
