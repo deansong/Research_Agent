@@ -305,6 +305,59 @@ def test_designer_schema_survives_strict_mode():
     print("PASS  designer and discussor schemas are strict-mode clean")
 
 
+
+def test_designer_instructions_stay_under_the_measured_size_cliff():
+    """A hard, measured limit -- not a style preference.
+
+    Above roughly 6 KB of `developer_instructions`, a Codex turn NEVER
+    COMPLETES. Not slower: it hangs, with no error. Bisected during a live run,
+    and it is size rather than content -- 13,940 characters of ordinary prose
+    hangs exactly the same way. The per-turn prompt has no such cliff, which is
+    why the worked example lives there instead.
+
+    So this file has a budget, and the failure mode for exceeding it is a
+    design phase that silently never returns. Worth a test rather than a
+    comment somebody edits past.
+    """
+    from agent.backends.codex import SAFE_INSTRUCTIONS_CHARS
+    from agent.bootstrap.prompts import DESIGNER_INSTRUCTIONS
+
+    size = len(DESIGNER_INSTRUCTIONS)
+    assert size < SAFE_INSTRUCTIONS_CHARS, (
+        f"DESIGNER_INSTRUCTIONS is {size} chars, over the {SAFE_INSTRUCTIONS_CHARS} "
+        f"limit. Turns will hang rather than fail. Move material into the "
+        f"per-turn prompt (worked_example) instead of growing this."
+    )
+    print(f"PASS  DESIGNER_INSTRUCTIONS is {size} chars, "
+          f"{SAFE_INSTRUCTIONS_CHARS - size} under the cliff")
+
+
+def test_the_designer_is_told_to_split_work_across_nodes():
+    """The guidance used to contradict itself, and the wrong half won.
+
+    It said "if a node owns more than about three steps, it is probably two
+    nodes" AND "prefer the smallest graph that does the job -- three good nodes
+    beat eight". A real design then put three plan steps and three separate
+    output documents on one node, which ran past ten minutes and was killed
+    with all its work discarded.
+
+    These assertions are deliberately about the SUBSTANCE -- atomicity, and
+    counting artefacts -- because that is the argument that makes splitting
+    obviously right rather than a rule to be balanced against neatness.
+    """
+    from agent.bootstrap.prompts import DESIGNER_INSTRUCTIONS as text
+
+    lowered = text.lower()
+    assert "atomic" in lowered, "the designer must be told a node is all-or-nothing"
+    assert "artefacts" in lowered or "artifacts" in lowered, \
+        "the designer must be told to count what a node produces"
+    assert "one top-level step per node" in lowered, "no explicit step budget"
+
+    # And the line that pulled the other way must be gone.
+    assert "three good nodes beat eight" not in lowered, \
+        "the contradictory 'smallest graph' advice is back"
+    print("PASS  the designer is told to split, with the reason, and not to un-split")
+
 if __name__ == "__main__":
     for name, fn in sorted(globals().items()):
         if name.startswith("test_"):

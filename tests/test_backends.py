@@ -292,6 +292,162 @@ def test_busy_backs_off_then_gives_up():
     print("PASS  provider-busy backs off a bounded number of times")
 
 
+
+# ---------------------------------------------------------------------------
+# the timeout measures SILENCE, not elapsed time
+# ---------------------------------------------------------------------------
+
+
+class _Stream:
+    """A notification stream that emits `events` with `gap` seconds between."""
+
+    def __init__(self, events, gap):
+        self._events = list(events)
+        self._gap = gap
+        self.closed = False
+
+    def __iter__(self):
+        import time
+
+        for event in self._events:
+            time.sleep(self._gap)
+            yield event
+
+    def close(self):
+        self.closed = True
+
+
+class _Handle:
+    def __init__(self, stream):
+        self.id = "turn-1"
+        self._stream = stream
+        self.interrupted = False
+
+    def stream(self):
+        return self._stream
+
+    def interrupt(self):
+        self.interrupted = True
+
+
+class _Thread:
+    def __init__(self, handle):
+        self._handle = handle
+
+    def turn(self, prompt, output_schema=None):
+        return self._handle
+
+
+def _drain(items, turn_id):
+    """Stand-in for _collect that really consumes the stream.
+
+    Worth its own function with this comment: the first version of these tests
+    patched _collect with a plain return value, so it never iterated the
+    stream, the worker finished in microseconds, and all three tests "passed"
+    without exercising the loop at all.
+    """
+    for _ in items:
+        pass
+    return "collected"
+
+
+def _quiet_event():
+    """An event describe() deliberately does not print.
+
+    This is the whole crux. A turn that is reasoning steadily emits plenty of
+    these, and the old code only reset its clock on PRINTABLE events -- so
+    thinking hard looked exactly like hanging.
+    """
+    from agent.backends._progress import describe
+
+    class Payload:
+        pass
+
+    class Event:
+        payload = Payload()
+
+    assert describe(Event()) is None, "this fixture must be a non-printing event"
+    return Event()
+
+
+def test_a_turn_that_keeps_streaming_is_never_killed_for_being_slow():
+    """The regression that cost a real run.
+
+    A node ran past the old 600s wall-clock deadline and was interrupted while
+    Codex was still sending events -- ten minutes of real work discarded,
+    because a node is atomic. The limit is on silence now, so a turn that keeps
+    talking runs as long as it needs.
+    """
+    from unittest.mock import MagicMock, patch
+
+    from agent.backends.codex import CodexBackend
+
+    # Eight events, 0.05s apart: 0.4s of steady chatter. The idle limit is
+    # 0.25s -- shorter than the run, longer than any single gap -- so a
+    # wall-clock rule would kill this and an idle rule must not.
+    stream = _Stream([_quiet_event() for _ in range(8)], gap=0.05)
+    handle = _Handle(stream)
+    backend = CodexBackend(MagicMock(), timeout=0.25, max_seconds=30)
+
+    with patch("agent.backends.codex._collect", _drain):
+        result = backend._run_turn(_Thread(handle), "go", {})
+
+    assert result == "collected", result
+    assert not handle.interrupted, "a productive turn must not be interrupted"
+    assert stream.closed
+    print("PASS  a turn streaming events is not killed for running long")
+
+
+def test_a_turn_that_goes_quiet_is_abandoned():
+    """The other half: silence really is a hang, and must not wait for ever."""
+    from unittest.mock import MagicMock, patch
+
+    from agent.backends.base import BackendTimeout
+    from agent.backends.codex import CodexBackend
+
+    # Two events with a five-second gap: the second never arrives in time.
+    stream = _Stream([_quiet_event(), _quiet_event()], gap=5.0)
+    handle = _Handle(stream)
+    backend = CodexBackend(MagicMock(), timeout=0.3, max_seconds=30)
+
+    with patch("agent.backends.codex._collect", _drain):
+        try:
+            backend._run_turn(_Thread(handle), "go", {})
+            raise AssertionError("expected BackendTimeout")
+        except BackendTimeout as exc:
+            assert "went silent" in str(exc), str(exc)
+            # The advice must be about silence, not about the task being big.
+            assert "SILENCE, not on total time" in str(exc), str(exc)
+
+    assert handle.interrupted, "a wedged turn must be interrupted"
+    print("PASS  a turn that stops sending events is abandoned, and says why")
+
+
+def test_the_absolute_cap_catches_a_runaway():
+    """Idle detection alone would let a keepalive every few seconds run for
+    ever, so there is a backstop -- and its advice is the right advice for the
+    case it actually catches: split the node."""
+    from unittest.mock import MagicMock, patch
+
+    from agent.backends.base import BackendTimeout
+    from agent.backends.codex import CodexBackend
+
+    stream = _Stream([_quiet_event() for _ in range(200)], gap=0.01)
+    handle = _Handle(stream)
+    # Never idle, but capped almost immediately.
+    backend = CodexBackend(MagicMock(), timeout=30, max_seconds=0.1)
+
+    with patch("agent.backends.codex._collect", _drain):
+        try:
+            backend._run_turn(_Thread(handle), "go", {})
+            raise AssertionError("expected BackendTimeout")
+        except BackendTimeout as exc:
+            assert "absolute cap" in str(exc), str(exc)
+            assert "Split it across more nodes" in str(exc), str(exc)
+
+    assert handle.interrupted
+    print("PASS  a runaway hits the cap, and is told to split the node")
+
 if __name__ == "__main__":
     for name, fn in sorted(globals().items()):
         if name.startswith("test_"):

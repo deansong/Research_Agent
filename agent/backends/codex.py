@@ -97,7 +97,8 @@ class CodexBackend:
         self,
         client: Codex,
         model: str | None = None,
-        timeout: float = 600.0,
+        timeout: float = 300.0,
+        max_seconds: float = 7200.0,
         credit_wait_attempts: int = 20,
         credit_wait_seconds: float = 60.0,
         busy_attempts: int = 4,
@@ -112,11 +113,29 @@ class CodexBackend:
         self.credit_wait_seconds = float(credit_wait_seconds)
         self.busy_attempts = int(busy_attempts)
         self.timeout = float(timeout)
-        """Seconds before a single turn is abandoned.
+        """Seconds of SILENCE before a turn is abandoned -- not total runtime.
 
-        There was no timeout at all before, and it showed: a designer call ran
-        for twenty minutes with no output and no way to tell a slow request
-        from a wedged one. The CLI just sat there."""
+        This measures the wrong thing if you measure it the other way, and we
+        found that out the hard way. It used to be a wall-clock deadline, and a
+        node doing genuinely long work was killed at 600s while Codex was still
+        streaming events; the heartbeat gaps in the log proved it (30s, 30s,
+        65s -- that 65 means an event arrived and reset the clock). Killing a
+        productive turn is the worst possible outcome, because a node is atomic:
+        ten minutes of real work went in the bin.
+
+        So the question is not "has this taken long?" but "is anything still
+        happening?". Any event from the provider counts -- including the many
+        that _progress.describe() deliberately does not print, because a turn
+        that is thinking hard is still a turn that is working.
+
+        300s of complete silence is a lot. A turn that quiet really is wedged."""
+
+        self.max_seconds = float(max_seconds)
+        """An absolute cap, as a backstop against a genuine runaway.
+
+        Idle detection alone would let a provider that emits a keepalive every
+        thirty seconds run for ever. Two hours is far beyond any legitimate
+        single turn, so hitting this means something is actually wrong."""
 
     def run_structured(
         self,
@@ -245,13 +264,25 @@ class CodexBackend:
         """
         handle = thread.turn(prompt, output_schema=output_schema)
         outcome: dict[str, object] = {}
-        last_output = [time.monotonic()]
+
+        # Two clocks, and the distinction is the whole point. `last_event` is
+        # touched by EVERY event, so it answers "is the provider still alive?".
+        # `last_line` is touched only when we print something, so it answers
+        # "does the human need reassurance?". Conflating them is what killed a
+        # working turn: the old code only reset on printable events, so a node
+        # that was reasoning steadily -- emitting events describe() ignores --
+        # looked identical to one that had hung.
+        last_event = [time.monotonic()]
+        last_line = [time.monotonic()]
+        events = [0]
 
         def report(event) -> None:
+            events[0] += 1
+            last_event[0] = time.monotonic()
             line = describe(event)
             if line:
                 print(line, flush=True)
-                last_output[0] = time.monotonic()
+                last_line[0] = time.monotonic()
 
         def drain() -> None:
             stream = handle.stream()
@@ -266,35 +297,83 @@ class CodexBackend:
         worker.start()
 
         started = time.monotonic()
+        poll = self._poll_seconds()
         while worker.is_alive():
-            worker.join(timeout=5.0)
+            worker.join(timeout=poll)
             now = time.monotonic()
             if not worker.is_alive():
                 break
-            if now - started >= self.timeout:
-                handle.interrupt()
-                worker.join(timeout=30.0)
-                raise BackendTimeout(
-                    f"Codex did not finish within {self.timeout:.0f}s.\n\n"
-                    f"This is usually the task being big rather than anything being "
-                    f"broken -- a node asked to implement a lot in one turn can "
-                    f"legitimately run for a long time.\n\n"
-                    f"To give it longer, put this in <repo>/.agent/config.json:\n"
-                    f'    {{"roles": {{"<role>": {{"options": {{"timeout": 3600}}}}}}}}\n'
-                    f"and use the role name this node declares as its `backend`.\n\n"
-                    f"If it times out even then, the node is probably being asked to do "
-                    f"too much at once. Split the work across more nodes, or narrow the "
-                    f"brief."
-                )
-            # Only speak up if the provider itself has said nothing for a while.
-            if now - last_output[0] >= 30.0:
-                print(f"    ... still working ({now - started:.0f}s)", flush=True)
-                last_output[0] = now
+
+            idle = now - last_event[0]
+            elapsed = now - started
+
+            if idle >= self.timeout:
+                self._abandon(handle, worker)
+                raise BackendTimeout(self._silent_message(idle, elapsed, events[0]))
+
+            if elapsed >= self.max_seconds:
+                self._abandon(handle, worker)
+                raise BackendTimeout(self._runaway_message(elapsed, events[0]))
+
+            # Only speak up if the provider itself has said nothing for a while,
+            # and say what we are actually waiting on. "still working (400s)" is
+            # ambiguous between thinking and hung; the idle figure is not.
+            if now - last_line[0] >= 30.0:
+                print(f"    ... still working ({elapsed:.0f}s elapsed, "
+                      f"{events[0]} events, last one {idle:.0f}s ago)", flush=True)
+                last_line[0] = now
 
         if "error" in outcome:
             raise outcome["error"]  # type: ignore[misc]
         return outcome["result"]
 
+
+    def _poll_seconds(self) -> float:
+        """How often to check whether a turn is still going.
+
+        Five seconds for real settings -- cheap, and nobody minds noticing a
+        stall five seconds late. But it must stay comfortably below whichever
+        limit is shortest, or the limit cannot fire at all: a fixed 5s poll with
+        a 0.2s limit checks once, after the turn is already over. That mattered
+        first in a test, and a limit that silently cannot trigger is worth
+        ruling out in the code rather than in the test setup.
+        """
+        return max(0.02, min(5.0, self.timeout / 4, self.max_seconds / 4))
+
+    def _abandon(self, handle, worker) -> None:
+        """Stop a turn we have given up on, and wait for its thread to notice."""
+        handle.interrupt()
+        worker.join(timeout=30.0)
+
+    def _silent_message(self, idle: float, elapsed: float, events: int) -> str:
+        return (
+            f"Codex went silent for {idle:.0f}s (turn ran {elapsed:.0f}s, "
+            f"{events} events).\n\n"
+            f"The limit is on SILENCE, not on total time -- a turn that keeps "
+            f"streaming is never killed for taking long. So this is a request "
+            f"that stopped responding rather than one that was slow.\n\n"
+            f"Usually worth simply running it again; the graph checkpoints after "
+            f"every completed node, so nothing before this is lost.\n\n"
+            f"To allow longer silences, put this in <repo>/.agent/config.json:\n"
+            f'    {{"roles": {{"<role>": {{"options": {{"timeout": 600}}}}}}}}\n'
+            f"using the role name this node declares as its `backend` -- which "
+            f"may well be shared with other nodes."
+        )
+
+    def _runaway_message(self, elapsed: float, events: int) -> str:
+        return (
+            f"Codex ran {elapsed:.0f}s on one turn ({events} events) and hit the "
+            f"absolute cap.\n\n"
+            f"It was still producing output the whole time, so this is not a "
+            f"hang -- the node is being asked to do too much in a single turn. "
+            f"A node is atomic: it either finishes or its work is discarded, so "
+            f"a turn this long is a bad bet however patient you are.\n\n"
+            f"Split it across more nodes -- give each one fewer plan steps and "
+            f"fewer output fields. The Wiring panel in the web UI does this "
+            f"without hand-editing JSON.\n\n"
+            f"To raise the cap anyway:\n"
+            f'    {{"roles": {{"<role>": {{"options": {{"max_seconds": 14400}}}}}}}}'
+        )
 
     def _get_thread(self, *, thread_id, repo_path, access, developer_instructions):
         if len(developer_instructions) > SAFE_INSTRUCTIONS_CHARS:

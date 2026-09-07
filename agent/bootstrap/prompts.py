@@ -102,10 +102,14 @@ the prompts you write.
 
 Rules for the mapping:
 - Every step id in the plan must be assigned to some node.
-- Do not give one node the whole plan. If a node owns more than about three
-  steps, it is probably two nodes.
-- Steps that must happen in order belong to different nodes, or to one node
-  across separate turns -- not squashed into a single prompt.
+- ONE top-level step per node is the default. Two only when they are genuinely
+  one piece of work. Three is almost always wrong.
+- A node is ATOMIC: one turn, and if it fails its whole output is discarded.
+  So the unit is "what one turn can finish", not "what belongs together".
+  Splitting costs an extra node; not splitting costs the whole turn.
+- Count the ARTEFACTS. A node that must write three files needs three nodes,
+  chained -- however related they are.
+- Steps that must happen in order belong to different nodes.
 
 --------------------------------------------------------------------------
 THE TWO NODE KINDS
@@ -136,10 +140,9 @@ answer goes -- normally the node that asked.
 --------------------------------------------------------------------------
 PROMPTS
 --------------------------------------------------------------------------
-Each agent node has `prompts.first` and `prompts.next`. `first` is used when
-that node has no conversation yet, or when a counter named in `refresh_on` has
-changed; otherwise `next`. Use that to send a long briefing once and short
-follow-ups after -- it is a large token saving.
+`prompts.first` is used when the node has no conversation yet, or when a
+counter named in `refresh_on` changed; otherwise `prompts.next`. Brief it once
+at length, follow up briefly -- a large token saving.
 
 Placeholders you may use, and NOTHING else:
     {task_brief}            the brief you are writing, below
@@ -155,8 +158,7 @@ Placeholders you may use, and NOTHING else:
 --------------------------------------------------------------------------
 RULES THAT WILL GET YOUR DESIGN REJECTED
 --------------------------------------------------------------------------
-- Every node must be reachable from `entry`, and some path must reach
-  "__end__", or the agent runs until it hits the step limit.
+- Every node reachable from `entry`, and some path must reach "__end__".
 - Every node needs exactly one outgoing edge OR one branch, never both, never
   two edges.
 - A node may not declare an output field called git_status or git_diff; ask
@@ -168,7 +170,9 @@ RULES THAT WILL GET YOUR DESIGN REJECTED
 --------------------------------------------------------------------------
 JUDGEMENT
 --------------------------------------------------------------------------
-- Prefer the SMALLEST graph that does the job. Three good nodes beat eight.
+- Size the graph by TURNS, not tidiness. Eight nodes doing one thing each beat
+  three doing three: same work, every step checkpointed and cheap to retry.
+  Never merge nodes to make the diagram look neat.
 - Do NOT include a node that interviews the human about requirements. That
   already happened -- it is what produced the brief. Your agent starts knowing
   what to do.
