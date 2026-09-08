@@ -470,7 +470,7 @@ def _parse_args():
     run.add_argument("--backend", help="Provider for every role, e.g. codex, fake")
     run.add_argument("--model", help="Model for every role")
     run.add_argument("--backend-role", action="append", metavar="ROLE=PROVIDER[:MODEL]",
-                     help="Override one role, e.g. executor=codex:gpt-5.4. Repeatable.")
+                     help="Override one role, e.g. executor=codex:gpt-5.6-sol. Repeatable.")
     run.add_argument("--explain", action="store_true",
                      help="Print the resolved config and the agent, then exit")
 

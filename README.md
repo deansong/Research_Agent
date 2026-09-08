@@ -242,7 +242,7 @@ mkdir -p .agent && cp agent.example.json .agent/config.json
     "planner":      { "provider": "codex" },
     "designer":     { "provider": "codex" },
     "orchestrator": { "provider": "codex" },
-    "executor":     { "provider": "codex", "model": "gpt-5.4",
+    "executor":     { "provider": "codex", "model": "gpt-5.6-sol",
                       "options": { "timeout": 3600 } }
   },
 
@@ -270,7 +270,7 @@ skeleton uses `coder`, `runner` and `checker` — `runner` deliberately separate
 so experiment runs can go to a cheaper model without touching the graph:
 
 ```json
-{ "roles": { "runner": { "model": "gpt-5.4-mini" } } }
+{ "roles": { "runner": { "model": "gpt-5.6-luna" } } }
 ```
 
 An unconfigured role falls back to `default`, and says so at startup rather
@@ -415,7 +415,7 @@ Every node names a **role**, and every role is configurable:
 
 ```bash
 python main.py run . --backend fake                        # everything
-python main.py run . --backend-role executor=codex:gpt-5.4 # one role
+python main.py run . --backend-role executor=codex:gpt-5.6-sol  # one role
 python main.py run . --explain                             # show, spend nothing
 ```
 
@@ -426,7 +426,7 @@ Or persistently, in `<repo>/.agent/config.json` (per repo) or
 {
   "default": { "provider": "codex" },
   "roles": {
-    "executor": { "provider": "codex", "model": "gpt-5.4",
+    "executor": { "provider": "codex", "model": "gpt-5.6-sol",
                   "options": { "timeout": 3600 } }
   }
 }

@@ -107,7 +107,7 @@ catches a duplicate JSON key silently collapsing.
 
 | key | meaning |
 | --- | --- |
-| `backend` | a **role name**, resolved through the normal config stack — so `--backend-role reviewer=codex:gpt-5.4` configures a role that only exists inside this folder |
+| `backend` | a **role name**, resolved through the normal config stack — so `--backend-role reviewer=codex:gpt-5.6-sol` configures a role that only exists inside this folder |
 | `access` | `none`, `read_only` or `write`. Checked against the backend's capability **before anything is constructed** |
 | `output` | becomes a Pydantic model at runtime; its JSON Schema constrains the reply |
 | `prompts` | see the one rule below |
@@ -478,19 +478,35 @@ satisfies both rules by construction.
 `"coder"` that writes code. Nothing configures those roles, so they fall back
 to the default until you say otherwise:
 
+**`runner` and `checker` already default to the mini tier**, so this costs
+nothing to leave alone. From `config.py`:
+
+| role | model | why |
+| --- | --- | --- |
+| everything else | `gpt-5.6-sol` | "the flagship-equivalent tier" |
+| `runner`, `checker` | `gpt-5.6-terra` | "the mini-like tier" |
+
+Running an experiment is mostly obedience — take this command, run it, put the
+numbers there. Designing one is not. To change either:
+
 ```json
 {
   "roles": {
-    "runner":  { "provider": "codex", "model": "gpt-5.4-mini" },
-    "checker": { "provider": "codex", "model": "gpt-5.4-mini" }
+    "runner":  { "model": "gpt-5.6-luna" },
+    "checker": { "model": "gpt-5.6-sol" }
   }
 }
 ```
 
-Until then the run prints
-`[config] checker, runner not configured, using the default (codex/gpt-5.4)`
-— because a silent fallback here would have you believing experiments run on a
-small model while every turn goes to the big one.
+**`checker` is the one to watch.** It decides whether a run measured the right
+thing, which is judgement rather than obedience, and a run that finished
+cleanly while measuring the wrong thing is the failure it exists to catch. If
+it starts waving work through, put it back on `sol`.
+
+A global `--model` or `AGENT_MODEL` reaches *every* role, including these two —
+otherwise `--model gpt-5.6-pro` would leave two roles on the mini tier, which
+is the kind of half-applied setting you discover from a bill. A model named for
+a specific role survives it, because somebody asked for that one.
 
 It is a **skeleton, not a mould.** The designer is told to check it against
 the plan first, drop what does not apply, add what the plan needs (a baseline

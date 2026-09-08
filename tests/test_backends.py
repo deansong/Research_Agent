@@ -76,6 +76,112 @@ def test_run_structured_signatures_agree():
     print("PASS  every run_structured accepts the same keyword arguments")
 
 
+def _resolved(**cli_kwargs):
+    """Models per role, with the given CLI flags and no environment."""
+    import pathlib
+
+    from agent.config import backend_for, load_config
+
+    class Args:
+        pass
+
+    args = Args()
+    for key, value in cli_kwargs.items():
+        setattr(args, key, value)
+
+    cfg = load_config(repo_path=pathlib.Path("/nonexistent-repo"),
+                      cli=args, env={})
+    return cfg, {role: backend_for(cfg, role).model
+                 for role in ("designer", "coder", "runner", "checker")}
+
+
+def test_the_default_model_is_pinned_and_split_by_role():
+    """It used to be None -- "let the Codex CLI decide".
+
+    Which meant the model that writes a 40,000-character design document was
+    whatever ~/.codex/config.toml on that machine happened to say, invisible
+    to --explain and different per checkout. Now it is a decision in the
+    repository: the flagship tier by default, the mini tier for the two roles
+    that run experiments and check them.
+    """
+    from agent.config import DEFAULT_MODEL, DEFAULT_ROLE_MODELS
+
+    _, models = _resolved()
+    assert models["designer"] == DEFAULT_MODEL == "gpt-5.6-sol", models
+    assert models["coder"] == "gpt-5.6-sol", "code and reports get the default"
+    assert models["runner"] == models["checker"] == "gpt-5.6-terra", models
+    assert set(DEFAULT_ROLE_MODELS) == {"runner", "checker"}, DEFAULT_ROLE_MODELS
+    print(f"PASS  default {DEFAULT_MODEL}, runs on {DEFAULT_ROLE_MODELS['runner']}")
+
+
+def test_a_global_model_override_reaches_every_role():
+    """The trap in seeding per-role defaults.
+
+    --model and AGENT_MODEL only ever set `default.model`, so a built-in role
+    model would silently outrank them: `--model gpt-5.6-pro` leaving two
+    roles on the mini tier is the kind of half-applied setting you discover
+    from a bill.
+    """
+    _, models = _resolved(model="gpt-5.6-pro")
+    assert set(models.values()) == {"gpt-5.6-pro"}, models
+
+    # But a model named FOR that role survives, because somebody asked.
+    _, models = _resolved(model="gpt-5.6-pro",
+                          backend_role=["runner=codex:gpt-5.6-luna"])
+    assert models["runner"] == "gpt-5.6-luna", models
+    assert models["checker"] == "gpt-5.6-pro", "only the named role is spared"
+    print("PASS  --model reaches every role; a named role override wins")
+
+
+def test_backend_fake_still_reaches_the_seeded_roles():
+    """Why the seeded entries carry provider="".
+
+    The whole test suite and every `--backend fake` run depend on one flag
+    redirecting every role. A seeded provider="codex" on runner and checker
+    would have quietly kept two roles on the real API -- which, in a suite
+    that runs offline, would fail as a login error rather than as anything
+    resembling this cause.
+    """
+    cfg, models = _resolved(backend="fake")
+    from agent.config import backend_for
+
+    for role in ("designer", "runner", "checker"):
+        assert backend_for(cfg, role).provider == "fake", (role, cfg)
+    print("PASS  --backend fake redirects the seeded roles too")
+
+
+def test_the_default_models_are_real_model_ids():
+    """A typo here is only discovered by a failed live turn.
+
+    The names come from the tier table inside the codex binary, so they can
+    be checked against it -- the same source that says sol is the
+    flagship-equivalent tier and terra the mini-like one. Skipped when the
+    binary is not installed rather than guessed at.
+    """
+    import pathlib
+
+    from agent.config import DEFAULT_MODEL, DEFAULT_ROLE_MODELS
+
+    try:
+        import codex_cli_bin
+    except ImportError:  # pragma: no cover - optional
+        pytest.skip("codex_cli_bin not installed; cannot verify model ids")
+
+    root = pathlib.Path(codex_cli_bin.__file__).parent / "bin"
+    binaries = [p for p in root.glob("codex*") if p.is_file()]
+    if not binaries:  # pragma: no cover
+        pytest.skip(f"no codex binary under {root}")
+
+    blob = max(binaries, key=lambda p: p.stat().st_size).read_bytes()
+    for model in {DEFAULT_MODEL, *DEFAULT_ROLE_MODELS.values()}:
+        assert model.encode() in blob, (
+            f"{model!r} does not appear in the installed codex binary. "
+            f"A model id it does not know fails every turn."
+        )
+    print(f"PASS  {DEFAULT_MODEL} and {sorted(set(DEFAULT_ROLE_MODELS.values()))} "
+          f"are ids the installed codex knows")
+
+
 def test_configured_options_reach_the_backend():
     """Options in config must actually arrive, for every provider.
 

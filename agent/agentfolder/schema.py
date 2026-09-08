@@ -184,7 +184,8 @@ class AgentNodeConfig(FolderModel):
     backend: str = Field(min_length=1, max_length=64)
     """A ROLE NAME, fed straight through config.backend_for(). So a generated
     node with backend "reviewer" is configurable with
-    --backend-role reviewer=codex:gpt-5.4, using the existing config stack."""
+    --backend-role reviewer=codex:gpt-5.6-sol, using the existing config
+    stack."""
 
     access: Literal["none", "read_only", "write"] = "read_only"
 

@@ -38,6 +38,54 @@ from agent import roles
 
 DEFAULT_SESSION = "main"
 
+#: The model every role gets unless something names another one.
+#:
+#: This used to be None, which meant "send no model and let the Codex CLI use
+#: whatever ~/.codex/config.toml says". Pinning it is better for one reason:
+#: the design phase writes a document of tens of thousands of tokens in one
+#: turn, so which model runs it decides whether the folder validates -- and
+#: that should be a decision in the repository, visible in --explain, rather
+#: than whatever a machine's CLI config happens to say.
+#:
+#: WHICH model, from the tier table inside the codex binary:
+#:
+#:     gpt-5.6-sol     "Sol is the flagship-equivalent tier"
+#:     gpt-5.6-terra   "Terra is the mini-like tier"
+#:     gpt-5.6-luna    "Luna is the nano-like tier"
+#:
+#: Sol, because it is the strongest of the three and because it is what this
+#: project has actually been running: with model=None we inherited
+#: ~/.codex/config.toml, which says gpt-5.6-sol, and the rollout logs confirm
+#: every turn used it. So this pins current behaviour rather than changing it.
+#:
+#: The cost of naming it here is that it now WINS over ~/.codex/config.toml:
+#: there is no value meaning "inherit", because an explicit null in a config
+#: file is indistinguishable from an absent key once Pydantic has parsed it.
+#: To use another model, name it -- --model, --backend-role, or
+#: `default.model` in <repo>/.agent/config.json.
+DEFAULT_MODEL = "gpt-5.6-sol"
+
+#: Roles that get something other than DEFAULT_MODEL out of the box.
+#:
+#: The split the research skeleton already sets up: `coder` writes code and
+#: reports and takes the default, while `runner` and `checker` -- the roles
+#: that execute experiments and judge the results -- go to the mini tier.
+#: Running an experiment is mostly obedience: take this command, run it, put
+#: the numbers there. Designing one is not.
+#:
+#: `checker` is the one to watch. It decides whether a run measured the right
+#: thing, which is judgement rather than obedience, and a run that finished
+#: cleanly while measuring the wrong thing is the failure it exists to catch.
+#: Move it back with {"roles": {"checker": {"model": "gpt-5.6-sol"}}} if it
+#: starts waving work through.
+#:
+#: Seeded with provider="" so that --backend fake still reaches these roles:
+#: backend_for() falls back to the default provider for an empty one.
+DEFAULT_ROLE_MODELS = {
+    "runner": "gpt-5.6-terra",
+    "checker": "gpt-5.6-terra",
+}
+
 # LangGraph raises GraphRecursionError after this many super-steps in one
 # invoke(). Ours is high because a long task legitimately loops
 # orchestrator -> executor -> orchestrator many times.
@@ -53,6 +101,10 @@ class BackendConfig:
 
     provider: str = "codex"
     model: str | None = None
+    """None means "send no model and let the provider choose".
+
+    Only reachable in code now, not through a config file: resolve() starts
+    from DEFAULT_MODEL, and a file cannot express "go back to None"."""
     options: dict[str, Any] = field(default_factory=dict)
     """Provider-specific extras, passed straight to the backend's __init__.
     e.g. {"permission_mode": "acceptEdits"} for claude_code."""
@@ -89,7 +141,7 @@ def backend_for(cfg: AgentConfig, role: str) -> BackendConfig:
     """The effective config for one role: its own settings over the default.
 
     Merging per FIELD (not per role) is what lets you write
-        {"default": {"model": "gpt-5.4"}, "roles": {"executor": {"provider": "codex"}}}
+        {"default": {"model": "gpt-5.6-sol"}, "roles": {"executor": {"provider": "codex"}}}
     and have the executor still pick up the default model.
     """
     override = cfg.roles.get(role)
@@ -170,8 +222,11 @@ def load_config(
     env = os.environ if env is None else env
 
     # ---- layer 1: built-in defaults ------------------------------------
-    default = BackendConfig(provider="codex", model=None, options={})
-    role_configs: dict[str, BackendConfig] = {}
+    default = BackendConfig(provider="codex", model=DEFAULT_MODEL, options={})
+    role_configs: dict[str, BackendConfig] = {
+        role: BackendConfig(provider="", model=model)
+        for role, model in DEFAULT_ROLE_MODELS.items()
+    }
     session: str | None = None
     recursion_limit = DEFAULT_RECURSION_LIMIT
     sources: list[str] = ["built-in defaults"]
@@ -265,6 +320,19 @@ def load_config(
         if getattr(cli, "session", None):
             session = cli.session
 
+    # A GLOBAL model override means "use this everywhere", and the built-in
+    # per-role models must not outrank it. `--model gpt-5.6-pro` that quietly
+    # left two roles on the mini tier would be the kind of half-applied
+    # setting you only discover from a bill.
+    #
+    # Only the seeded value is released: if any later layer named a model for
+    # that role, it stays, because somebody asked for it specifically.
+    if default.model != DEFAULT_MODEL:
+        for role, seeded in DEFAULT_ROLE_MODELS.items():
+            current = role_configs.get(role)
+            if current is not None and current.model == seeded:
+                role_configs[role] = replace(current, model=None)
+
     return AgentConfig(
         default=default,
         roles=role_configs,
@@ -288,7 +356,7 @@ def _parse_role_override(item: str) -> tuple[str, BackendConfig]:
     if "=" not in item:
         raise SystemExit(
             f"--backend-role expects role=provider[:model], got '{item}'.\n"
-            f"Example: --backend-role executor=codex:gpt-5.4"
+            f"Example: --backend-role executor=codex:gpt-5.6-sol"
         )
     role_name, spec = item.split("=", 1)
     role_name = role_name.strip()
