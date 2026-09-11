@@ -252,3 +252,132 @@ def test_progress_reports_carry_the_seven_keys():
 
 if __name__ == "__main__":
     sys.exit(pytest.main([__file__, "-q"]))
+
+
+# ---------------------------------------------------------------------------
+# The providers' vocabulary. argv() is pure, so these need no subprocess.
+# ---------------------------------------------------------------------------
+
+def _agy():
+    from agent.backends.antigravity import AntigravityBackend
+
+    backend = AntigravityBackend.__new__(AntigravityBackend)
+    backend.executable = "agy"
+    backend.model = "gemini-3.8-flash-low"
+    backend.effort = None
+    backend.max_seconds = 7200.0
+    backend._warned_dangerous = True          # silence the notice in tests
+    return backend
+
+
+def test_antigravity_access_maps_to_flags(capsys):
+    """A mis-mapped access is a node declared read_only that edits your
+    repository. This is the cheapest possible test for it."""
+    backend = _agy()
+    dangerous = "--dangerously-skip-permissions"
+
+    for access in (Access.NONE, Access.READ_ONLY):
+        flags = backend.access_flags(access)
+        assert flags == ["--sandbox"], (access, flags)
+        assert dangerous not in flags
+
+    for access in (Access.WRITE, Access.FULL):
+        assert backend.access_flags(access) == [dangerous], access
+    print("PASS  only write and full reach --dangerously-skip-permissions")
+
+
+def test_antigravity_says_when_it_skips_permissions(capsys):
+    """A silent --dangerously-skip-permissions is the one thing in this
+    backend that can damage a machine."""
+    from agent.backends.antigravity import AntigravityBackend
+
+    backend = _agy()
+    backend._warned_dangerous = False
+    backend.access_flags(Access.WRITE)
+    first = capsys.readouterr().out
+    assert "--dangerously-skip-permissions" in first, first
+
+    backend.access_flags(Access.WRITE)
+    assert capsys.readouterr().out == "", "once per process, not once per turn"
+    print("PASS  skipping permissions is announced, once")
+
+
+def test_antigravity_sends_instructions_in_the_prompt():
+    """The one asymmetry between the two providers: agy has no system-prompt
+    flag, so a persona that is not prepended simply vanishes."""
+    argv = _agy().argv(prompt="do the thing", instructions="You are the RUNNER.",
+                       access=Access.READ_ONLY, schema_path="/tmp/s.json",
+                       session=[])
+    assert "--append-system-prompt" not in argv
+    body = argv[argv.index("-p") + 1]
+    assert "You are the RUNNER." in body and "do the thing" in body
+    assert body.index("You are the RUNNER.") < body.index("do the thing")
+    print("PASS  agy gets its persona through the prompt, in front")
+
+
+def test_antigravity_never_mints_a_conversation_id():
+    """Measured: --conversation <fresh-uuid> warns 'not found' and then makes
+    a DIFFERENT conversation. Trusting a minted id would mean every turn
+    starting fresh while we believed it was resuming."""
+    fragment, minted = _agy().session_args(None)
+    assert fragment == [] and minted is None, (fragment, minted)
+
+    fragment, minted = _agy().session_args("conv-7")
+    assert fragment == ["--conversation", "conv-7"] and minted is None
+    print("PASS  ids come back from agy; they are never invented here")
+
+
+def test_antigravity_reads_structured_output_not_response():
+    """They differ: `response` carried two keys the model invented that the
+    schema never asked for, and extra="forbid" would reject them."""
+    envelope = {"event": "result", "result": {
+        "status": "SUCCESS",
+        "response": '{"answer":"ok","toolAction":"Finishing","toolSummary":"x"}',
+        "structured_output": {"answer": "ok"},
+        "conversation_id": "c-1",
+        "usage": {"input_tokens": 11, "output_tokens": 2,
+                  "thinking_tokens": 3, "cache_read_tokens": 4},
+    }}
+    backend = _agy()
+    assert json.loads(backend.final_text(envelope)) == {"answer": "ok"}
+    assert backend.session_id_from(envelope) == "c-1"
+
+    usage = backend.usage_from(envelope)
+    assert (usage.input_tokens, usage.output_tokens) == (11, 2)
+    assert usage.reasoning_tokens == 3 and usage.cached_input_tokens == 4
+    print("PASS  the parsed structured_output wins over the raw response")
+
+
+def test_antigravity_explains_a_denied_tool_call():
+    """SUCCESS with no answer is what a permission denial looks like, and the
+    remedy is about access, not about retrying."""
+    backend = _agy()
+    envelope = {"result": {"status": "SUCCESS", "response": ""}}
+    assert backend.final_text(envelope) == ""
+    why = backend._why_empty(envelope)
+    assert "DENIED" in why or "denied" in why.lower(), why
+    assert "read_only" in why, "name the likely cause"
+    print("PASS  an empty successful turn is explained as a denial")
+
+
+def test_antigravity_maps_steps_into_the_shared_vocabulary():
+    """Reuse `command`/`reasoning` rather than inventing names, so headline(),
+    Turn.counts() and the web UI activity panel work with no changes."""
+    backend = _agy()
+
+    started = backend.record_for({"event": "step_update", "step_update": {
+        "state": "ACTIVE", "step_type": "tool", "tool_name": "run_command",
+        "tool_info": {"parameters": {"CommandLine": "pytest -q"}}}})
+    assert started == {"kind": "command", "phase": "started",
+                       "command": "pytest -q"}, started
+
+    failed = backend.record_for({"event": "step_update", "step_update": {
+        "state": "ERROR", "step_type": "tool", "tool_name": "run_command",
+        "tool_info": {"parameters": {"CommandLine": "x"},
+                      "error": {"message": "permission check failed"}}}})
+    assert failed["phase"] == "error" and failed["exit_code"] == 1
+    assert "permission check failed" in failed["output"]
+
+    assert backend.record_for({"event": "init", "init": {}}) is None
+    assert backend.record_for({"event": "result", "result": {}}) is None
+    print("PASS  agy steps become the records the rest of the project reads")

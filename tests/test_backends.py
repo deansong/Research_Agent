@@ -18,7 +18,7 @@ import sys
 
 sys.path.insert(0, str(pathlib.Path(__file__).resolve().parents[1]))
 
-from agent.backends import PROVIDERS, _load
+from agent.backends import PROVIDERS, STUB_PROVIDERS, _load
 from agent.backends.base import Access
 
 REQUIRED_ATTRS = ("name", "supports_repo_access", "max_access")
@@ -205,7 +205,7 @@ def test_configured_options_reach_the_backend():
     # And the stubs, which take **options too -- they must not choke on it.
     from agent.backends.base import BackendUnavailable
 
-    for provider in ("api", "claude_code", "antigravity"):
+    for provider in sorted(STUB_PROVIDERS):
         try:
             _instantiate(BackendConfig(provider=provider, options={"anything": 1}),
                          role="r", codex_client=None)
@@ -246,7 +246,7 @@ def test_stub_backends_fail_loudly_at_construction():
     """A stub must refuse at startup, not halfway through a task."""
     from agent.backends.base import BackendUnavailable
 
-    for provider in ("api", "claude_code", "antigravity"):
+    for provider in sorted(STUB_PROVIDERS):
         cls = _load(provider)
         try:
             cls(model=None)

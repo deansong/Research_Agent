@@ -23,6 +23,12 @@ PROVIDERS: dict[str, str] = {
 }
 
 
+#: Registered, but not implemented. The tests read THIS rather than keeping a
+#: copy: a hand-maintained list is exactly how a test asserting "these three
+#: refuse to construct" would keep passing after two of them started working.
+STUB_PROVIDERS: frozenset[str] = frozenset({"api"})
+
+
 def _load(provider: str):
     """Import a provider class lazily.
 
