@@ -65,7 +65,9 @@ DEFAULT_SESSION = "main"
 #: `default.model` in <repo>/.agent/config.json.
 DEFAULT_MODEL = "gpt-5.6-sol"
 
-#: Roles that get something other than DEFAULT_MODEL out of the box.
+#: Roles that get something other than the default, as (provider, model)
+#: PAIRS -- the pair is the unit, because a model id belongs to the
+#: provider it was named for.
 #:
 #: The split the research skeleton already sets up: `coder` writes code and
 #: reports and takes the default, while `runner` and `checker` -- the roles
@@ -81,9 +83,11 @@ DEFAULT_MODEL = "gpt-5.6-sol"
 #:
 #: Seeded with provider="" so that --backend fake still reaches these roles:
 #: backend_for() falls back to the default provider for an empty one.
-DEFAULT_ROLE_MODELS = {
-    "runner": "gpt-5.6-terra",
-    "checker": "gpt-5.6-terra",
+DEFAULT_PROVIDER = "codex"
+
+DEFAULT_ROLE_BACKENDS: dict[str, tuple[str, str]] = {
+    "runner": ("codex", "gpt-5.6-terra"),
+    "checker": ("codex", "gpt-5.6-terra"),
 }
 
 # LangGraph raises GraphRecursionError after this many super-steps in one
@@ -222,11 +226,19 @@ def load_config(
     env = os.environ if env is None else env
 
     # ---- layer 1: built-in defaults ------------------------------------
-    default = BackendConfig(provider="codex", model=DEFAULT_MODEL, options={})
-    role_configs: dict[str, BackendConfig] = {
-        role: BackendConfig(provider="", model=model)
-        for role, model in DEFAULT_ROLE_MODELS.items()
-    }
+    default = BackendConfig(provider=DEFAULT_PROVIDER, model=DEFAULT_MODEL,
+                            options={})
+    # NOT seeded with the per-role defaults. Those are applied at the END (see
+    # _apply_role_defaults), and leaving this empty is what makes provenance
+    # readable: every entry below was put here by a layer that was ASKED to,
+    # and all three write sites start from BackendConfig(provider="",
+    # model=None) and overwrite only what was named. So afterwards
+    #     provider == ""   means "nobody named a provider for this role"
+    #     model is None    means "nobody named a model for this role"
+    # A pre-seeded entry is exactly what destroys that, and then you need a
+    # comparison heuristic that cannot tell a default from a deliberate
+    # choice of the same value.
+    role_configs: dict[str, BackendConfig] = {}
     session: str | None = None
     recursion_limit = DEFAULT_RECURSION_LIMIT
     sources: list[str] = ["built-in defaults"]
@@ -320,18 +332,8 @@ def load_config(
         if getattr(cli, "session", None):
             session = cli.session
 
-    # A GLOBAL model override means "use this everywhere", and the built-in
-    # per-role models must not outrank it. `--model gpt-5.6-pro` that quietly
-    # left two roles on the mini tier would be the kind of half-applied
-    # setting you only discover from a bill.
-    #
-    # Only the seeded value is released: if any later layer named a model for
-    # that role, it stays, because somebody asked for it specifically.
-    if default.model != DEFAULT_MODEL:
-        for role, seeded in DEFAULT_ROLE_MODELS.items():
-            current = role_configs.get(role)
-            if current is not None and current.model == seeded:
-                role_configs[role] = replace(current, model=None)
+    # Layer 1 in PRECEDENCE, last in code -- see _apply_role_defaults.
+    role_configs = _apply_role_defaults(default, role_configs)
 
     return AgentConfig(
         default=default,
@@ -341,6 +343,53 @@ def load_config(
         sources=tuple(sources),
         **extras,
     )
+
+
+def _apply_role_defaults(
+    default: BackendConfig,
+    role_configs: dict[str, BackendConfig],
+) -> dict[str, BackendConfig]:
+    """Fill in DEFAULT_ROLE_BACKENDS wherever nothing louder has spoken.
+
+    Applied AFTER every other layer even though it is the lowest-precedence
+    one, because "did anybody else name a provider for this role?" is only
+    answerable once they all have. That is also why load_config no longer
+    seeds role_configs: an empty provider in there now MEANS "nobody asked",
+    and a pre-seeded entry would have erased the only evidence.
+
+    THE PER-ROLE DEFAULTS ARE A PACKAGE DEAL. Any GLOBAL override -- --backend,
+    --model, AGENT_BACKEND, AGENT_MODEL, CODEX_MODEL, or `default` in a config
+    file -- discards the whole package for every role. Two failures if it did
+    not, and the first takes the offline test suite with it:
+
+        --backend fake   would leave three roles on the real claude CLI, and
+                         fail as a login error rather than as anything
+                         resembling this cause;
+        --model X        would pair X with whatever provider each role was
+                         seeded to, so an opus id would be sent to codex.
+
+    A model id belongs to the provider it was named for -- gemini-3.8-flash
+    handed to codex fails every turn -- so the pair is the unit, and naming
+    one half discards the other rather than mixing them.
+    """
+    if default.provider != DEFAULT_PROVIDER or default.model != DEFAULT_MODEL:
+        return role_configs
+
+    out = dict(role_configs)
+    for role, (provider, model) in DEFAULT_ROLE_BACKENDS.items():
+        current = out.get(role, BackendConfig(provider="", model=None))
+
+        # Which provider will this role ACTUALLY run on? The seeded model is
+        # only meaningful if it is the one it was named for.
+        if (current.provider or provider) != provider:
+            continue
+
+        out[role] = replace(
+            current,
+            provider=provider,
+            model=model if current.model is None else current.model,
+        )
+    return out
 
 
 def _apply_file(base: BackendConfig, entry: _BackendFile) -> BackendConfig:

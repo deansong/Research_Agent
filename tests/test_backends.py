@@ -104,14 +104,15 @@ def test_the_default_model_is_pinned_and_split_by_role():
     repository: the flagship tier by default, the mini tier for the two roles
     that run experiments and check them.
     """
-    from agent.config import DEFAULT_MODEL, DEFAULT_ROLE_MODELS
+    from agent.config import DEFAULT_MODEL, DEFAULT_ROLE_BACKENDS
 
     _, models = _resolved()
     assert models["designer"] == DEFAULT_MODEL == "gpt-5.6-sol", models
     assert models["coder"] == "gpt-5.6-sol", "code and reports get the default"
     assert models["runner"] == models["checker"] == "gpt-5.6-terra", models
-    assert set(DEFAULT_ROLE_MODELS) == {"runner", "checker"}, DEFAULT_ROLE_MODELS
-    print(f"PASS  default {DEFAULT_MODEL}, runs on {DEFAULT_ROLE_MODELS['runner']}")
+    assert set(DEFAULT_ROLE_BACKENDS) == {"runner", "checker"}, DEFAULT_ROLE_BACKENDS
+    print(f"PASS  default {DEFAULT_MODEL}, runs on "
+          f"{DEFAULT_ROLE_BACKENDS['runner'][1]}")
 
 
 def test_a_global_model_override_reaches_every_role():
@@ -160,7 +161,7 @@ def test_the_default_models_are_real_model_ids():
     """
     import pathlib
 
-    from agent.config import DEFAULT_MODEL, DEFAULT_ROLE_MODELS
+    from agent.config import DEFAULT_MODEL, DEFAULT_ROLE_BACKENDS
 
     try:
         import codex_cli_bin
@@ -173,12 +174,13 @@ def test_the_default_models_are_real_model_ids():
         pytest.skip(f"no codex binary under {root}")
 
     blob = max(binaries, key=lambda p: p.stat().st_size).read_bytes()
-    for model in {DEFAULT_MODEL, *DEFAULT_ROLE_MODELS.values()}:
+    for model in {DEFAULT_MODEL, *(m for _, m in DEFAULT_ROLE_BACKENDS.values())}:
         assert model.encode() in blob, (
             f"{model!r} does not appear in the installed codex binary. "
             f"A model id it does not know fails every turn."
         )
-    print(f"PASS  {DEFAULT_MODEL} and {sorted(set(DEFAULT_ROLE_MODELS.values()))} "
+    print(f"PASS  {DEFAULT_MODEL} and "
+          f"{sorted({m for _, m in DEFAULT_ROLE_BACKENDS.values()})} "
           f"are ids the installed codex knows")
 
 
