@@ -1,5 +1,5 @@
 {
-  "_comment": "Copy to ~/.codex-langgraph-agent/config.json (global) or <repo>/.agent/config.json (per repo), or point at it with --config. Delete the _comment keys; they are only here because JSON has no comments. Only 'codex' is implemented today; the others fail at startup with instructions for filling them in.",
+  "_comment": "Copy to ~/.codex-langgraph-agent/config.json (global) or <repo>/.agent/config.json (per repo), or point at it with --config. Delete the _comment keys; they are only here because JSON has no comments. 'codex', 'claude_code', 'antigravity' and 'fake' are implemented; 'api' is a stub that fails at startup with instructions for filling it in.",
 
   "default": {
     "provider": "codex",

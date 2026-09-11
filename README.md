@@ -286,8 +286,9 @@ error, since the folder that defines it may not exist yet.
 
 | provider | options |
 | --- | --- |
-| `codex` | `timeout` (600s), `credit_wait_attempts` (20), `credit_wait_seconds` (60), `busy_attempts` (4) |
-| `claude_code` | `executable` (`"claude"`), `timeout` (900s) — *stub* |
+| `codex` | `timeout` (300s, on SILENCE not total time), `max_seconds` (7200), `max_output_tokens` (60000), `credit_wait_attempts` (20), `credit_wait_seconds` (60), `busy_attempts` (4) |
+| `claude_code` | `executable` (`"claude"`), `timeout`, `max_seconds`, `max_output_tokens`, `max_turns`, `max_budget_usd` |
+| `antigravity` | `executable` (`"agy"`), `timeout`, `max_seconds`, `max_output_tokens`, `effort` (`low`/`medium`/`high`) |
 | `api` | `provider` (`"anthropic"`) — *stub* |
 
 Typos are caught: the file is parsed strictly, so `"provdier"` is an error
@@ -445,9 +446,17 @@ the role and the fix.
 
 | provider | status |
 | --- | --- |
-| `codex` | **implemented** |
+| `codex` | **implemented** — the OpenAI Codex SDK |
+| `claude_code` | **implemented** — shells out to the `claude` CLI |
+| `antigravity` | **implemented** — shells out to the `agy` CLI (Gemini, GPT-OSS, Claude via Antigravity) |
 | `fake` | **implemented** — canned answers, for learning and testing |
-| `claude_code`, `api`, `antigravity` | stubs; each fails at startup with the steps to finish it. Full design in the module docstring |
+| `api` | stub; fails at startup with the steps to finish it. Full design in the module docstring |
+
+The two CLI backends share `agent/backends/_cli.py` — one subprocess per turn,
+NDJSON out — so each provider module is just vocabulary: an argv builder, an
+access mapping, an event mapping and a usage mapping. Neither needs a Python
+package installed; they need the CLI on `PATH` and logged in, and they say so
+at startup if it is not.
 
 ---
 

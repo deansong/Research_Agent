@@ -10,7 +10,9 @@ openai-codex
 # For the stub backends, once you implement them (see agent/backends/):
 #   anthropic     # agent/backends/api.py, provider="anthropic"
 #   openai        # agent/backends/api.py, provider="openai"
-# agent/backends/claude_code.py shells out to the `claude` CLI -- no package needed.
+# agent/backends/claude_code.py shells out to the `claude` CLI and
+# agent/backends/antigravity.py to `agy` -- neither needs a package, only
+# the command on PATH and logged in.
 
 # The web UI (python main.py web .). Optional -- `run` works without them, and
 # cli.py says so if you try `web` and they are missing.

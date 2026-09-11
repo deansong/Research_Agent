@@ -478,13 +478,25 @@ satisfies both rules by construction.
 `"coder"` that writes code. Nothing configures those roles, so they fall back
 to the default until you say otherwise:
 
-**`runner` and `checker` already default to the mini tier**, so this costs
-nothing to leave alone. From `config.py`:
+**The roles already default across three providers**, so this costs nothing
+to leave alone. From `config.py::DEFAULT_ROLE_BACKENDS`:
 
-| role | model | why |
+| role | provider | model |
 | --- | --- | --- |
-| everything else | `gpt-5.6-sol` | "the flagship-equivalent tier" |
-| `runner`, `checker` | `gpt-5.6-terra` | "the mini-like tier" |
+| discussor, planner, designer | `claude_code` | `opus` |
+| coder | `codex` | `gpt-5.6-sol` |
+| runner, checker | `antigravity` | `gemini-3.8-flash-medium` |
+| everything else | `codex` | `gpt-5.6-sol` |
+
+The two CLI providers need their command on `PATH` and logged in — `claude`
+and `agy` — and say so at startup if not.
+
+**Antigravity has no middle access setting.** Measured in `-p` mode:
+`--sandbox` denies both running a command and reading a file, `--mode
+accept-edits` also denies, and only `--dangerously-skip-permissions` works. So
+a `runner` node on that provider runs with permission checks off, the node's
+declared `access` is the policy boundary, and the backend prints one line per
+process naming the flag. Claude Code *can* express read-only, and does.
 
 Running an experiment is mostly obedience — take this command, run it, put the
 numbers there. Designing one is not. To change either:
@@ -503,10 +515,15 @@ thing, which is judgement rather than obedience, and a run that finished
 cleanly while measuring the wrong thing is the failure it exists to catch. If
 it starts waving work through, put it back on `sol`.
 
-A global `--model` or `AGENT_MODEL` reaches *every* role, including these two —
-otherwise `--model gpt-5.6-pro` would leave two roles on the mini tier, which
-is the kind of half-applied setting you discover from a bill. A model named for
-a specific role survives it, because somebody asked for that one.
+**The per-role defaults are a package deal.** Any *global* override —
+`--backend`, `--model`, `AGENT_BACKEND`, `AGENT_MODEL`, or `default` in a
+config file — discards the whole package for every role. Otherwise
+`--backend fake` would leave five roles talking to two real CLIs, and
+`--model gpt-5.6-pro` would pair that id with whatever provider each role
+happened to be seeded to. A model id belongs to the provider it was named for:
+move a role to another provider and the model does *not* travel with it.
+
+Anything that names a role specifically keeps what it named.
 
 It is a **skeleton, not a mould.** The designer is told to check it against
 the plan first, drop what does not apply, add what the plan needs (a baseline
