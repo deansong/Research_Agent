@@ -381,3 +381,109 @@ def test_antigravity_maps_steps_into_the_shared_vocabulary():
     assert backend.record_for({"event": "init", "init": {}}) is None
     assert backend.record_for({"event": "result", "result": {}}) is None
     print("PASS  agy steps become the records the rest of the project reads")
+
+
+def _claude():
+    from agent.backends.claude_code import ClaudeCodeBackend
+
+    backend = ClaudeCodeBackend.__new__(ClaudeCodeBackend)
+    backend.executable = "claude"
+    backend.model = "opus"
+    backend.max_turns = None
+    backend.max_budget_usd = None
+    return backend
+
+
+def test_claude_access_maps_to_flags():
+    backend = _claude()
+
+    read_only = backend.access_flags(Access.READ_ONLY)
+    assert "bypassPermissions" not in read_only
+    assert "--disallowed-tools" in read_only, "the deny-list is the guarantee"
+    assert "Write" in read_only[read_only.index("--disallowed-tools") + 1]
+    assert "--allowed-tools" in read_only, "the allow-list is the intent"
+
+    assert backend.access_flags(Access.WRITE) == [
+        "--permission-mode", "acceptEdits"]
+    assert backend.access_flags(Access.FULL) == [
+        "--permission-mode", "bypassPermissions"]
+    print("PASS  only full reaches bypassPermissions")
+
+
+def test_claude_keeps_the_workspace_out_of_the_turn():
+    """With cwd=repo_path the CLI would load that repo's CLAUDE.md, settings,
+    hooks and plugins -- instruction injection from the directory under study,
+    and hooks running commands nobody asked for."""
+    argv = _claude().argv(prompt="go", instructions="be terse",
+                          access=Access.READ_ONLY, schema_path="/dev/null",
+                          session=[])
+    assert "--strict-mcp-config" in argv
+    assert argv[argv.index("--setting-sources") + 1] == "", argv
+    print("PASS  workspace settings, hooks and MCP are kept out")
+
+
+def test_claude_mints_its_own_session_id():
+    """The stub's good idea, kept: --session-id takes a uuid we choose, so the
+    handle semantics match Codex's thread id exactly."""
+    import uuid as _uuid
+
+    fragment, minted = _claude().session_args(None)
+    assert fragment[0] == "--session-id" and minted == fragment[1]
+    _uuid.UUID(minted)                       # must be a real uuid or the CLI refuses
+
+    fragment, minted = _claude().session_args("abc-123")
+    assert fragment == ["--resume", "abc-123"] and minted == "abc-123"
+    print("PASS  turn 1 names the conversation; later turns resume it")
+
+
+def test_claude_reports_cost_which_nothing_else_does():
+    """telemetry.py has printed Usage.cost_usd since it was written and it has
+    been None every time, because Codex does not report cost."""
+    envelope = {"type": "result", "is_error": False, "result": '{"answer":"a"}',
+                "session_id": "s-1", "total_cost_usd": 0.0123,
+                "usage": {"input_tokens": 100, "output_tokens": 20,
+                          "cache_read_input_tokens": 80,
+                          "output_tokens_details": {"thinking_tokens": 7}}}
+    backend = _claude()
+    usage = backend.usage_from(envelope)
+    assert usage.cost_usd == 0.0123, usage
+    assert usage.cached_input_tokens == 80 and usage.reasoning_tokens == 7
+    assert backend.final_text(envelope) == '{"answer":"a"}'
+    assert backend.session_id_from(envelope) == "s-1"
+    print("PASS  cost_usd is populated for the first time")
+
+
+def test_claude_treats_is_error_not_the_exit_code_as_the_signal():
+    """Measured: an authentication failure came back is_error true with exit
+    status 0. Trusting the exit code would have fed that text to Pydantic."""
+    envelope = {"type": "result", "is_error": True,
+                "result": "Authentication error", "permission_denials": []}
+    backend = _claude()
+    assert backend.final_text(envelope) == "", "an errored turn has no answer"
+    why = backend._why_empty(envelope)
+    assert "Authentication error" in why and "refresh the login" in why
+    print("PASS  is_error is the signal, and the message says what to do")
+
+
+def test_claude_maps_tool_use_into_the_shared_vocabulary():
+    backend = _claude()
+
+    bash = backend.record_for({"type": "assistant", "message": {"content": [
+        {"type": "tool_use", "name": "Bash", "input": {"command": "pytest -q"}}]}})
+    assert bash == {"kind": "command", "phase": "started",
+                    "command": "pytest -q"}, bash
+
+    write = backend.record_for({"type": "assistant", "message": {"content": [
+        {"type": "tool_use", "name": "Write",
+         "input": {"file_path": "results/a.json"}}]}})
+    assert write["kind"] == "file_change"
+    assert write["changes"][0]["path"] == "results/a.json"
+
+    failed = backend.record_for({"type": "user", "message": {"content": [
+        {"type": "tool_result", "content": "boom", "is_error": True}]}})
+    assert failed["exit_code"] == 1 and failed["output"] == "boom"
+
+    delta = backend.record_for({"type": "stream_event", "event": {
+        "delta": {"text": "tok"}}})
+    assert delta["transient"] is True and delta["stream"] == "message"
+    print("PASS  claude tool use becomes the records the project already reads")
