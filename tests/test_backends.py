@@ -106,13 +106,97 @@ def test_the_default_model_is_pinned_and_split_by_role():
     """
     from agent.config import DEFAULT_MODEL, DEFAULT_ROLE_BACKENDS
 
-    _, models = _resolved()
-    assert models["designer"] == DEFAULT_MODEL == "gpt-5.6-sol", models
-    assert models["coder"] == "gpt-5.6-sol", "code and reports get the default"
-    assert models["runner"] == models["checker"] == "gpt-5.6-terra", models
-    assert set(DEFAULT_ROLE_BACKENDS) == {"runner", "checker"}, DEFAULT_ROLE_BACKENDS
-    print(f"PASS  default {DEFAULT_MODEL}, runs on "
+    cfg, models = _resolved()
+    from agent.config import backend_for
+
+    def where(role):
+        spec = backend_for(cfg, role)
+        return (spec.provider, spec.model)
+
+    # Design is the expensive thing to get wrong -- one turn writes a
+    # 40,000-character document.
+    for role in ("discussor", "planner", "designer"):
+        assert where(role) == ("claude_code", "opus"), (role, where(role))
+
+    assert where("coder") == ("codex", "gpt-5.6-sol"), where("coder")
+
+    # Running an experiment is mostly obedience, so it goes to the cheap tier.
+    for role in ("runner", "checker"):
+        assert where(role) == ("antigravity", "gemini-3.8-flash-medium"), role
+
+    # Anything with no entry falls through to the global default.
+    assert where("orchestrator") == ("codex", DEFAULT_MODEL)
+    assert models["designer"] == "opus"
+    print(f"PASS  design on claude_code/opus, runs on antigravity/"
           f"{DEFAULT_ROLE_BACKENDS['runner'][1]}")
+
+
+def test_backend_fake_releases_the_whole_cross_provider_package():
+    """The trap that would take the offline suite with it.
+
+    Three roles now default to a real `claude` CLI and two to a real `agy`.
+    If --backend fake did not release those, the whole suite would try to
+    reach two logged-in CLIs and fail as a login error rather than as
+    anything resembling this cause.
+    """
+    from agent.config import backend_for
+
+    cfg, _ = _resolved(backend="fake")
+    for role in ("discussor", "designer", "coder", "runner", "checker",
+                 "executor"):
+        spec = backend_for(cfg, role)
+        assert spec.provider == "fake", (role, spec)
+        assert spec.model == "gpt-5.6-sol", (role, spec)
+    print("PASS  one --backend flag still redirects every role")
+
+
+def test_a_seeded_model_does_not_travel_to_another_provider():
+    """A model id belongs to the provider it was named for.
+
+    gemini-3.8-flash-medium handed to codex fails every turn, so moving a
+    role must drop the model that came with it rather than carry it across.
+    """
+    from agent.config import backend_for
+
+    cfg, _ = _resolved(backend_role=["runner=codex"])
+    spec = backend_for(cfg, "runner")
+    assert spec.provider == "codex", spec
+    assert spec.model == "gpt-5.6-sol", \
+        f"the gemini id must not travel to codex, got {spec.model!r}"
+
+    # Same provider, though, and the seeded model is a kindness worth keeping.
+    cfg, _ = _resolved(backend_role=["runner=antigravity"])
+    assert backend_for(cfg, "runner").model == "gemini-3.8-flash-medium"
+    print("PASS  moving a role drops the model that belonged to the old one")
+
+
+def test_an_explicitly_configured_model_equal_to_the_seed_survives():
+    """The latent bug the old comparison-based release had.
+
+    It cleared any role whose model still EQUALLED the seed, which cannot
+    tell a default from somebody deliberately choosing the same value.
+    Provenance-by-absence has no such false positive.
+    """
+    from agent.config import backend_for
+
+    cfg, _ = _resolved(model="gpt-5.6-pro",
+                       backend_role=["runner=antigravity:gemini-3.8-flash-medium"])
+    spec = backend_for(cfg, "runner")
+    assert spec.provider == "antigravity", spec
+    assert spec.model == "gemini-3.8-flash-medium", \
+        "asked for explicitly, so a global --model must not take it away"
+    print("PASS  a deliberate choice equal to the default is not released")
+
+
+def test_a_named_role_beats_the_seeded_provider():
+    from agent.config import backend_for
+
+    cfg, _ = _resolved(backend_role=["designer=antigravity:gemini-3.1-pro-high"])
+    spec = backend_for(cfg, "designer")
+    assert (spec.provider, spec.model) == ("antigravity", "gemini-3.1-pro-high")
+    # and it does not disturb its neighbours
+    assert backend_for(cfg, "planner").provider == "claude_code"
+    print("PASS  --backend-role overrides one role and only that role")
 
 
 def test_a_global_model_override_reaches_every_role():
@@ -154,34 +238,100 @@ def test_backend_fake_still_reaches_the_seeded_roles():
 def test_the_default_models_are_real_model_ids():
     """A typo here is only discovered by a failed live turn.
 
-    The names come from the tier table inside the codex binary, so they can
-    be checked against it -- the same source that says sol is the
-    flagship-equivalent tier and terra the mini-like one. Skipped when the
-    binary is not installed rather than guessed at.
+    Provider-aware, because the ids now come from three different places and
+    a single source could only ever check one of them. Skipped PER PROVIDER
+    rather than per test: a machine with codex but no agy must still guard
+    the codex ids, and a suite that fails when the wifi is off is worse than
+    no guard at all.
     """
-    import pathlib
+    from agent.config import DEFAULT_MODEL, DEFAULT_PROVIDER, DEFAULT_ROLE_BACKENDS
 
-    from agent.config import DEFAULT_MODEL, DEFAULT_ROLE_BACKENDS
-
-    try:
-        import codex_cli_bin
-    except ImportError:  # pragma: no cover - optional
-        pytest.skip("codex_cli_bin not installed; cannot verify model ids")
-
-    root = pathlib.Path(codex_cli_bin.__file__).parent / "bin"
-    binaries = [p for p in root.glob("codex*") if p.is_file()]
-    if not binaries:  # pragma: no cover
-        pytest.skip(f"no codex binary under {root}")
-
-    blob = max(binaries, key=lambda p: p.stat().st_size).read_bytes()
-    for model in {DEFAULT_MODEL, *(m for _, m in DEFAULT_ROLE_BACKENDS.values())}:
-        assert model.encode() in blob, (
-            f"{model!r} does not appear in the installed codex binary. "
-            f"A model id it does not know fails every turn."
+    wanted = {(DEFAULT_PROVIDER, DEFAULT_MODEL), *DEFAULT_ROLE_BACKENDS.values()}
+    checked = []
+    for provider, model in sorted(wanted):
+        known = _known_models(provider)
+        if known is None:
+            continue
+        assert model in known, (
+            f"{provider} does not know the model id {model!r}. "
+            f"A model id the CLI does not know fails every turn."
         )
-    print(f"PASS  {DEFAULT_MODEL} and "
-          f"{sorted({m for _, m in DEFAULT_ROLE_BACKENDS.values()})} "
-          f"are ids the installed codex knows")
+        checked.append(f"{provider}:{model}")
+
+    assert checked, "no provider CLI available to check against"
+    print(f"PASS  verified {', '.join(checked)}")
+
+
+#: provider -> the ids it knows, or None when that CLI is not installed here.
+#: Cached: six roles must not mean six `agy models` calls.
+_MODEL_CACHE: dict[str, set[str] | None] = {}
+
+
+def _known_models(provider: str) -> set[str] | None:
+    if provider in _MODEL_CACHE:
+        return _MODEL_CACHE[provider]
+    _MODEL_CACHE[provider] = _lookup_models(provider)
+    return _MODEL_CACHE[provider]
+
+
+def _lookup_models(provider: str) -> set[str] | None:
+    import pathlib
+    import shutil
+    import subprocess
+
+    if provider == "codex":
+        try:
+            import codex_cli_bin
+        except ImportError:  # pragma: no cover - optional
+            return None
+        root = pathlib.Path(codex_cli_bin.__file__).parent / "bin"
+        binaries = [p for p in root.glob("codex*") if p.is_file()]
+        if not binaries:  # pragma: no cover
+            return None
+        # A substring check over the binary, which is what the tier table is
+        # embedded in. Returns a matcher rather than a set -- see below.
+        blob = max(binaries, key=lambda p: p.stat().st_size).read_bytes()
+        return _Blob(blob)
+
+    if provider == "antigravity":
+        if not shutil.which("agy"):
+            return None
+        try:
+            out = subprocess.run(["agy", "models"], capture_output=True,
+                                 text=True, timeout=20)
+        except (subprocess.TimeoutExpired, OSError):  # pragma: no cover
+            return None
+        if out.returncode != 0:  # pragma: no cover
+            return None
+        return {line.split()[0] for line in out.stdout.splitlines()
+                if line.strip() and not line.startswith(" ")}
+
+    if provider == "claude_code":
+        if not shutil.which("claude"):
+            return None
+        # `claude --help` names the aliases; do NOT grep the binary the way
+        # the codex check does. It is a Node bundle, so a substring hit would
+        # prove nothing while looking like it was working.
+        try:
+            out = subprocess.run(["claude", "--help"], capture_output=True,
+                                 text=True, timeout=20)
+        except (subprocess.TimeoutExpired, OSError):  # pragma: no cover
+            return None
+        text = out.stdout + out.stderr
+        return {alias for alias in ("opus", "sonnet", "fable", "haiku")
+                if f"'{alias}'" in text}
+
+    return None  # pragma: no cover
+
+
+class _Blob:
+    """A set-like `in` over a binary, for the codex tier table."""
+
+    def __init__(self, blob: bytes):
+        self._blob = blob
+
+    def __contains__(self, model: str) -> bool:
+        return model.encode() in self._blob
 
 
 def test_configured_options_reach_the_backend():
@@ -221,26 +371,31 @@ def test_an_unconfigured_role_says_it_is_using_the_default(capsys):
     """The silence that would make the cheap-model option a lie.
 
     A designed agent invents its own role names, and backend_for() falls back
-    to the default for any it does not recognise. The research skeleton puts
-    experiment runs on a role called "runner" precisely so they can be pointed
-    at a smaller model -- so if nobody says the role is unconfigured, the
-    human believes they are saving money while every turn goes to the default.
+    to the default for any it does not recognise -- so without this notice the
+    human believes a role is on the model they picked for it while every turn
+    goes to the default.
+
+    `reviewer` here, not `runner`: runner is one of the roles config.py now
+    gives a default to, so it is deliberately NOT reported any more. An
+    invented role is the case this notice is actually for.
     """
     from agent.backends import build_backends
     from agent.backends.base import Access
     from agent.config import AgentConfig, BackendConfig
 
     cfg = AgentConfig(default=BackendConfig(provider="fake", model="m-1"),
-                      roles={"checker": BackendConfig(provider="fake", model="m-2")})
-    build_backends(cfg, {"runner": Access.WRITE, "checker": Access.READ_ONLY,
-                         "executor": Access.WRITE})
+                      roles={"auditor": BackendConfig(provider="fake", model="m-2")})
+    build_backends(cfg, {"reviewer": Access.WRITE, "auditor": Access.READ_ONLY,
+                         "executor": Access.WRITE, "runner": Access.WRITE})
 
     printed = capsys.readouterr().out
-    assert "runner" in printed and "m-1" in printed, printed
-    # Configured roles are not mentioned, and neither are the built-ins --
-    # a line that fires five times a run is one everybody learns to skip.
-    assert "checker" not in printed, printed
+    assert "reviewer" in printed and "m-1" in printed, printed
+    # Configured roles are not mentioned, nor the built-ins, nor the roles the
+    # project itself seeds -- a line that fires five times a run is one
+    # everybody learns to skip.
+    assert "auditor" not in printed, printed
     assert "executor" not in printed, printed
+    assert "runner" not in printed, "the project configures runner itself"
     print("PASS  an unconfigured role says which model it fell back to")
 
 

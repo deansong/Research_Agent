@@ -86,8 +86,27 @@ DEFAULT_MODEL = "gpt-5.6-sol"
 DEFAULT_PROVIDER = "codex"
 
 DEFAULT_ROLE_BACKENDS: dict[str, tuple[str, str]] = {
-    "runner": ("codex", "gpt-5.6-terra"),
-    "checker": ("codex", "gpt-5.6-terra"),
+    # Design is the expensive thing to get wrong: one turn writes a
+    # 40,000-character document, and a weaker model there produces a graph
+    # that fails validation three times and then gives up.
+    "discussor": ("claude_code", "opus"),
+    "planner": ("claude_code", "opus"),
+    "designer": ("claude_code", "opus"),
+
+    # Writing the experiment code is still Codex's flagship.
+    "coder": ("codex", "gpt-5.6-sol"),
+
+    # Running an experiment is mostly obedience -- take this command, run it,
+    # put the numbers there -- so it goes to the cheapest tier that can hold a
+    # tool loop together.
+    #
+    # `checker` is the one to watch. It decides whether a run measured the
+    # right thing, which is judgement rather than obedience, and a run that
+    # finished cleanly while measuring the wrong thing is the failure it
+    # exists to catch. If it starts waving work through:
+    #     {"roles": {"checker": {"provider": "codex", "model": "gpt-5.6-sol"}}}
+    "runner": ("antigravity", "gemini-3.8-flash-medium"),
+    "checker": ("antigravity", "gemini-3.8-flash-medium"),
 }
 
 # LangGraph raises GraphRecursionError after this many super-steps in one

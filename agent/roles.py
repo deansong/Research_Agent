@@ -31,4 +31,12 @@ EXECUTOR = "executor"
 
 #: Every role that some file in this repository mentions by name.  Used for
 #: typo suggestions and for the --explain listing -- NEVER as a whitelist.
-ALL_ROLES: tuple[str, ...] = (DISCUSSOR, PLANNER, DESIGNER, ORCHESTRATOR, EXECUTOR)
+#: The roles the RESEARCH SKELETON names, which config.py now gives defaults
+#: to. Not built into any graph here -- a designed agent declares them -- but
+#: named in Python, which is the line ALL_ROLES draws.
+CODER = "coder"
+RUNNER = "runner"
+CHECKER = "checker"
+
+ALL_ROLES: tuple[str, ...] = (DISCUSSOR, PLANNER, DESIGNER, ORCHESTRATOR,
+                              EXECUTOR, CODER, RUNNER, CHECKER)
