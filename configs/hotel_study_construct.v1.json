@@ -1,0 +1,24 @@
+{
+  "schema_version": 1,
+  "construct_id": "hotel-role-skill-model-association-v1",
+  "frozen_on": "2026-09-08",
+  "instrument": "teacher-forced raw logits from revision-pinned pretrained base causal language models",
+  "construct": "Within-model association between a controlled hotel-role prompt and a researcher-frozen skill phrase, compared across publisher-documented pretraining cutoffs.",
+  "unit_of_observation": "model_revision x role x skill_phrase x controlled_prompt_unit x geography_stratum x scoring_method",
+  "time_index": {
+    "field": "publisher_documented_pretraining_cutoff",
+    "release_date_is_not_a_cutoff": true,
+    "permitted_evidence": ["publisher model card", "publisher technical report", "publisher training-data documentation"],
+    "prohibited_evidence": ["release date alone", "repository modification date", "benchmark knowledge probe", "third-party inference"]
+  },
+  "required_interpretation": "Models are time-indexed statistical instruments. Reported quantities concern associations encoded by the frozen checkpoints under a fixed design.",
+  "forbidden_interpretations": [
+    "measurement of employees or worker capabilities",
+    "measurement of vacancies or job advertisements",
+    "measurement of regional labour markets",
+    "causal effect of calendar time or training-data freshness",
+    "population uncertainty",
+    "true historical skill demand"
+  ],
+  "design_warning": "A cutoff is an upper freshness boundary, not a complete corpus date distribution. Model-version differences can reflect corpus composition, optimization, architecture details, or other training choices and cannot be attributed to time alone."
+}

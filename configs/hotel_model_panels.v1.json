@@ -1,0 +1,107 @@
+{
+  "schema_version": 1,
+  "panel_freeze_id": "hotel-model-panels-v1-2026-09-08",
+  "accessed_on": "2026-09-08",
+  "sensitivity_model_registry": "configs/hotel_sensitivity_models.v1.json",
+  "selection_rule": "Primary checkpoints must be publisher-issued pretrained base causal LMs with raw full-vocabulary logits, explicit publisher-documented pretraining cutoffs, immutable model and tokenizer revisions, the same publisher, nominal scale, architecture family, tokenizer family, dtype and loader. Release order is never cutoff evidence.",
+  "primary_panel": {
+    "panel_id": "primary_meta_llama_8b_two_cutoffs_v1",
+    "ordered_by": "publisher_documented_pretraining_cutoff",
+    "pool_with_other_panels": false,
+    "residual_confounding": "Llama 3.1 is a new training mix and changes long-context RoPE scaling. Differences are model-version associations, not causal cutoff effects.",
+    "model_ids": ["meta_llama3_8b_base_2023_03", "meta_llama3_1_8b_base_2023_12"]
+  },
+  "models": {
+    "meta_llama3_8b_base_2023_03": {
+      "publisher": "Meta",
+      "checkpoint": "meta-llama/Meta-Llama-3-8B",
+      "revision": "8cde5ca8380496c9a6cc7ef3a8b46a0372a1d920",
+      "tokenizer_checkpoint": "meta-llama/Meta-Llama-3-8B",
+      "tokenizer_revision": "8cde5ca8380496c9a6cc7ef3a8b46a0372a1d920",
+      "repository_last_modified": "2024-09-27T15:52:33Z",
+      "variant": "pretrained_base",
+      "instruction_tuned": false,
+      "chat_tuned": false,
+      "release_date": "2024-04-18",
+      "release_date_source": "https://github.com/meta-llama/llama3/blob/a0940f9cf7065d45bb6675660f80d305c041a754/MODEL_CARD.md",
+      "training_cutoff": {
+        "status": "publisher_documented_cutoff",
+        "value": "2023-03",
+        "precision": "month",
+        "scope": "pretraining data for the 8B model",
+        "evidence_url": "https://github.com/meta-llama/llama3/blob/a0940f9cf7065d45bb6675660f80d305c041a754/MODEL_CARD.md#training-data",
+        "accessed_on": "2026-09-08",
+        "excerpt_id": "meta_llama3_8b_cutoff"
+      },
+      "license": {"name": "Meta Llama 3 Community License", "gated": true, "approval": "manual Hugging Face acceptance required"},
+      "parameters": 8030261248,
+      "architecture": {"class": "LlamaForCausalLM", "family": "Llama 3 decoder-only Transformer", "layers": 32, "hidden_size": 4096, "attention_heads": 32, "kv_heads": 8, "context_length": 8192, "rope_scaling": null},
+      "tokenizer": {"family": "Meta Llama 3 tiktoken-based BPE", "vocabulary_size": 128256, "files": ["tokenizer.json", "tokenizer_config.json", "special_tokens_map.json"]},
+      "weights": {"format": "safetensors", "shards": 4, "bytes": 16060556376, "parameter_dtype": "BF16", "quantized": false},
+      "loader": {"library": "transformers", "class": "AutoModelForCausalLM", "tokenizer_class": "AutoTokenizer", "trust_remote_code": false, "local_files_only_for_runs": true},
+      "runtime": {"minimum_transformers": "4.43.0", "minimum_torch": "2.1.0", "load_dtype": "torch.bfloat16", "device_map": "auto", "minimum_aggregate_weight_memory_bytes": 16060556376, "recommended_gpu_vram_gib": 24, "requirements_note": "Full-vocabulary unquantized scoring; runtime activation and logits overhead must be preflighted."},
+      "repository_evidence_url": "https://huggingface.co/meta-llama/Meta-Llama-3-8B/tree/8cde5ca8380496c9a6cc7ef3a8b46a0372a1d920"
+    },
+    "meta_llama3_1_8b_base_2023_12": {
+      "publisher": "Meta",
+      "checkpoint": "meta-llama/Llama-3.1-8B",
+      "revision": "d04e592bb4f6aa9cfee91e2e20afa771667e1d4b",
+      "tokenizer_checkpoint": "meta-llama/Llama-3.1-8B",
+      "tokenizer_revision": "d04e592bb4f6aa9cfee91e2e20afa771667e1d4b",
+      "repository_last_modified": "2024-10-16T22:00:37Z",
+      "variant": "pretrained_base",
+      "instruction_tuned": false,
+      "chat_tuned": false,
+      "release_date": "2024-07-23",
+      "release_date_source": "https://github.com/meta-llama/llama-models/blob/0e0b8c519242d5833d8c11bffc1232b77ad7f301/models/llama3_1/MODEL_CARD.md",
+      "training_cutoff": {
+        "status": "publisher_documented_cutoff",
+        "value": "2023-12",
+        "precision": "month",
+        "scope": "pretraining data for the Llama 3.1 family",
+        "evidence_url": "https://github.com/meta-llama/llama-models/blob/0e0b8c519242d5833d8c11bffc1232b77ad7f301/models/llama3_1/MODEL_CARD.md#training-data",
+        "accessed_on": "2026-09-08",
+        "excerpt_id": "meta_llama3_1_8b_cutoff"
+      },
+      "license": {"name": "Llama 3.1 Community License", "gated": true, "approval": "manual Hugging Face acceptance required"},
+      "parameters": 8030261248,
+      "architecture": {"class": "LlamaForCausalLM", "family": "Llama 3 decoder-only Transformer", "layers": 32, "hidden_size": 4096, "attention_heads": 32, "kv_heads": 8, "context_length": 131072, "rope_scaling": "llama3 long-context scaling"},
+      "tokenizer": {"family": "Meta Llama 3 tiktoken-based BPE", "vocabulary_size": 128256, "files": ["tokenizer.json", "tokenizer_config.json", "special_tokens_map.json"]},
+      "weights": {"format": "safetensors", "shards": 4, "bytes": 16060556376, "parameter_dtype": "BF16", "quantized": false},
+      "loader": {"library": "transformers", "class": "AutoModelForCausalLM", "tokenizer_class": "AutoTokenizer", "trust_remote_code": false, "local_files_only_for_runs": true},
+      "runtime": {"minimum_transformers": "4.43.0", "minimum_torch": "2.1.0", "load_dtype": "torch.bfloat16", "device_map": "auto", "minimum_aggregate_weight_memory_bytes": 16060556376, "recommended_gpu_vram_gib": 24, "requirements_note": "Full-vocabulary unquantized scoring; runtime activation and logits overhead must be preflighted."},
+      "repository_evidence_url": "https://huggingface.co/meta-llama/Llama-3.1-8B/tree/d04e592bb4f6aa9cfee91e2e20afa771667e1d4b"
+    }
+  },
+  "sensitivity_panels": [
+    {
+      "panel_id": "architecture_tokenizer_cutoff_sensitivity_v1",
+      "labels": ["architecture", "tokenizer", "scale", "cutoff-confounded"],
+      "model_refs": [{"model_id":"meta_llama2_7b_base_2022_09", "checkpoint":"meta-llama/Llama-2-7b-hf", "revision":"01c7f73d771dfac7d292323805ebc428287df4f9", "tokenizer_checkpoint":"meta-llama/Llama-2-7b-hf", "tokenizer_revision":"01c7f73d771dfac7d292323805ebc428287df4f9", "variant":"pretrained_base", "publisher_cutoff":"2022-09", "release_date":"2023-07-18", "parameters":6738417664, "license":"Llama 2 Community License", "gating":"manual"}, {"primary_model_id": "meta_llama3_8b_base_2023_03"}],
+      "rule": "Never include in the primary adjacent-period series; architecture, tokenizer, scale and cutoff all differ."
+    },
+    {
+      "panel_id": "scale_sensitivity_v1",
+      "labels": ["scale"],
+      "model_refs": [{"primary_model_id":"meta_llama3_1_8b_base_2023_12"}, {"model_id":"meta_llama3_1_70b_base_2023_12", "checkpoint":"meta-llama/Llama-3.1-70B", "revision":"349b2ddb53ce8f2849a6c168a81980ab25258dac", "tokenizer_checkpoint":"meta-llama/Llama-3.1-70B", "tokenizer_revision":"349b2ddb53ce8f2849a6c168a81980ab25258dac", "variant":"pretrained_base", "publisher_cutoff":"2023-12", "parameters":70553706496, "license":"Llama 3.1 Community License", "gating":"manual"}],
+      "rule": "Same-cutoff scale comparisons only; 70B models require a separate feasibility approval and namespace."
+    },
+    {
+      "panel_id": "instruction_tuning_sensitivity_v1",
+      "labels": ["instruction-tuned", "plain-completion-no-chat-template"],
+      "model_refs": [{"model_id":"meta_llama3_8b_instruct_2023_03", "checkpoint":"meta-llama/Meta-Llama-3-8B-Instruct", "revision":"8afb486c1db24fe5011ec46dfbe5b5dccdb575c2", "tokenizer_checkpoint":"meta-llama/Meta-Llama-3-8B-Instruct", "tokenizer_revision":"8afb486c1db24fe5011ec46dfbe5b5dccdb575c2", "variant":"instruction_tuned", "publisher_pretraining_cutoff":"2023-03", "rendering_mode":"plain_completion_no_chat_template"}, {"model_id":"meta_llama3_1_8b_instruct_2023_12", "checkpoint":"meta-llama/Llama-3.1-8B-Instruct", "revision":"0e9e39f249a16976918f6564b8830bc894c89659", "tokenizer_checkpoint":"meta-llama/Llama-3.1-8B-Instruct", "tokenizer_revision":"0e9e39f249a16976918f6564b8830bc894c89659", "variant":"instruction_tuned", "publisher_pretraining_cutoff":"2023-12", "rendering_mode":"plain_completion_no_chat_template"}],
+      "rule": "Instruction-tuned checkpoints are never pooled with base checkpoints; fine-tuning freshness is a separate evidence field and may be incomplete."
+    },
+    {
+      "panel_id": "unknown_cutoff_qwen_sensitivity_v1",
+      "labels": ["unknown-cutoff", "architecture", "tokenizer", "publisher"],
+      "model_refs": [{"model_id":"qwen2_5_7b_base_unknown_cutoff", "checkpoint":"Qwen/Qwen2.5-7B", "revision":"d149729398750b98c0af14eb82c78cfe92750796", "tokenizer_checkpoint":"Qwen/Qwen2.5-7B", "tokenizer_revision":"d149729398750b98c0af14eb82c78cfe92750796", "variant":"pretrained_base", "publisher_cutoff":null, "release_date":"2024-09-19", "parameters":7615616512, "license":"Apache-2.0", "gating":"ungated"}],
+      "rule": "Release date does not repair missing cutoff evidence. This panel cannot support a temporal ordering."
+    }
+  ],
+  "explicit_exclusions": [
+    {"configuration": "configs/models.json legacy GPT-2/Llama-3-Instruct pair", "reason": "base/instruction, architecture, scale and cutoff contrasts are entangled"},
+    {"configuration": "configs/qwen_models.json release-ordered Qwen chat pair", "reason": "publisher cutoff unknown; release order is not cutoff evidence"},
+    {"checkpoint": "openai-community/gpt2", "reason": "WebText collection rule is not a checkpoint-level maximum corpus cutoff comparable to the primary month cutoffs"}
+  ]
+}

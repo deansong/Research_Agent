@@ -1,0 +1,90 @@
+{
+  "schema_version": 1,
+  "registration_id": "hotel-estimands-v1-2026-09-08",
+  "frozen_on": "2026-09-08",
+  "scope": "Fixed-design inference about associations encoded by the registered model revisions; never about employees, vacancies, regional labour markets, causality, population uncertainty, or true historical skill demand.",
+  "raw_cell_quantities": {
+    "token_log_probability": "For target token t_j, log_p_j = raw_target_logit_j - logsumexp(full_vocabulary_logits_j), computed in float32 or float64 after retaining the unmodified source-dtype target logit and normalization input metadata.",
+    "total_sequence_log_probability": "L_total = sum(j=1..T) log_p_j. This is the preregistered primary scoring method and includes the model-token-length penalty.",
+    "mean_token_log_probability": "L_mean = L_total / T. This is a secondary scoring-method sensitivity and is never called interchangeable with total sequence log probability.",
+    "retention": ["target token IDs", "decoded token pieces", "raw target logits", "full-vocabulary log-sum-exp terms", "token log probabilities", "T", "L_total", "L_mean"]
+  },
+  "normalization": {
+    "operation": "Separately for every model_revision x role_id x prompt_id x stratum_id x scoring_method, z-score the 28 analytical skill scores across the frozen primary vocabulary using the population standard deviation (ddof=0).",
+    "formula": "z_mrpsk = (L_mrpsk - mean_k L_mrpsk) / sqrt(mean_k((L_mrpsk - mean_k L_mrpsk)^2))",
+    "zero_variance": "Mark the entire normalization block missing with reason zero_skill_variance; do not set z to zero.",
+    "cross_model_rule": "Never compare or pool unnormalized logits or log probabilities across model revisions."
+  },
+  "primary_estimands": [
+    {
+      "id": "role_skill_normalized_association_total",
+      "quantity": "For each model x role x skill in global_unqualified, the arithmetic mean of total-score z values over the four fixed prompt IDs.",
+      "weights": "one quarter per prompt ID",
+      "completeness": "all four matched prompt cells required"
+    },
+    {
+      "id": "global_skill_normalized_association_total",
+      "quantity": "For each model x skill, the arithmetic mean of role_skill_normalized_association_total over all seven frozen roles.",
+      "weights": "one seventh per role; no population, employment, vacancy, or regional weights",
+      "completeness": "all seven role estimands required"
+    },
+    {
+      "id": "adjacent_cutoff_shift_total",
+      "quantity": "Later-minus-earlier difference in the normalized association estimand for each role x skill and for each global skill summary, ordered only by publisher-documented pretraining cutoff.",
+      "panel": "primary_meta_llama_8b_two_cutoffs_v1",
+      "registered_contrast": "meta_llama3_1_8b_base_2023_12 minus meta_llama3_8b_base_2023_03",
+      "interpretation": "checkpoint-association shift, not a causal time effect"
+    }
+  ],
+  "secondary_estimands": [
+    {"id":"mean_token_parallel_estimands", "quantity":"Recompute every normalized association, rank, and adjacent-cutoff shift using L_mean in sensitivity/scoring_method/v1; never pool with L_total."},
+    {"id":"within_model_role_rank", "quantity":"Descending midrank of the four-prompt normalized role-skill association among the 28 skills, with rank 1 highest; ties receive average ranks."},
+    {"id":"within_model_global_rank", "quantity":"Descending midrank of the seven-role global skill association among the 28 skills, with rank 1 highest."},
+    {"id":"adjacent_rank_shift", "quantity":"later rank minus earlier rank; negative values indicate a higher within-model rank in the later checkpoint."},
+    {"id":"fixed_design_cohen_dz", "quantity":"For each role x skill and scoring method, mean(d_p)/sample_sd(d_p) across the four matched prompt-specific later-minus-earlier normalized differences; undefined when sample_sd is zero. The global version first averages each prompt-specific difference equally over seven roles, then applies the same formula across four prompt IDs."},
+    {"id":"control_margin", "quantity":"Positive-control score minus negative-control score within each matched model x role x prompt x stratum and scoring method; diagnostic only."}
+  ],
+  "stability": {
+    "prompt_rank_stability": ["all six pairwise Spearman rank correlations among four prompt-specific 28-skill ranks", "all six pairwise Kendall tau-b correlations", "pairwise Jaccard overlap of top five skills"],
+    "leave_one_prompt_out": "Recompute normalized associations, ranks, and adjacent shifts after omitting each one of four prompt IDs; report minimum, maximum, sign concordance, and maximum absolute rank displacement.",
+    "scoring_stability": "Within each model x role, Spearman and Kendall tau-b between total-score and mean-token skill ranks; report top-five Jaccard overlap.",
+    "geography_stability": "In its own namespace, compare each region-label rank vector with global_unqualified and report region-pair rank correlations; do not interpret differences as regional outcomes."
+  },
+  "fixed_prompt_resampling": {
+    "label": "fixed-design prompt sensitivity interval",
+    "replicates": 10000,
+    "seed": 20260908,
+    "method": "percentile interval using deterministic PCG64 draws; report 2.5th and 97.5th empirical quantiles with the quantile algorithm recorded by the implementation",
+    "primary_unit": "template ID is the only resampled unit. Draw four template IDs with replacement from {relevant_skill, work_association, relevant_capability, description_skill}; use the same draw jointly for every model, role, skill, and the adjacent contrast.",
+    "role_estimand": "Reaverage the four drawn prompt-specific normalized values for the fixed role and skill.",
+    "global_estimand": "For each drawn template ID, first average its normalized value equally across the seven fixed roles, then average the four draws. Roles are never resampled.",
+    "geography_estimand": "Within a fixed region label, resample only the same four template IDs. Regions are never resampled or population-weighted.",
+    "prohibitions": "These intervals are sensitivity summaries over four researcher-fixed wordings. They are not confidence intervals, population uncertainty, model-training uncertainty, employee uncertainty, vacancy uncertainty, or labour-market uncertainty."
+  },
+  "tests_and_multiplicity": {
+    "test": "Two-sided exact sign-flip test of the mean later-minus-earlier normalized difference across the four matched template IDs (16 sign assignments); zero differences remain zero in every assignment.",
+    "families": [
+      {"id":"primary_role_skill_total", "members":196, "definition":"7 roles x 28 skills for adjacent_cutoff_shift_total", "correction":"Benjamini-Hochberg FDR at q=0.05 across all 196 registered p-values"},
+      {"id":"primary_global_skill_total", "members":28, "definition":"28 seven-role global skill shifts for total scoring", "correction":"Holm family-wise correction at alpha=0.05 across 28 registered p-values"},
+      {"id":"secondary_role_skill_mean", "members":196, "definition":"mean-token parallel role x skill shifts", "correction":"Benjamini-Hochberg FDR at q=0.05, kept separate from total scoring"},
+      {"id":"secondary_global_skill_mean", "members":28, "definition":"mean-token parallel global skill shifts", "correction":"Holm family-wise correction at alpha=0.05, kept separate from total scoring"}
+    ],
+    "sensitivity_rule": "Each additional namespace that computes p-values forms its own explicitly named family and correction; no p-values from controls, taxonomies, geographies, or panels are inserted into a primary family post hoc.",
+    "reporting": "Always report unadjusted p, adjusted p, family ID, effect direction, normalized shift, rank shift, fixed-design interval, and exact complete-cell count; no significance-only filtering."
+  },
+  "missingness": {
+    "no_imputation": true,
+    "no_substitution": true,
+    "cell_rule": "Every expected cell has exactly one terminal status: complete or failed, with a typed failure-ledger entry. Never silently skip.",
+    "contrast_rule": "A prompt-specific contrast requires both pinned model cells. A role estimand requires all four paired prompt units; a global estimand requires all seven complete role estimands. Otherwise mark it missing rather than use available cases.",
+    "normalization_rule": "A normalization block requires all 28 primary skills. A missing skill makes the entire block missing so the reference set never changes.",
+    "summary": "Report expected, complete, failed, paired-complete, and estimable counts by model, role, skill, prompt, stratum, scoring method, failure type, and namespace."
+  },
+  "locked_exclusions": [
+    "Control targets, aliases, and alternative-taxonomy targets are excluded from primary normalization and multiplicity families.",
+    "Instruction/chat, unknown-cutoff, different-scale, different-tokenizer, and different-architecture panels are excluded from the primary temporal series.",
+    "Geographic strata are excluded from global_unqualified primary estimates.",
+    "Release date is excluded as a temporal ordering variable.",
+    "Reserved O*NET validation material is excluded from all estimation, selection, normalization, testing, and multiplicity decisions."
+  ]
+}

@@ -13,7 +13,9 @@ import time
 
 from openai_codex import Codex, Sandbox
 
-from agent.backends._progress import _LiveText, headline, record
+from agent.backends._progress import (_LiveText, flood_message, headline,
+                                      poll_seconds, record,
+                                      runaway_message, silent_message)
 from agent.backends._schema import strict_json_schema
 from agent.backends.base import (
     BackendCancelled,
@@ -465,106 +467,28 @@ class CodexBackend:
 
 
     def _poll_seconds(self) -> float:
-        """How often to check whether a turn is still going.
-
-        Five seconds for real settings -- cheap, and nobody minds noticing a
-        stall five seconds late. But it must stay comfortably below whichever
-        limit is shortest, or the limit cannot fire at all: a fixed 5s poll with
-        a 0.2s limit checks once, after the turn is already over. That mattered
-        first in a test, and a limit that silently cannot trigger is worth
-        ruling out in the code rather than in the test setup.
-        """
-        limit = min(5.0, self.timeout / 4, self.max_seconds / 4)
-        if self.cancel is not None:
-            # Armed for cancellation, so responsiveness is the point. Five
-            # seconds between checks means a Stop button that takes up to five
-            # seconds to do anything, which is long enough to make someone
-            # press it again. A join timeout costs nothing to shorten.
-            limit = min(limit, 0.25)
-        return max(0.02, limit)
+        return poll_seconds(self.timeout, self.max_seconds, self.cancel)
 
     def _abandon(self, handle, worker) -> None:
         """Stop a turn we have given up on, and wait for its thread to notice."""
         handle.interrupt()
         worker.join(timeout=30.0)
 
+    # ---- diagnostics ----------------------------------------------------
+    # The words live in _progress.py now, because every one of them is true of
+    # any provider that streams a turn -- only the name at the front was ours.
+    # These stay as methods so the tests that assert on the text still call
+    # them where they always did, and so a subclass could reword one.
+
     def _silent_message(self, idle: float, elapsed: float, events: int,
                         streamed: int = 0, live=None) -> str:
-        """What went quiet, and -- the part that was missing -- what it had
-        already said.
-
-        The first version of this reported "5 events" and concluded "a request
-        that stopped responding rather than one that was slow". Both true and
-        together misleading: that turn had streamed 16,608 tokens of a
-        finished design, which the counters could not see because tokens are
-        not events. Stalling AFTER writing an answer and never starting one
-        are different failures with different remedies, so the message has to
-        tell them apart.
-        """
-        head = (f"Codex went silent for {idle:.0f}s (turn ran {elapsed:.0f}s, "
-                f"{events} events")
-        head += f", {streamed:,} tokens written).\n\n" if streamed else ").\n\n"
-
-        if streamed:
-            body = (
-                f"It was NOT idle for most of that: it wrote {streamed:,} "
-                f"tokens and then stopped, which is a stall after the work "
-                f"rather than a request that never started. Raising the "
-                f"timeout will not help -- there was nothing left to wait "
-                f"for. Run it again.\n\n"
-            )
-            tail = (live.tail(400) if live is not None else "")
-            if tail:
-                body += f"The last thing it wrote:\n    {tail}\n\n"
-        else:
-            body = (
-                f"Nothing arrived at all, so this is a request that stopped "
-                f"responding rather than one that was slow -- the limit is on "
-                f"SILENCE, and a turn that keeps streaming is never killed "
-                f"for taking long.\n\n"
-            )
-
-        return (
-            head + body
-            + f"The graph checkpoints after every completed node, so nothing "
-              f"before this is lost.\n\n"
-              f"To allow longer silences, put this in "
-              f"<repo>/.agent/config.json:\n"
-              f'    {{"roles": {{"<role>": {{"options": {{"timeout": 600}}}}}}}}\n'
-              f"using the role name this node declares as its `backend` -- "
-              f"which may well be shared with other nodes."
-        )
+        return silent_message("Codex", idle, elapsed, events, streamed, live)
 
     def _flood_message(self, streamed: int, elapsed: float) -> str:
-        return (
-            f"Codex typed {streamed:,} tokens of answer in one turn "
-            f"({elapsed:.0f}s) and hit the output cap.\n\n"
-            f"This is not slowness. Something makes the model emit a whole "
-            f"document, treat it as a draft, and emit another -- so it is "
-            f"never idle and never finishes. The largest legitimate design "
-            f"this project has produced is about 12,000 tokens.\n\n"
-            f"Most likely the plan asks one node for far too much, so the "
-            f"document it has to write is enormous. Split the biggest steps "
-            f"and design again.\n\n"
-            f"To raise the cap, in <repo>/.agent/config.json:\n"
-            f'    {{"roles": {{"<role>": {{"options": '
-            f'{{"max_output_tokens": 120000}}}}}}}}'
-        )
+        return flood_message("Codex", streamed, elapsed)
 
     def _runaway_message(self, elapsed: float, events: int) -> str:
-        return (
-            f"Codex ran {elapsed:.0f}s on one turn ({events} events) and hit the "
-            f"absolute cap.\n\n"
-            f"It was still producing output the whole time, so this is not a "
-            f"hang -- the node is being asked to do too much in a single turn. "
-            f"A node is atomic: it either finishes or its work is discarded, so "
-            f"a turn this long is a bad bet however patient you are.\n\n"
-            f"Split it across more nodes -- give each one fewer plan steps and "
-            f"fewer output fields. The Wiring panel in the web UI does this "
-            f"without hand-editing JSON.\n\n"
-            f"To raise the cap anyway:\n"
-            f'    {{"roles": {{"<role>": {{"options": {{"max_seconds": 14400}}}}}}}}'
-        )
+        return runaway_message("Codex", elapsed, events)
 
     def _get_thread(self, *, thread_id, repo_path, access, developer_instructions):
         if len(developer_instructions) > SAFE_INSTRUCTIONS_CHARS:

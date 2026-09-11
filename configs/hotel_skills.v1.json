@@ -1,0 +1,88 @@
+{
+  "schema_version": 1,
+  "taxonomy_id": "hotel-skill-vocabulary-v1",
+  "frozen_on": "2026-09-08",
+  "development_rule": "Vocabulary and aliases were defined before any model scoring, from broad functional coverage in ESCO 1.2.0 and hotel-role boundaries in the frozen role map. Model outputs and reserved O*NET validation ratings were not used.",
+  "source": {
+    "title": "European Skills, Competences, Qualifications and Occupations classification",
+    "publisher": "European Commission, DG Employment, Social Affairs and Inclusion",
+    "version": "1.2.0",
+    "release_date": "2024-05",
+    "accessed_on": "2026-09-08",
+    "url": "https://esco.ec.europa.eu/en/use-esco/download",
+    "archive_sha256": "49526f51ea5a26126c866e010c5552e1af084ed3eb5a53e1a3602bc06957d66d",
+    "use": "independent domain and terminology source; the scored phrases are researcher-frozen English labels, not a claim that each is an exact ESCO preferred label"
+  },
+  "inclusion_rules": [
+    "Include interpretable English skill or knowledge phrases that can plausibly vary in association across at least two frozen hotel roles.",
+    "Cover interpersonal, administrative, commercial, digital, environmental, safety, operational and supervisory domains.",
+    "Retain both one-word and multiword surfaces so total and mean-token scoring sensitivities are identifiable.",
+    "Use one canonical phrase per concept; aliases are for display/mapping only and are never scored as extra observations in the primary taxonomy.",
+    "Freeze without consulting model logits, generations, ranks or reserved validation ratings."
+  ],
+  "exclusion_rules": [
+    "Exclude personality traits, protected characteristics, credentials, educational attainment, wages, availability and years of experience.",
+    "Exclude vendor brands from the primary vocabulary; software-brand phrases belong only in a future technology sensitivity.",
+    "Exclude phrases that encode a specific region, employer, hotel tier or legal regime.",
+    "Exclude synonyms as separate primary skills and exclude model-discovered phrases until a newly digested design is reviewed."
+  ],
+  "token_length_policy": {
+    "surface_classes": {"single_word": "one whitespace-delimited word", "multiword": "two or more whitespace-delimited words"},
+    "model_token_class": "At tokenizer qualification, render the exact target boundary and record token IDs and counts separately for each pinned tokenizer revision. Do not infer token counts from whitespace.",
+    "unresolved_status": "required_preflight_cell; gated tokenizer access was not assumed during this freeze"
+  },
+  "primary_vocabulary": [
+    {"id":"guest_service","phrase":"guest service","aliases":["customer service","guest relations"],"surface_class":"multiword","word_count":2,"domain":"interpersonal"},
+    {"id":"oral_communication","phrase":"oral communication","aliases":["verbal communication","speaking"],"surface_class":"multiword","word_count":2,"domain":"communication"},
+    {"id":"written_communication","phrase":"written communication","aliases":["business writing","writing"],"surface_class":"multiword","word_count":2,"domain":"communication"},
+    {"id":"teamwork","phrase":"teamwork","aliases":["collaboration","team working"],"surface_class":"single_word","word_count":1,"domain":"interpersonal"},
+    {"id":"problem_solving","phrase":"problem solving","aliases":["troubleshooting","solving problems"],"surface_class":"multiword","word_count":2,"domain":"cognitive"},
+    {"id":"conflict_resolution","phrase":"conflict resolution","aliases":["complaint resolution","dispute resolution"],"surface_class":"multiword","word_count":2,"domain":"interpersonal"},
+    {"id":"attention_to_detail","phrase":"attention to detail","aliases":["detail orientation","accuracy"],"surface_class":"multiword","word_count":3,"domain":"self_management"},
+    {"id":"time_management","phrase":"time management","aliases":["prioritization","scheduling"],"surface_class":"multiword","word_count":2,"domain":"self_management"},
+    {"id":"intercultural_competence","phrase":"intercultural competence","aliases":["cultural awareness","cross-cultural competence"],"surface_class":"multiword","word_count":2,"domain":"interpersonal"},
+    {"id":"foreign_languages","phrase":"foreign languages","aliases":["multilingual communication","language proficiency"],"surface_class":"multiword","word_count":2,"domain":"communication"},
+    {"id":"sales","phrase":"sales","aliases":["selling","upselling"],"surface_class":"single_word","word_count":1,"domain":"commercial"},
+    {"id":"revenue_management","phrase":"revenue management","aliases":["yield management","pricing optimization"],"surface_class":"multiword","word_count":2,"domain":"commercial"},
+    {"id":"reservation_systems","phrase":"reservation systems","aliases":["booking systems","central reservation systems"],"surface_class":"multiword","word_count":2,"domain":"digital_operational"},
+    {"id":"property_management_systems","phrase":"property management systems","aliases":["hotel PMS","PMS software"],"surface_class":"multiword","word_count":3,"domain":"digital_operational"},
+    {"id":"point_of_sale_systems","phrase":"point-of-sale systems","aliases":["POS systems","payment terminals"],"surface_class":"multiword","word_count":2,"domain":"digital_operational"},
+    {"id":"data_analysis","phrase":"data analysis","aliases":["data analytics","analysing data"],"surface_class":"multiword","word_count":2,"domain":"digital_analytical"},
+    {"id":"digital_literacy","phrase":"digital literacy","aliases":["digital skills","computer literacy"],"surface_class":"multiword","word_count":2,"domain":"digital_general"},
+    {"id":"cybersecurity_awareness","phrase":"cybersecurity awareness","aliases":["information security awareness","cyber security awareness"],"surface_class":"multiword","word_count":2,"domain":"digital_safety"},
+    {"id":"sustainable_practices","phrase":"sustainable practices","aliases":["environmental practices","green practices"],"surface_class":"multiword","word_count":2,"domain":"environmental"},
+    {"id":"cleaning_and_sanitation","phrase":"cleaning and sanitation","aliases":["cleaning and hygiene","sanitisation"],"surface_class":"multiword","word_count":3,"domain":"operations"},
+    {"id":"food_safety","phrase":"food safety","aliases":["food hygiene","safe food handling"],"surface_class":"multiword","word_count":2,"domain":"operations_safety"},
+    {"id":"equipment_maintenance","phrase":"equipment maintenance","aliases":["preventive maintenance","equipment repair"],"surface_class":"multiword","word_count":2,"domain":"technical"},
+    {"id":"emergency_response","phrase":"emergency response","aliases":["emergency procedures","incident response"],"surface_class":"multiword","word_count":2,"domain":"safety"},
+    {"id":"security_monitoring","phrase":"security monitoring","aliases":["premises surveillance","security observation"],"surface_class":"multiword","word_count":2,"domain":"safety"},
+    {"id":"leadership","phrase":"leadership","aliases":["leading teams","people leadership"],"surface_class":"single_word","word_count":1,"domain":"management"},
+    {"id":"budgeting","phrase":"budgeting","aliases":["budget management","financial planning"],"surface_class":"single_word","word_count":1,"domain":"management"},
+    {"id":"staff_training","phrase":"staff training","aliases":["employee training","training staff"],"surface_class":"multiword","word_count":2,"domain":"management"},
+    {"id":"inventory_management","phrase":"inventory management","aliases":["stock control","inventory control"],"surface_class":"multiword","word_count":2,"domain":"operations_management"}
+  ],
+  "alternative_taxonomies": [
+    {
+      "id": "broad_constructs_v1",
+      "purpose": "Test sensitivity to correlated narrow digital and communication phrases.",
+      "operations": [
+        {"collapse": ["oral_communication", "written_communication"], "into": {"id":"communication", "phrase":"communication"}},
+        {"collapse": ["reservation_systems", "property_management_systems", "point_of_sale_systems"], "into": {"id":"hospitality_software", "phrase":"hospitality software"}},
+        {"collapse": ["emergency_response", "security_monitoring"], "into": {"id":"safety_and_security", "phrase":"safety and security"}},
+        {"collapse": ["sales", "revenue_management", "data_analysis"], "into": {"id":"commercial_analysis", "phrase":"commercial analysis"}}
+      ],
+      "namespace_required": true
+    },
+    {
+      "id": "operational_granularity_v1",
+      "purpose": "Test sensitivity to separating composite operational phrases.",
+      "operations": [
+        {"split": "guest_service", "into": [{"id":"guest_reception", "phrase":"guest reception"}, {"id":"complaint_handling", "phrase":"complaint handling"}]},
+        {"split": "cleaning_and_sanitation", "into": [{"id":"room_cleaning", "phrase":"room cleaning"}, {"id":"sanitation_procedures", "phrase":"sanitation procedures"}]},
+        {"split": "equipment_maintenance", "into": [{"id":"preventive_maintenance", "phrase":"preventive maintenance"}, {"id":"equipment_repair", "phrase":"equipment repair"}]},
+        {"split": "emergency_response", "into": [{"id":"emergency_planning", "phrase":"emergency planning"}, {"id":"first_aid", "phrase":"first aid"}]}
+      ],
+      "namespace_required": true
+    }
+  ]
+}

@@ -1,0 +1,11 @@
+{
+  "schema_version": 1,
+  "reserve_id": "onet31-broad-pattern-validation-v1",
+  "status": "sealed_until_primary_analysis_frozen",
+  "source": {"publisher": "U.S. Department of Labor, Employment and Training Administration", "title": "O*NET 31.0 Database", "version": "31.0", "release_date": "2026-08", "accessed_on": "2026-09-08", "url": "https://www.onetcenter.org/database.html", "license": "CC BY 4.0", "archive_sha256": "6883548adf5fde64cf6f801b35d15519c9225f2732c3cab0e281c652d16b23a9"},
+  "reserved_tables": ["Occupation Data", "Task Statements", "Essential Skills", "Transferable Skills", "Knowledge", "Work Activities", "Work Styles", "Software Skills"],
+  "reserved_occupation_codes": ["43-4081.00", "37-2012.00", "11-9051.00", "35-1012.00", "49-9071.00", "11-2022.00", "13-1161.00", "33-9032.00", "11-9081.00"],
+  "permitted_use": "Qualitative validation of broad, preregistered role-skill patterns after model-only analysis is frozen.",
+  "prohibited_uses": ["skill selection", "alias revision", "prompt revision", "model-panel selection", "estimand revision", "quantitative calibration of model scores", "claims about workers, vacancies, labour markets, causality or historical demand"],
+  "separation_note": "O*NET is a contemporary occupational information system, not historical validation for model cutoff periods. Its sampling errors and ratings are outside the model estimand."
+}

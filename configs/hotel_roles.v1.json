@@ -1,0 +1,48 @@
+{
+  "schema_version": 1,
+  "taxonomy_id": "hotel-experimental-roles-onet31-v1",
+  "source": {
+    "title": "O*NET 31.0 Database",
+    "publisher": "U.S. Department of Labor, Employment and Training Administration",
+    "version": "31.0",
+    "release_date": "2026-08",
+    "accessed_on": "2026-09-08",
+    "url": "https://www.onetcenter.org/database.html",
+    "license": "CC BY 4.0",
+    "archive_sha256": "6883548adf5fde64cf6f801b35d15519c9225f2732c3cab0e281c652d16b23a9"
+  },
+  "selection_rules": [
+    "Represent each required hotel function with the most direct O*NET-SOC occupation whose definition covers that work.",
+    "Use a neutral singular experimental label and retain all source codes; do not imply that the label is a population estimate or exhaustive job family.",
+    "For sales and revenue, combine sales management and market/pricing analysis because O*NET has no hotel-revenue-manager occupation; mark the composite explicitly.",
+    "Food and beverage uses both department management and direct first-line supervision to cover managerial and operational phrasing.",
+    "Do not add or remove roles in response to model scores."
+  ],
+  "roles": [
+    {"id": "front_office", "prompt_label": "hotel front-office employee", "source_codes": ["43-4081.00"], "source_titles": ["Hotel, Motel, and Resort Desk Clerks"], "mapping": "direct", "include": "reception, reservations, registration, accounts and guest information", "exclude": "concierge-only and corporate reservations roles"},
+    {"id": "housekeeping", "prompt_label": "hotel housekeeping employee", "source_codes": ["37-2012.00"], "source_titles": ["Maids and Housekeeping Cleaners"], "mapping": "direct_hotel_scope", "include": "guest-room and common-area cleaning and linen replenishment", "exclude": "private-household-only work"},
+    {"id": "food_and_beverage", "prompt_label": "hotel food-and-beverage employee", "source_codes": ["11-9051.00", "35-1012.00"], "source_titles": ["Food Service Managers", "First-Line Supervisors of Food Preparation and Serving Workers"], "mapping": "two-code_functional", "include": "hotel food and beverage preparation, service and coordination", "exclude": "lodging functions unrelated to food or beverage"},
+    {"id": "maintenance_engineering", "prompt_label": "hotel maintenance and engineering employee", "source_codes": ["49-9071.00"], "source_titles": ["Maintenance and Repair Workers, General"], "mapping": "functional_hotel_context", "include": "building, HVAC, plumbing, electrical and mechanical upkeep", "exclude": "new construction and single-trade specialist work"},
+    {"id": "sales_revenue", "prompt_label": "hotel sales and revenue employee", "source_codes": ["11-2022.00", "13-1161.00"], "source_titles": ["Sales Managers", "Market Research Analysts and Marketing Specialists"], "mapping": "explicit_composite", "include": "distribution, pricing, demand analysis, competitor analysis and sales planning", "exclude": "general accounting and unrelated advertising production"},
+    {"id": "security", "prompt_label": "hotel security employee", "source_codes": ["33-9032.00"], "source_titles": ["Security Guards"], "mapping": "functional_hotel_context", "include": "premises monitoring, access, incident and emergency response", "exclude": "law-enforcement powers and cybersecurity specialist work"},
+    {"id": "management", "prompt_label": "hotel manager", "source_codes": ["11-9081.00"], "source_titles": ["Lodging Managers"], "mapping": "direct", "include": "coordination of lodging and accommodation operations", "exclude": "ownership status and non-lodging corporate management"}
+  ],
+  "alternative_taxonomies": [
+    {
+      "id": "disaggregated_composites_v1",
+      "purpose": "Test dependence on the two composite functional families without consulting scores.",
+      "operations": [
+        {"split":"food_and_beverage", "into":[{"id":"food_and_beverage_management", "prompt_label":"hotel food-and-beverage manager", "source_codes":["11-9051.00"]}, {"id":"food_and_beverage_supervision", "prompt_label":"hotel food-and-beverage supervisor", "source_codes":["35-1012.00"]}]},
+        {"split":"sales_revenue", "into":[{"id":"hotel_sales", "prompt_label":"hotel sales employee", "source_codes":["11-2022.00"]}, {"id":"hotel_revenue_analysis", "prompt_label":"hotel revenue analyst", "source_codes":["13-1161.00"]}]}
+      ],
+      "namespace_required": true
+    },
+    {
+      "id": "direct_hotel_codes_only_v1",
+      "purpose": "Restrict to O*NET definitions that explicitly name hotels, lodging, or accommodations.",
+      "included_role_ids": ["front_office", "housekeeping", "management"],
+      "warning": "Reduced functional coverage is intentional and must not be pooled with the primary seven-role summary.",
+      "namespace_required": true
+    }
+  ]
+}

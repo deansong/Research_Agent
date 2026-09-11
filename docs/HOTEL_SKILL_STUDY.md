@@ -1,5 +1,12 @@
 # Hotel skill discovery and comparison study
 
+> **Superseded design notice (2026-09-08):** the GPT-2/Llama-3-Instruct
+> default described below is a rejected legacy design and must not be executed
+> as the primary temporal panel. The maintained study-input freeze is documented
+> in `docs/HOTEL_STUDY_INPUTS.md` and `configs/hotel_model_panels.v1.json`.
+> Historical fixture approvals and outputs mentioned below were removed by
+> `4914bf3` and are not admissible evidence.
+
 ## Scope and interpretation
 
 This workflow compares **model representations** elicited from locally runnable,

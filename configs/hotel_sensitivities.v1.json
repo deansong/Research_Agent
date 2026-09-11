@@ -1,0 +1,28 @@
+{
+  "schema_version": 1,
+  "registration_id": "hotel-sensitivity-separation-v1-2026-09-08",
+  "frozen_on": "2026-09-08",
+  "rule": "Every sensitivity has its own immutable manifest, artifact namespace, expected-cell inventory, failure ledger, and approval-bound digest. No sensitivity cell is pooled into primary/v1.",
+  "namespaces": [
+    {"dimension":"prompt", "namespace":"sensitivity/prompt/v1", "manifest":"prompt.manifest.v1.json", "change":"four registered semantic paraphrases and four leave-one-prompt-out analyses", "contrast_label":"isolated fixed wording contrast within an otherwise identical cell", "pool_primary":false},
+    {"dimension":"geography", "namespace":"sensitivity/geography/v1", "manifest":"geography.manifest.v1.json", "change":"global_unqualified versus five M49 region names", "contrast_label":"isolated prompt-context label contrast; not a regional comparison of people, vacancies, markets, or demand", "pool_primary":false},
+    {"dimension":"scoring_method", "namespace":"sensitivity/scoring_method/v1", "manifest":"scoring_method.manifest.v1.json", "change":"L_total versus L_mean computed from the same retained token log probabilities", "contrast_label":"isolated analytical transformation; token length remains tokenizer-dependent", "pool_primary":false},
+    {"dimension":"tokenizer", "namespace":"sensitivity/tokenizer/v1", "manifest":"tokenizer.manifest.v1.json", "change":"native pinned tokenizer families only", "contrast_label":"confounded checkpoint comparison; incompatible tokenizers must never be swapped onto fixed weights and no isolated tokenizer contrast is currently available", "pool_primary":false},
+    {"dimension":"scale", "namespace":"sensitivity/scale/v1", "manifest":"scale.manifest.v1.json", "change":"same-version Llama 3.1 8B versus 70B base checkpoints with the same documented cutoff", "contrast_label":"scale-isolated to the strongest available degree, while width/depth and scale-specific training behavior are intrinsic to the scale change; feasibility approval required", "pool_primary":false},
+    {"dimension":"architecture", "namespace":"sensitivity/architecture/v1", "manifest":"architecture.manifest.v1.json", "change":"Llama 2 7B base versus Llama 3 8B base", "contrast_label":"confounded by architecture, tokenizer, nominal scale, corpus, and documented cutoff", "pool_primary":false},
+    {"dimension":"role_taxonomy", "namespace":"sensitivity/role_taxonomy/v1", "manifest":"role_taxonomy.manifest.v1.json", "change":"preregistered alternative role labels or code aggregation only", "contrast_label":"isolated researcher taxonomy/rendering intervention where model and skill target are held fixed; semantics and wording intentionally change", "pool_primary":false},
+    {"dimension":"skill_taxonomy", "namespace":"sensitivity/skill_taxonomy/broad_constructs_v1", "manifest":"skill_taxonomy_broad.manifest.v1.json", "change":"registered broad_constructs_v1 collapse", "contrast_label":"isolated researcher taxonomy change; target wording, token length, and normalization reference set change by design", "pool_primary":false},
+    {"dimension":"skill_taxonomy", "namespace":"sensitivity/skill_taxonomy/operational_granularity_v1", "manifest":"skill_taxonomy_operational.manifest.v1.json", "change":"registered operational_granularity_v1 split", "contrast_label":"isolated researcher taxonomy change; target wording, token length, and normalization reference set change by design", "pool_primary":false}
+  ],
+  "additional_excluded_panels": [
+    {"namespace":"sensitivity/instruction_tuned/v1", "panel_id":"instruction_tuning_sensitivity_v1", "label":"instruction-tuning sensitivity under the registered plain-completion rendering; fine-tuning corpus remains confounded, chat rendering is not tested, and the panel is excluded from primary"},
+    {"namespace":"sensitivity/chat_template/v1", "panel_id":"instruction_tuning_sensitivity_v1", "dimension":"chat_template", "rendering_mode":"native_pinned_chat_template", "label":"within-checkpoint native chat-template rendering versus registered plain-completion rendering; native templates differ across revisions and this panel is excluded from primary"},
+    {"namespace":"sensitivity/unknown_cutoff/v1", "panel_id":"unknown_cutoff_qwen_sensitivity_v1", "label":"unknown-cutoff, publisher, architecture, tokenizer, and scale confounded; no temporal ordering"}
+  ],
+  "manifest_contract": [
+    "Bind exact model and tokenizer revisions, role and skill taxonomy digests, prompt and estimand digests, namespace, changed dimension, fixed dimensions, scoring methods, expected cell IDs, software/environment identity, and approval digest.",
+    "Label every contrast isolated, partially isolated, or confounded with the named factors; an empty label is invalid.",
+    "A design-changing edit creates a new digest and approval. Existing approval cannot authorize a changed namespace manifest.",
+    "Unavailable models or tokenizers create failure-ledger and missing-cell records; substitution and silent omission are invalid."
+  ]
+}

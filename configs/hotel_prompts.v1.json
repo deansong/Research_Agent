@@ -1,0 +1,100 @@
+{
+  "schema_version": 1,
+  "registration_id": "hotel-prompts-v1-2026-09-08",
+  "frozen_on": "2026-09-08",
+  "language": "en",
+  "construct": "English-language, globally unqualified hotel-role/skill associations encoded by revision-pinned models treated only as time-indexed statistical instruments.",
+  "primary_stratum": {
+    "id": "global_unqualified",
+    "kind": "neutral",
+    "render_value": null,
+    "interpretation": "No location is named. Equal-weight summaries over the frozen roles and prompts are called globally aggregated only in this design sense; they are not estimates of any geographic or labour-market population."
+  },
+  "geographic_sensitivity_strata": {
+    "source": {
+      "title": "Standard country or area codes for statistical use (M49)",
+      "publisher": "United Nations Statistics Division",
+      "url": "https://unstats.un.org/unsd/methodology/m49/",
+      "accessed_on": "2026-09-08",
+      "use": "The five first-level M49 region names are fixed prompt labels only; no regional population weights or regional outcomes are used."
+    },
+    "strata": [
+      {"id": "m49_002_africa", "m49_code": "002", "render_value": "Africa"},
+      {"id": "m49_019_americas", "m49_code": "019", "render_value": "the Americas"},
+      {"id": "m49_142_asia", "m49_code": "142", "render_value": "Asia"},
+      {"id": "m49_150_europe", "m49_code": "150", "render_value": "Europe"},
+      {"id": "m49_009_oceania", "m49_code": "009", "render_value": "Oceania"}
+    ],
+    "warning": "Geographic prompt results are lexical/context sensitivity checks. They never measure regional workers, vacancies, skill demand, or labour markets."
+  },
+  "target_boundary": {
+    "slot_marker": "{skill_slot}",
+    "rule": "Every stored template must end exactly with {skill_slot}. The model context is the rendered template with that final marker removed and has no trailing whitespace.",
+    "target_rendering": "Concatenate exactly one ASCII space (U+0020) and the frozen skill phrase; append no punctuation, EOS, newline, or other suffix.",
+    "tokenization": "Tokenize the complete context-plus-target string with add_special_tokens=false. Establish target token positions by a tokenizer-specific boundary qualification, retain every target token, and reject ambiguous or zero-token boundaries.",
+    "no_chat_template": true
+  },
+  "templates": [
+    {
+      "id": "relevant_skill",
+      "semantic_family": "direct relevance",
+      "neutral": "For the role of {role}, a relevant skill is{skill_slot}",
+      "geographic": "In hotels in {geography}, a relevant skill for {role} is{skill_slot}"
+    },
+    {
+      "id": "work_association",
+      "semantic_family": "work association",
+      "neutral": "The work of {role} is commonly associated with{skill_slot}",
+      "geographic": "The work of {role} in hotels in {geography} is commonly associated with{skill_slot}"
+    },
+    {
+      "id": "relevant_capability",
+      "semantic_family": "capability relevance",
+      "neutral": "One capability relevant to {role} is{skill_slot}",
+      "geographic": "One capability relevant to {role} in hotels in {geography} is{skill_slot}"
+    },
+    {
+      "id": "description_skill",
+      "semantic_family": "description association",
+      "neutral": "In descriptions of {role}, an important skill is{skill_slot}",
+      "geographic": "In descriptions of {role} in hotels in {geography}, an important skill is{skill_slot}"
+    }
+  ],
+  "controls": {
+    "use": "Role-specific face-validity diagnostics fixed before scoring. Control outcomes are reported and never used to edit the design, drop a model, or replace a missing cell.",
+    "expected_direction": "For each matched model-role-template-stratum pair, both registered scoring methods are expected to score the positive phrase above the negative phrase; failures remain visible and have no confirmatory interpretation.",
+    "pairs": [
+      {"role_id":"front_office", "positive":{"id":"front_office_positive", "phrase":"guest service"}, "negative":{"id":"front_office_negative", "phrase":"engine repair"}},
+      {"role_id":"housekeeping", "positive":{"id":"housekeeping_positive", "phrase":"room cleaning"}, "negative":{"id":"housekeeping_negative", "phrase":"revenue forecasting"}},
+      {"role_id":"food_and_beverage", "positive":{"id":"food_and_beverage_positive", "phrase":"food safety"}, "negative":{"id":"food_and_beverage_negative", "phrase":"access monitoring"}},
+      {"role_id":"maintenance_engineering", "positive":{"id":"maintenance_engineering_positive", "phrase":"equipment maintenance"}, "negative":{"id":"maintenance_engineering_negative", "phrase":"guest check-in"}},
+      {"role_id":"sales_revenue", "positive":{"id":"sales_revenue_positive", "phrase":"revenue management"}, "negative":{"id":"sales_revenue_negative", "phrase":"room sanitation"}},
+      {"role_id":"security", "positive":{"id":"security_positive", "phrase":"security monitoring"}, "negative":{"id":"security_negative", "phrase":"menu planning"}},
+      {"role_id":"management", "positive":{"id":"management_positive", "phrase":"staff leadership"}, "negative":{"id":"management_negative", "phrase":"floor vacuuming"}}
+    ]
+  },
+  "cell_enumeration": {
+    "models": "all model IDs in configs/hotel_model_panels.v1.json primary_panel.model_ids",
+    "roles": "all role IDs in configs/hotel_roles.v1.json",
+    "analytical_targets": "all IDs in configs/hotel_skills.v1.json primary_vocabulary",
+    "control_targets": "the role-matched positive and negative control only",
+    "prompt_units": "all four template IDs",
+    "primary_strata": ["global_unqualified"],
+    "geographic_strata": ["m49_002_africa", "m49_019_americas", "m49_142_asia", "m49_150_europe", "m49_009_oceania"],
+    "expected_counts": {
+      "primary_analytical": 1568,
+      "geography_analytical": 7840,
+      "primary_controls": 112,
+      "geography_controls": 560,
+      "all_registered_cells": 10080
+    },
+    "cell_identity_fields": ["namespace", "design_variant_id", "rendering_mode", "model_id", "model_revision", "tokenizer_revision", "role_id", "target_kind", "target_id", "target_phrase", "prompt_id", "stratum_id", "rendered_context", "rendered_target"],
+    "scoring_note": "Total and mean-token scores are two deterministic summaries of the same teacher-forced cell and do not duplicate the cell identity."
+  },
+  "exclusions": [
+    "No questions, instructions, demonstrations, answer choices, chat wrappers, system messages, or generated completions.",
+    "No language other than English and no named country, city, property, employer, hotel tier, or legal regime.",
+    "Aliases are not scored as extra primary targets; alternative surfaces require a separate sensitivity namespace.",
+    "No prompt or control is revised in response to logits, ranks, missingness, or reserved validation evidence."
+  ]
+}
