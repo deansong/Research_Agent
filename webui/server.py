@@ -49,8 +49,10 @@ from agent.agentfolder.load import AgentFolderError, load_agent_folder
 from agent.agentfolder.schema import GraphFile
 from agent.agentfolder.validate import Problem, validate_folder
 from agent.backends import PROVIDERS
+from agent.backends import auth as backend_auth
 from agent.backends.base import Access
 from agent.config import backend_for, load_config
+from webui import auth as auth_flows
 from webui import editing
 from webui.models import (
     Answer,
@@ -71,14 +73,18 @@ _RUNNERS_LOCK = threading.Lock()
 
 #: Defaults for this server process, set by `create_app`. They stand in for the
 #: command-line flags the CLI would have read.
-_DEFAULTS: dict = {"repo": Path("."), "cli_args": None}
+_DEFAULTS: dict = {"repo": Path("."), "cli_args": None, "host": "127.0.0.1"}
 
 
-def create_app(repo: Path, cli_args=None) -> FastAPI:
+def create_app(repo: Path, cli_args=None, host: str = "127.0.0.1") -> FastAPI:
     """Build the app. `cli_args` is the argparse namespace from `main.py web`,
-    so --backend and friends mean the same thing here as they do for `run`."""
+    so --backend and friends mean the same thing here as they do for `run`.
+
+    `host` is remembered only so the login routes can refuse to run on a server
+    that is reachable from elsewhere. See `_login_allowed`."""
     _DEFAULTS["repo"] = Path(repo).resolve()
     _DEFAULTS["cli_args"] = cli_args
+    _DEFAULTS["host"] = host
 
     app = FastAPI(title="Agent designer", version="1", lifespan=_lifespan)
     _register(app)
@@ -127,6 +133,9 @@ async def _lifespan(app: FastAPI):
         _RUNNERS.clear()
     for runner in runners:
         runner.shutdown()
+    # A login flow holds a pty and a child process. Neither should outlive the
+    # server that started it.
+    auth_flows.shutdown()
 
 
 def _register(app: FastAPI) -> None:
@@ -509,6 +518,75 @@ def _register(app: FastAPI) -> None:
             "model": getattr(_DEFAULTS["cli_args"], "model", None),
         }
 
+    # ---- logins ----------------------------------------------------------
+    #
+    # A turn on a logged-out provider fails minutes in, with a message about
+    # the model rather than about the login. These routes let the page say so
+    # first, and fix it without leaving the page.
+
+    @app.get("/api/auth")
+    def auth_status(repo: str | None = None):
+        """Every provider this repo would actually use, and whether it can run.
+
+        Probed live rather than cached: the answer changes when somebody logs
+        in elsewhere, and a cached "not logged in" is the kind of wrong that
+        sends people to re-run a login that is already working.
+        """
+        cfg = load_config(repo_path=_resolve_repo(repo), cli=_DEFAULTS["cli_args"])
+        in_use = {cfg.default.provider}
+        in_use.update(backend_for(cfg, role).provider for role in cfg.roles)
+
+        # Shown even when unused, so a provider can be signed in BEFORE being
+        # configured -- which is the order people actually do it in.
+        shown = sorted(in_use | set(auth_flows.FLOWS) | {"antigravity"})
+
+        allowed, why = _login_allowed()
+        return {
+            "providers": [
+                {**vars(status), "ok": status.ok, "in_use": status.provider in in_use}
+                for status in backend_auth.status_all(shown)
+            ],
+            "can_login_here": allowed,
+            "why_not": why,
+        }
+
+    @app.post("/api/auth/{provider}/login")
+    def auth_login(provider: str, restart: bool = False):
+        allowed, why = _login_allowed()
+        if not allowed:
+            raise _bad("login_refused", provider, why, status=403)
+        try:
+            return auth_flows.start(provider, restart=restart).snapshot()
+        except auth_flows.LoginError as exc:
+            raise _bad("login_unavailable", provider, str(exc))
+
+    @app.get("/api/auth/{provider}/login")
+    def auth_login_state(provider: str):
+        session = auth_flows.get(provider)
+        if session is None:
+            raise _bad("no_login", provider, "No login has been started for "
+                                             "this provider.", status=404)
+        return session.snapshot()
+
+    @app.post("/api/auth/{provider}/login/input")
+    def auth_login_input(provider: str, body: dict = Body(...)):
+        session = auth_flows.get(provider)
+        if session is None:
+            raise _bad("no_login", provider, "That login is no longer running. "
+                                             "Start it again.", status=404)
+        try:
+            session.send(str(body.get("text") or ""))
+        except auth_flows.LoginError as exc:
+            raise _bad("login_closed", provider, str(exc))
+        return session.snapshot()
+
+    @app.post("/api/auth/{provider}/login/cancel")
+    def auth_login_cancel(provider: str):
+        session = auth_flows.get(provider)
+        if session is not None:
+            session.cancel()
+        return {"ok": True}
+
 
 # ---- streaming ------------------------------------------------------------
 
@@ -760,6 +838,32 @@ def _detail(runner: SessionRunner, task: str = "") -> SessionDetail:
     )
 
 
+def _login_allowed() -> tuple[bool, str]:
+    """Whether this server may sign the machine in to anything.
+
+    Loopback only, and this is not paranoia about a local tool. The web UI has
+    no token and no password -- webui/README.md says so plainly -- so on
+    `--host 0.0.0.0` anyone who can reach the port could log this machine into
+    THEIR account, and every turn after that would run as them, on their bill,
+    with their credentials in ~/.codex. That is a different and worse thing
+    than the arbitrary-code-execution the README already warns about, because
+    it leaves no trace on the page.
+
+    Reading the status is still allowed from anywhere: it says whether a login
+    exists, never what it is.
+    """
+    host = str(_DEFAULTS.get("host") or "")
+    if host in ("127.0.0.1", "localhost", "::1", ""):
+        return True, ""
+    return False, (
+        f"This server is bound to {host}, so it is reachable from other "
+        f"machines -- and it has no password. Signing in from here would let "
+        f"anyone who can reach the port log this machine into their own "
+        f"account. Run the login in a terminal on the server instead, or "
+        f"restart the UI on 127.0.0.1 and reach it over an SSH tunnel."
+    )
+
+
 def _bad(code: str, where: str, message: str, status: int = 400) -> HTTPException:
     """One error shape for the whole API -- the same one validation uses.
 
@@ -777,7 +881,7 @@ def serve(repo: Path, host: str = "127.0.0.1", port: int = 8420, cli_args=None) 
     """Run the server. Called by `main.py web`."""
     import uvicorn
 
-    app = create_app(repo, cli_args)
+    app = create_app(repo, cli_args, host=host)
     print(f"\nAgent designer UI:  http://{host}:{port}\n")
     uvicorn.run(
         app, host=host, port=port, log_level="warning",
