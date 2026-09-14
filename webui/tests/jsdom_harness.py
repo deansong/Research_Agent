@@ -30,6 +30,7 @@ STATIC = pathlib.Path(__file__).resolve().parents[1] / "static"
 #: engine rather than as a problem with this list.
 MODULES: list[tuple[str, list[str]]] = [
     ("api.js", ["Problem", "api", "subscribe"]),
+    ("auth.js", ["AuthPanel"]),
     ("chat.js", ["Chat"]),
     ("graph.js", ["GraphPanel"]),
     ("plan.js", ["PlanPanel", "ownersByStep"]),
@@ -92,6 +93,12 @@ Object.defineProperty(El.prototype, 'parentElement', {
 });
 
 var __KNOWN = __IDS__;
+// One element per id, as a real document has. Without this every lookup
+// returned a NEW object, so anything a module wrote to an element was
+// invisible to the next line that looked the same element up -- which made it
+// impossible to assert on what a panel actually rendered, and quietly limited
+// this harness to "does it load".
+var __ELEMENTS = {};
 var document = {
   documentElement: new El('root'),
   activeElement: null,
@@ -102,7 +109,8 @@ var document = {
       __errors.push("getElementById('" + id + "') returned null");
       return null;
     }
-    return new El(id);
+    if (!__ELEMENTS[id]) __ELEMENTS[id] = new El(id);
+    return __ELEMENTS[id];
   },
   createElement() { return new El('created') },
   createTextNode() { return new El('text') },

@@ -11,6 +11,7 @@
 */
 
 import { api, subscribe } from './api.js';
+import { AuthPanel } from './auth.js';
 import { Chat } from './chat.js';
 import { GraphPanel } from './graph.js';
 import { Inspector, renderActivity } from './inspector.js';
@@ -51,6 +52,13 @@ const plan = new PlanPanel(el('tab-plan'), {
 const inspector = new Inspector({
   onSave: saveNode,
   onSelectSteps: () => {},
+});
+
+const auth = new AuthPanel({
+  // The repo decides which providers are IN USE, so the panel follows whatever
+  // the New-session field is pointed at -- there is usually no open session
+  // when somebody goes looking for this.
+  getRepo: () => el('new-repo').value.trim() || '',
 });
 
 const topology = new TopologyPanel(el('tab-wiring'), {
@@ -624,6 +632,10 @@ api.schema().then((schema) => inspector.setSchema(schema)).catch(() => {
   chat.logLine('could not load /api/schema; using fallback field options', 'error');
 });
 
+// Asked once at startup, so the dot is already right when somebody notices
+// it. Quiet on failure by design -- see AuthPanel.poll.
+auth.poll();
+
 wireTabs('canvas-tabs');
 wireTabs('inspector-tabs');
 wireJson();
@@ -633,4 +645,4 @@ wireDialogs();
 
 // Exported so the panels added in later steps can reach the shared bits
 // without importing app.js and creating a cycle.
-export { state, chat, graph, plan, inspector, topology, refresh, showError };
+export { state, chat, graph, plan, inspector, topology, auth, refresh, showError };

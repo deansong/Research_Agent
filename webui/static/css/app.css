@@ -1235,3 +1235,116 @@ dialog label.required .field-note { color: var(--accent); }
   background: var(--danger);
   color: #1a0808;
 }
+
+/* ---------- provider logins ---------- */
+/*
+  The dot lives in the topbar because the failure it warns about is expensive
+  and silent: a turn on a signed-out provider dies minutes in, with a message
+  about the model. Neutral until the status is known -- an amber dot that
+  appears because a fetch has not landed yet is a false alarm every reload.
+*/
+.auth-dot {
+  display: inline-block;
+  width: 7px; height: 7px;
+  margin-right: 6px;
+  border-radius: 50%;
+  background: var(--text-faint);
+  vertical-align: middle;
+}
+.auth-dot.good { background: var(--ok); }
+.auth-dot.bad  { background: var(--warn); }
+
+#dialog-auth { width: min(640px, 92vw); }
+
+.auth-list { display: flex; flex-direction: column; gap: 8px; margin: 14px 0; }
+
+.auth-row {
+  display: grid;
+  grid-template-columns: 1fr auto;
+  grid-template-areas: "head action" "detail action";
+  gap: 2px 12px;
+  align-items: center;
+  padding: 10px 12px;
+  border: 1px solid var(--line);
+  border-left: 3px solid var(--text-faint);
+  border-radius: var(--radius);
+  background: var(--bg-raised);
+}
+.auth-row.ok      { border-left-color: var(--ok); }
+.auth-row.bad     { border-left-color: var(--warn); }
+.auth-row.unknown { border-left-color: var(--text-faint); }
+
+.auth-row-head { grid-area: head; display: flex; align-items: baseline; gap: 8px; }
+.auth-name { font-family: var(--mono); font-size: 13px; }
+
+.auth-badge { font-size: 11px; color: var(--text-dim); }
+.auth-row.ok  .auth-badge { color: var(--ok); }
+.auth-row.bad .auth-badge { color: var(--warn); }
+
+.auth-inuse {
+  font-size: 10px;
+  text-transform: uppercase;
+  letter-spacing: .06em;
+  color: var(--accent);
+}
+
+.auth-detail { grid-area: detail; font-size: 11px; color: var(--text-dim); }
+.auth-action {
+  grid-area: action;
+  display: flex; flex-direction: column; align-items: flex-end; gap: 4px;
+  max-width: 260px;
+}
+.auth-note { margin: 0; font-size: 11px; color: var(--text-faint); text-align: right; }
+.auth-command,
+.auth-code {
+  font-family: var(--mono);
+  background: var(--bg-input);
+  border: 1px solid var(--line);
+  border-radius: 4px;
+  padding: 2px 6px;
+}
+.auth-command { font-size: 11px; color: var(--text); user-select: all; }
+
+/* ---- a flow in progress ---- */
+
+.auth-flow {
+  margin-top: 4px;
+  padding: 12px 14px;
+  border: 1px solid var(--line-bright);
+  border-radius: var(--radius);
+  background: var(--bg-panel);
+}
+.auth-flow h3 { margin: 0 0 8px; font-size: 13px; font-weight: 600; }
+.auth-steps { margin: 0 0 10px; padding-left: 20px; font-size: 12px; }
+.auth-steps li { margin-bottom: 6px; }
+
+.auth-url { color: var(--accent); word-break: break-all; }
+
+/* Big, because it is copied by eye from a screen to a phone as often as it is
+   copied by button. */
+.auth-code { font-size: 18px; letter-spacing: .1em; margin: 0 6px; }
+
+.auth-input-row { display: flex; flex-direction: column; gap: 4px; font-size: 12px; }
+.auth-input-line { display: flex; gap: 6px; }
+.auth-input-line input {
+  flex: 1;
+  font-family: var(--mono);
+  font-size: 12px;
+}
+
+/* What the CLI actually said. Kept rather than swallowed: an unfamiliar
+   refusal is the one thing a summary cannot paraphrase usefully. */
+.auth-output {
+  max-height: 190px;
+  overflow: auto;
+  margin: 8px 0 0;
+  padding: 8px 10px;
+  border-radius: 4px;
+  background: var(--bg-input);
+  border: 1px solid var(--line);
+  font-family: var(--mono);
+  font-size: 11px;
+  color: var(--text-dim);
+  white-space: pre-wrap;
+  word-break: break-all;
+}

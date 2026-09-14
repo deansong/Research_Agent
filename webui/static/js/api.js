@@ -88,6 +88,15 @@ export const api = {
   // The turn running right now, whichever node it belongs to -- what the
   // "still working" line expands into.
   currentActivity: (id) => request('GET', `/api/sessions/${encodeURIComponent(id)}/activity`),
+  // Logins. Status is safe to call from anywhere; the rest are refused by the
+  // server unless it is bound to loopback -- see _login_allowed in server.py.
+  authStatus:    (repo)  => request('GET', `/api/auth${repo ? `?repo=${encodeURIComponent(repo)}` : ''}`),
+  loginStart:    (p, restart) =>
+    request('POST', `/api/auth/${encodeURIComponent(p)}/login${restart ? '?restart=true' : ''}`),
+  loginState:    (p)     => request('GET', `/api/auth/${encodeURIComponent(p)}/login`),
+  loginInput:    (p, text) =>
+    request('POST', `/api/auth/${encodeURIComponent(p)}/login/input`, { text }),
+  loginCancel:   (p)     => request('POST', `/api/auth/${encodeURIComponent(p)}/login/cancel`, {}),
   config:        ()     => request('GET', '/api/config'),
   schema:        ()     => request('GET', '/api/schema'),
   defaults:      ()     => request('GET', '/api/defaults'),

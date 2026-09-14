@@ -42,6 +42,14 @@
             title="Finish the current step, then stop. Nothing is lost.">Pause</button>
     <button id="btn-stop" class="btn danger" disabled
             title="Stop now, abandoning the step in flight. That step's work is discarded.">Stop</button>
+    <!--
+      The provider logins. In the topbar rather than buried in a tab because
+      the failure it prevents is expensive and silent: a turn on a logged-out
+      provider dies minutes in, with a message about the model. The dot turns
+      amber the moment any provider in use cannot run.
+    -->
+    <button id="btn-auth" class="btn ghost" title="Provider logins">
+      <span id="auth-dot" class="auth-dot"></span>Logins</button>
     <button id="btn-new" class="btn">New session</button>
     <button id="btn-open" class="btn ghost">Open&hellip;</button>
   </div>
@@ -196,6 +204,56 @@
       <button type="submit" class="btn primary" id="new-ok">Start</button>
     </menu>
   </form>
+</dialog>
+
+<dialog id="dialog-auth">
+  <div class="dialog-inner">
+    <h2>Provider logins</h2>
+    <p class="muted">Checked live, each time this opens. A provider that is
+      signed out fails in the middle of a turn rather than at the start, so it
+      is worth knowing first.</p>
+
+    <p class="dialog-error" id="auth-why-not" hidden></p>
+    <div class="auth-list" id="auth-list"></div>
+
+    <!--
+      One flow at a time, shown in place. The link and the code are what the
+      human needs; the transcript underneath is what the CLI said, kept so an
+      unfamiliar refusal is readable rather than swallowed.
+    -->
+    <section class="auth-flow" id="auth-flow" hidden>
+      <h3 id="auth-flow-title">Signing in</h3>
+      <ol class="auth-steps">
+        <li>
+          <span>Open this link and sign in:</span>
+          <a id="auth-flow-url" class="auth-url" target="_blank" rel="noopener noreferrer"></a>
+        </li>
+        <li id="auth-flow-code-step" hidden>
+          <span>Enter this one-time code:</span>
+          <code class="auth-code" id="auth-flow-code"></code>
+          <button type="button" class="btn tiny ghost" id="btn-auth-copy">Copy</button>
+        </li>
+      </ol>
+
+      <label class="auth-input-row" id="auth-flow-input-row" hidden>
+        <span id="auth-flow-input-label">Paste the code from the browser</span>
+        <span class="auth-input-line">
+          <input id="auth-flow-input" spellcheck="false" autocomplete="off">
+          <button type="button" class="btn tiny primary" id="btn-auth-submit">Send</button>
+        </span>
+      </label>
+
+      <p class="dialog-error" id="auth-flow-error" hidden></p>
+      <pre class="auth-output" id="auth-flow-output"></pre>
+      <menu>
+        <button type="button" class="btn tiny danger" id="btn-auth-cancel">Cancel sign-in</button>
+      </menu>
+    </section>
+
+    <menu>
+      <button type="button" class="btn ghost" id="auth-close">Close</button>
+    </menu>
+  </div>
 </dialog>
 
 <dialog id="dialog-open">

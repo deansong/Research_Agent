@@ -334,3 +334,74 @@ def test_only_providers_with_a_flow_can_be_driven():
         status = PROBES[name]()
         assert status.browser_login is True, f"{name} offers a flow but says it cannot"
         assert spec.argv[0] == status.login_command.split()[0]
+
+
+# ---- not losing a working login to a login attempt ------------------------
+
+
+def creds_flow(monkeypatch, path, body: str, **kw) -> None:
+    monkeypatch.setitem(
+        login.FLOWS, "probe",
+        login.Flow(argv=[sys.executable, "-u", "-c", body], scrub=False,
+                   expects_code=kw.get("expects_code", False),
+                   credentials=lambda env, p=path: [p]),
+    )
+
+
+def test_a_login_that_did_not_happen_puts_the_credentials_back(tmp_path, monkeypatch):
+    """MEASURED: `codex login --device-auth` deletes ~/.codex/auth.json the
+    moment it STARTS, not when it succeeds. Without this, "Sign in again" on a
+    working login is a trap -- press Cancel, or let the fifteen-minute device
+    code expire, and the machine is signed out."""
+    creds = tmp_path / "auth.json"
+    creds.write_bytes(b'{"token": "the-real-one"}')
+    creds_flow(monkeypatch, creds,
+               f"import os; os.remove({str(creds)!r}); print('cleared')")
+    outcome(monkeypatch, False, detail="Not logged in.")
+
+    snap = settle(login.start("probe"))
+
+    assert snap["state"] == "failed"
+    assert creds.read_bytes() == b'{"token": "the-real-one"}'
+    assert str(creds) in snap["restored"], "restored it without saying so"
+
+
+def test_a_cancelled_login_puts_the_credentials_back(tmp_path, monkeypatch):
+    creds = tmp_path / "auth.json"
+    creds.write_bytes(b"original")
+    creds_flow(monkeypatch, creds,
+               f"import os, time; os.remove({str(creds)!r}); time.sleep(60)")
+    outcome(monkeypatch, False)
+
+    session = login.start("probe")
+    until(session, lambda s: not creds.exists() or s["state"] != "running")
+    session.cancel()
+
+    assert creds.read_bytes() == b"original"
+
+
+def test_a_login_that_worked_keeps_its_new_credentials(tmp_path, monkeypatch):
+    """The other half, and the one that would make this whole guard harmful if
+    it were wrong: a SUCCESSFUL login must not have its result overwritten with
+    the credentials it replaced."""
+    creds = tmp_path / "auth.json"
+    creds.write_bytes(b"old")
+    creds_flow(monkeypatch, creds,
+               f"open({str(creds)!r}, 'w').write('brand new')")
+    outcome(monkeypatch, True)
+
+    snap = settle(login.start("probe"))
+
+    assert snap["state"] == "done"
+    assert creds.read_bytes() == b"brand new"
+    assert snap["restored"] == []
+
+
+def test_nothing_is_conjured_where_there_was_nothing(tmp_path, monkeypatch):
+    creds = tmp_path / "auth.json"
+    creds_flow(monkeypatch, creds, "print('no credentials existed')")
+    outcome(monkeypatch, False)
+
+    settle(login.start("probe"))
+
+    assert not creds.exists()

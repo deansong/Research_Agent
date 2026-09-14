@@ -54,7 +54,9 @@ import subprocess
 import termios
 import threading
 import time
+import pathlib
 from dataclasses import dataclass, field
+from typing import Callable
 
 from agent.backends.auth import _ANSI, AuthStatus, status_for
 
@@ -96,6 +98,20 @@ class Flow:
     expects_code: bool
     #: Shown next to the input box, so the box says what to put in it.
     input_label: str = ""
+    #: env -> the credential files this flow can destroy. Called with the
+    #: environment the CHILD will get, so it resolves the same CODEX_HOME /
+    #: HOME the login itself will write to. See _guard_credentials.
+    credentials: "Callable[[dict], list[pathlib.Path]] | None" = None
+
+
+def _codex_credentials(env: dict) -> list[pathlib.Path]:
+    home = env.get("CODEX_HOME") or (pathlib.Path(env.get("HOME", "~")) / ".codex")
+    return [pathlib.Path(home) / "auth.json"]
+
+
+def _claude_credentials(env: dict) -> list[pathlib.Path]:
+    home = env.get("CLAUDE_CONFIG_DIR") or (pathlib.Path(env.get("HOME", "~")) / ".claude")
+    return [pathlib.Path(home) / ".credentials.json"]
 
 
 FLOWS: dict[str, Flow] = {
@@ -107,12 +123,18 @@ FLOWS: dict[str, Flow] = {
         argv=["codex", "login", "--device-auth"],
         scrub=False,
         expects_code=False,
+        credentials=_codex_credentials,
     ),
     "claude_code": Flow(
         argv=["claude", "auth", "login"],
         scrub=True,
         expects_code=True,
         input_label="Paste the code from the browser",
+        # MEASURED: claude leaves its credentials alone until the login
+        # succeeds, unlike codex. Guarded anyway -- the cost is one file read,
+        # and the failure mode if a release changes its mind is that somebody
+        # loses a working login by pressing Cancel.
+        credentials=_claude_credentials,
     ),
 }
 
@@ -173,6 +195,9 @@ class LoginSession:
         self.state = "starting"
         self.result: AuthStatus | None = None
         self.error = ""
+        #: Files actually put back, so the page can say so rather than leaving
+        #: somebody to wonder whether pressing Cancel cost them their login.
+        self._restored: list[pathlib.Path] = []
 
         self._lock = threading.Lock()
         self._text = ""
@@ -183,6 +208,9 @@ class LoginSession:
         self._secrets: list[str] = []
         self._proc: subprocess.Popen | None = None
         self._master = -1
+        #: path -> the bytes that were there before this flow started, or None
+        #: if the file did not exist. See _guard_credentials.
+        self._saved: dict[pathlib.Path, bytes | None] = {}
 
         self._spawn()
 
@@ -218,6 +246,7 @@ class LoginSession:
         os.close(slave)
         self._master = master
         self.state = "running"
+        self._saved = _read_credentials(self.flow, env)
 
         thread = threading.Thread(target=self._read, name=f"login-{self.provider}",
                                   daemon=True)
@@ -313,6 +342,11 @@ class LoginSession:
                 proc.kill()
                 proc.wait(timeout=5)
 
+        # Only once the child is definitely gone: it would otherwise be free
+        # to delete the file again after it was put back.
+        if state != "done":
+            self._restored = _restore_credentials(self._saved)
+
     def _close_master(self) -> None:
         with self._lock:
             fd, self._master = self._master, -1
@@ -374,7 +408,65 @@ class LoginSession:
             "accepts_input": running and self.flow.expects_code,
             "running": running,
             "command": " ".join(self.flow.argv),
+            "restored": [str(path) for path in self._restored],
         }
+
+
+# ---- not losing a working login to a login attempt ------------------------
+
+
+def _read_credentials(flow: Flow, env: dict) -> dict:
+    """Remember the credential files before the flow can touch them.
+
+    MEASURED, and the reason this exists: `codex login --device-auth` DELETES
+    ~/.codex/auth.json the moment it starts, not when it succeeds. So pressing
+    "Sign in again" on a working login and then changing your mind -- or
+    letting the fifteen-minute device code expire -- signs the machine out.
+    The button would have been a trap.
+
+    `claude auth login` leaves its file alone. Guarded the same way regardless:
+    the cost is one file read, and the failure mode if a release changes its
+    mind is somebody losing a login by pressing Cancel.
+    """
+    if flow.credentials is None:
+        return {}
+
+    saved: dict[pathlib.Path, bytes | None] = {}
+    for path in flow.credentials(env):
+        try:
+            saved[path] = path.read_bytes()
+        except FileNotFoundError:
+            saved[path] = None
+        except OSError:
+            # Unreadable is not the same as absent, and writing over something
+            # we could not read is worse than leaving it alone.
+            continue
+    return saved
+
+
+def _restore_credentials(saved: dict) -> list[pathlib.Path]:
+    """Put back what a flow that did not succeed took away.
+
+    Only called when the provider did NOT confirm a login, which is also what
+    makes this safe against a login done elsewhere in the meantime: if somebody
+    signed in from a terminal while this flow was open, the re-probe says so,
+    the outcome is "done", and nothing here runs.
+    """
+    restored = []
+    for path, before in saved.items():
+        if before is None:
+            continue                       # nothing was there to lose
+        try:
+            if path.exists() and path.read_bytes() == before:
+                continue                   # untouched
+            path.parent.mkdir(parents=True, exist_ok=True)
+            path.write_bytes(before)
+            # Credentials, so not world-readable. Both CLIs write 0600.
+            path.chmod(0o600)
+            restored.append(path)
+        except OSError:
+            continue
+    return restored
 
 
 # ---- one flow per provider, process-wide ----------------------------------

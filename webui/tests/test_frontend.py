@@ -57,6 +57,10 @@ def test_every_control_gets_its_listener():
     for control, event in [
         ("btn-new", "click"),
         ("btn-open", "click"),
+        ("btn-auth", "click"),
+        ("btn-auth-cancel", "click"),
+        ("btn-auth-submit", "click"),
+        ("auth-flow-input", "keydown"),
         ("btn-pause", "click"),
         ("btn-stop", "click"),
         ("btn-scroll", "click"),
@@ -275,3 +279,122 @@ def test_the_harness_would_notice_a_broken_lookup():
 
 if __name__ == "__main__":
     sys.exit(pytest.main([__file__, "-q"]))
+
+
+def test_the_login_panel_says_which_of_three_states_each_provider_is_in():
+    """Three, not two. "Could not tell" rendered as "signed out" sends somebody
+    to re-run a login that is working -- the same three-valued rule the probe
+    keeps, which is worth nothing if the page flattens it back to a boolean.
+
+    Also asserts the row for a provider that cannot be signed in from a browser
+    offers the COMMAND instead of a button, because a button that cannot work
+    is worse than a sentence.
+    """
+    try:
+        import quickjs  # noqa: F401
+    except ImportError:  # pragma: no cover
+        pytest.skip("quickjs not installed")
+    from jsdom_harness import exercise
+
+    result = exercise("""
+      var panel = new __ns.AuthPanel({ getRepo: function () { return '/tmp/x' } });
+      panel.canLogin = true;
+      panel.providers = [
+        { provider: 'codex', installed: true, logged_in: true, ok: true,
+          in_use: true, detail: 'Logged in using ChatGPT', method: 'ChatGPT',
+          account: '', browser_login: true, login_command: 'codex login', note: '' },
+        { provider: 'claude_code', installed: true, logged_in: false, ok: false,
+          in_use: true, detail: 'Not logged in.', method: '', account: '',
+          browser_login: true, login_command: 'claude auth login', note: '' },
+        { provider: 'antigravity', installed: true, logged_in: null, ok: false,
+          in_use: false, detail: 'agy models exited 9', method: '', account: '',
+          browser_login: false, login_command: 'agy',
+          note: 'agy signs in through its full-screen interface, so this one has to be done in a terminal.' },
+      ];
+      panel.render();
+
+      function read(row) {
+        var head = row._children[0];
+        var action = row._children[2];
+        var kinds = action._children.map(function (c) { return c.className });
+        return {
+          badge: head._children[1].textContent,
+          inuse: head._children.length > 2,
+          klass: row.className,
+          actions: kinds,
+          actionText: action._children.map(function (c) { return c.textContent }),
+        };
+      }
+
+      var rows = document.getElementById('auth-list')._children;
+      return { count: rows.length, rows: rows.map(read) };
+    """)
+
+    assert result["count"] == 3, result
+    codex, claude, agy = result["rows"]
+
+    assert codex["badge"] == "signed in"
+    assert "ok" in codex["klass"]
+    assert codex["inuse"] is True
+
+    assert claude["badge"] == "signed out"
+    assert "bad" in claude["klass"]
+    assert any("btn" in k for k in claude["actions"]), "no way to fix it"
+
+    assert agy["badge"] == "unknown", "a failed probe must not read as signed out"
+    assert "unknown" in agy["klass"]
+    assert not any("btn" in k for k in agy["actions"]), (
+        "offered a sign-in button for a CLI that cannot do it from a browser")
+    assert "agy" in " ".join(agy["actionText"]), "did not say what to run instead"
+    print("PASS  three states rendered, and agy shows a command not a button")
+
+
+def test_the_login_panel_shows_the_link_and_the_code():
+    """The two things a human has to act on. The transcript underneath is
+    context; these are the task."""
+    try:
+        import quickjs  # noqa: F401
+    except ImportError:  # pragma: no cover
+        pytest.skip("quickjs not installed")
+    from jsdom_harness import exercise
+
+    result = exercise("""
+      var panel = new __ns.AuthPanel({ getRepo: function () { return '' } });
+      panel.showFlow('codex');
+      panel.paint({
+        provider: 'codex', state: 'running', running: true, error: '',
+        url: 'https://auth.openai.com/codex/device', code: 'CW4P-ZJ3G9',
+        accepts_input: false, input_label: '', output: 'Welcome to Codex',
+      });
+      var before = {
+        url: document.getElementById('auth-flow-url').href,
+        code: document.getElementById('auth-flow-code').textContent,
+        codeHidden: document.getElementById('auth-flow-code-step').hidden,
+        inputHidden: document.getElementById('auth-flow-input-row').hidden,
+        cancelHidden: document.getElementById('btn-auth-cancel').hidden,
+      };
+
+      panel.paint({
+        provider: 'claude_code', state: 'failed', running: false,
+        error: 'Not logged in.', url: 'https://claude.com/oauth', code: '',
+        accepts_input: false, input_label: 'Paste the code',
+        output: 'Invalid code.',
+      });
+      var after = {
+        error: document.getElementById('auth-flow-error').textContent,
+        errorHidden: document.getElementById('auth-flow-error').hidden,
+        cancelHidden: document.getElementById('btn-auth-cancel').hidden,
+      };
+      return { before: before, after: after };
+    """)
+
+    before, after = result["before"], result["after"]
+    assert before["url"] == "https://auth.openai.com/codex/device"
+    assert before["code"] == "CW4P-ZJ3G9"
+    assert before["codeHidden"] is False
+    assert before["inputHidden"] is True, "asked for a code the flow does not want"
+    assert before["cancelHidden"] is False
+
+    assert after["errorHidden"] is False and after["error"] == "Not logged in."
+    assert after["cancelHidden"] is True, "offered to cancel something already over"
+    print("PASS  link and code shown, and a finished flow stops offering Cancel")
