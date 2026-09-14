@@ -87,11 +87,63 @@ that hands everyone who can route to the port the ability to run commands as
 you, in your repository. Use the tunnel unless you have put something in front
 of the server yourself.
 
+**The login routes refuse to run on a non-loopback bind.** Reading the status
+is still allowed from anywhere — it says whether a login exists, never what it
+is — but starting one is not. Signing in writes credentials to this machine,
+so without that rule anyone who could reach the port could sign it into *their*
+account, and every turn afterwards would run as them, on their bill, with
+nothing on the page saying so. That is a worse thing than the command
+execution above, because it leaves no trace.
+
+---
+
+## Provider logins
+
+The **Logins** button in the topbar, and the dot beside it. The dot goes amber
+when a provider a role is actually pointed at cannot run; a provider nothing
+uses does not colour it, because a dot that is always amber is a dot nobody
+looks at.
+
+Each provider shows one of three states — signed in, signed out, or *unknown*.
+Three and not two on purpose: a probe that failed is not the same as a login
+that is missing, and showing it as "signed out" sends you off to re-run a
+login that works.
+
+What the button can do depends on the CLI, and the server decides which:
+
+| provider | signing in from the browser |
+| --- | --- |
+| `codex` | yes — a device code. Open the link, type the code, the page waits |
+| `claude_code` | yes — open the link, paste the code back into the page |
+| `antigravity` | **no.** `agy` signs in through a full-screen terminal interface; the panel shows the command to run instead |
+
+Driving `agy` would mean writing a terminal emulator, and a half-working one
+would be worse than the sentence telling you to run it yourself.
+
+### Signing in again is safe, and it did not used to be
+
+Measured: **`codex login --device-auth` deletes `~/.codex/auth.json` the moment
+it starts**, not when it succeeds. So pressing "Sign in again" on a working
+login and then changing your mind — or letting the fifteen-minute device code
+expire — signed the machine out. It cost a working login once while this was
+being tested, which is how it was found.
+
+The flow now copies the credential files before it spawns anything and puts
+them back on any outcome that is not a confirmed login, and the page says so
+rather than doing it quietly. Restoring *only* when the provider did not
+confirm is also what makes it safe if you sign in from a terminal while the
+page is open: the re-probe sees that login, calls the flow done, and nothing
+is written.
+
+A login counts as finished when the provider says so — the flow re-runs the
+status check after the process exits. Exit code 0 has been caught lying twice
+in this project already.
+
 ---
 
 ## What to read, in what order
 
-Six Python files and six JavaScript ones. If you read them in this order each
+Seven Python files and seven JavaScript ones. If you read them in this order each
 one only depends on what came before.
 
 | | |
@@ -102,12 +154,14 @@ one only depends on what came before.
 | **4. `server.py`** | Routes. Deliberately the boring half. |
 | **5. `editing.py`** | Reading and writing `plan.json` and the agent folder, and the three traps involved. |
 | **6. `models.py`** | The request and response shapes. |
-| **7. `static/js/api.js`** | Every call to the server, in one place. |
-| **8. `static/js/app.js`** | Wires the panels together. The only file that knows they all exist. |
-| **9. `static/js/chat.js`** | The left column — the only panel that can drive the agent. |
-| **10. `static/js/graph.js`** | Cytoscape. |
-| **11. `static/js/plan.js`** | The plan tree, and the step ↔ node link. |
-| **12. `static/js/inspector.js`** / **`topology.js`** | The right column, and editing the graph's shape. |
+| **7. `auth.py`** | Driving a login on a pseudo-terminal. Independent of everything above it, and the only file here that spawns a process of its own. |
+| **8. `static/js/api.js`** | Every call to the server, in one place. |
+| **9. `static/js/app.js`** | Wires the panels together. The only file that knows they all exist. |
+| **10. `static/js/chat.js`** | The left column — the only panel that can drive the agent. |
+| **11. `static/js/graph.js`** | Cytoscape. |
+| **12. `static/js/plan.js`** | The plan tree, and the step ↔ node link. |
+| **13. `static/js/auth.js`** | The Logins panel. Polls rather than riding the event stream, because a login happens before there is a session. |
+| **14. `static/js/inspector.js`** / **`topology.js`** | The right column, and editing the graph's shape. |
 
 ---
 
@@ -115,7 +169,7 @@ one only depends on what came before.
 
 ```
 ┌──────────────────────────────────────────────────────────────────────┐
-│  agent designer      <session>  [phase]  agent: name    [New] [Open] │
+│  agent designer   <session> [phase] agent: name  [Logins] [New] [Open] │
 ├───────────────┬──────────────────────────────┬───────────────────────┤
 │ Conversation  │ Graph │ Plan │ Wiring │ JSON │ Run │ Configure │ ... │
 │               │                              │                       │

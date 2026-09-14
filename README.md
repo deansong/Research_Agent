@@ -31,11 +31,32 @@ python -m venv .venv && source .venv/bin/activate
 pip install -r requirements.txt
 ```
 
-Only `codex` is implemented as a real provider. Sign in once:
+Three providers are real, and each signs in through its own CLI. To see where
+you stand:
 
 ```bash
 python main.py login
 ```
+
+```
+  ok  antigravity  Logged in; 14 models available.
+  --  claude_code  Not logged in.
+  ok  codex        Logged in using ChatGPT  (ChatGPT)
+
+To fix, in a terminal on this machine:
+    claude auth login   # claude_code
+```
+
+It reports rather than signing in, because the answer is usually "they are
+fine" — and for `codex`, finding out should not mean starting a flow that
+clears the stored credentials before it does anything else. The browser UI has
+a **Logins** button that can drive the `codex` and `claude` flows end to end;
+`agy` signs in through a full-screen terminal interface, so that one is always
+a terminal job.
+
+A signed-out provider is named again by `--explain`, and once more before a
+run spends anything — the failure it replaces was a turn dying five minutes
+in with a message about the model.
 
 ## The browser UI
 
@@ -452,6 +473,11 @@ the role and the fix.
 | `fake` | **implemented** — canned answers, for learning and testing |
 | `api` | stub; fails at startup with the steps to finish it. Full design in the module docstring |
 
+`python main.py login` asks each of them directly — `codex login status`,
+`claude auth status --json`, `agy models`. The measured details are in
+`agent/backends/auth.py`, including the one that matters: `claude auth status`
+exits 0 whether or not you are signed in, so the exit code cannot be the test.
+
 The two CLI backends share `agent/backends/_cli.py` — one subprocess per turn,
 NDJSON out — so each provider module is just vocabulary: an argv builder, an
 access mapping, an event mapping and a usage mapping. Neither needs a Python
@@ -495,7 +521,7 @@ you need an answer that begins with a slash.
 ## CLI reference
 
 ```
-python main.py login                          sign in to Codex
+python main.py login [provider]                who is signed in, and how to fix it
 python main.py run <repo> [options]           the main command
 python main.py web <repo> [options]           serve the browser UI
 python main.py sessions <repo>                list sessions

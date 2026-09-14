@@ -50,3 +50,69 @@ In `-p` mode, measured with the same prompt each time:
 There is no middle setting. Any agy node that must touch the filesystem needs
 `--dangerously-skip-permissions`. Denial is clean (no hang) and surfaces as a
 step_update with `state:"ERROR"` and a readable `tool_info.error.message`.
+
+---
+
+# Login probes and flows (measured 2026-09-14)
+
+Against codex 0.153.4, claude 2.1.252, agy 1.1.27. Each row was run twice: once
+normally, and once with `HOME` pointed at an empty directory to get the
+signed-out behaviour without disturbing a real login.
+
+## Asking whether a provider is signed in
+
+| provider | command | signed in | signed out |
+| --- | --- | --- | --- |
+| codex | `codex login status` | exit 0, `Logged in using ChatGPT` | exit 1, `Not logged in` |
+| claude_code | `claude auth status --json` | `{"loggedIn":true,"authMethod":…}` | `{"loggedIn":false,"authMethod":"none"}` |
+| antigravity | `agy models` | exit 0, the model list | exit 1, `Please sign in to view available models.` |
+
+- **`claude auth status` exits 0 either way.** The JSON body is the only signal.
+  It also prints `projectsDirectory`, which is a quick way to see *which*
+  config directory it read.
+- **codex and agy both print something ahead of the answer** — a PATH warning,
+  `Fetching available models...` — and both put the whole thing on **stderr**
+  with stdout empty. So the verdict is the *last* line, not the first.
+- `agy` has no login, logout or auth subcommand at all. `agy models` is a
+  network call that needs the token, which is what makes it a usable probe.
+- The probe must run in the environment the *backend* will use: `_cli.py`
+  scrubs `CLAUDE_*`, so a probe that keeps `CLAUDE_CONFIG_DIR` reads a
+  different credentials file and answers about a different account. `codex.py`
+  scrubs nothing, so its probe must not either.
+
+## Driving a login
+
+Both refuse to print **anything** when stdout is a pipe — they check `isatty()`
+and render an interactive flow or nothing. On a pty both print immediately.
+`pty.openpty()` handed to an ordinary `Popen` with `start_new_session=True` is
+enough; `pty.fork()` is not needed.
+
+| provider | flow | driveable from a browser |
+| --- | --- | --- |
+| codex | `codex login --device-auth` → prints a URL and a code like `CW4P-ZJ3G9`, then polls | yes |
+| claude_code | `claude auth login` → prints a URL, then blocks on `Paste code here if prompted >` | yes |
+| antigravity | bare `agy` → alternate screen buffer (`\e[?1049h`), cursor hide, kitty keyboard protocol | **no** |
+
+- The default `codex login` (no `--device-auth`) opens a browser **on the
+  server** and waits on a localhost callback there — wrong when the page is
+  being viewed through an SSH tunnel. A device code travels.
+- A pty translates every `\n` to CRLF on output. A tool that writes its own
+  `\r\n` therefore arrives as `\r\r\n`.
+- codex **indents** the device code under its numbered step.
+- Those two together hid the code from a "code alone on its line" pattern
+  twice, from a transcript that displayed it perfectly both times.
+- `claude` echoes `Invalid code. Please make sure the full code was copied.`
+  and **stays running**, so a bad paste can simply be retried.
+
+## The one that can cost you a login
+
+**`codex login --device-auth` deletes `~/.codex/auth.json` the moment it
+starts**, not when it succeeds. Confirmed by checksum: present before, gone
+during the flow, and the process had done nothing but print a code.
+
+`claude auth login` does **not** — a dummy `.credentials.json` survived the
+flow byte-identical.
+
+So any UI offering "sign in again" has to snapshot the credential files first
+and restore them on any outcome that is not a confirmed login. `webui/auth.py`
+does; verified live, with `codex login status` agreeing afterwards.
