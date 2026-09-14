@@ -94,7 +94,41 @@ def build_backends(
         built[role] = cache[key]
 
     _warn_unconfigured(cfg, needed)
+    _warn_signed_out(built)
     return built
+
+
+def _warn_signed_out(built: dict) -> None:
+    """Say, before a single token is spent, that a provider cannot run.
+
+    This is the failure the whole auth module exists for: a role pointed at a
+    signed-out provider does not fail at startup, it fails inside a turn,
+    minutes in, with a message about the model. The probe costs about two
+    seconds -- one network call to `agy`, the others are local -- against a run
+    measured in minutes.
+
+    A WARNING and not a refusal, deliberately. `claude auth status` reports
+    loggedIn:false for an install authenticated by ANTHROPIC_API_KEY, and
+    whether turns still work in that case has not been measured here. Refusing
+    on an unverified signal would block a setup that works; saying so loudly
+    costs a line.
+    """
+    from agent.backends.auth import status_all
+
+    providers = sorted({backend.name for backend in built.values()})
+    signed_out = [s for s in status_all(providers) if s.logged_in is False]
+    if not signed_out:
+        return
+
+    for status in signed_out:
+        roles = sorted(r for r, b in built.items() if b.name == status.provider)
+        print(f"\n[login] {status.provider} is not signed in, and "
+              f"{', '.join(roles)} {'is' if len(roles) == 1 else 'are'} "
+              f"pointed at it.\n"
+              f"        {status.detail}\n"
+              f"        Fix it with:  {status.login_command}"
+              + (f"\n        {status.note}" if status.note else ""))
+    print()
 
 
 def _warn_unconfigured(cfg, needed) -> None:

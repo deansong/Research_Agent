@@ -594,17 +594,6 @@ def open_client():
         yield client
 
 
-def login_chatgpt() -> None:
-    """Interactive ChatGPT sign-in for Codex."""
-    with Codex() as codex:
-        login = codex.login_chatgpt()
-        print("\nOpen this URL in your browser:")
-        print(login.auth_url)
-        print()
-        login.wait()
-        print("ChatGPT/Codex login successful.")
-
-
 def _heartbeat(elapsed: float, idle: float, total: int,
                kinds: dict[str, int], last: str, streamed: int = 0) -> str:
     """What to say during a quiet stretch of a long turn.

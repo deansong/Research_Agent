@@ -23,6 +23,7 @@ sys.path.insert(0, str(pathlib.Path(__file__).resolve().parents[1]))
 
 from agent.backends import PROVIDERS  # noqa: E402
 from agent.backends import auth  # noqa: E402
+from agent.backends.auth import AuthStatus  # noqa: E402
 
 
 def fake(tmp_path, name: str, body: str) -> str:
@@ -250,3 +251,85 @@ def test_status_all_answers_for_every_provider_asked_for():
 
     assert [s.provider for s in result] == ["fake", "api"], "duplicates collapsed"
     assert auth.status_all([]) == []
+
+
+# ---- saying so before anything is spent -----------------------------------
+
+
+def test_a_signed_out_provider_is_named_before_a_run_starts(monkeypatch, capsys):
+    """The failure the whole module exists to prevent: a role pointed at a
+    signed-out provider fails INSIDE a turn, minutes in, with a message about
+    the model. build_backends is the last place that can say so for free."""
+    from agent import backends
+
+    monkeypatch.setattr(auth, "status_all", lambda names: [
+        AuthStatus(provider="claude_code", installed=True, logged_in=False,
+                   detail="Not logged in.", login_command="claude auth login")])
+
+    class Backend:
+        name = "claude_code"
+
+    backends._warn_signed_out({"designer": Backend(), "planner": Backend()})
+
+    printed = capsys.readouterr().out
+    assert "claude_code is not signed in" in printed
+    assert "designer, planner" in printed, "did not say WHICH roles are affected"
+    assert "claude auth login" in printed, "did not say how to fix it"
+
+
+def test_nothing_is_said_when_every_provider_is_fine(monkeypatch, capsys):
+    """A warning that appears on a healthy run is a warning people stop
+    reading."""
+    from agent import backends
+
+    monkeypatch.setattr(auth, "status_all", lambda names: [
+        AuthStatus(provider="codex", installed=True, logged_in=True, detail="ok")])
+
+    class Backend:
+        name = "codex"
+
+    backends._warn_signed_out({"coder": Backend()})
+
+    assert capsys.readouterr().out == ""
+
+
+def test_a_provider_that_cannot_be_checked_is_not_reported_as_signed_out(monkeypatch, capsys):
+    """logged_in is None. Warning about it would send somebody to re-run a
+    login that works, which is the exact mistake the three-valued answer
+    exists to avoid."""
+    from agent import backends
+
+    monkeypatch.setattr(auth, "status_all", lambda names: [
+        AuthStatus(provider="codex", installed=True, logged_in=None,
+                   detail="timed out", login_command="codex login")])
+
+    class Backend:
+        name = "codex"
+
+    backends._warn_signed_out({"coder": Backend()})
+
+    assert capsys.readouterr().out == ""
+
+
+def test_the_login_check_is_wired_into_build_backends(monkeypatch, capsys):
+    """Through build_backends, not straight at the helper.
+
+    The helper's own tests all pass with the call site deleted -- a function
+    can be perfect and never run. This project has been caught by exactly that
+    once before (a validator check nothing invoked), so the wiring gets its own
+    test that goes in the front door.
+    """
+    from agent.backends import Access, build_backends
+    from agent.config import AgentConfig, BackendConfig
+
+    monkeypatch.setattr(auth, "status_all", lambda names: [
+        AuthStatus(provider="fake", installed=True, logged_in=False,
+                   detail="pretend it is signed out",
+                   login_command="fake login")])
+
+    cfg = AgentConfig(default=BackendConfig(provider="fake", model="m-1"), roles={})
+    build_backends(cfg, {"coder": Access.WRITE})
+
+    printed = capsys.readouterr().out
+    assert "fake is not signed in" in printed, printed
+    assert "coder" in printed, printed

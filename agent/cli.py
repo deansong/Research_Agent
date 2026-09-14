@@ -36,9 +36,7 @@ def main() -> None:
     args = _parse_args()
 
     if args.command == "login":
-        from agent.backends.codex import login_chatgpt
-
-        login_chatgpt()
+        _show_logins(getattr(args, "provider", None))
         return
 
     repo_path = _validated_repo(args.repo)
@@ -108,6 +106,8 @@ def main() -> None:
         if folder_path is None:
             if args.explain:
                 print(describe(cfg, paths))
+                _report_logins({backend_for(cfg, role).provider
+                                for role in ("discussor", "planner", "designer")})
                 print("\nNo agent has been designed for this session yet.")
                 print("Run without --explain to design one, or pass --pre-build-agent.")
                 return
@@ -419,12 +419,77 @@ def _explain(cfg, folder, paths, needed) -> None:
     for role, access in needed.items():
         spec = backend_for(cfg, role)
         print(f"  {role:16} {spec.provider:12} {spec.model or '(default)':20} needs {access.value}")
+    _report_logins({backend_for(cfg, role).provider for role in needed})
     print()
     print(f"session      {paths.session}")
     print(f"checkpoint   {paths.checkpoint}")
     print()
     print("topology (mermaid):")
     print(mermaid(folder))
+
+
+def _report_logins(providers) -> None:
+    """Say, in --explain, whether the providers above can actually run.
+
+    --explain exists to show everything and spend nothing, and "which model
+    each role uses" is only half of whether a run will work. Printed here
+    rather than inside config.describe() so that function stays pure
+    formatting -- it is called on every run, and a banner that makes a network
+    call is a banner that can hang.
+    """
+    from agent.backends.auth import status_all
+
+    statuses = [s for s in status_all(sorted(providers)) if not s.ok]
+    if not statuses:
+        return
+
+    print()
+    for status in statuses:
+        state = "cannot be checked" if status.logged_in is None else "is NOT signed in"
+        print(f"  ! {status.provider} {state}: {status.detail}")
+        if status.login_command:
+            print(f"    fix with:  {status.login_command}")
+
+
+def _show_logins(provider: str | None = None) -> None:
+    """`python main.py login` -- who is signed in, and what to run about it.
+
+    Used to be "sign into Codex", from when Codex was the only provider. It
+    lists instead of signing in because the answer is usually "they are fine"
+    and finding that out should not require starting a flow that, for codex,
+    CLEARS the credentials before it does anything else (see webui/auth.py).
+
+    Signing in is left to each provider's own command, printed here. Those are
+    full-screen interactive programs; wrapping them would add a layer between
+    somebody and a login prompt, and gain nothing a terminal does not already
+    do.
+    """
+    from agent.backends import PROVIDERS
+    from agent.backends.auth import status_all, status_for
+
+    if provider:
+        statuses = [status_for(provider)]
+    else:
+        statuses = status_all(sorted(PROVIDERS))
+
+    print()
+    width = max(len(s.provider) for s in statuses)
+    for status in statuses:
+        mark = "ok  " if status.ok else ("??  " if status.logged_in is None else "--  ")
+        extra = " · ".join(x for x in (status.account, status.method) if x)
+        print(f"  {mark}{status.provider:<{width}}  {status.detail}"
+              + (f"  ({extra})" if extra else ""))
+
+    broken = [s for s in statuses if not s.ok and s.login_command]
+    if not broken:
+        print("\nEverything that can be signed in, is.\n")
+        return
+
+    print("\nTo fix, in a terminal on this machine:")
+    for status in broken:
+        print(f"    {status.login_command:<20}# {status.provider}")
+    print("\nOr open the web UI and use the Logins button, which can drive "
+          "the ones\nthat do not need a full-screen terminal.\n")
 
 
 def _parse_args():
@@ -443,7 +508,10 @@ def _parse_args():
     )
     subparsers = parser.add_subparsers(dest="command", required=True)
 
-    subparsers.add_parser("login", help="Sign into Codex using ChatGPT")
+    login = subparsers.add_parser(
+        "login", help="Show which providers are signed in, and how to fix one")
+    login.add_argument("provider", nargs="?",
+                       help="Check just this provider, instead of all of them")
 
     run = subparsers.add_parser("run", help="Run the coding agent")
     run.add_argument("repo", help="Path to the repository")
