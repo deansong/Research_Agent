@@ -156,8 +156,16 @@ def _gate_problems(folder, plan: dict) -> str:
     for step in gated:
         step_id = str(step.get("id", "?"))
         title = str(step.get("title", "")).strip()
+        # A gate on a STAGE is satisfied by the stage's work reaching a human,
+        # so its substeps' owners count. Nodes own substeps -- a stage is four
+        # pieces of work and a node is one -- so without this every gate a
+        # person ticks on a stage in the plan editor is unsatisfiable, and the
+        # design phase rejects every design with a complaint about a step id
+        # that was never meant to be owned directly.
+        wanted = {step_id} | {str(sub.get("id", ""))
+                              for sub in step.get("substeps", []) or []}
         owners = [name for name, config in folder.nodes.items()
-                  if step_id in (getattr(config, "steps", None) or [])]
+                  if wanted & set(getattr(config, "steps", None) or [])]
 
         if not owners:
             lines.append(

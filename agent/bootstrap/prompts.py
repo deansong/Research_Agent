@@ -379,22 +379,19 @@ DIFFERENT node whose only job is to look at the result.
                                    -. blocked .-> human_review
 
 A plain edge INTO the verifier, a branch OUT of it. The research skeleton
-below is this exact shape with real names and complete node entries --
-write_code_a -> run_exp_a -> check_a -> branch -- so read it there rather
-than twice.
+below is this shape with real names and complete node entries --
+write_method -> check_method -> branch -- so read it there rather than twice.
 
 The verifier is access "read_only" -- it judges, it never fixes -- with
 `verdict` as an enum of ok/redo/blocked, and its prompt reading the worker's
-claim so it checks rather than is told.
+claim so it checks rather than is told. It owns no plan step, so `steps: []`.
 
-Two things a design usually gets wrong here:
+Two things a design usually gets wrong:
 
 1. `redo` points at the WORKER, which then uses prompts.next -- so put
    {out.<verifier>.problem} in that prompt, or it repeats its mistake.
 2. `default` is a human node, never "__end__". An unhandled verdict that
    silently ends the run is the worst outcome available.
-
-The verifier owns no plan step, so `steps: []`.
 """
 
 
@@ -508,11 +505,9 @@ USES FOR A BRANCH THAT ARE NOT "did it work":
   results already exist. Counters exist (`bump`) but CANNOT be rendered into
   a prompt, so the filesystem is the only progress a prompt can read.
 - ENOUGH ALREADY. A `redo` loop with no way out spins until the step limit
-  and then dies with nothing. A node keeps its own conversation across calls
-  (prompts.next, same thread), so the checker remembers what it already
-  rejected: say in its prompts.next that if it has sent this back before and
-  the same problem remains, it must return "blocked" and go to the human.
-  That conversation is the only place an attempt count can live.
+  and dies with nothing. check_method's prompts.next below is how a loop
+  ends: a node keeps its own conversation, so the checker remembers what it
+  already rejected -- the only place an attempt count can live.
 """
 
 
@@ -556,30 +551,34 @@ RESEARCH_GRAPH = {
     "format_version": 1,
     "name": "research_skeleton",
     "description": (
-        "Set up, inspect the data, then one write-code/run/check triple per "
-        "experiment type, then a report. A failure goes back to the node that "
-        "wrote the code, with the checker's complaint."
+        "The four stages of a research plan as a graph: a shared dataloader, "
+        "the experiment config, each method and baseline behind its own "
+        "checker, the runs, then analysis and a report."
     ),
     "entry": "setup_env",
     "nodes": [
         {"name": "setup_env", "kind": "agent"},
-        {"name": "inspect_data", "kind": "agent"},
-        {"name": "write_code_a", "kind": "agent"},
-        {"name": "run_exp_a", "kind": "agent"},
-        {"name": "check_a", "kind": "agent"},
-        {"name": "write_code_b", "kind": "agent"},
-        {"name": "run_exp_b", "kind": "agent"},
-        {"name": "check_b", "kind": "agent"},
+        {"name": "write_dataloader", "kind": "agent"},
+        {"name": "check_data", "kind": "agent"},
+        {"name": "design_experiments", "kind": "agent"},
+        {"name": "write_method", "kind": "agent"},
+        {"name": "check_method", "kind": "agent"},
+        {"name": "write_baseline", "kind": "agent"},
+        {"name": "check_baseline", "kind": "agent"},
+        {"name": "run_method", "kind": "agent"},
+        {"name": "run_baseline", "kind": "agent"},
+        {"name": "analyse", "kind": "agent"},
         {"name": "report", "kind": "agent"},
         {"name": "review", "kind": "human"},
     ],
     "edges": [
-        {"from": "setup_env", "to": "inspect_data"},
-        {"from": "inspect_data", "to": "write_code_a"},
-        {"from": "write_code_a", "to": "run_exp_a"},
-        {"from": "run_exp_a", "to": "check_a"},
-        {"from": "write_code_b", "to": "run_exp_b"},
-        {"from": "run_exp_b", "to": "check_b"},
+        {"from": "setup_env", "to": "write_dataloader"},
+        {"from": "write_dataloader", "to": "check_data"},
+        {"from": "design_experiments", "to": "write_method"},
+        {"from": "write_method", "to": "check_method"},
+        {"from": "write_baseline", "to": "check_baseline"},
+        {"from": "run_method", "to": "run_baseline"},
+        {"from": "run_baseline", "to": "analyse"},
         {"from": "report", "to": "review", "ask": {
             "purpose": "findings",
             "resume_to": "report",
@@ -589,29 +588,55 @@ RESEARCH_GRAPH = {
         }},
     ],
     "branches": [
-        {"from": "check_a", "route_on": "verdict",
+        {"from": "check_data", "route_on": "verdict",
          "cases": [
-             {"when": "ok", "to": "write_code_b"},
-             {"when": "redo", "to": "write_code_a"},
+             {"when": "ok", "to": "design_experiments"},
+             {"when": "redo", "to": "write_dataloader"},
              {"when": "blocked", "to": "review", "ask": {
                  "purpose": "blocked",
-                 "resume_to": "write_code_a",
-                 "question": "{out.check_a.problem}\n\nHow should I proceed? "
+                 "resume_to": "write_dataloader",
+                 "question": "{out.check_data.problem}\n\nNow what? "
                              "Type guidance, or /exit.",
-                 "context": "{out.check_a.detail}",
+                 "context": "{out.check_data.detail}",
              }},
          ],
          "default": "review"},
-        {"from": "check_b", "route_on": "verdict",
+        {"from": "check_method", "route_on": "verdict",
          "cases": [
-             {"when": "ok", "to": "report"},
-             {"when": "redo", "to": "write_code_b"},
+             {"when": "ok", "to": "write_baseline"},
+             {"when": "redo", "to": "write_method"},
              {"when": "blocked", "to": "review", "ask": {
                  "purpose": "blocked",
-                 "resume_to": "write_code_b",
-                 "question": "{out.check_b.problem}\n\nHow should I proceed? "
+                 "resume_to": "write_method",
+                 "question": "{out.check_method.problem}\n\nNow what? "
                              "Type guidance, or /exit.",
-                 "context": "{out.check_b.detail}",
+                 "context": "{out.check_method.detail}",
+             }},
+         ],
+         "default": "review"},
+        {"from": "check_baseline", "route_on": "verdict",
+         "cases": [
+             {"when": "ok", "to": "run_method"},
+             {"when": "redo", "to": "write_baseline"},
+             {"when": "blocked", "to": "review", "ask": {
+                 "purpose": "blocked",
+                 "resume_to": "write_baseline",
+                 "question": "{out.check_baseline.problem}\n\nNow what? "
+                             "Type guidance, or /exit.",
+                 "context": "{out.check_baseline.detail}",
+             }},
+         ],
+         "default": "review"},
+        {"from": "analyse", "route_on": "verdict",
+         "cases": [
+             {"when": "ok", "to": "report"},
+             {"when": "redo", "to": "run_method"},
+             {"when": "blocked", "to": "review", "ask": {
+                 "purpose": "blocked",
+                 "resume_to": "run_method",
+                 "question": "{out.analyse.problem}\n\nNow what? "
+                             "Type guidance, or /exit.",
+                 "context": "{out.analyse.detail}",
              }},
          ],
          "default": "review"},
@@ -619,45 +644,49 @@ RESEARCH_GRAPH = {
 }
 
 
-#: node -> (access, backend, what it is for). Sent as a table rather than as
-#: nine nodes.json entries: the worked example already shows what an entry
-#: looks like, and repeating it nine times would cost thousands of prompt
-#: tokens to teach nothing new. Access and backend are the two fields the
-#: skeleton is actually making a claim about.
+#: node -> (access, backend, what it is for). A table rather than nine more
+#: nodes.json entries: the three spelled out in full below already show what an
+#: entry looks like, and these nodes are the same three shapes with different
+#: subjects. Access and backend are the two fields the skeleton is making a
+#: claim about.
 RESEARCH_ROLES: tuple[tuple[str, str, str, str], ...] = (
-    ("setup_env",    "write",     "coder",   "install deps, pin versions, record what the environment is"),
-    ("inspect_data", "read_only", "coder",   "find and inspect the data -- DROP THIS NODE if there is none"),
-    ("report",       "write",     "coder",   "summarise findings across every experiment"),
+    ("setup_env",    "write",     "coder",   "install and pin what the rest needs"),
+    ("design_experiments", "write", "coder", "the config: datasets, splits, hyperparameters, seeds, ablations"),
+    ("analyse",      "read_only", "checker", "read every result file and decide what they say; branches"),
+    ("report",       "write",     "coder",   "write up what analyse concluded"),
 )
-#: The other three -- write_code_a, run_exp_a, check_a -- are in
-#: RESEARCH_NODES as complete entries, so a table row for them would be
-#: repeating in summary what is spelled out below it.
+#: write_dataloader / write_baseline copy write_method; check_data /
+#: check_baseline copy check_method; run_baseline copies run_method. Each is
+#: the same entry with a different subject and different `steps`.
 
 
-#: Three real nodes.json entries -- the triple the whole skeleton repeats.
+#: Three real nodes.json entries plus the human node -- one per SHAPE the
+#: skeleton repeats: a worker, a runner, a verifier.
 #:
-#: These exist because a topology is not a design: the graph says a node
-#: called run_exp_a runs an experiment, and says nothing about what its
-#: prompt has to contain for that to happen. The generic worked example
-#: cannot show it either, because its nodes discuss and orchestrate rather
-#: than run anything.
+#: These exist because a topology is not a design: the graph says a node called
+#: run_method runs an experiment, and says nothing about what its prompt has to
+#: contain for that to happen. The generic worked example cannot show it
+#: either, because its nodes discuss and orchestrate rather than run anything.
 #:
-#: They are validated: tests/test_bootstrap.py writes them to disk as part of
-#: a real folder and runs validate_folder(strict=True) over it, so every
-#: placeholder here names a field that the node it points at actually
-#: declares. An exemplar with a broken placeholder would teach the designer
-#: to write broken placeholders, and its repair loop would then fight the
-#: example it was given.
+#: They are validated: tests/test_bootstrap.py writes them to disk as part of a
+#: real folder and runs validate_folder(strict=True) over it, so every
+#: placeholder here names a field that the node it points at actually declares.
+#: An exemplar with a broken placeholder would teach the designer to write
+#: broken placeholders, and its repair loop would then fight the example it was
+#: given.
 RESEARCH_NODES: dict[str, dict] = {
-    "write_code_a": {
+    "write_method": {
         "backend": "coder",
         "access": "write",
-        "steps": ["3"],
+        "steps": ["1.2"],
         "instructions": (
             "You write experiment code. It goes in the repository as normal "
             "source with its own tests -- not in the artifacts directory, "
             "which is for results. Write the tests as you go and run them: "
-            "code that has never been executed is not finished."
+            "code that has never been executed is not finished.\n\nUse the "
+            "dataloader that already exists; do not write your own loading or "
+            "splitting. A method and its baseline on different splits is not "
+            "a comparison, and nothing downstream can see it happened."
         ),
         "output": [
             {"name": "files", "type": "string", "required": True,
@@ -670,25 +699,68 @@ RESEARCH_NODES: dict[str, dict] = {
             "first": (
                 "{task_brief}\n\nYour step:\n{my_steps}\n\n"
                 "The rest of the plan, for context only:\n{plan_outline}\n\n"
-                "The repository is at {repo_path}. Read what is there before "
-                "writing anything new -- most of this usually exists. Make the "
-                "run command take an output directory; results go under "
-                "{artifacts_dir}.\n\nWrite the code and its tests, run the "
-                "tests, and report the files and the run command."
+                "The repository is at {repo_path}. Read what is there first -- "
+                "most of this usually exists. The shared dataloader is at "
+                "{out.write_dataloader.files}; use it. Make the run command "
+                "take an output directory; results go under {artifacts_dir}."
+                "\n\nWrite the code and its tests, run them, and report the "
+                "files and the run command."
             ),
             "next": (
                 "Your last attempt was sent back. What was wrong:\n\n"
-                "{out.check_a.problem}\n\n{out.check_a.detail}\n\n"
+                "{out.check_method.problem}\n\n{out.check_method.detail}\n\n"
                 "Fix exactly that. Do not start again from scratch, and do "
                 "not change anything the complaint does not mention."
             ),
         },
-        "announce": "writing the experiment code...",
+        "announce": "writing the method...",
     },
-    "run_exp_a": {
+    "check_method": {
+        "backend": "checker",
+        "access": "read_only",
+        "steps": [],
+        "instructions": (
+            "You decide whether a piece of work counts. You never fix "
+            "anything: you are read-only, and the point of you is that you "
+            "are not the node that did the work.\n\nRead the code, not the "
+            "report about it, and run its tests. Code that passes its own "
+            "tests and implements the wrong thing is the failure worth "
+            "catching."
+        ),
+        "output": [
+            {"name": "verdict", "type": "enum",
+             "choices": ["ok", "redo", "blocked"], "required": True},
+            {"name": "problem", "type": "string",
+             "description": "One sentence. Empty when the verdict is ok."},
+            {"name": "detail", "type": "string",
+             "description": "What you looked at, and what to change."},
+        ],
+        "prompts": {
+            "first": (
+                "Check this work against what was asked:\n\n{my_steps}\n\n"
+                "It reports these files:\n{out.write_method.files}\n\n"
+                "Run it with: {out.write_method.how_to_run}\n"
+                "Its own summary: {out.write_method.summary}\n\n"
+                "Read the files and run the tests. Return 'ok' if the step's "
+                "own check is satisfied, 'redo' with a specific complaint, or "
+                "'blocked' if retrying cannot fix it -- missing data or "
+                "hardware, a contradiction in the plan."
+            ),
+            "next": (
+                "This came back after your last verdict.\n\n{my_steps}\n\n"
+                "Files:\n{out.write_method.files}\n\n"
+                "You have seen this before. If the problem you named last "
+                "time is STILL there, return 'blocked', not 'redo': a second "
+                "identical complaint means the loop is not converging and a "
+                "person should look. 'redo' only for something new."
+            ),
+        },
+        "announce": "checking the code...",
+    },
+    "run_method": {
         "backend": "runner",
         "access": "write",
-        "steps": ["4"],
+        "steps": ["3.1"],
         "instructions": (
             "You run experiments and record what happened. You do not fix "
             "code: if a run fails, report it with enough of the error to act "
@@ -708,19 +780,18 @@ RESEARCH_NODES: dict[str, dict] = {
         "prompts": {
             "first": (
                 "Run this experiment:\n{my_steps}\n\n"
-                "The code was just written. How to run it:\n"
-                "{out.write_code_a.how_to_run}\n\n"
-                "Files it touched:\n{out.write_code_a.files}\n\n"
+                "The configuration to run:\n"
+                "{out.design_experiments.summary}\n\n"
+                "How to run it:\n{out.write_method.how_to_run}\n\n"
                 "Write every result under {artifacts_dir}, one file per "
                 "configuration and seed, named so a second run ADDS a file "
-                "rather than replacing one, and keep the full stdout there "
-                "too.\n\nDo not modify the code. If it will not run, stop "
-                "and report the error."
+                "rather than replacing one, with the full stdout beside it.\n\n"
+                "Do not modify the code. If it will not run, report the error."
             ),
             "next": (
-                "The code changed; run it again.\n\n"
-                "{out.write_code_a.how_to_run}\n\nSame rules as before: "
-                "results under {artifacts_dir}, nothing overwritten, no edits."
+                "Run it again -- {out.analyse.problem}\n\n"
+                "{out.write_method.how_to_run}\n\nSame rules: results under "
+                "{artifacts_dir}, nothing overwritten, no edits."
             ),
         },
         "announce": "running the experiment...",
@@ -739,58 +810,13 @@ RESEARCH_NODES: dict[str, dict] = {
              "summary": "Stop the run (everything finished is saved)"},
         ],
     },
-    "check_a": {
-        "backend": "checker",
-        "access": "read_only",
-        "steps": [],
-        "instructions": (
-            "You decide whether a piece of work counts. You never fix "
-            "anything: you are read-only, and the point of you is that you "
-            "are not the node that did the work.\n\nJudge the RESULTS, not "
-            "the report about them. Open the files, check the numbers are "
-            "there and plausible, check the run did what the step asked and "
-            "not something adjacent -- a run that finished cleanly and "
-            "measured the wrong thing is the failure worth catching."
-        ),
-        "output": [
-            {"name": "verdict", "type": "enum",
-             "choices": ["ok", "redo", "blocked"], "required": True},
-            {"name": "problem", "type": "string",
-             "description": "One sentence. Empty when the verdict is ok."},
-            {"name": "detail", "type": "string",
-             "description": "What you looked at, and what to change."},
-        ],
-        "prompts": {
-            "first": (
-                "Check this work against what was asked:\n\n{my_steps}\n\n"
-                "It reports {out.run_exp_a.ran}, results at "
-                "{out.run_exp_a.results_path}: {out.run_exp_a.summary}\n\n"
-                "Log tail:\n{out.run_exp_a.log_tail}\n\n"
-                "Read the actual result files under {artifacts_dir}. Return "
-                "'ok' if the step's own check is satisfied, 'redo' with a "
-                "specific complaint if the code or the run must change, or "
-                "'blocked' if retrying cannot fix it -- missing data, missing "
-                "hardware, a contradiction in the plan."
-            ),
-            "next": (
-                "This came back after your last verdict.\n\n{my_steps}\n\n"
-                "Results: {out.run_exp_a.results_path}\n"
-                "Log:\n{out.run_exp_a.log_tail}\n\n"
-                "You have seen this before. If the problem you named last "
-                "time is STILL there, return 'blocked', not 'redo': a second "
-                "identical complaint means the loop is not converging and a "
-                "person should look. 'redo' only for something new."
-            ),
-        },
-        "announce": "checking the results...",
-    },
 }
 
 
 def research_skeleton() -> str:
     """The skeleton, as it is sent to the designer."""
     table = "\n".join(
-        f"  {name:<13} access {access:<9} backend {backend!r:<10} {purpose}"
+        f"  {name:<19} access {access:<9} backend {backend!r:<10} {purpose}"
         for name, access, backend, purpose in RESEARCH_ROLES
     )
     return (
@@ -798,59 +824,64 @@ def research_skeleton() -> str:
         "--------------------------------------------------------------------------\n"
         "THE RESEARCH SKELETON -- start here, then check it fits\n"
         "--------------------------------------------------------------------------\n"
-        "Work in this project is computer-science research, and it nearly always\n"
-        "has this shape:\n"
+        "The plan's four stages as a graph. Your plan has the same four, so the\n"
+        "mapping is nearly mechanical: stage 1 is the write_* nodes, 2 is\n"
+        "design_experiments, 3 is the run_* nodes, 4 is analyse and report.\n"
         "\n"
-        "  setup_env -> inspect_data -> write_code_a -> run_exp_a -> check_a\n"
-        "                                                             |\n"
-        "        ok -> write_code_b -> run_exp_b -> check_b -> report -> review\n"
-        "      redo -> write_code_a          (with {out.check_a.problem})\n"
-        "   blocked -> review\n"
+        "  setup_env -> write_dataloader -> check_data --ok--> design_experiments\n"
+        "  design_experiments -> write_method -> check_method --ok--> write_baseline\n"
+        "  write_baseline -> check_baseline --ok--> run_method -> run_baseline\n"
+        "  run_baseline -> analyse --ok--> report -> review\n"
+        "\n"
+        "  every check_*:  redo -> the node that wrote it,  blocked -> review\n"
+        "  analyse:        redo -> run_method (the run, not the code)\n"
         "\n"
         "BEFORE using it, check it against the plan and say in `rationale` what\n"
         "you changed and why. It is a starting point, not a form to fill in:\n"
         "\n"
-        "- ONE write_code/run_exp/check triple PER EXPERIMENT TYPE. Two types\n"
-        "  means a and b; four means a to d. One type means just a.\n"
-        "- Chain the triples SEQUENTIALLY -- check_a's `ok` goes to write_code_b.\n"
-        "  Never fan out to two nodes at once; the validator refuses it.\n"
-        "- Drop inspect_data when there is no dataset; drop setup_env only\n"
-        "  if the environment already exists.\n"
-        "- Add nodes the plan needs and this does not have: a baseline to\n"
-        "  reproduce, an ablation, a figure/table builder, a literature check.\n"
-        "- The code node writes the code AND its tests; do not add a node whose\n"
-        "  only job is to test code. The provider does that inside one turn.\n"
-        "- check_* is the retry judge, and it must be a SEPARATE read_only node.\n"
-        "  A run node routing on its own output back to itself is rejected.\n"
-        "- `redo` must carry the complaint: put {out.check_a.problem} in\n"
-        "  write_code_a's prompts.next, or it makes the same mistake again.\n"
+        "- ONE DATALOADER, used by every method and baseline. Different splits\n"
+        "  between a method and its baseline is not a comparison, and nothing\n"
+        "  downstream can tell. Say so in each write_* prompt, as below.\n"
+        "- ONE write/check PAIR PER THING IMPLEMENTED. Two baselines means two\n"
+        "  pairs, chained. Drop write_baseline if the plan compares against a\n"
+        "  published number rather than reproducing one.\n"
+        "- ONE run_* PER THING RUN, all after every check has passed: a run is\n"
+        "  the expensive node, and a bug found inside it costs the whole run.\n"
+        "- Chain them SEQUENTIALLY. One plain outgoing edge per node -- the\n"
+        "  validator refuses two, so there are no arms running side by side.\n"
+        "- Drop setup_env if the environment works. Drop write_dataloader and\n"
+        "  check_data together if there is no data stage -- and then take\n"
+        "  {out.write_dataloader.files} out of the write_* prompts, or they\n"
+        "  name a node that no longer exists and the design is rejected.\n"
+        "- Add nodes the plan needs and this has not: an ablation, a figure.\n"
+        "- A write_* node writes the code AND its tests. Do not add a node whose\n"
+        "  only job is to test code; the provider does that in one turn.\n"
+        "- check_* is the retry judge and must be SEPARATE and read_only. A node\n"
+        "  routing on its own output back to itself is rejected.\n"
+        "- `redo` must carry the complaint: put {out.check_method.problem} in\n"
+        "  write_method's prompts.next, or it repeats the mistake it was never\n"
+        "  told about.\n"
+        "- `steps` is a SUBSTEP id -- \"1.2\", not \"1\": a substep is one piece of\n"
+        "  work, a stage is four. Its `check` is what the check_* node applies,\n"
+        "  and arrives in {my_steps}.\n"
+        "- A substep marked [human gate] needs a human node after the node that\n"
+        "  owns it, with an ask offering /approve and /exit.\n"
         "\n"
-        "The nodes around the triple:\n"
+        "The nodes not spelled out below:\n"
         "\n"
         f"{table}\n"
-        "  review        kind \"human\"  the exit, and where blocked goes\n"
+        "  review              kind \"human\"  the exit, and where blocked goes\n"
         "\n"
-        "`backend` names a ROLE, not a model. \"runner\" and \"checker\" are\n"
-        "deliberately separate from \"coder\" so the human can point experiment\n"
-        "runs at a cheaper model in .agent/config.json without touching the\n"
-        "graph. Use these names, and read_only for anything that only looks.\n"
+        "`backend` names a ROLE, not a model. \"runner\" and \"checker\" are kept\n"
+        "separate from \"coder\" so runs can be pointed at a cheaper model in\n"
+        ".agent/config.json without touching the graph. Use these names, and\n"
+        "read_only for anything that only looks.\n"
         "\n"
-        "graph.json for the two-experiment case, complete and valid:\n"
+        "graph.json:\n"
         + json.dumps(RESEARCH_GRAPH, indent=1)
-        + "\n\nAnd the nodes.json entries, in full. Copy them; b, c, d are "
-        "the same with different names and steps. Note:\n"
-        "\n"
-        "- write_code_a's prompts.next carries {out.check_a.problem}. Without "
-        "it a redo repeats the mistake it was never told about.\n"
-        "- run_exp_a may not edit code; check_a is read_only. Three nodes, "
-        "one job each, and the judge is not whoever did the work.\n"
-        "- check_a's prompts.next is where the loop can END: it has its own "
-        "conversation, so a second identical complaint becomes blocked.\n"
-        "- Each plan step's `check` is what check_a applies; it arrives in "
-        "{my_steps}. A vague check gives a node that rubber-stamps -- say so "
-        "in `rationale`.\n"
-        "- A step marked [human gate] in the outline needs a human node "
-        "after that stage, with an ask, offering /approve and /exit.\n"
-        "\nnodes.json (four of the ten entries):\n"
+        + "\n\nnodes.json, for the three SHAPES it repeats -- worker, verifier, "
+        "runner -- plus the human node. write_dataloader and write_baseline "
+        "are write_method with another subject and `steps`; check_data and "
+        "check_baseline are check_method; run_baseline is run_method.\n"
         + json.dumps(RESEARCH_NODES, indent=1)
     )

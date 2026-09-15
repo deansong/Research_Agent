@@ -356,19 +356,80 @@ def test_designer_schema_survives_strict_mode():
 
 
 
+#: The output fields a synthesised node has to declare, by the family its name
+#: puts it in. Not decoration: the skeleton's graph.json reads
+#: {out.check_data.problem}, {out.analyse.detail} and {out.report.findings} in
+#: its asks, and validate_folder rejects a placeholder naming a field the node
+#: does not have. So this table is what makes the graph checkable at all.
+_VERDICT = [
+    {"name": "verdict", "type": "enum",
+     "choices": ["ok", "redo", "blocked"], "required": True},
+    {"name": "problem", "type": "string"},
+    {"name": "detail", "type": "string"},
+]
+_FAMILIES: list[tuple[tuple[str, ...], str, str, list]] = [
+    # name prefixes,            access,      backend,   output fields
+    (("check_", "analyse"),     "read_only", "checker", _VERDICT),
+    (("run_",),                 "write",     "runner",  [
+        {"name": "results_path", "type": "string", "required": True},
+        {"name": "log_tail", "type": "string", "required": True},
+        {"name": "ran", "type": "enum", "choices": ["finished", "failed"],
+         "required": True},
+        {"name": "summary", "type": "string", "required": True}]),
+    (("write_",),               "write",     "coder",   [
+        {"name": "files", "type": "string", "required": True},
+        {"name": "how_to_run", "type": "string", "required": True},
+        {"name": "summary", "type": "string", "required": True}]),
+    (("report",),               "write",     "coder",   [
+        {"name": "summary", "type": "string", "required": True},
+        {"name": "findings", "type": "string"}]),
+]
+
+
+def _synthesised(name: str, roles: dict) -> dict:
+    """What a node the skeleton does not spell out must look like.
+
+    The skeleton tells the designer that write_dataloader and write_baseline
+    ARE write_method with another subject, that check_data and check_baseline
+    are check_method, and that run_baseline is run_method. This makes the same
+    reading -- by family, from the name -- rather than by string-replacing
+    "_a." for "_b." in a copy of the JSON, which is what this used to do and
+    which tied the whole harness to a naming convention the skeleton no longer
+    has.
+    """
+    access, backend = roles.get(name, (None, None))
+    fields = None
+    for prefixes, fam_access, fam_backend, fam_fields in _FAMILIES:
+        if name.startswith(prefixes):
+            access = access or fam_access
+            backend = backend or fam_backend
+            fields = fam_fields
+            break
+    return {
+        "backend": backend or "coder",
+        "access": access or "write",
+        # Empty for every synthesised node: a verifier is identified
+        # STRUCTURALLY as read_only + no steps + the source of a branch, so
+        # giving check_data a step would quietly break the no_verifier check
+        # this folder exists to exercise.
+        "steps": [],
+        "instructions": f"You are {name}.",
+        "output": fields or [{"name": "summary", "type": "string", "required": True}],
+        "prompts": {"first": "{my_steps}", "next": "{my_steps}"},
+    }
+
+
 def _research_folder(tmp: pathlib.Path):
     """Write the research skeleton to disk as a real agent folder.
 
-    Four of the ten node entries are REAL -- RESEARCH_NODES, exactly as the
-    designer is shown them -- so this checks the exemplars themselves, not a
-    paraphrase of them. Every {out.x.y} in those prompts has to name a field
-    the node x really declares, and only writing them out and validating
-    catches it. An exemplar with a broken placeholder teaches the designer to
-    write broken placeholders, and its repair loop then fights the example.
+    The four entries in RESEARCH_NODES are REAL -- exactly as the designer is
+    shown them -- so this checks the exemplars themselves, not a paraphrase.
+    Every {out.x.y} in those prompts has to name a field the node x really
+    declares, and only writing them out and validating catches it. An exemplar
+    with a broken placeholder teaches the designer to write broken
+    placeholders, and its repair loop then fights the example it was given.
 
-    The other six are synthesised from RESEARCH_ROLES, the same reading of
-    the skeleton the designer has to make: "b, c, d are the same with
-    different names and steps".
+    The rest are synthesised by family; see _synthesised.
     """
     from agent.agentfolder.schema import graph_document, node_entry
     from agent.bootstrap.nodes.writer import _entry_for
@@ -376,48 +437,27 @@ def _research_folder(tmp: pathlib.Path):
                                          RESEARCH_ROLES)
     from agent.bootstrap.schemas import NodeProposal
 
-    specs = {name: (access, backend)
+    roles = {name: (access, backend)
              for name, access, backend, _ in RESEARCH_ROLES}
-    outputs = {"report": [
-        {"name": "summary", "type": "string", "required": True},
-        {"name": "findings", "type": "string"},
-    ]}
 
     nodes: dict[str, dict] = {}
     for entry in RESEARCH_GRAPH["nodes"]:
         name, kind = entry["name"], entry["kind"]
-
-        # The b triple is a's entries with the names swapped -- the same
-        # reading of "b, c, d are the same with different names and steps"
-        # that the designer is asked to make.
         source = RESEARCH_NODES.get(name)
-        if source is None and name.endswith("_b"):
-            source = json.loads(
-                json.dumps(RESEARCH_NODES[name[:-2] + "_a"])
-                .replace("_a.", "_b."))
 
         if source is not None:
             # Through the designer's own strict model and then the REAL
-            # writer, not a hand-rolled equivalent. That is what makes this
-            # a test of the exemplars: they have to be emittable by the
-            # designer (NodeProposal) and convertible to disk (_entry_for),
-            # and `sets` alone differs between those two shapes -- pairs in
-            # the proposal, an object on disk.
+            # writer, not a hand-rolled equivalent. That is what makes this a
+            # test of the exemplars: they have to be emittable by the designer
+            # (NodeProposal) and convertible to disk (_entry_for), and `sets`
+            # alone differs between those two shapes -- pairs in the proposal,
+            # an object on disk.
             proposal = NodeProposal.model_validate({"name": name, **source})
             nodes[name] = _entry_for(kind, proposal.model_dump())
             continue
 
-        access, backend = specs[name]
-        nodes[name] = node_entry("agent", {
-            "backend": backend,
-            "access": access,
-            "steps": [],
-            "instructions": f"You are {name}.",
-            "output": outputs.get(name, [
-                {"name": "summary", "type": "string", "required": True},
-            ]),
-            "prompts": {"first": "{my_steps}", "next": "{my_steps}"},
-        })
+        assert kind == "agent", f"{name} is a {kind} node with no entry to write"
+        nodes[name] = node_entry("agent", _synthesised(name, roles))
 
     folder = tmp / "agent"
     folder.mkdir(parents=True, exist_ok=True)
@@ -481,14 +521,18 @@ def test_a_gated_step_with_no_human_node_is_rejected():
     from agent.bootstrap.nodes.validator import _gate_problems
 
     plan = {"steps": [
-        {"id": "3", "title": "Write the sweep", "check": "pytest"},
-        {"id": "4", "title": "Launch the sweep", "gate": True},
+        {"id": "1", "title": "Code", "check": "pytest"},
+        {"id": "3", "title": "Run", "gate": True,
+         "substeps": [{"id": "3.1", "title": "Launch the sweep"}]},
     ]}
 
     with tempfile.TemporaryDirectory() as tmp:
         folder = load_agent_folder(_research_folder(pathlib.Path(tmp)))
 
-        # The skeleton's run_exp_a owns step 4 and does reach `review`.
+        # Stage 3 is gated and NOTHING owns the bare id "3" -- nodes own
+        # substeps. The gate is satisfied through run_method, which owns 3.1
+        # and reaches `review`. Without that reading every gate a person ticks
+        # on a stage would reject the design.
         assert _gate_problems(folder, plan) == "", _gate_problems(folder, plan)
 
         # Nobody owns step 9, so nobody will ever ask about it.
@@ -503,7 +547,7 @@ def test_a_gated_step_with_no_human_node_is_rejected():
             if node.kind == "human":
                 node.kind = "agent"
         blind = _gate_problems(folder, plan)
-        assert "Step 4" in blind and "reaches a human node" in blind, blind
+        assert "Step 3" in blind and "reaches a human node" in blind, blind
     print("PASS  a human-gated step must reach a human, not merely coexist")
 
 
@@ -979,10 +1023,10 @@ def test_the_skeleton_offers_a_cheaper_backend_for_running_experiments():
 
     by_node = {name: entry.get("backend")
                for name, entry in RESEARCH_NODES.items()}
-    assert by_node["run_exp_a"] == "runner", by_node
-    assert by_node["check_a"] == "checker", by_node
-    assert by_node["write_code_a"] == "coder", by_node
-    assert by_node["run_exp_a"] != by_node["write_code_a"], \
+    assert by_node["run_method"] == "runner", by_node
+    assert by_node["check_method"] == "checker", by_node
+    assert by_node["write_method"] == "coder", by_node
+    assert by_node["run_method"] != by_node["write_method"], \
         "running and writing must be separately configurable"
 
     # And the designer is told what those names are FOR -- an undocumented
@@ -1092,7 +1136,7 @@ def test_the_designer_is_told_not_to_let_a_node_check_itself():
     # pinning its exact indentation makes this a test of the indent level.
     flat = " ".join(shape.split())
     assert "THE VERIFIER LOOP" in shape, "the rationale for the shape is missing"
-    assert '"when": "redo", "to": "write_code_a"' in flat, \
+    assert '"when": "redo", "to": "write_method"' in flat, \
         "redo must be shown pointing back at the WORKER, not onwards"
     assert '"default": "review"' in flat, \
         "an unhandled verdict must reach a human, not silently end the run"
@@ -1335,7 +1379,7 @@ def test_a_gated_substep_with_no_human_node_is_rejected():
         folder = load_agent_folder(_research_folder(pathlib.Path(tmp)))
 
         owned = {"steps": [{"id": "3", "title": "Run", "substeps": [
-            {"id": "4", "title": "Launch the sweep", "gate": True}]}]}
+            {"id": "3.1", "title": "Launch the sweep", "gate": True}]}]}
         assert _gate_problems(folder, owned) == "", "a gated substep an owning node reaches"
 
         orphan = {"steps": [{"id": "3", "title": "Run", "substeps": [
@@ -1343,3 +1387,29 @@ def test_a_gated_substep_with_no_human_node_is_rejected():
         problem = _gate_problems(folder, orphan)
         assert "9.9" in problem and "no node lists it" in problem, problem
     print("PASS  a gated SUBSTEP is checked against the graph, not just a step")
+
+
+def test_a_gate_on_a_whole_stage_is_satisfied_by_its_substeps_owners():
+    """Nodes own SUBSTEPS, so nothing owns a bare stage id.
+
+    A person ticking "human gate" on stage 3 in the plan editor is asking to
+    approve before the running starts -- an entirely reasonable thing to want.
+    Looking for a node whose `steps` contains "3" finds none, and the design
+    phase then rejects every design with a complaint about an id that was
+    never meant to be owned directly.
+    """
+    from agent.agentfolder.load import load_agent_folder
+    from agent.bootstrap.nodes.validator import _gate_problems
+
+    with tempfile.TemporaryDirectory() as tmp:
+        folder = load_agent_folder(_research_folder(pathlib.Path(tmp)))
+
+        stage = {"steps": [{"id": "3", "title": "Run", "gate": True,
+                            "substeps": [{"id": "3.1", "title": "our method"}]}]}
+        assert _gate_problems(folder, stage) == "", _gate_problems(folder, stage)
+
+        # And it is still not satisfied by a stage nobody's nodes touch at all.
+        nowhere = {"steps": [{"id": "8", "title": "Publish", "gate": True,
+                              "substeps": [{"id": "8.1", "title": "upload"}]}]}
+        assert "no node lists it" in _gate_problems(folder, nowhere)
+    print("PASS  a gate on a stage is satisfied through the nodes owning its substeps")
