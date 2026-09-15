@@ -350,14 +350,47 @@ def test_antigravity_reads_structured_output_not_response():
 
 def test_antigravity_explains_a_denied_tool_call():
     """SUCCESS with no answer is what a permission denial looks like, and the
-    remedy is about access, not about retrying."""
+    remedy is about access, not about retrying.
+
+    MEASURED: the envelope carries `denied_actions`, so the refused tool can
+    be NAMED rather than guessed at.
+    """
     backend = _agy()
-    envelope = {"result": {"status": "SUCCESS", "response": ""}}
+    envelope = {"result": {"status": "SUCCESS", "response": "",
+                           "denied_actions": [{"action": "command",
+                                               "display_name": "RunCommand"}]}}
     assert backend.final_text(envelope) == ""
+
     why = backend._why_empty(envelope)
-    assert "DENIED" in why or "denied" in why.lower(), why
+    assert "RunCommand" in why, "the envelope says what was refused; say it"
     assert "read_only" in why, "name the likely cause"
-    print("PASS  an empty successful turn is explained as a denial")
+    assert "config.json" in why, "say where the fix goes"
+    print("PASS  a denial names the tool that was refused")
+
+
+def test_an_empty_turn_is_still_explained_without_denied_actions():
+    """Older envelopes, or a refusal recorded some other way."""
+    why = _agy()._why_empty({"result": {"status": "SUCCESS", "response": ""}})
+
+    assert "'SUCCESS'" in why and "refused tool call" in why, why
+
+
+def test_the_denial_message_never_suggests_widening_a_verifier():
+    """The advice this replaced was "give the node write access".
+
+    For the node that hits this most -- a `check_*` verifier -- that is the
+    one change it must not make. A verifier is read_only BY DESIGN: it is
+    what stops the judge fixing the work it is judging, and
+    _verification_problems recognises a verifier structurally as read_only
+    with no steps that is the source of a branch. Following the old advice
+    turned a broken run into a design that silently no longer verified
+    anything, which is strictly worse than the error.
+    """
+    why = _agy()._why_empty({"result": {"status": "SUCCESS", "response": ""}}).lower()
+
+    assert "give the node write access" not in why
+    assert "do not give a check_* node write access" in why, why
+    print("PASS  the remedy does not destroy the verifier it is offered to")
 
 
 def test_antigravity_maps_steps_into_the_shared_vocabulary():

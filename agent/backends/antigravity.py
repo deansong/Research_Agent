@@ -186,13 +186,45 @@ class AntigravityBackend(CliBackend):
         return json.dumps(parsed) if parsed is not None else ""
 
     def _why_empty(self, envelope):
+        """Say what was actually refused, and do NOT suggest widening a verifier.
+
+        The envelope carries `denied_actions` -- measured:
+        [{"action": "command", "display_name": "RunCommand"}] -- so the turn
+        can be named instead of guessed at.
+
+        The advice this replaced was "give the node write access". For the
+        node that hits this most, a `check_*` verifier, that is the one change
+        it must not make: a verifier is read_only BY DESIGN, and
+        _verification_problems identifies one structurally as read_only with
+        no steps that is the source of a branch. Widening it stops it counting
+        as a verifier at all, and hands the judge the power to fix the work it
+        is judging -- which is the single rule this project's graphs are built
+        around.
+        """
         result = envelope.get("result") or envelope
+        denied = result.get("denied_actions") or []
+        names = sorted({str(d.get("display_name") or d.get("action"))
+                        for d in denied if isinstance(d, dict)})
+        refused = (f"agy refused {', '.join(names)}"
+                   if names else
+                   f"agy reported status={result.get('status')!r} and sent no "
+                   f"structured_output, which is what a refused tool call "
+                   f"looks like")
+
         return (
-            f"agy reported status={result.get('status')!r} and sent no "
-            f"structured_output. That is what a DENIED tool call looks like: "
-            f"a node declared read_only cannot read files or run commands on "
-            f"this CLI. Give the node write access if it genuinely needs to "
-            f"touch the repository."
+            f"{refused}.\n\n"
+            f"This is agy's permission model, not the model failing. It has no "
+            f"setting between --dangerously-skip-permissions and refusing "
+            f"every tool call, so a node that must read files or run commands "
+            f"cannot run on this provider under read_only.\n\n"
+            f"Point the role at a provider that can, which for a verifier is "
+            f"the right fix and costs one line:\n"
+            f'    {{"roles": {{"checker": {{"provider": "codex"}}}}}}\n'
+            f"in <repo>/.agent/config.json.\n\n"
+            f"Do NOT give a check_* node write access to get past this. A "
+            f"verifier is read_only by design -- that is what stops the judge "
+            f"fixing the work it is judging, and it is how the validator "
+            f"recognises a verifier at all."
         )
 
     def usage_from(self, envelope) -> Usage | None:
