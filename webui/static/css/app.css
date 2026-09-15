@@ -1348,3 +1348,27 @@ dialog label.required .field-note { color: var(--accent); }
   white-space: pre-wrap;
   word-break: break-all;
 }
+
+/* ---------- the node summary, and a node's own output ---------- */
+/*
+  The header of the Context tab. Set apart from the prompt sections below it
+  because it answers a different question -- what this node IS, rather than
+  what it will be sent -- and because "which model is about to read this" was
+  the fact the page could not previously answer at all.
+*/
+.node-summary {
+  padding: 10px 12px;
+  margin-bottom: 4px;
+  border: 1px solid var(--line);
+  border-left: 3px solid var(--accent-dim);
+  border-radius: var(--radius);
+  background: var(--bg-raised);
+}
+.node-summary .facts { margin-bottom: 0; }
+.node-summary .muted { margin: 8px 0 0; font-size: 11px; }
+
+/* A node's structured output. Wider key column than .facts: these are field
+   names from the design, not the handful of fixed labels the run panel has,
+   and truncating them loses the thing being looked up. */
+.output-facts { grid-template-columns: 130px 1fr; }
+.output-facts dd { white-space: pre-wrap; color: var(--text); }

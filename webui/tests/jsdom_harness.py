@@ -71,9 +71,14 @@ El.prototype.append = function () {
   for (var i = 0; i < arguments.length; i++) this._children.push(arguments[i]);
   this.childElementCount = this._children.length;
 };
+// Takes its arguments, as the real one does. Ignoring them made every panel
+// that renders with replaceChildren(node) look EMPTY to a test, so the only
+// assertions possible were about panels built with append() -- which is why
+// the inspector had none.
 El.prototype.replaceChildren = function () {
   this._children = [];
-  this.childElementCount = 0;
+  for (var i = 0; i < arguments.length; i++) this._children.push(arguments[i]);
+  this.childElementCount = this._children.length;
 };
 El.prototype.remove = function () {};
 El.prototype.addEventListener = function (type) {

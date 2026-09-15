@@ -297,10 +297,18 @@ def _register(app: FastAPI) -> None:
             raise _bad("unreadable_agent", str(path), str(exc), 422)
 
         plan = editing.read_plan(runner.paths)
+        backends = _resolved_backends(runner, folder)
+        view = editing.graph_view(folder, plan)
+        # Onto the view nodes as well as in the table, so the drawing can show
+        # the model without the front end learning how roles resolve.
+        for node in view.get("nodes", []):
+            node.update(backends.get(node.get("backend", ""), {}))
+
         return {
             **document,
             "editable": path == runner.paths.agent_dir,
-            "view": editing.graph_view(folder, plan),
+            "view": view,
+            "backends": backends,
             "problems": [_problem(p) for p in validate_folder(folder)],
         }
 
@@ -376,11 +384,16 @@ def _register(app: FastAPI) -> None:
         state.setdefault("artifacts_dir", str(runner.paths.artifacts))
 
         try:
-            return editing.node_context(
+            context = editing.node_context(
                 folder, name, state=state,
                 artifacts_dir=str(runner.paths.artifacts),
                 session_dir=str(runner.paths.session),
             )
+            # Which MODEL this node's role resolves to. The role name alone
+            # does not answer "what is about to read this prompt".
+            context["resolved"] = _resolved_backends(runner, folder).get(
+                context.get("backend", ""), {})
+            return context
         except KeyError:
             raise _bad("no_node", name, f"No node named {name!r} in this agent.", 404)
 
@@ -836,6 +849,40 @@ def _detail(runner: SessionRunner, task: str = "") -> SessionDetail:
         error=runner.error,
         problems=problems,
     )
+
+
+def _resolved_backends(runner, folder) -> dict:
+    """role name -> the provider and model it actually resolves to.
+
+    A node declares a ROLE -- "coder", "checker" -- and which model that is
+    depends on config resolution, three layers of it. So the graph could tell
+    you a node runs on "coder" and nothing on the page could tell you whether
+    that was gpt-5.6-sol or gemini-3.8-flash-medium, which is the difference
+    between a careful verifier and a cheap one, and the whole reason roles are
+    separate from models.
+
+    Resolved once per request and keyed by role, not by node: two nodes on the
+    same role share an answer, and this keeps the front end from having to
+    know anything about config layering.
+    """
+    from agent.agentfolder.schema import AgentNodeConfig
+
+    cfg = load_config(repo_path=runner.paths.repo, cli=_DEFAULTS["cli_args"])
+    roles = {config.backend for config in folder.nodes.values()
+             if isinstance(config, AgentNodeConfig) and config.backend}
+
+    resolved = {}
+    for role in sorted(roles):
+        spec = backend_for(cfg, role)
+        resolved[role] = {
+            "provider": spec.provider,
+            "model": spec.model,
+            # False means "nobody named this role, it fell through to the
+            # default" -- worth showing, because that is how an experiment
+            # ends up on a model nobody chose.
+            "configured": role in cfg.roles,
+        }
+    return resolved
 
 
 def _login_allowed() -> tuple[bool, str]:

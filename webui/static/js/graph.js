@@ -146,7 +146,11 @@ function subtitle(node) {
     return node.commands?.length ? node.commands.map((c) => `/${c}`).join(' ') : 'human';
   }
   if (node.kind === 'end') return '';
-  const bits = [node.backend];
+  // Role AND model. The role name alone cannot tell you whether this node is
+  // about to run on a flagship or on the cheap tier, which for a checker is
+  // the difference between a verifier and a rubber stamp -- and it is the
+  // whole reason roles are separate from models.
+  const bits = [node.model ? `${node.backend} · ${node.model}` : node.backend];
   if (node.access === 'write') bits.push('WRITE');
   if (node.steps?.length) bits.push(`steps ${node.steps.join(',')}`);
   return bits.filter(Boolean).join(' · ');

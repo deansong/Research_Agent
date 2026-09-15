@@ -267,6 +267,8 @@ export class Inspector {
       return;
     }
 
+    box.append(nodeSummary(context));
+
     box.append(section(
       'Prompt, as the model will receive it',
       'Placeholders resolved against the session’s current state. An '
@@ -295,6 +297,19 @@ export class Inspector {
       ));
     }
 
+    // What it PRODUCED, before the templates. For a research node this is
+    // where the experiment actually lives -- which model, which dataset,
+    // which config -- and it used to be the last thing on the tab, as a JSON
+    // blob, under four sections of prompt.
+    if (Object.keys(context.last_output || {}).length) {
+      box.append(section(
+        'What it produced',
+        'Its structured output from the most recent turn. Later nodes read '
+        + 'these as {out.' + context.name + '.<field>}.',
+        outputTable(context.last_output),
+      ));
+    }
+
     box.append(section(
       `Its own steps  ({my_steps})`,
       'Given in full. Everything else in the plan it sees as one line each.',
@@ -310,11 +325,6 @@ export class Inspector {
         `${context.thread_key.template}  →  ${context.thread_key.rendered || '(empty)'}`,
         null,
       ));
-    }
-
-    if (Object.keys(context.last_output || {}).length) {
-      box.append(section('Last output', 'What this node returned most recently.',
-                         pre(JSON.stringify(context.last_output, null, 2))));
     }
 
     this.context.replaceChildren(box);
@@ -486,6 +496,82 @@ function pre(text) {
   element.textContent = text;
   return element;
 }
+
+/**
+ * The header of the Context tab: what this node IS, in one glance.
+ *
+ * The role name was the only backend fact on the page, and it cannot tell you
+ * what is about to read the prompt below. "checker" resolving to a cheap
+ * model rather than a careful one is the difference between a verifier and a
+ * rubber stamp, and it is invisible until you go and read three config files.
+ */
+function nodeSummary(context) {
+  const resolved = context.resolved || {};
+  const model = resolved.model
+    ? `${resolved.provider}/${resolved.model}`
+    : '(unresolved)';
+
+  const rows = {
+    'runs on': `${context.backend || '(no role)'}  →  ${model}`,
+    access: context.access || '',
+  };
+  // The TITLES where we have them: "1.3 Base-model baseline" says what this
+  // node is for, and "steps 1.3" does not. This is the line that connects a
+  // node name the designer invented back to the plan a person approved.
+  if (context.step_titles?.length) {
+    rows['plan steps'] = context.step_titles.join('\n');
+  } else if (context.steps?.length) {
+    rows['plan steps'] = context.steps.join(', ');
+  }
+  if (context.output?.length) {
+    rows['must return'] = context.output.map((f) => f.name).join(', ');
+  }
+
+  const box = document.createElement('div');
+  box.className = 'subsection node-summary';
+  const list = document.createElement('dl');
+  list.className = 'facts';
+  for (const [key, value] of Object.entries(rows)) {
+    const dt = document.createElement('dt');
+    dt.textContent = key;
+    const dd = document.createElement('dd');
+    dd.textContent = value;
+    dd.title = value;
+    if (value.includes('\n')) dd.style.setProperty('white-space', 'pre-wrap');
+    list.append(dt, dd);
+  }
+  box.append(list);
+
+  // Said out loud, because a role nobody configured silently takes the
+  // default -- which is how an experiment ends up on a model nobody chose.
+  if (resolved.model && resolved.configured === false) {
+    const note = document.createElement('p');
+    note.className = 'muted';
+    note.textContent = `Nothing configures "${context.backend}", so it falls `
+      + `back to the default. Set it in <repo>/.agent/config.json.`;
+    box.append(note);
+  }
+  return box;
+}
+
+/** A node's structured output as fields, not as a JSON blob. */
+function outputTable(output) {
+  const list = document.createElement('dl');
+  list.className = 'facts output-facts';
+  for (const [key, value] of Object.entries(output)) {
+    const dt = document.createElement('dt');
+    dt.textContent = key;
+    const dd = document.createElement('dd');
+    // Objects and lists still want JSON; strings must NOT be quoted, because
+    // a path or a config summary is what somebody is here to read.
+    dd.textContent = typeof value === 'string'
+      ? value
+      : JSON.stringify(value, null, 2);
+    list.append(dt, dd);
+  }
+  return list;
+}
+
 
 function section(title, hint, body) {
   const box = document.createElement('div');

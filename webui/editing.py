@@ -298,6 +298,16 @@ def graph_view(folder, plan: dict | None = None) -> dict:
 # ---------------------------------------------------------------------------
 
 
+def _step_titles(plan: dict, ids: list[str]) -> list[str]:
+    """"1.3 Base-model baseline" for each step or substep a node owns."""
+    wanted, titles = set(ids), []
+    for step in (plan or {}).get("steps", []):
+        for entry in (step, *(step.get("substeps") or [])):
+            if str(entry.get("id")) in wanted:
+                titles.append(f"{entry['id']} {entry.get('title', '')}".strip())
+    return titles
+
+
 def node_context(folder, name: str, *, state: dict, artifacts_dir: str = "",
                  session_dir: str = "") -> dict:
     """The prompt a node will really receive, rendered against current state.
@@ -351,6 +361,11 @@ def node_context(folder, name: str, *, state: dict, artifacts_dir: str = "",
                                         context)},
         },
         "my_steps": steps_for(plan, list(config.steps)),
+        # The titles alone, for the summary header. "steps 1.3" says nothing
+        # about what a node is FOR; "1.3 Base-model baseline" does, and it is
+        # the one line that connects a node name somebody's designer invented
+        # back to the plan a person approved.
+        "step_titles": _step_titles(plan, list(config.steps)),
         "plan_outline": outline(plan),
         "thread_key": {"template": config.thread_key,
                        "rendered": render(config.thread_key, context)},

@@ -398,3 +398,98 @@ def test_the_login_panel_shows_the_link_and_the_code():
     assert after["errorHidden"] is False and after["error"] == "Not logged in."
     assert after["cancelHidden"] is True, "offered to cancel something already over"
     print("PASS  link and code shown, and a finished flow stops offering Cancel")
+
+
+def test_the_node_summary_names_the_model_not_just_the_role():
+    """The complaint this fixes: the page showed a node ran on "coder" and
+    nothing anywhere said whether that was a flagship or the cheap tier.
+
+    For a checker that is the difference between a verifier and a rubber
+    stamp, and it is the whole reason roles are separate from models.
+    """
+    try:
+        import quickjs  # noqa: F401
+    except ImportError:  # pragma: no cover
+        pytest.skip("quickjs not installed")
+    from jsdom_harness import exercise
+
+    result = exercise("""
+      var inspector = new __ns.Inspector({ onSave() {}, onSelectSteps() {} });
+      inspector.showContext({
+        name: 'run_method', kind: 'agent', backend: 'runner', access: 'write',
+        steps: ['3.1'],
+        step_titles: ['3.1 LoRA r=16, seeds 0-2'],
+        output: [{name: 'results_path'}, {name: 'summary'}],
+        resolved: {provider: 'antigravity', model: 'gemini-3.8-flash-medium',
+                   configured: false},
+        prompts: {first: {template: 'x', rendered: 'run Qwen2.5-7B on sst2'},
+                  next: {template: '', rendered: ''}},
+        instructions: 'i', appended_instructions: '',
+        my_steps: '3.1 our method', plan_outline: '1. Code',
+        thread_key: {template: '', rendered: ''},
+        last_output: {
+          results_path: 'artifacts/lora16/seed0.json',
+          summary: 'Qwen2.5-7B, sst2, lr 2e-4, 3 seeds',
+        },
+      });
+
+      function text(el) {
+        var out = el.textContent || '';
+        for (var i = 0; i < el._children.length; i++) out += ' ' + text(el._children[i]);
+        return out;
+      }
+      return { shown: text(document.getElementById('tab-context')) };
+    """)
+
+    shown = result["shown"]
+    assert "runner" in shown, "the role is still named"
+    assert "antigravity/gemini-3.8-flash-medium" in shown, \
+        "the resolved model is not on the page"
+    # A role nobody configured silently takes the default -- which is how an
+    # experiment ends up on a model nobody chose.
+    assert "falls back to the default" in shown, "an unconfigured role says so"
+    # The step TITLE, not just its id: "steps 3.1" says nothing about what the
+    # node is for, and the id is the only link back to the approved plan.
+    assert "3.1 LoRA r=16, seeds 0-2" in shown, "the plan step title is missing"
+    print("PASS  a node says which model it runs on, and whether anyone chose it")
+
+
+def test_a_nodes_output_is_shown_as_fields_not_a_json_blob():
+    """Where a research node's experiment actually lives -- which model, which
+    dataset, which config. It used to be the last thing on the tab, JSON, under
+    four sections of prompt."""
+    try:
+        import quickjs  # noqa: F401
+    except ImportError:  # pragma: no cover
+        pytest.skip("quickjs not installed")
+    from jsdom_harness import exercise
+
+    result = exercise("""
+      var inspector = new __ns.Inspector({ onSave() {}, onSelectSteps() {} });
+      inspector.showContext({
+        name: 'design_experiments', kind: 'agent', backend: 'coder',
+        access: 'write', steps: ['2.1'], output: [{name: 'summary'}],
+        resolved: {provider: 'codex', model: 'gpt-5.6-sol', configured: true},
+        prompts: {first: {template: 'x', rendered: 'y'},
+                  next: {template: '', rendered: ''}},
+        instructions: 'i', appended_instructions: '',
+        my_steps: '', plan_outline: '',
+        thread_key: {template: '', rendered: ''},
+        last_output: {summary: 'Qwen2.5-7B on sst2, seeds 0-2', seeds: [0, 1, 2]},
+      });
+      function text(el) {
+        var out = el.textContent || '';
+        for (var i = 0; i < el._children.length; i++) out += ' ' + text(el._children[i]);
+        return out;
+      }
+      return { shown: text(document.getElementById('tab-context')) };
+    """)
+
+    shown = result["shown"]
+    assert "Qwen2.5-7B on sst2, seeds 0-2" in shown
+    # Unquoted: a path or a config summary is what somebody is here to read,
+    # and JSON.stringify would wrap it in quotes and escape it.
+    assert '"Qwen2.5-7B' not in shown, "a string value was JSON-quoted"
+    # Pretty-printed JSON indents with NEWLINES, so strip all whitespace.
+    assert "[0,1,2]" in "".join(shown.split()), "a list still renders as JSON"
+    print("PASS  a node's output reads as fields, with strings unquoted")

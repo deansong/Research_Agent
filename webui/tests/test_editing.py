@@ -715,3 +715,74 @@ def test_unknown_step_ids_are_surfaced():
 
 if __name__ == "__main__":
     sys.exit(pytest.main([__file__, "-q"]))
+
+
+def test_a_node_reports_which_model_its_role_resolves_to():
+    """The complaint this answers: the graph said a node ran on "coder" and
+    nothing on the page said whether that was a flagship or the cheap tier.
+
+    A role is resolved through three config layers, so the front end cannot
+    work it out -- the server has to say. Asserted on BOTH shapes it is served
+    in: the table, and on each drawable node, because the graph draws from the
+    view and the inspector reads the table.
+    """
+    with temp_repo() as tmp:
+        repo = pathlib.Path(tmp)
+        client = _client(repo)
+        sid = _session_with_an_agent(client, repo)
+
+        document = client.get(f"/api/sessions/{sid}/agent").json()
+
+        backends = document["backends"]
+        assert backends, "no roles resolved at all"
+        for role, spec in backends.items():
+            assert spec["provider"], role
+            assert spec["model"], f"{role} resolved to no model"
+            assert "configured" in spec, f"{role} does not say if anyone chose it"
+
+        agents = [n for n in document["view"]["nodes"] if n.get("backend")]
+        assert agents, "no agent nodes in the view"
+        for node in agents:
+            assert node.get("model"), f"{node['id']} carries no model"
+            assert node["model"] == backends[node["backend"]]["model"]
+        print("PASS  every node says which provider and model it resolves to")
+
+
+def test_the_node_context_resolves_its_own_model_too():
+    """The inspector reads this endpoint, not the agent document."""
+    with temp_repo() as tmp:
+        repo = pathlib.Path(tmp)
+        client = _client(repo)
+        sid = _session_with_an_agent(client, repo)
+
+        document = client.get(f"/api/sessions/{sid}/agent").json()
+        name = next(n for n, cfg in document["nodes"].items() if "backend" in cfg)
+
+        context = client.get(f"/api/sessions/{sid}/nodes/{name}/context").json()
+
+        assert context["resolved"]["provider"], context.get("resolved")
+        assert context["resolved"]["model"], context.get("resolved")
+        print("PASS  the node context endpoint resolves the node's model")
+
+
+def test_the_node_context_carries_its_plan_step_titles():
+    """"steps 1.3" does not say what a node is for. The title does, and it is
+    the only thing connecting a node name the designer invented back to the
+    plan a person approved."""
+    with temp_repo() as tmp:
+        repo = pathlib.Path(tmp)
+        client = _client(repo)
+        sid = _session_with_an_agent(client, repo)
+
+        document = client.get(f"/api/sessions/{sid}/agent").json()
+        owner = next((n for n, cfg in document["nodes"].items() if cfg.get("steps")), None)
+        assert owner, "no node owns a plan step"
+
+        context = client.get(f"/api/sessions/{sid}/nodes/{owner}/context").json()
+        titles = context["step_titles"]
+
+        assert titles, f"{owner} owns {document['nodes'][owner]['steps']} and got no titles"
+        for title, step_id in zip(titles, document["nodes"][owner]["steps"]):
+            assert title.startswith(step_id), (title, step_id)
+            assert title != step_id, "the id with no title is not a title"
+        print("PASS  a node's plan steps arrive with their titles")
