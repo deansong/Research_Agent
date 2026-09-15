@@ -24,6 +24,7 @@ sys.path.insert(0, str(pathlib.Path(__file__).resolve().parents[2]))
 
 from fastapi.testclient import TestClient  # noqa: E402
 
+from webui.tests.conftest import temp_repo  # noqa: E402
 from webui import server  # noqa: E402
 
 TIMEOUT = 20.0
@@ -93,7 +94,7 @@ def test_a_relative_repo_is_taken_from_the_launched_repo_not_the_cwd():
     """
     import os
 
-    with tempfile.TemporaryDirectory() as tmp:
+    with temp_repo() as tmp:
         root = pathlib.Path(tmp)
         project = root / "projectA"
         elsewhere = root / "elsewhere"
@@ -118,7 +119,7 @@ def test_a_relative_repo_is_taken_from_the_launched_repo_not_the_cwd():
 
 def test_an_absolute_repo_is_honoured_as_typed():
     """One server, several projects -- so an absolute path must win."""
-    with tempfile.TemporaryDirectory() as tmp:
+    with temp_repo() as tmp:
         root = pathlib.Path(tmp)
         launched, other = root / "launched", root / "other"
         launched.mkdir()
@@ -143,7 +144,7 @@ def test_a_missing_repo_says_which_path_and_what_exists_nearby():
     not on screen. And for a path that does not exist, the sibling names are
     almost always the answer, because the mistake is nearly always a typo.
     """
-    with tempfile.TemporaryDirectory() as tmp:
+    with temp_repo() as tmp:
         root = pathlib.Path(tmp)
         (root / "launched").mkdir()
         (root / "emotion_analysis").mkdir()
@@ -166,7 +167,7 @@ def test_a_missing_repo_says_which_path_and_what_exists_nearby():
 
 def test_a_file_given_as_a_repo_says_so():
     """The other way to reach bad_repo, with a different fix."""
-    with tempfile.TemporaryDirectory() as tmp:
+    with temp_repo() as tmp:
         root = pathlib.Path(tmp)
         (root / "launched").mkdir()
         (root / "notes.txt").write_text("hello")
@@ -189,7 +190,7 @@ def test_pointing_the_repo_at_dot_agent_is_refused():
     with the agent's read and write access aimed at its own checkpoint and
     definition. Refused rather than warned for that reason.
     """
-    with tempfile.TemporaryDirectory() as tmp:
+    with temp_repo() as tmp:
         root = pathlib.Path(tmp)
         (root / "launched").mkdir()
         dot_agent = root / "myproject" / ".agent"
@@ -212,7 +213,7 @@ def test_pointing_the_repo_at_dot_agent_is_refused():
 
 def test_an_empty_task_says_what_to_do_about_it():
     """The message a first-time user actually hits."""
-    with tempfile.TemporaryDirectory() as tmp:
+    with temp_repo() as tmp:
         root = pathlib.Path(tmp)
         client = _client(root)
         response = client.post("/api/sessions", json={"repo": str(root), "task": ""})
@@ -225,7 +226,7 @@ def test_an_empty_task_says_what_to_do_about_it():
 def test_defaults_endpoint_reports_the_launched_repo():
     """The browser prefills its field from this, so a "." never reaches the
     server from the UI in the first place."""
-    with tempfile.TemporaryDirectory() as tmp:
+    with temp_repo() as tmp:
         project = pathlib.Path(tmp) / "projectA"
         project.mkdir()
         client = _client(project)
@@ -243,7 +244,7 @@ def test_defaults_endpoint_reports_the_launched_repo():
 
 
 def test_plan_round_trips_and_validates():
-    with tempfile.TemporaryDirectory() as tmp:
+    with temp_repo() as tmp:
         repo = pathlib.Path(tmp)
         client = _client(repo)
         sid = client.post("/api/sessions", json={
@@ -282,7 +283,7 @@ def test_a_check_and_a_gate_survive_the_round_trip():
     disk, because /approve re-reads plan.json and the designer reads it from
     there.
     """
-    with tempfile.TemporaryDirectory() as tmp:
+    with temp_repo() as tmp:
         repo = pathlib.Path(tmp)
         client = _client(repo)
         sid = client.post("/api/sessions", json={
@@ -318,7 +319,7 @@ def test_a_malformed_plan_is_refused_rather_than_written():
     """Refusing here is safe -- a plan has no half-finished state to pass
     through -- and the alternative is a session whose plan.json cannot be read
     back by the graph that needs it."""
-    with tempfile.TemporaryDirectory() as tmp:
+    with temp_repo() as tmp:
         repo = pathlib.Path(tmp)
         client = _client(repo)
         sid = client.post("/api/sessions", json={
@@ -344,7 +345,7 @@ def test_a_malformed_plan_is_refused_rather_than_written():
 def test_duplicate_step_ids_are_a_warning_not_a_refusal():
     """Nothing in the agent checks this, and steps_for() would silently hand a
     node both steps -- so the editor is the only place it can be surfaced."""
-    with tempfile.TemporaryDirectory() as tmp:
+    with temp_repo() as tmp:
         repo = pathlib.Path(tmp)
         client = _client(repo)
         sid = client.post("/api/sessions", json={
@@ -380,7 +381,7 @@ def test_agent_round_trips_byte_for_byte():
     which the loader then rejects -- so the agent you just saved will not load.
     Nothing else in the test suite would notice.
     """
-    with tempfile.TemporaryDirectory() as tmp:
+    with temp_repo() as tmp:
         repo = pathlib.Path(tmp)
         client = _client(repo)
         sid = _session_with_an_agent(client, repo)
@@ -421,7 +422,7 @@ def test_the_shipped_agent_round_trips_unchanged():
     source = storage.builtin_agents_dir() / "default"
     before = {p.name: p.read_text() for p in sorted(source.glob("*.json"))}
 
-    with tempfile.TemporaryDirectory() as tmp:
+    with temp_repo() as tmp:
         target = pathlib.Path(tmp) / "agent"
         target.mkdir()
         for name, text in before.items():
@@ -442,7 +443,7 @@ def test_the_shipped_agent_round_trips_unchanged():
 
 
 def test_editing_a_node_parameter_takes_effect():
-    with tempfile.TemporaryDirectory() as tmp:
+    with temp_repo() as tmp:
         repo = pathlib.Path(tmp)
         client = _client(repo)
         sid = _session_with_an_agent(client, repo)
@@ -469,7 +470,7 @@ def test_deleting_a_node_saves_but_reports_the_damage():
     unreachable, so refusing to SAVE those makes the editor unusable. Running is
     what is gated -- cli.py already refuses a folder with blocking problems.
     """
-    with tempfile.TemporaryDirectory() as tmp:
+    with temp_repo() as tmp:
         repo = pathlib.Path(tmp)
         client = _client(repo)
         sid = _session_with_an_agent(client, repo)
@@ -501,7 +502,7 @@ def test_deleting_a_node_saves_but_reports_the_damage():
 def test_a_structurally_unreadable_agent_is_refused():
     """Problems are saveable; nonsense is not. A node kind of "wizard" is not a
     state you can be halfway through -- it is a bug in the client."""
-    with tempfile.TemporaryDirectory() as tmp:
+    with temp_repo() as tmp:
         repo = pathlib.Path(tmp)
         client = _client(repo)
         sid = _session_with_an_agent(client, repo)
@@ -520,7 +521,7 @@ def test_a_structurally_unreadable_agent_is_refused():
 
 
 def test_validate_endpoint_does_not_write():
-    with tempfile.TemporaryDirectory() as tmp:
+    with temp_repo() as tmp:
         repo = pathlib.Path(tmp)
         client = _client(repo)
         sid = _session_with_an_agent(client, repo)
@@ -556,7 +557,7 @@ def test_adding_a_node_and_wiring_it_in_ends_valid():
 
     The sequence is the one the Wiring panel performs, in the same order.
     """
-    with tempfile.TemporaryDirectory() as tmp:
+    with temp_repo() as tmp:
         repo = pathlib.Path(tmp)
         client = _client(repo)
         sid = _session_with_an_agent(client, repo)
@@ -613,7 +614,7 @@ def test_adding_a_node_and_wiring_it_in_ends_valid():
 def test_an_edge_into_a_human_node_without_an_ask_is_reported():
     """The failure this catches is silent and confusing: the run stops at a
     human node with no question to show, so the UI just sits there."""
-    with tempfile.TemporaryDirectory() as tmp:
+    with temp_repo() as tmp:
         repo = pathlib.Path(tmp)
         client = _client(repo)
         sid = _session_with_an_agent(client, repo)
@@ -642,7 +643,7 @@ def test_graph_view_includes_human_command_edges():
     Their exits are slash commands, and those live in nodes.json -- the same
     reason validate.py's reachability walk has to read both files.
     """
-    with tempfile.TemporaryDirectory() as tmp:
+    with temp_repo() as tmp:
         repo = pathlib.Path(tmp)
         client = _client(repo)
         sid = _session_with_an_agent(client, repo)
@@ -664,7 +665,7 @@ def test_node_context_renders_placeholders_and_shows_appended_rules():
     instructions are longer than its file, because the compiler appends the
     working rules so a generated agent cannot opt out of them.
     """
-    with tempfile.TemporaryDirectory() as tmp:
+    with temp_repo() as tmp:
         repo = pathlib.Path(tmp)
         client = _client(repo)
         sid = _session_with_an_agent(client, repo)
@@ -695,7 +696,7 @@ def test_node_context_renders_placeholders_and_shows_appended_rules():
 def test_unknown_step_ids_are_surfaced():
     """steps_for() drops an id it does not recognise, without a word. Nothing in
     the agent checks it, so the editor is the only chance to notice."""
-    with tempfile.TemporaryDirectory() as tmp:
+    with temp_repo() as tmp:
         repo = pathlib.Path(tmp)
         client = _client(repo)
         sid = _session_with_an_agent(client, repo)

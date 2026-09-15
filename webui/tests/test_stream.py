@@ -25,6 +25,7 @@ import pytest
 os.environ.setdefault("LANGGRAPH_STRICT_MSGPACK", "true")
 sys.path.insert(0, str(pathlib.Path(__file__).resolve().parents[2]))
 
+from webui.tests.conftest import temp_repo  # noqa: E402
 from webui import server  # noqa: E402
 
 
@@ -150,7 +151,7 @@ def test_sse_headers_and_framing():
     nginx, which buffers text/event-stream by default and turns a live feed into
     one enormous delivery at the very end.
     """
-    with tempfile.TemporaryDirectory() as tmp:
+    with temp_repo() as tmp:
         folder = pathlib.Path(tmp)
         with _Server(folder) as live:
             session_id = _run_to_a_question(live, folder)
@@ -187,7 +188,7 @@ def test_reconnecting_with_last_event_id_loses_nothing_and_repeats_nothing():
     back in a Last-Event-ID header. If the server ignores that, every dropped
     connection silently swallows however many events went past in the meantime.
     """
-    with tempfile.TemporaryDirectory() as tmp:
+    with temp_repo() as tmp:
         folder = pathlib.Path(tmp)
         with _Server(folder) as live:
             session_id = _run_to_a_question(live, folder)
@@ -218,7 +219,7 @@ def test_a_late_subscriber_gets_the_whole_history():
     This is the ordinary case, not an edge case: you start a long run, go and
     make tea, and come back to a browser that has to catch up.
     """
-    with tempfile.TemporaryDirectory() as tmp:
+    with temp_repo() as tmp:
         folder = pathlib.Path(tmp)
         with _Server(folder) as live:
             session_id = _run_to_a_question(live, folder)

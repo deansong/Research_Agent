@@ -24,6 +24,7 @@ sys.path.insert(0, str(pathlib.Path(__file__).resolve().parents[2]))
 
 from fastapi.testclient import TestClient  # noqa: E402
 
+from webui.tests.conftest import temp_repo  # noqa: E402
 from webui import server  # noqa: E402
 
 #: How long to wait for the worker thread to reach its next question. Generous
@@ -83,7 +84,7 @@ def test_a_whole_session_over_http():
     thread, the answer queue, the interrupt/resume cycle and the two-phase
     handoff all work through HTTP exactly as they do through the terminal.
     """
-    with tempfile.TemporaryDirectory() as tmp:
+    with temp_repo() as tmp:
         repo = pathlib.Path(tmp)
         client = _client(repo)
 
@@ -154,7 +155,7 @@ def test_answering_when_nothing_asked_is_refused():
     NEXT question -- answering something nobody watched being asked. 409 rather
     than 400: it is a state conflict, and a browser retries those differently.
     """
-    with tempfile.TemporaryDirectory() as tmp:
+    with temp_repo() as tmp:
         repo = pathlib.Path(tmp)
         client = _client(repo)
         sid = client.post("/api/sessions", json={
@@ -180,7 +181,7 @@ def test_events_replay_from_a_sequence_number():
     saw. This checks the server half of that: ask for everything after seq N and
     get exactly that, with no gap and no duplicate.
     """
-    with tempfile.TemporaryDirectory() as tmp:
+    with temp_repo() as tmp:
         repo = pathlib.Path(tmp)
         client = _client(repo)
         sid = client.post("/api/sessions", json={
@@ -214,7 +215,7 @@ def test_node_prints_reach_the_stream():
     the GraphSession seam. If webui/capture.py stops working, the browser goes
     quiet during exactly the minutes you most want to watch.
     """
-    with tempfile.TemporaryDirectory() as tmp:
+    with temp_repo() as tmp:
         repo = pathlib.Path(tmp)
         client = _client(repo)
         sid = client.post("/api/sessions", json={
@@ -287,7 +288,7 @@ def test_pause_stops_the_run_and_start_resumes_it():
     the guarantee is that Start carries on from the same question rather than
     beginning again. That is the whole difference between this and /exit.
     """
-    with tempfile.TemporaryDirectory() as tmp:
+    with temp_repo() as tmp:
         repo = pathlib.Path(tmp)
         client = _client(repo)
         sid = client.post("/api/sessions", json={
@@ -317,7 +318,7 @@ def test_pause_stops_the_run_and_start_resumes_it():
 def test_pause_and_stop_are_refused_when_nothing_is_running():
     """A control that reports success while doing nothing is worse than one
     that is disabled -- so the server says so plainly."""
-    with tempfile.TemporaryDirectory() as tmp:
+    with temp_repo() as tmp:
         repo = pathlib.Path(tmp)
         client = _client(repo)
         sid = client.post("/api/sessions", json={
@@ -339,7 +340,7 @@ def test_the_running_turn_is_served_while_it_runs():
     """
     from agent import activity
 
-    with tempfile.TemporaryDirectory() as tmp:
+    with temp_repo() as tmp:
         repo = pathlib.Path(tmp)
         client = _client(repo)
         sid = client.post("/api/sessions", json={
