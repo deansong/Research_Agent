@@ -580,23 +580,40 @@ def test_every_design_phase_prompt_knows_this_is_ml_research():
                                          DISCUSSOR_INSTRUCTIONS,
                                          PLANNER_INSTRUCTIONS)
 
-    discussor = DISCUSSOR_INSTRUCTIONS.lower()
+    # Whitespace-normalised, like the designer half below and for the same
+    # reason: these are wrapped prose. This assertion set has now failed three
+    # times on a reflow that changed nothing about what the model is told --
+    # the last one split "OUT of scope" across two lines.
+    flat = lambda text: " ".join(text.lower().split())
+
+    discussor = flat(DISCUSSOR_INSTRUCTIONS)
     # The two people leave out, and the two that waste the most time.
     for essential in ("compute", "metric", "baseline", "seeds", "hardware"):
         assert essential in discussor, f"the discussor never asks about {essential}"
     assert "refute" in discussor, "a claim needs a way to be wrong"
 
-    planner = PLANNER_INSTRUCTIONS.lower()
+    planner = flat(PLANNER_INSTRUCTIONS)
     assert "reproduce the baseline first" in planner, \
         "a number you cannot reproduce is not a comparison"
-    assert "different steps" in planner, "running and analysing must split"
+    # Running and analysing are separate STAGES now, which is a stronger
+    # guarantee than the sentence that used to assert it: the plan's shape
+    # keeps them apart rather than a paragraph asking nicely. Merging them is
+    # what makes the second one quietly not happen.
+    # Anchored to the stage TABLE, by the descriptor after each name, because
+    # the bare names also appear in the worked substep example below it -- the
+    # first version of this assertion matched there and let a merged
+    # "3. Run and analyse" through.
+    for stage in ("1. code what has to be written",
+                  "2. experiment design what will be run",
+                  "3. run running it, and keeping every result",
+                  "4. analysis and report what the numbers mean"):
+        assert stage in planner, f"the planner no longer names stage {stage!r}"
     assert "seeds" in planner and "config" in planner, "the variables must be pinned"
     assert "out of scope" in planner
 
-    # Whitespace-normalised, and over the whole turn rather than one field:
-    # these are wrapped prose, and these assertions have failed twice on a
-    # reflow and once on a move between the two halves of the prompt --
-    # neither of which changed anything about what the designer is told.
+    # Over the whole turn rather than one field, because these have also
+    # failed on material moving between the instructions and the prompt --
+    # which likewise changes nothing about what the designer is told.
     designer = _designer_turn()
     assert "never overwritten" in designer, "a re-run must add a result"
     assert "per config and seed" in designer, "results are per config and seed"
