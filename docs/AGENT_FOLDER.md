@@ -451,11 +451,11 @@ Three uses a pass/fail framing misses, all from how experiments really fail:
 
 ## The research skeleton
 
-Work in this project is computer-science research, so the designer is shown a
-starting shape for it, alongside the worked example
-(`agent/bootstrap/prompts.py::research_skeleton`):
+Work in this project is machine-learning research, so the designer is shown a
+starting shape for it alongside the worked example
+(`agent/bootstrap/prompts.py::research_skeleton`).
 
-It is the **plan's four stages** as a graph, because the plan the designer is
+It is the **plan's four stages** as a graph, and the plan the designer is
 handed has the same four — so the mapping is close to mechanical:
 
 ```
@@ -482,7 +482,7 @@ A `write_*` node writes its own tests, so there is no separate test-writing
 node. Drop `setup_env` when the environment already works, and
 `write_dataloader` with `check_data` when there is no data stage.
 
-Three details in it are load-bearing:
+Four details in it are load-bearing:
 
 **One dataloader, shared.** Written once, before anything that uses it, and
 every `write_*` prompt says to use it rather than loading and splitting its
