@@ -113,7 +113,12 @@ _MINIMAL_PLAN = {
         {"id": "1", "title": "Inspect the repository",
          "detail": "Read what is there and note the conventions.",
          "substeps": [
-             {"id": "1.1", "title": "List the files", "detail": ""},
+             # A check on a SUBSTEP, so the offline path carries one through
+             # steps_for() into a node's prompt. Without it --backend fake
+             # rehearses the design phase without ever exercising the field a
+             # verifier node is built from.
+             {"id": "1.1", "title": "List the files", "detail": "",
+              "check": "the file list names the entry point"},
              {"id": "1.2", "title": "Read the entry points", "detail": ""},
          ]},
         {"id": "2", "title": "Report back to the human",

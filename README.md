@@ -128,7 +128,7 @@ hand.
     sessions/<session>/     one per task. gitignored.
         brief.txt           OPTIONAL, written by YOU — see below
         request.txt         what you asked for — identifies the session
-        plan.json           the numbered steps — EDIT ME before approving
+        plan.json           four stages, work in substeps — EDIT ME first
         brief.md            the designer's rewrite of it, for the agent
         agent/              the agent designed for this session
         artifacts/          where a run puts what it PRODUCES
@@ -553,7 +553,7 @@ python main.py promote <repo> <name>          keep this session's agent
     sessions/<session>/     gitignored  (or anywhere, with --session-dir)
         brief.txt           optional; YOUR initial idea, written by hand
         request.txt         what you asked for — identifies the session
-        plan.json           the numbered steps — EDIT ME before approving
+        plan.json           four stages, work in substeps — EDIT ME first
         brief.md            the designer's rewrite of it, for the agent
         agent/              the agent designed for this session
         artifacts/          where a run puts what it PRODUCES

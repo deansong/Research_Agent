@@ -114,15 +114,31 @@ def make_planner(backend, paths):
 
 
 def render_plan(plan: dict) -> str:
-    """The plan as a person should read it."""
+    """The plan as a person should read it, at the approval gate.
+
+    `check` and `gate` are shown, and they were not before. This is the screen
+    somebody types /approve at: the gate is the part they are being asked to
+    agree to -- it is where the run will stop and wait for them -- and the
+    check is the sentence a verifier node will be built to apply. Approving a
+    plan without seeing either means approving the two things that decide what
+    the agent does when something goes wrong.
+    """
     lines = []
     for step in plan.get("steps", []):
-        lines.append(f"  {step['id']}. {step['title']}")
+        lines.append(f"  {step['id']}. {step['title']}" + _gate_mark(step))
         if step.get("detail"):
             lines.append(f"       {step['detail']}")
+        if step.get("check"):
+            lines.append(f"       check: {step['check']}")
         for sub in step.get("substeps", []):
-            lines.append(f"       {sub['id']} {sub['title']}")
+            lines.append(f"       {sub['id']} {sub['title']}" + _gate_mark(sub))
+            if sub.get("check"):
+                lines.append(f"            check: {sub['check']}")
     return "\n".join(lines)
+
+
+def _gate_mark(step: dict) -> str:
+    return "   [human gate]" if step.get("gate") else ""
 
 
 def outline(plan: dict) -> str:

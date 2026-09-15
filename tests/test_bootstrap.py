@@ -1413,3 +1413,29 @@ def test_a_gate_on_a_whole_stage_is_satisfied_by_its_substeps_owners():
                               "substeps": [{"id": "8.1", "title": "upload"}]}]}
         assert "no node lists it" in _gate_problems(folder, nowhere)
     print("PASS  a gate on a stage is satisfied through the nodes owning its substeps")
+
+
+def test_the_approval_screen_shows_the_gates_and_the_checks():
+    """What /approve is actually approving.
+
+    The gate is where the run will STOP and wait for a person; the check is
+    the sentence a verifier node gets built to apply. Neither was shown on
+    this screen, so somebody could approve a plan without seeing the two
+    fields that decide what the agent does when something goes wrong -- and
+    with four stages the gate is nearly always on a substep.
+    """
+    from agent.bootstrap.nodes.planner import render_plan
+
+    text = render_plan({"steps": [
+        {"id": "1", "title": "Code", "substeps": [
+            {"id": "1.1", "title": "dataloader", "check": "pytest passes"}]},
+        {"id": "3", "title": "Run", "substeps": [
+            {"id": "3.1", "title": "our method", "gate": True}]},
+    ]})
+
+    assert "check: pytest passes" in text, "a substep's check is not shown"
+    assert "[human gate]" in text, "the gate is not shown"
+    # On the gated line, not floating somewhere else in the screen.
+    gated = [ln for ln in text.splitlines() if "[human gate]" in ln]
+    assert len(gated) == 1 and "our method" in gated[0], gated
+    print("PASS  the approval screen shows both gates and checks")

@@ -401,12 +401,14 @@ stage rather than one central orchestrator over twenty nodes.
 
 ### Example nodes the designer can copy
 
-A topology is not a design: `graph.json` says a node called `run_exp_a` runs an
+A topology is not a design: `graph.json` says a node called `run_method` runs an
 experiment and says nothing about what its prompt must contain for that to
 happen. So the prompt carries four complete `nodes.json` entries
-(`prompts.py::RESEARCH_NODES`) — `write_code_a`, `run_exp_a`, `check_a` and the
-`review` human node. The b, c, d triples are those with the names and steps
-changed.
+(`prompts.py::RESEARCH_NODES`) — one per SHAPE the skeleton repeats:
+`write_method` the worker, `check_method` its verifier, `run_method` the
+runner, and the `review` human node. `write_dataloader` and `write_baseline`
+are `write_method` with another subject and other `steps`; `check_data` and
+`check_baseline` are `check_method`; `run_baseline` is `run_method`.
 
 They are **validated**: `tests/test_bootstrap.py` runs them through
 `NodeProposal` (the designer's own strict output model) and then the real
@@ -415,14 +417,17 @@ every `{out.x.y}` in them names a field node `x` really declares. An exemplar
 with a broken placeholder would teach the designer to write broken
 placeholders, and its repair loop would then fight the example it was handed.
 
-Three details in them are the point:
+Four details in them are the point:
 
-- `write_code_a`'s `prompts.next` carries `{out.check_a.problem}`. Without it a
-  `redo` repeats the mistake it was never told about.
-- `run_exp_a` may not edit code; `check_a` is `read_only`. Three nodes, one job
-  each, and the judge is not whoever did the work.
-- `check_a`'s `prompts.next` is where the loop can **end** — it has its own
+- `write_method`'s `prompts.next` carries `{out.check_method.problem}`. Without
+  it a `redo` repeats the mistake it was never told about.
+- `run_method` may not edit code; `check_method` is `read_only`. Three nodes,
+  one job each, and the judge is not whoever did the work.
+- `check_method`'s `prompts.next` is where the loop can **end** — it has its own
   conversation, so a second identical complaint becomes `blocked`.
+- `write_method` is told to use the dataloader that already exists rather than
+  writing its own. A method and its baseline measured on different splits is not
+  a comparison, and nothing downstream can tell that it happened.
 
 ### Branches that are not "did it work"
 
@@ -450,30 +455,50 @@ Work in this project is computer-science research, so the designer is shown a
 starting shape for it, alongside the worked example
 (`agent/bootstrap/prompts.py::research_skeleton`):
 
+It is the **plan's four stages** as a graph, because the plan the designer is
+handed has the same four — so the mapping is close to mechanical:
+
 ```
-setup_env -> inspect_data -> write_code_a -> run_exp_a -> check_a
-                                                            |
-       ok -> write_code_b -> run_exp_b -> check_b -> report -> review
-     redo -> write_code_a          (carrying {out.check_a.problem})
-  blocked -> review
+setup_env -> write_dataloader -> check_data --ok--> design_experiments
+design_experiments -> write_method -> check_method --ok--> write_baseline
+write_baseline -> check_baseline --ok--> run_method -> run_baseline
+run_baseline -> analyse --ok--> report -> review
+
+every check_*: redo -> the node that wrote it,  blocked -> review
+analyse:       redo -> run_method (the run, not the code)
 ```
 
-One **write / run / check** triple per experiment *type*, chained
-sequentially — `check_a`'s `ok` goes to `write_code_b`, never to two nodes at
-once, because the validator refuses fan-out. `inspect_data` is dropped when
-there is no dataset; the code node writes its own tests, so there is no
-separate test-writing node.
+| stage | nodes |
+| --- | --- |
+| 1 code | `write_dataloader`, `write_method`, `write_baseline` |
+| 2 experiment design | `design_experiments` |
+| 3 run | `run_method`, `run_baseline` |
+| 4 analysis and report | `analyse`, `report` |
 
-Two details in it are load-bearing:
+One **write / check** pair per thing implemented, so each method and each
+baseline is its own node with its own context, chained sequentially — a node
+has exactly one plain outgoing edge, because the validator refuses fan-out.
+A `write_*` node writes its own tests, so there is no separate test-writing
+node. Drop `setup_env` when the environment already works, and
+`write_dataloader` with `check_data` when there is no data stage.
 
-**The retry is judged by a third node.** `write_code → run_exp → check →
-write_code`, not `write_code → run_exp → write_code`. A run node deciding
-whether its own run was any good is `self_assessment`, which the validator
-rejects at design time. `check_*` is `read_only` with no plan steps, which is
-also exactly what the missing-verifier warning looks for — so the shape
-satisfies both rules by construction.
+Three details in it are load-bearing:
 
-**Experiment runs are on their own backend role.** `run_exp_*` declares
+**One dataloader, shared.** Written once, before anything that uses it, and
+every `write_*` prompt says to use it rather than loading and splitting its
+own. This is the failure the shape exists to prevent, because it is invisible
+in the results.
+
+**The retry is judged by a separate node.** `write_method → check_method →
+write_method`, never a node routing on its own output back to itself — that is
+`self_assessment`, which the validator rejects at design time. `check_*` is
+`read_only` with no plan steps, which is also exactly what the missing-verifier
+warning looks for, so the shape satisfies both rules by construction.
+
+**Every check passes before any run starts.** A run is the expensive node, and
+a bug found inside one costs the whole run.
+
+**Experiment runs are on their own backend role.** `run_*` declares
 `"backend": "runner"` and `check_*` declares `"checker"`, separate from the
 `"coder"` that writes code. Nothing configures those roles, so they fall back
 to the default until you say otherwise:
