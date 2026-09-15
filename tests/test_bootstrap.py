@@ -1213,7 +1213,10 @@ def test_the_designer_is_told_to_split_work_across_nodes():
     assert "atomic" in lowered, "the designer must be told a node is all-or-nothing"
     assert "artefacts" in lowered or "artifacts" in lowered, \
         "the designer must be told to count what a node produces"
-    assert "one top-level step per node" in lowered, "no explicit step budget"
+    # One SUBSTEP, not one top-level step: the plan's top level is the four
+    # stages, so a node owning a bare "1" is a node doing three jobs -- which
+    # is exactly the over-stuffed node this test exists to prevent.
+    assert "one substep per node" in lowered, "no explicit step budget"
 
     # And the line that pulled the other way must be gone.
     assert "three good nodes beat eight" not in lowered, \

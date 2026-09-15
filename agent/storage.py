@@ -17,7 +17,7 @@ LAYOUT
             meta.json           schema version, so a stale session refuses
             request.txt         what YOU asked for -- identifies the session
             brief.md            the designer's rewrite of it, for the agent
-            plan.json           the numbered steps -- EDIT THIS before approving
+            plan.json           four stages, work in substeps -- EDIT before approving
             artifacts/          where a run puts its OUTPUT -- see below
             agent.tmp/          staging; renamed to agent/ only once valid
             agent/              the agent designed for this session

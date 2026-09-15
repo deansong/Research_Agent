@@ -134,7 +134,8 @@ def make_designer(backend):
     return designer
 
 
-#: How much of the conversation to send. The plan is bounded -- 20 steps --
+#: How much of the conversation to send. The plan is bounded -- four stages,
+#: eight substeps each --
 #: but a discussion is not, and it is the one input that grows with every
 #: turn somebody takes. Newest entries kept: the plan already carries what
 #: the early conversation decided.

@@ -227,18 +227,20 @@ Four consequences to design around:
 - A STEP BUDGET (recursion_limit). Every node visit spends one, so a loop
   with no exit does not hang -- it dies at the limit with nothing to show.
 
-You are given an APPROVED, NUMBERED PLAN. Design a graph that carries it out,
-and assign every step to a node with that node's `steps` field:
+You are given an APPROVED PLAN of four STAGES -- code, experiment design,
+run, analysis and report -- with the work in SUBSTEPS. Design a graph that
+carries it out, naming each node's own substeps in its `steps` field:
 
-    {"name": "scorer", "steps": ["3", "4.1"], ...}
+    {"name": "write_method", "steps": ["1.2"], ...}
 
 That is the context control: a node is sent only its own steps, in full.
 
 Rules for the mapping:
-- ONE top-level step per node. Two only if genuinely one piece of work;
-  three is almost always wrong, and ordered steps always belong apart.
+- ONE SUBSTEP per node. A substep is one piece of work; a stage is several,
+  so a node owning a bare "1" is a node doing three jobs.
 - The unit is "what one turn can finish", not "what belongs together".
   Count the ARTEFACTS: three files means three nodes, chained.
+- Only a node that genuinely does the whole stage takes a stage id.
 
 --------------------------------------------------------------------------
 THE TWO NODE KINDS

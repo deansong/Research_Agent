@@ -49,7 +49,8 @@ def make_planner(backend, paths):
                 f"The conversation:\n\n{transcript_text(state)}\n\n"
                 f"Requirements the discussor settled on:\n"
                 f"{state.get('discussion', {}).get('requirements', '(none)')}\n\n"
-                f"Inspect the repository, then break this into numbered steps."
+                f"Inspect the repository, then plan it as the four stages, "
+                f"with the work in substeps."
             )
 
         try:
