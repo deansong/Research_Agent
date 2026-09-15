@@ -1,0 +1,59 @@
+{
+  "schema_version": 1,
+  "checkpoint_role": "instruct",
+  "model": {
+    "repo_id": "Qwen/Qwen2.5-1.5B-Instruct",
+    "revision": "989aa7980e4cf806f80c7fef2b1adb7bc71aa306",
+    "architecture_family": "Qwen2.5-1.5B",
+    "transformers_model_type": "qwen2",
+    "source_architecture": "Qwen2ForCausalLM",
+    "sequence_classification_class": "Qwen2ForSequenceClassification",
+    "trust_remote_code": false
+  },
+  "tokenizer": {
+    "repo_id": "Qwen/Qwen2.5-1.5B-Instruct",
+    "revision": "989aa7980e4cf806f80c7fef2b1adb7bc71aa306",
+    "tokenizer_class": "Qwen2Tokenizer",
+    "use_fast": true,
+    "use_chat_template": false,
+    "padding": {
+      "strategy": "longest",
+      "side": "right",
+      "pad_token": "<|endoftext|>",
+      "pad_token_id": 151643,
+      "same_as_eos": true
+    }
+  },
+  "datasets": {
+    "fancyzhx/ag_news": {
+      "num_labels": 4,
+      "id2label": {
+        "0": "World",
+        "1": "Sports",
+        "2": "Business",
+        "3": "Sci/Tech"
+      },
+      "label2id": {
+        "World": 0,
+        "Sports": 1,
+        "Business": 2,
+        "Sci/Tech": 3
+      },
+      "text_column": "text",
+      "max_length": 256
+    },
+    "stanfordnlp/imdb": {
+      "num_labels": 2,
+      "id2label": {
+        "0": "negative",
+        "1": "positive"
+      },
+      "label2id": {
+        "negative": 0,
+        "positive": 1
+      },
+      "text_column": "text",
+      "max_length": 512
+    }
+  }
+}

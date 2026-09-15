@@ -193,6 +193,20 @@ def _check_access(role: str, backend_cls, spec, needed: Access) -> None:
     API?" -- no, and you find out here rather than after the discussor and
     planner have already spent tokens.
     """
+    # Checked BEFORE max_access: a backend can be able to do more and still
+    # not express this particular level, and "tops out at full access" would
+    # be a baffling thing to say about a role asking for read_only.
+    if needed in getattr(backend_cls, "unsupported_access", frozenset()):
+        raise BackendUnavailable(
+            f"Config error: role '{role}' needs {needed.value} access, and the "
+            f"'{spec.provider}' backend cannot express that level -- it can do "
+            f"more, but not exactly this.\n"
+            f"See the module docstring for what was measured.\n"
+            f"Point the role at a provider that can:\n"
+            f'    {{"roles": {{"{role}": {{"provider": "codex"}}}}}}\n'
+            f"in <repo>/.agent/config.json."
+        )
+
     if needed <= backend_cls.max_access:
         return
 

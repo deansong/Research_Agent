@@ -98,15 +98,23 @@ DEFAULT_ROLE_BACKENDS: dict[str, tuple[str, str]] = {
 
     # Running an experiment is mostly obedience -- take this command, run it,
     # put the numbers there -- so it goes to the cheapest tier that can hold a
-    # tool loop together.
-    #
-    # `checker` is the one to watch. It decides whether a run measured the
-    # right thing, which is judgement rather than obedience, and a run that
-    # finished cleanly while measuring the wrong thing is the failure it
-    # exists to catch. If it starts waving work through:
-    #     {"roles": {"checker": {"provider": "codex", "model": "gpt-5.6-sol"}}}
+    # tool loop together. A `run_*` node declares WRITE access, which is a
+    # level agy can express.
     "runner": ("antigravity", "gemini-3.8-flash-medium"),
-    "checker": ("antigravity", "gemini-3.8-flash-medium"),
+
+    # `checker` is NOT on antigravity, and this is not a preference.
+    #
+    # A verifier is read_only by design -- that is what stops the judge fixing
+    # the work it is judging, and it is how validate.py recognises a verifier
+    # at all. MEASURED: agy has no read-only setting (--sandbox refuses
+    # RunCommand, --mode plan refuses read_file, only
+    # --dangerously-skip-permissions works), so every check_* node pointed
+    # here returned SUCCESS with no answer and failed 90 seconds in. The
+    # default shipped a broken verifier in every generated research agent.
+    #
+    # See AntigravityBackend.unsupported_access, which now refuses this
+    # combination at startup rather than mid-turn.
+    "checker": ("codex", "gpt-5.6-sol"),
 }
 
 # LangGraph raises GraphRecursionError after this many super-steps in one

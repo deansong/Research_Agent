@@ -16,6 +16,8 @@ import inspect
 import pathlib
 import sys
 
+import pytest
+
 sys.path.insert(0, str(pathlib.Path(__file__).resolve().parents[1]))
 
 from agent.backends import PROVIDERS, STUB_PROVIDERS, _load
@@ -121,8 +123,10 @@ def test_the_default_model_is_pinned_and_split_by_role():
     assert where("coder") == ("codex", "gpt-5.6-sol"), where("coder")
 
     # Running an experiment is mostly obedience, so it goes to the cheap tier.
-    for role in ("runner", "checker"):
-        assert where(role) == ("antigravity", "gemini-3.8-flash-medium"), role
+    # `runner` only: a check_* node is read_only, and agy cannot express that
+    # level -- see test_the_checker_default_is_not_a_provider_that_cannot_verify.
+    assert where("runner") == ("antigravity", "gemini-3.8-flash-medium")
+    assert where("checker") == ("codex", "gpt-5.6-sol"), where("checker")
 
     # Anything with no entry falls through to the global default.
     assert where("orchestrator") == ("codex", DEFAULT_MODEL)
@@ -194,8 +198,13 @@ def test_a_named_role_beats_the_seeded_provider():
     cfg, _ = _resolved(backend_role=["designer=antigravity:gemini-3.1-pro-high"])
     spec = backend_for(cfg, "designer")
     assert (spec.provider, spec.model) == ("antigravity", "gemini-3.1-pro-high")
-    # and it does not disturb its neighbours
-    assert backend_for(cfg, "planner").provider == "claude_code"
+    # And it does not disturb its neighbours. Read from the table rather than
+    # hardcoded: what this test is about is that overriding ONE role leaves
+    # the others alone, and pinning the literal here made it fail whenever
+    # somebody changed a default it was not testing. The literals belong in
+    # test_the_default_model_is_pinned_and_split_by_role, which exists for it.
+    from agent.config import DEFAULT_ROLE_BACKENDS
+    assert backend_for(cfg, "planner").provider == DEFAULT_ROLE_BACKENDS["planner"][0]
     print("PASS  --backend-role overrides one role and only that role")
 
 
@@ -1043,3 +1052,77 @@ if __name__ == "__main__":
         if name.startswith("test_"):
             fn()
     print("\nAll backend tests passed.")
+
+
+# ---- a backend that cannot express a level in the MIDDLE of its range ------
+
+
+def test_a_read_only_role_is_refused_on_antigravity_at_startup():
+    """The failure this replaces cost 90 seconds and 45,000 tokens per node.
+
+    MEASURED: `agy` has no read-only setting. --sandbox refuses RunCommand,
+    --mode plan refuses read_file, and only --dangerously-skip-permissions
+    works. So a node declared read_only got a turn that could do nothing and
+    came back SUCCESS with no structured_output -- discovered mid-run, once
+    per verifier, in a graph that usually has four of them.
+
+    max_access could not catch it, because access is not monotonic here:
+    antigravity can do FULL and still not do READ_ONLY.
+    """
+    from agent.backends import build_backends
+    from agent.backends.base import Access, BackendUnavailable
+    from agent.config import AgentConfig, BackendConfig
+
+    cfg = AgentConfig(
+        default=BackendConfig(provider="codex", model="m"),
+        roles={"checker": BackendConfig(provider="antigravity", model="m")},
+    )
+
+    with pytest.raises(BackendUnavailable) as caught:
+        build_backends(cfg, {"checker": Access.READ_ONLY})
+
+    message = str(caught.value)
+    assert "checker" in message, "say WHICH role"
+    assert "read_only" in message, "say which level"
+    assert "config.json" in message, "say where the fix goes"
+    # And not the max_access wording, which would be nonsense here: the
+    # backend can do MORE than read_only, just not exactly it.
+    assert "tops out at" not in message, message
+    print("PASS  a read_only role on antigravity is refused before a turn runs")
+
+
+def test_antigravity_still_serves_the_levels_it_can():
+    """The refusal must be surgical. `runner` declares write access and is
+    the reason antigravity is configured at all."""
+    from agent.backends import build_backends
+    from agent.backends.base import Access
+    from agent.config import AgentConfig, BackendConfig
+
+    cfg = AgentConfig(
+        default=BackendConfig(provider="codex", model="m"),
+        roles={"runner": BackendConfig(provider="antigravity",
+                                       model="gemini-3.8-flash-medium")},
+    )
+
+    built = build_backends(cfg, {"runner": Access.WRITE})
+
+    assert built["runner"].name == "antigravity"
+    print("PASS  write access on antigravity is untouched")
+
+
+def test_the_checker_default_is_not_a_provider_that_cannot_verify():
+    """The default shipped a broken verifier in every generated research
+    agent: `checker` pointed at antigravity, and every check_* node a designer
+    produces is read_only."""
+    from agent.backends import PROVIDERS, _load
+    from agent.backends.base import Access
+    from agent.config import DEFAULT_ROLE_BACKENDS
+
+    provider, _model = DEFAULT_ROLE_BACKENDS["checker"]
+    cls = _load(provider)
+
+    assert Access.READ_ONLY not in getattr(cls, "unsupported_access", frozenset()), (
+        f"checker defaults to {provider!r}, which cannot express read_only -- "
+        f"so every verifier in a generated agent would fail mid-run"
+    )
+    print(f"PASS  the checker default ({provider}) can actually run a verifier")

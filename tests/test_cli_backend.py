@@ -272,18 +272,36 @@ def _agy():
 
 def test_antigravity_access_maps_to_flags(capsys):
     """A mis-mapped access is a node declared read_only that edits your
-    repository. This is the cheapest possible test for it."""
+    repository. This is the cheapest possible test for it.
+
+    READ_ONLY is absent on purpose: `agy` cannot express it, so
+    `unsupported_access` refuses the combination at startup and it never
+    reaches access_flags. NONE still maps to --sandbox, and for NONE that is
+    the honest mapping -- a node declared `none` is asking for a turn that
+    touches nothing.
+    """
     backend = _agy()
     dangerous = "--dangerously-skip-permissions"
 
-    for access in (Access.NONE, Access.READ_ONLY):
-        flags = backend.access_flags(access)
-        assert flags == ["--sandbox"], (access, flags)
-        assert dangerous not in flags
+    assert backend.access_flags(Access.NONE) == ["--sandbox"]
 
     for access in (Access.WRITE, Access.FULL):
         assert backend.access_flags(access) == [dangerous], access
     print("PASS  only write and full reach --dangerously-skip-permissions")
+
+
+def test_read_only_never_reaches_antigravitys_flag_mapping():
+    """The guard and the mapping have to agree.
+
+    If READ_ONLY were ever dropped from `unsupported_access` it would fall
+    through to the `write`/`full` branch below and silently run a VERIFIER
+    with --dangerously-skip-permissions -- a judge with write access to the
+    work it is judging. Better that the two facts are asserted together.
+    """
+    from agent.backends.antigravity import AntigravityBackend
+
+    assert Access.READ_ONLY in AntigravityBackend.unsupported_access
+    print("PASS  read_only is refused before it can reach a flag")
 
 
 def test_antigravity_says_when_it_skips_permissions(capsys):

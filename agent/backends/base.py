@@ -182,6 +182,25 @@ class AgentBackend(Protocol):
     that needs more than this -- e.g. the executor needs WRITE, so it cannot
     be served by a backend whose max_access is NONE."""
 
+    unsupported_access: frozenset  # frozenset[Access]
+    """Levels this backend cannot express, even though max_access allows more.
+
+    max_access assumes access is MONOTONIC -- that a backend able to do more
+    can also do less.  Antigravity breaks that: `agy` has no setting between
+    --dangerously-skip-permissions and refusing every tool call, so it can do
+    FULL but not READ_ONLY.  Measured three ways: --sandbox refuses
+    RunCommand, --mode plan refuses read_file, and only skip-permissions
+    works.
+
+    Without this the hole is invisible until a turn is already running, and
+    what comes back is a SUCCESS envelope with no answer -- 90 seconds and
+    45,000 tokens spent to discover a configuration mistake.  Declaring it
+    turns that into one line at startup, naming the role.
+
+    Optional: `getattr(cls, "unsupported_access", frozenset())` everywhere it
+    is read, so a backend written before this existed still conforms.
+    """
+
     def run_structured(
         self,
         *,

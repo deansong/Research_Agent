@@ -41,22 +41,35 @@ was told -- would take a long time to trace back here.
 --------------------------------------------------------------------------
 ACCESS, AND WHY THERE IS NO MIDDLE SETTING
 --------------------------------------------------------------------------
-Measured with one prompt and three flag sets, in `-p` mode:
+Measured with one prompt and every flag set agy offers, in `-p` mode. The
+last row was added after a real run failed on it:
 
     --sandbox                       run a command: DENIED   read a file: DENIED
     --mode accept-edits             run a command: DENIED
     --dangerously-skip-permissions  run a command: works    read a file: works
+    --mode plan                     read a file: DENIED
+                                    (denied_actions: read_file / ListDir)
 
-So on this CLI, in print mode, a node that must touch the filesystem at all
-needs --dangerously-skip-permissions. There is no read-only-with-file-access
-setting to map READ_ONLY onto. The node's declared `access` in nodes.json
-stays the policy boundary -- it is what decides which nodes get to do this --
-and the backend prints a line naming the flag every time it uses it, because
-a silent --dangerously-skip-permissions is the one thing here that can damage
-a machine.
+`--mode plan` was the last candidate for a genuine read-only setting, and it
+is not one: it refuses reads as firmly as --sandbox refuses commands. So this
+CLI has a HOLE IN THE MIDDLE of the access range -- it can do FULL and it
+cannot do READ_ONLY -- which `max_access` cannot express, because that field
+assumes a backend able to do more can also do less.
 
-Denial is at least clean: it refuses rather than blocking, and arrives as a
-step_update with state "ERROR" and a readable tool_info.error.message.
+`unsupported_access` below is what expresses it, and build_backends refuses
+the combination at startup. Before that, every check_* verifier pointed here
+spent about 90 seconds and 45,000 tokens to return SUCCESS with no answer,
+and the shipped default put `checker` on this provider -- so every generated
+research agent had four broken verifiers in it.
+
+The node's declared `access` in nodes.json stays the policy boundary for the
+levels this backend CAN serve, and the backend prints a line naming the flag
+every time it uses --dangerously-skip-permissions, because a silent one is
+the one thing here that can damage a machine.
+
+Denial is at least clean: it refuses rather than blocking, arrives as a
+step_update with state "ERROR" and a readable tool_info.error.message, and
+the final envelope lists what was refused in `denied_actions`.
 
 --------------------------------------------------------------------------
 THE STREAM
@@ -94,6 +107,18 @@ class AntigravityBackend(CliBackend):
     #: _check_access enforces against this. Left at NONE, the research
     #: skeleton's run_exp_* nodes (which declare write) could not use it at all.
     max_access = Access.FULL
+    #: The hole in the middle. MEASURED 2026-09-15, agy 1.1.27, all three
+    #: settings, with a prompt that asks for one file to be read:
+    #:
+    #:   --sandbox                        denied_actions: RunCommand
+    #:   --mode plan                      denied_actions: read_file (ListDir)
+    #:   --dangerously-skip-permissions   works
+    #:
+    #: So there is no read-only mode: a node declared read_only would get a
+    #: turn that can do nothing, return SUCCESS with no structured_output, and
+    #: fail 90 seconds in. Declared here so build_backends refuses at startup
+    #: and names the role instead.
+    unsupported_access = frozenset({Access.READ_ONLY})
 
     def __init__(self, *, effort: str | None = None, **options):
         self.effort = effort
@@ -125,10 +150,14 @@ class AntigravityBackend(CliBackend):
         return argv + session
 
     def access_flags(self, access: Access) -> list[str]:
-        """See the module docstring: there is no middle setting."""
-        if access in (Access.NONE, Access.READ_ONLY):
-            # Cannot read files either, but that is honest: a node declared
-            # read_only gets a turn that can reason and not touch anything.
+        """See the module docstring: there is no middle setting.
+
+        READ_ONLY never reaches here -- `unsupported_access` refuses it at
+        startup. NONE still maps to --sandbox, and for NONE that IS honest: a
+        node declared `none` is asking for a turn that touches nothing, and
+        refusing every tool call is exactly that.
+        """
+        if access is Access.NONE:
             return ["--sandbox"]
 
         if not self._warned_dangerous:

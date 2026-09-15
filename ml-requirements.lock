@@ -1,0 +1,16 @@
+# Isolated dependency contract for the Qwen LoRA classifier experiment only.
+# Install in a fresh Python 3.11 virtual environment with:
+#   python -m pip install --requirement ml-requirements.lock
+#
+# Do not merge these pins into requirements.txt: that file is the application's
+# dependency contract, while this lock is deliberately experiment-specific.
+torch==2.5.1
+transformers==4.46.3
+datasets==3.1.0
+peft==0.13.2
+accelerate==1.1.1
+scikit-learn==1.5.2
+numpy==1.26.4
+pandas==2.2.3
+matplotlib==3.9.2
+seaborn==0.13.2

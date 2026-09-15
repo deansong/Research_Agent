@@ -510,8 +510,16 @@ to leave alone. From `config.py::DEFAULT_ROLE_BACKENDS`:
 | --- | --- | --- |
 | discussor, planner, designer | `claude_code` | `opus` |
 | coder | `codex` | `gpt-5.6-sol` |
-| runner, checker | `antigravity` | `gemini-3.8-flash-medium` |
+| runner | `antigravity` | `gemini-3.8-flash-medium` |
+| checker | `codex` | `gpt-5.6-sol` |
 | everything else | `codex` | `gpt-5.6-sol` |
+
+`checker` is deliberately **not** on antigravity. A `check_*` node is
+`read_only`, and `agy` has no read-only setting — measured: `--sandbox`
+refuses commands, `--mode plan` refuses reads, and only
+`--dangerously-skip-permissions` works. A verifier pointed there returned
+SUCCESS with no answer after about 90 seconds. `build_backends` now refuses
+that combination at startup rather than mid-run.
 
 The two CLI providers need their command on `PATH` and logged in — `claude`
 and `agy` — and say so at startup if not.
