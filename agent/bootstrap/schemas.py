@@ -83,6 +83,19 @@ class SubStep(StrictModel):
     title: str
     detail: str = ""
 
+    check: str = ""
+    """Same meaning as PlanStep.check, and here for a structural reason.
+
+    A plan's top level is the four STAGES of the work, so the thing a single
+    node owns -- and therefore the thing a verifier has to apply -- is a
+    substep. Without this field the check lands one level above the node that
+    has to satisfy it, and every verifier in a designed graph is left applying
+    its whole stage's check to one third of the work."""
+
+    gate: bool = False
+    """Same meaning as PlanStep.gate. A person approves a substep -- "start the
+    long training run" -- not a whole stage."""
+
 
 class PlanStep(StrictModel):
     """One numbered step of the work."""

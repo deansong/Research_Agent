@@ -142,7 +142,12 @@ export class PlanPanel {
     // person is best placed to fix. The planner writes a check from what it
     // can infer; you know the command that actually decides, and you know
     // which steps you want to be asked about before they run.
-    if (!parent) item.append(this.checkRow(step));
+    //
+    // Substeps get them too, and that is the important half: a research plan's
+    // top level is the four STAGES, so a substep is what one node owns and
+    // what one verifier applies. A check editable only on the stage is a check
+    // aimed at three nodes at once.
+    item.append(this.checkRow(step));
 
     if (!parent) {
       const subs = document.createElement('ol');
@@ -154,7 +159,7 @@ export class PlanPanel {
         step.substeps = step.substeps || [];
         step.substeps.push({
           id: `${step.id}.${step.substeps.length + 1}`,
-          title: 'New substep', detail: '',
+          title: 'New substep', detail: '', check: '', gate: false,
         });
         this.markDirty();
         this.draw();

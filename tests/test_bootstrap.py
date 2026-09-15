@@ -1249,3 +1249,80 @@ if __name__ == "__main__":
         if name.startswith("test_"):
             fn()
     print("\nAll bootstrap tests passed.")
+
+
+# ---- a substep carries its own check and gate ------------------------------
+#
+# The four-stage plan puts the STAGES at the top level, so the unit a single
+# node owns -- and therefore the unit a verifier applies a check to -- is a
+# substep. These three tests are the three places that fact has to be honoured;
+# each one fails on its own if only the schema field is added.
+
+
+def test_a_substep_carries_its_check_to_the_node_that_owns_it():
+    """The schema field alone buys nothing: `steps_for` is what puts the check
+    in front of the node, and a node told how its work will be judged can aim
+    at that instead of guessing."""
+    from agent.bootstrap.nodes.planner import steps_for
+
+    plan = {"steps": [{"id": "1", "title": "Code", "substeps": [
+        {"id": "1.1", "title": "unified dataloader",
+         "check": "pytest tests/test_loader.py passes"},
+        {"id": "1.2", "title": "our method", "check": "trains one step"},
+    ]}]}
+
+    own = steps_for(plan, ["1.1"])
+
+    assert "unified dataloader" in own
+    assert "check: pytest tests/test_loader.py passes" in own
+    # And only its own: the whole point of substeps is that three nodes do not
+    # each receive all three checks.
+    assert "trains one step" not in own
+    print("PASS  a substep's check reaches the node that owns it, and only it")
+
+
+def test_a_gate_on_a_substep_shows_in_the_outline():
+    """The outline collapses each stage to one line, and it is the only thing
+    every OTHER node is shown. A gate invisible there is a stop in the run that
+    nothing downstream can see coming."""
+    from agent.bootstrap.nodes.planner import outline
+
+    plan = {"steps": [
+        {"id": "1", "title": "Code"},
+        {"id": "3", "title": "Run", "substeps": [
+            {"id": "3.1", "title": "our method", "gate": True},
+            {"id": "3.2", "title": "baselines"},
+        ]},
+    ]}
+
+    lines = outline(plan).splitlines()
+
+    assert len(lines) == 2, "the outline is one line per stage"
+    assert "[human gate]" not in lines[0]
+    assert "[human gate]" in lines[1], "a gated substep left the stage unmarked"
+    print("PASS  a gate on a substep marks its stage in the outline")
+
+
+def test_a_gated_substep_with_no_human_node_is_rejected():
+    """The same promise `test_a_gated_step_with_no_human_node_is_rejected`
+    covers, one level down -- and this is the level that matters, because what
+    a person actually approves ("start the long training run") is a substep.
+
+    Walking only the top level lets every gate that matters through unchecked,
+    and the run then LOOKS successful, which is the worst shape available.
+    """
+    from agent.agentfolder.load import load_agent_folder
+    from agent.bootstrap.nodes.validator import _gate_problems
+
+    with tempfile.TemporaryDirectory() as tmp:
+        folder = load_agent_folder(_research_folder(pathlib.Path(tmp)))
+
+        owned = {"steps": [{"id": "3", "title": "Run", "substeps": [
+            {"id": "4", "title": "Launch the sweep", "gate": True}]}]}
+        assert _gate_problems(folder, owned) == "", "a gated substep an owning node reaches"
+
+        orphan = {"steps": [{"id": "3", "title": "Run", "substeps": [
+            {"id": "9.9", "title": "Publish", "gate": True}]}]}
+        problem = _gate_problems(folder, orphan)
+        assert "9.9" in problem and "no node lists it" in problem, problem
+    print("PASS  a gated SUBSTEP is checked against the graph, not just a step")

@@ -134,8 +134,21 @@ def outline(plan: dict) -> str:
     every node reading the outline should be able to see it.
     """
     return "\n".join(
-        f"  {s['id']}. {s['title']}" + ("  [human gate]" if s.get("gate") else "")
+        f"  {s['id']}. {s['title']}" + ("  [human gate]" if _is_gated(s) else "")
         for s in (plan or {}).get("steps", [])
+    )
+
+
+def _is_gated(step: dict) -> bool:
+    """Whether the run stops for a person anywhere in this step.
+
+    Substeps count. The outline collapses each stage to one line, so a gate on
+    substep 3.1 would otherwise be invisible to every node except the one that
+    owns it -- and where the run stops is topology, not detail: it changes what
+    happens after, which is exactly what the outline is for.
+    """
+    return bool(step.get("gate")) or any(
+        sub.get("gate") for sub in step.get("substeps", []) or []
     )
 
 
@@ -170,4 +183,13 @@ def steps_for(plan: dict, ids: list[str]) -> str:
             lines.append(f"   {sub['id']} {sub['title']}")
             if sub.get("detail"):
                 lines.append(f"      {sub['detail']}")
+            # A substep carries its own check and gate for the same reason a
+            # step does, and it matters more: the top level of a research plan
+            # is the four STAGES, so a substep is what one node actually owns.
+            # Rendered only here, where the owner reads it.
+            if sub.get("check"):
+                lines.append(f"      check: {sub['check']}")
+            if sub.get("gate"):
+                lines.append("      human gate: a person must approve this "
+                             "before the run continues.")
     return "\n".join(lines)

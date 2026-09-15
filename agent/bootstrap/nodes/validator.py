@@ -91,6 +91,14 @@ def make_validator(paths, *, max_attempts: int):
     return validator
 
 
+def _every_step(plan: dict):
+    """Top-level steps and their substeps, flat. Ids stay as written, so a
+    substep is found by the same `steps` lookup a step is."""
+    for step in (plan or {}).get("steps", []):
+        yield step
+        yield from step.get("substeps", []) or []
+
+
 def _gate_problems(folder, plan: dict) -> str:
     """Every human-gated plan step must actually reach a human.
 
@@ -108,7 +116,12 @@ def _gate_problems(folder, plan: dict) -> str:
     graph usually has one for its exit, and passing on that basis would make
     the check decorative.
     """
-    gated = [step for step in plan.get("steps", []) if step.get("gate")]
+    # Substeps too. A research plan's top level is the four STAGES, so the
+    # thing a person actually approves -- "start the long training run" -- is
+    # nearly always a substep. Walking only the top level would let every gate
+    # that matters through unchecked, which is this function's own failure
+    # mode: the run looks successful.
+    gated = [step for step in _every_step(plan) if step.get("gate")]
     if not gated:
         return ""
 
