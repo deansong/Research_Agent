@@ -727,10 +727,11 @@ def test_a_turn_that_goes_quiet_is_abandoned():
         except BackendTimeout as exc:
             assert "went silent" in str(exc), str(exc)
             # The advice must be about silence, not about the task being big.
-            # The no-output branch: nothing arrived, so silence is the whole
-            # story. The other branch is test_a_stall_after_a_long_answer...
-            assert "Nothing arrived at all" in str(exc), str(exc)
+            # This fixture DOES record its two events, so the honest branch is
+            # "it was working until it wasn't" -- the no-output wording is
+            # checked where it is true, in the stall test below.
             assert "SILENCE" in str(exc), str(exc)
+            assert "Nothing arrived at all" not in str(exc), str(exc)
 
     assert handle.interrupted, "a wedged turn must be interrupted"
     print("PASS  a turn that stops sending events is abandoned, and says why")
@@ -907,10 +908,18 @@ def test_a_stall_after_a_long_answer_is_not_reported_as_never_starting():
     assert "Raising the timeout will not help" in stalled, stalled
     assert "task_brief" in stalled, "show what it had already written"
 
-    never = backend._silent_message(300, 340, 2, 0, _LiveText())
+    # ZERO events, not two: "nothing arrived at all" is a claim about the
+    # record, and this assertion used to pass on a turn that had recorded two.
+    never = backend._silent_message(300, 340, 0, 0, _LiveText())
     assert "Nothing arrived at all" in never, never
     assert "tokens" not in never.split("config.json")[0], \
         "do not claim tokens were written when none were"
+
+    # The third case, and the one that sent somebody to raise a timeout that
+    # was not the problem -- or, here, not to raise one that was.
+    working = backend._silent_message(300, 645, 242, 0, _LiveText())
+    assert "Nothing arrived at all" not in working, working
+    assert "242 events" in working, working
     print("PASS  a stall after writing is told apart from one before")
 
 
@@ -1126,3 +1135,159 @@ def test_the_checker_default_is_not_a_provider_that_cannot_verify():
         f"so every verifier in a generated agent would fail mid-run"
     )
     print(f"PASS  the checker default ({provider}) can actually run a verifier")
+
+
+def test_a_provider_with_no_token_deltas_still_gets_the_right_diagnosis():
+    """The same mistake as the stall test, made a second time for a second
+    provider -- and this one could never be caught by testing Codex.
+
+    MEASURED, on a live run: antigravity's `record_for` never returns an entry
+    flagged `transient`, so `streamed` is structurally ALWAYS 0 there. Every
+    agy timeout therefore took the no-output branch and asserted "Nothing
+    arrived at all" -- once over a turn that had run 645s and recorded 242
+    events of a GPU training step. The remedy the message implied (rerun; it
+    never started) was the opposite of the right one (the training step needs
+    longer than 300s of silence).
+
+    So the branch cannot key on tokens alone. It keys on the counter every
+    provider can produce: the number of recorded events.
+    """
+    from agent.backends._progress import silent_message
+    from agent.backends.antigravity import AntigravityBackend
+
+    # First: the structural fact the bug rested on, asserted rather than
+    # assumed, so this test fails if agy ever does start streaming deltas and
+    # the reasoning above stops applying.
+    agy = AntigravityBackend.__new__(AntigravityBackend)
+    running = {"event": "step_update", "step_update": {
+        "state": "RUNNING", "step_type": "tool", "tool_name": "run_command",
+        "tool_info": {"parameters": {"CommandLine": "python train.py"}}}}
+    assert not agy.record_for(running).get("transient"), \
+        "agy now streams deltas; the no-token reasoning below needs revisiting"
+
+    message = silent_message("Antigravity", 300, 645, 242, 0, None,
+                             "$ python train.py --seed 42", ("runner",))
+
+    assert "Nothing arrived at all" not in message, message
+    assert "242 events" in message, message
+    # The single most useful fact, and it was already recorded: WHAT went
+    # quiet. Without it "a step stopped producing output" is unactionable.
+    assert "python train.py --seed 42" in message, message
+    # And the config snippet has to be paste-able. "<role>" means going and
+    # looking it up in nodes.json, which is how .agent/config.json ended up
+    # with a hand-written comment explaining which role somebody had derived.
+    assert '"runner"' in message, message
+    assert "<role>" not in message, message
+    # Larger than the limit that was just hit -- a flat 600 is no advice to
+    # somebody who has already set 600.
+    assert "1200" in message, message
+    print("PASS  a provider with no token deltas is diagnosed by its events")
+
+
+def test_a_shared_backend_names_every_role_it_serves():
+    """Instances are shared between identically-configured roles, so the
+    timeout message must not name just one of them. Naming one would send
+    somebody to raise a limit on `coder` while the node that actually stalled
+    sat on `runner` -- and the config change would look correct."""
+    from agent.backends._progress import silent_message
+
+    message = silent_message("Codex", 300, 645, 242, 0, None, "$ pytest",
+                             ("coder", "runner"))
+    assert '"coder"' in message and '"runner"' in message, message
+    assert "serves `coder`, `runner`" in message, message
+    assert "every node on them" in message, message
+    print("PASS  a shared instance names every role that reaches it")
+
+
+def test_build_backends_stamps_the_roles_a_timeout_message_needs():
+    """The wiring half. silent_message can only name real roles if somebody
+    tells the instance what they are, and only the factory knows -- because
+    two identically-configured roles SHARE one instance, so the answer does
+    not exist until every role has been resolved.
+    """
+    from agent.backends import build_backends
+    from agent.backends.base import Access
+    from agent.config import AgentConfig, BackendConfig
+
+    same = BackendConfig(provider="antigravity", model="gemini-3.8-flash-medium")
+    cfg = AgentConfig(
+        default=BackendConfig(provider="codex", model="m"),
+        # `runner` and `executor` are configured identically, so they share
+        # an instance; `coder` differs by model and must not be swept in.
+        roles={"runner": same, "executor": same,
+               "coder": BackendConfig(provider="antigravity",
+                                      model="gemini-3.8-pro")},
+    )
+
+    built = build_backends(cfg, {"runner": Access.WRITE,
+                                 "executor": Access.WRITE,
+                                 "coder": Access.WRITE})
+
+    assert built["runner"] is built["executor"], \
+        "the sharing this test exists to cover is not happening"
+    assert built["coder"] is not built["runner"]
+    assert built["runner"].roles == ("executor", "runner"), built["runner"].roles
+    assert built["coder"].roles == ("coder",), built["coder"].roles
+
+    # And it reaches the message, which is the only reason any of this is
+    # here. CliBackend calls silent_message directly rather than through a
+    # method, so this is the call the timeout path actually makes.
+    from agent.backends._progress import silent_message
+    runner = built["runner"]
+    text = silent_message(runner.label, 300, 645, 242, 0, None, "$ train",
+                          runner.roles)
+    assert '"executor"' in text and '"runner"' in text, text
+    print("PASS  the factory tells each instance which roles reach it")
+
+
+def test_a_codex_turn_that_hangs_mid_command_says_which_command():
+    """The same wire on the Codex side. Its twin lives in test_cli_backend.py.
+
+    Two loops, two providers, two places to forget to hand the last announced
+    line to the message -- and forgetting is invisible, because the message
+    still reads perfectly well without it. Only that the one fact you went
+    looking for is missing.
+    """
+    import time
+    from unittest.mock import MagicMock, patch
+
+    from agent.backends._progress import describe
+    from agent.backends.base import BackendTimeout
+    from agent.backends.codex import CodexBackend
+
+    # _item dispatches on the CLASS NAME, so the name is the fixture.
+    Item = type("CommandExecutionThreadItem", (),
+                {"command": "python train.py --seed 42"})
+
+    class Event:
+        payload = type("ItemStartedNotification", (), {"item": Item()})()
+
+    assert "python train.py" in (describe(Event()) or ""), \
+        "this fixture must be a PRINTABLE event, or it proves nothing"
+
+    # One printable event, then the stream stops for longer than the limit.
+    stream = _Stream([Event()], gap=0.05)
+    handle = _Handle(stream)
+    backend = CodexBackend(MagicMock(), timeout=0.4, max_seconds=30)
+
+    def drain_then_hang(items, turn_id):
+        """Consume the stream, then stay alive and quiet.
+
+        _drain returns as soon as the stream ends, which kills the worker and
+        ends the loop before the idle limit can fire -- so a plain _drain here
+        would pass whatever the message said.
+        """
+        for _ in items:
+            pass
+        time.sleep(1.5)
+        return "collected"
+
+    with patch("agent.backends.codex._collect", drain_then_hang):
+        try:
+            backend._run_turn(_Thread(handle), "go", {})
+            raise AssertionError("expected BackendTimeout")
+        except BackendTimeout as exc:
+            assert "python train.py --seed 42" in str(exc), str(exc)
+            assert "Nothing arrived at all" not in str(exc), str(exc)
+
+    print("PASS  a Codex hang mid-command names the command too")

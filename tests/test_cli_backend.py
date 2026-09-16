@@ -563,3 +563,42 @@ def test_a_read_only_node_sharing_a_role_with_a_writer_is_still_refused():
     assert "read_only" in message
     assert "provider" in message, "say what to do about it"
     print("PASS  read_only is refused at the flag mapping, not silently widened")
+
+
+def test_a_child_that_hangs_mid_command_says_which_command():
+    """The failure this whole diagnosis exists for, driven end to end.
+
+    A real run: agy started a training command, the command produced nothing
+    for 300s, and the turn was killed. The message said "Nothing arrived at
+    all" over 242 recorded events and did not say what had been running --
+    so the only way to find out was to open the activity JSON by hand.
+
+    Asserting on silent_message alone cannot catch this: the loop has to
+    actually hand the last announced line over, and it did not.
+    """
+    class Phased(Fake):
+        """Honours a `phase` field, so a command can START and never finish --
+        which is what a long-running child looks like from out here."""
+
+        def record_for(self, event):
+            if event.get("event") == "result":
+                return None
+            return {"kind": "command", "phase": event.get("phase", "completed"),
+                    "command": event.get("command", "x")}
+
+    body = (
+        'import json, time\n'
+        'print(json.dumps({"event":"step","phase":"started",'
+        '"command":"python train.py --seed 42"}))\n'
+        'time.sleep(120)\n'
+    )
+    backend = Phased(body, timeout=0.6, max_seconds=60)
+
+    with pytest.raises(BackendTimeout) as caught:
+        _run(backend)
+
+    message = str(caught.value)
+    assert "python train.py --seed 42" in message, message
+    # One event arrived, so the no-output branch is a false statement here.
+    assert "Nothing arrived at all" not in message, message
+    print("PASS  a hang mid-command names the command in the timeout")

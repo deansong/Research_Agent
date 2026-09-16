@@ -93,6 +93,18 @@ def build_backends(
 
         built[role] = cache[key]
 
+    # Stamp each instance with every role that reached it, so a timeout
+    # message can print a config snippet naming real roles. Done after the
+    # loop, not inside it: an instance is SHARED, so the answer to "which
+    # roles is this?" does not exist until every role has been resolved --
+    # and a message that named only the first would send someone to raise a
+    # limit on one role while the node that actually stalled sat on another.
+    shared: dict[int, list[str]] = {}
+    for role, backend in built.items():
+        shared.setdefault(id(backend), []).append(role)
+    for backend in built.values():
+        backend.roles = tuple(sorted(shared[id(backend)]))
+
     _warn_unconfigured(cfg, needed)
     _warn_signed_out(built)
     return built

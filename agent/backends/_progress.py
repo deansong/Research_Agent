@@ -390,7 +390,8 @@ def _snake(class_name: str) -> str:
 
 
 def silent_message(provider: str, idle: float, elapsed: float, events: int,
-                   streamed: int = 0, live=None) -> str:
+                   streamed: int = 0, live=None, last: str = "",
+                   roles: tuple[str, ...] = ()) -> str:
     """What went quiet, and -- the part that was missing -- what it had
     already said.
 
@@ -400,6 +401,20 @@ def silent_message(provider: str, idle: float, elapsed: float, events: int,
     design, which the counters could not see because tokens are not events.
     Stalling AFTER writing an answer and never starting one are different
     failures with different remedies, so the message has to tell them apart.
+
+    THE SAME MISTAKE, A SECOND TIME. Telling them apart by `streamed` alone
+    then broke for a provider that has no token deltas to count. Antigravity's
+    record_for never marks an entry transient, so streamed is ALWAYS 0 there,
+    and every agy timeout printed "Nothing arrived at all" -- once over a turn
+    that had run 645s and recorded 242 events of a GPU training step. Three
+    cases, not two, and the third is distinguished by the counter the provider
+    can actually produce:
+
+        streamed         -- stopped after writing an answer; rerun, do not wait
+        events, no tokens-- was working, then a step went quiet; usually a
+                            command still running, and the limit is the thing
+                            that is wrong
+        neither          -- it really never started
     """
     head = (f"{provider} went silent for {idle:.0f}s (turn ran {elapsed:.0f}s, "
             f"{events} events")
@@ -416,6 +431,22 @@ def silent_message(provider: str, idle: float, elapsed: float, events: int,
         tail = (live.tail(400) if live is not None else "")
         if tail:
             body += f"The last thing it wrote:\n    {tail}\n\n"
+    elif events:
+        body = (
+            f"It was working until it wasn't: {events} events over "
+            f"{elapsed - idle:.0f}s, then {idle:.0f}s of nothing. So a step "
+            f"stopped producing output -- most often a command that is still "
+            f"running and has nothing to say while it runs. The limit is on "
+            f"SILENCE, and a turn that keeps streaming is never killed for "
+            f"taking long.\n\n"
+        )
+        if last:
+            body += f"The last thing it reported:\n    {last.strip()}\n\n"
+        body += (
+            f"If that step can legitimately take more than {idle:.0f}s without "
+            f"a word -- a training run, a long build -- then the limit is the "
+            f"thing that is wrong. Raise it. If it cannot, rerun.\n\n"
+        )
     else:
         body = (
             f"Nothing arrived at all, so this is a request that stopped "
@@ -424,15 +455,31 @@ def silent_message(provider: str, idle: float, elapsed: float, events: int,
             f"for taking long.\n\n"
         )
 
+    # Four times the limit that was just hit, to the minute, never below ten
+    # minutes. The old text said 600 flat, which is no advice at all to
+    # somebody who has already set 600 and hit it again.
+    suggested = max(600, int(idle) * 4 // 60 * 60)
+
+    if roles:
+        named = ", ".join(f"`{r}`" for r in roles)
+        which = (f"This backend serves {named}, so that raises the limit for "
+                 f"every node on {'them' if len(roles) > 1 else 'it'}.")
+        snippet = ('    {"roles": {%s}}'
+                   % ", ".join(f'"{r}": {{"options": {{"timeout": {suggested}}}}}'
+                               for r in roles))
+    else:
+        which = ("Use the role name this node declares as its `backend` -- "
+                 "which may well be shared with other nodes.")
+        snippet = ('    {"roles": {"<role>": {"options": {"timeout": %d}}}}'
+                   % suggested)
+
     return (
         head + body
         + f"The graph checkpoints after every completed node, so nothing "
           f"before this is lost.\n\n"
           f"To allow longer silences, put this in "
           f"<repo>/.agent/config.json:\n"
-          f'    {{"roles": {{"<role>": {{"options": {{"timeout": 600}}}}}}}}\n'
-          f"using the role name this node declares as its `backend` -- "
-          f"which may well be shared with other nodes."
+        + snippet + "\n" + which
     )
 
 

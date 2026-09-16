@@ -84,6 +84,15 @@ class CliBackend:
     #: Shown at the front of every timeout message.
     label = "The CLI"
 
+    #: Which config roles resolved to THIS instance -- stamped by
+    #: build_backends, because instances are shared and only the factory knows
+    #: the whole mapping. Read only by the timeout messages, so that the
+    #: config snippet they print names a real role instead of "<role>". A
+    #: class-level default means an instance built directly (a test, a script)
+    #: still works, it just prints the generic advice.
+    roles: tuple[str, ...] = ()
+
+
     def __init__(
         self,
         *,
@@ -339,7 +348,8 @@ class CliBackend:
             if idle >= self.timeout:
                 self._abandon(proc, worker)
                 raise BackendTimeout(silent_message(
-                    self.label, idle, elapsed, len(recorded), streamed[0], live))
+                    self.label, idle, elapsed, len(recorded), streamed[0], live,
+                    last_seen[0], self.roles))
             if elapsed >= self.max_seconds:
                 self._abandon(proc, worker)
                 raise BackendTimeout(runaway_message(

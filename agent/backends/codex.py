@@ -96,6 +96,11 @@ class CodexBackend:
     supports_repo_access = True
     max_access = Access.FULL
 
+    #: Which config roles resolved to THIS instance -- stamped by
+    #: build_backends, because instances are shared and only the factory knows
+    #: the whole mapping. See the note on CliBackend.roles.
+    roles: tuple[str, ...] = ()
+
     def __init__(
         self,
         client: Codex,
@@ -420,7 +425,8 @@ class CodexBackend:
             if idle >= self.timeout:
                 self._abandon(handle, worker)
                 raise BackendTimeout(self._silent_message(
-                    idle, elapsed, events[0], streamed[0], live))
+                    idle, elapsed, events[0], streamed[0], live,
+                    last_seen[0]))
 
             if elapsed >= self.max_seconds:
                 self._abandon(handle, worker)
@@ -481,8 +487,9 @@ class CodexBackend:
     # them where they always did, and so a subclass could reword one.
 
     def _silent_message(self, idle: float, elapsed: float, events: int,
-                        streamed: int = 0, live=None) -> str:
-        return silent_message("Codex", idle, elapsed, events, streamed, live)
+                        streamed: int = 0, live=None, last: str = "") -> str:
+        return silent_message("Codex", idle, elapsed, events, streamed, live,
+                              last, self.roles)
 
     def _flood_message(self, streamed: int, elapsed: float) -> str:
         return flood_message("Codex", streamed, elapsed)
