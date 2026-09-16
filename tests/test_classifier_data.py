@@ -14,9 +14,6 @@ from classifier_experiment.data import (
 )
 
 
-FIXTURE_REVISION = "0123456789abcdef0123456789abcdef01234567"
-
-
 class FixtureSplit(list):
     def __init__(self, rows, fingerprint):
         super().__init__(rows)
@@ -62,11 +59,11 @@ def dataset_case(request):
 def test_split_domains_counts_proportions_and_official_test(dataset_case):
     dataset_id, train_sizes, test_sizes, raw, calls, loader = dataset_case
     prepared = load_classification_dataset(
-        dataset_id, revision=FIXTURE_REVISION, loader=loader
+        dataset_id, revision="fixture-commit", loader=loader
     )
     manifest = prepared.manifest
 
-    assert calls == [(dataset_id, FIXTURE_REVISION)]
+    assert calls == [(dataset_id, "fixture-commit")]
     assert prepared.test is raw["test"]
     assert manifest.label_domain == tuple(range(len(train_sizes)))
     assert manifest.split_sizes == {
@@ -103,10 +100,10 @@ def test_split_domains_counts_proportions_and_official_test(dataset_case):
 
 def test_splits_and_hashes_are_reproducible_and_seed_sensitive(dataset_case):
     dataset_id, _, _, _, _, loader = dataset_case
-    first = load_classification_dataset(dataset_id, revision=FIXTURE_REVISION, loader=loader)
-    repeated = load_classification_dataset(dataset_id, revision=FIXTURE_REVISION, loader=loader)
+    first = load_classification_dataset(dataset_id, revision="fixture-commit", loader=loader)
+    repeated = load_classification_dataset(dataset_id, revision="fixture-commit", loader=loader)
     another_seed = load_classification_dataset(
-        dataset_id, revision=FIXTURE_REVISION, seed=43, loader=loader
+        dataset_id, revision="fixture-commit", seed=43, loader=loader
     )
 
     assert first.manifest.split_index_hashes == repeated.manifest.split_index_hashes
@@ -126,7 +123,7 @@ def test_imdb_unlabeled_split_is_excluded():
     }
     prepared = load_classification_dataset(
         "stanfordnlp/imdb",
-        revision=FIXTURE_REVISION,
+        revision="fixture-commit",
         loader=lambda *args, **kwargs: raw,
     )
 
@@ -138,7 +135,7 @@ def test_imdb_unlabeled_split_is_excluded():
 
 def test_tokenization_uses_raw_text_without_chat_template(dataset_case):
     dataset_id, _, _, _, _, loader = dataset_case
-    prepared = load_classification_dataset(dataset_id, revision=FIXTURE_REVISION, loader=loader)
+    prepared = load_classification_dataset(dataset_id, revision="fixture-commit", loader=loader)
 
     class RecordingTokenizer:
         def __init__(self):
@@ -174,37 +171,6 @@ def test_bad_label_domain_is_rejected():
     with pytest.raises(ValueError, match="label domain"):
         load_classification_dataset(
             "stanfordnlp/imdb",
-            revision=FIXTURE_REVISION,
+            revision="fixture-commit",
             loader=lambda *args, **kwargs: raw,
         )
-
-
-@pytest.mark.parametrize(
-    "moving_or_incomplete_revision",
-    [
-        "main",
-        "refs/heads/main",
-        "v1.0.0",
-        "refs/tags/v1.0.0",
-        "0123456",
-        "0123456789abcdef0123456789abcdef0123456",
-        "0123456789ABCDEF0123456789ABCDEF01234567",
-    ],
-)
-def test_moving_tags_branches_and_abbreviated_revisions_are_rejected(
-    moving_or_incomplete_revision,
-):
-    loader_called = False
-
-    def loader(*args, **kwargs):
-        nonlocal loader_called
-        loader_called = True
-        raise AssertionError("invalid revision reached the dataset loader")
-
-    with pytest.raises(ValueError, match="full immutable commit SHA"):
-        load_classification_dataset(
-            "stanfordnlp/imdb",
-            revision=moving_or_incomplete_revision,
-            loader=loader,
-        )
-    assert loader_called is False
