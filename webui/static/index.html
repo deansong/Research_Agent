@@ -103,6 +103,7 @@
       <button class="tab active" data-tab="graph">Graph</button>
       <button class="tab" data-tab="plan">Plan</button>
       <button class="tab" data-tab="wiring">Wiring</button>
+      <button class="tab" data-tab="files">Files</button>
       <button class="tab" data-tab="json">JSON</button>
     </div>
     <div class="tab-body active" id="tab-graph">
@@ -117,6 +118,16 @@
     </div>
     <div class="tab-body" id="tab-wiring">
       <div class="empty-state"><p class="muted">No agent yet.</p></div>
+    </div>
+    <div class="tab-body" id="tab-files">
+      <div class="files-layout">
+        <div class="files-list" id="files-list">
+          <div class="empty-state"><p class="muted">Nothing written yet.</p></div>
+        </div>
+        <div class="files-view" id="files-view">
+          <div class="empty-state"><p class="muted">Pick a file to read it.</p></div>
+        </div>
+      </div>
     </div>
     <div class="tab-body" id="tab-json">
       <div class="json-head">

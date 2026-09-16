@@ -88,6 +88,11 @@ export const api = {
   // The turn running right now, whichever node it belongs to -- what the
   // "still working" line expands into.
   currentActivity: (id) => request('GET', `/api/sessions/${encodeURIComponent(id)}/activity`),
+  // What the run WROTE, as opposed to what it is wired to do.
+  listFiles:     (id)   => request('GET', `/api/sessions/${encodeURIComponent(id)}/files`),
+  readFile:      (id, path) =>
+    request('GET', `/api/sessions/${encodeURIComponent(id)}/files/content`
+                 + `?path=${encodeURIComponent(path)}`),
   // Logins. Status is safe to call from anywhere; the rest are refused by the
   // server unless it is bound to loopback -- see _login_allowed in server.py.
   authStatus:    (repo)  => request('GET', `/api/auth${repo ? `?repo=${encodeURIComponent(repo)}` : ''}`),

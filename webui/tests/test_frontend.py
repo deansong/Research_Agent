@@ -631,3 +631,83 @@ def test_a_reopened_session_shows_the_conversation_it_already_had():
     # Two messages plus the marker.
     assert result["rows"] == 3, result["rows"]
     print("PASS  a reopened session replays its conversation, and says where it ends")
+
+
+def test_the_files_tab_puts_code_above_results():
+    """MEASURED on a real session: 32 changed source files against 1,985
+    artifacts. Mixed into one list, the training script somebody opened this
+    tab to read is a thousand rows down -- so the groups are separate, code
+    first, and the results group starts collapsed.
+    """
+    try:
+        import quickjs  # noqa: F401
+    except ImportError:  # pragma: no cover
+        pytest.skip("quickjs not installed")
+    from jsdom_harness import exercise
+
+    result = exercise("""
+      var panel = new __ns.FilesPanel(
+        document.getElementById('files-list'),
+        document.getElementById('files-view'),
+        { onRead: function () { return Promise.resolve({}); } });
+
+      panel.render({ files: [
+        { path: 'repo/classifier_experiment/train.py', root: 'repo',
+          size: 14922, modified: 1, origin: 'new', readable: true },
+        { path: 'repo/agent/config.py', root: 'repo',
+          size: 22187, modified: 2, origin: 'modified', readable: true },
+        { path: 'artifacts/smoke/a.json', root: 'artifacts',
+          size: 20, modified: 3, origin: 'artifact', readable: true },
+      ]});
+
+      var groups = document.getElementById('files-list')._children;
+      return {
+        headings: groups.map(function (g) { return g._children[0].textContent }),
+        open: groups.map(function (g) { return !!g.open }),
+      };
+    """)
+
+    assert result["headings"] == ["Code (2)", "Results (1)"], result
+    # Code open, results shut: one group is a handful of files to read, the
+    # other is two thousand to spot-check.
+    assert result["open"] == [True, False], result
+    print("PASS  the Files tab puts code above results")
+
+
+def test_a_file_that_cannot_be_shown_says_why_rather_than_showing_blank():
+    """"Too big" and "not text" are different problems with different
+    answers, and an empty pane is neither. The server already distinguishes
+    them; this is the half that shows it."""
+    try:
+        import quickjs  # noqa: F401
+    except ImportError:  # pragma: no cover
+        pytest.skip("quickjs not installed")
+    from jsdom_harness import exercise
+
+    result = exercise("""
+      var view = document.getElementById('files-view');
+      var panel = new __ns.FilesPanel(
+        document.getElementById('files-list'), view,
+        { onRead: function () { return Promise.resolve({}); } });
+
+      function text() {
+        var out = [];
+        (function walk(el) {
+          out.push(el.textContent || '');
+          for (var i = 0; i < el._children.length; i++) walk(el._children[i]);
+        })(view);
+        return out.join(' ');
+      }
+
+      panel.show({ path: 'repo/huge.log', size: 9, skipped: '9 bytes is over the limit' });
+      var skipped = text();
+      panel.show({ path: 'repo/train.py', size: 5, text: 'x = 1' });
+      var shown = text();
+      return { skipped: skipped, shown: shown };
+    """)
+
+    assert "over the limit" in result["skipped"], result
+    assert "x = 1" in result["shown"], result
+    # And the reason must not linger once a readable file is opened.
+    assert "over the limit" not in result["shown"], result
+    print("PASS  a file that cannot be shown says why")

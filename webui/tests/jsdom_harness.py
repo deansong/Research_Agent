@@ -32,6 +32,7 @@ MODULES: list[tuple[str, list[str]]] = [
     ("api.js", ["Problem", "api", "subscribe"]),
     ("auth.js", ["AuthPanel"]),
     ("chat.js", ["Chat"]),
+    ("files.js", ["FilesPanel"]),
     ("graph.js", ["GraphPanel"]),
     ("plan.js", ["PlanPanel", "ownersByStep"]),
     ("inspector.js", ["Inspector", "renderActivity"]),
@@ -78,6 +79,13 @@ El.prototype.append = function () {
 El.prototype.replaceChildren = function () {
   this._children = [];
   for (var i = 0; i < arguments.length; i++) this._children.push(arguments[i]);
+  this.childElementCount = this._children.length;
+};
+// Order matters here, not just membership: a panel that prepends a tag is
+// putting it BEFORE the text on purpose, and a stub that appended instead
+// would let a reversed render pass.
+El.prototype.prepend = function () {
+  for (var i = arguments.length - 1; i >= 0; i--) this._children.unshift(arguments[i]);
   this.childElementCount = this._children.length;
 };
 El.prototype.remove = function () {};

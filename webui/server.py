@@ -415,6 +415,50 @@ def _register(app: FastAPI) -> None:
             "nodes_with_activity": activity.nodes_with_activity(runner.paths.session),
         }
 
+    @app.get("/api/sessions/{session_id}/files")
+    def list_files(session_id: str):
+        """The code and results this run produced.
+
+        Separate from /agent, which describes the graph: this is what the
+        graph WROTE, and until now nothing in the browser could show it. A
+        node's Context panel could show the prompt that asked for a training
+        script and the command that ran it, and not the script.
+        """
+        from webui import files
+
+        runner = _runner(session_id)
+        try:
+            since = runner.paths.session.stat().st_mtime
+        except OSError:
+            since = None
+        return {"files": files.listing(runner.paths.repo, runner.paths.artifacts,
+                                       since=since),
+                "repo": str(runner.paths.repo),
+                "artifacts": str(runner.paths.artifacts)}
+
+    @app.get("/api/sessions/{session_id}/files/content")
+    def read_file(session_id: str, path: str = Query(...)):
+        """One file's text.
+
+        The path arrives from the browser, so it is the one untrusted input
+        in this file -- `files.read` resolves it and refuses anything that
+        lands outside the two roots. Taken as a QUERY parameter rather than a
+        path segment on purpose: a path segment would need the slashes in
+        "repo/classifier_experiment/train.py" escaped by every caller, and a
+        caller that forgets gets a 404 that looks like a missing file.
+        """
+        from webui import files
+
+        runner = _runner(session_id)
+        try:
+            return files.read(runner.paths.repo, runner.paths.artifacts, path)
+        except PermissionError as exc:
+            raise _bad("outside_session", path, str(exc), 403)
+        except FileNotFoundError as exc:
+            raise _bad("no_file", path, str(exc), 404)
+        except OSError as exc:
+            raise _bad("unreadable", path, str(exc), 422)
+
     @app.get("/api/sessions/{session_id}/activity")
     def get_current_activity(session_id: str):
         """The turn running right now, in full.

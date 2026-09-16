@@ -13,6 +13,7 @@
 import { api, subscribe } from './api.js';
 import { AuthPanel } from './auth.js';
 import { Chat } from './chat.js';
+import { FilesPanel } from './files.js';
 import { GraphPanel } from './graph.js';
 import { Inspector, renderActivity } from './inspector.js';
 import { PlanPanel, ownersByStep } from './plan.js';
@@ -47,6 +48,10 @@ const plan = new PlanPanel(el('tab-plan'), {
   // decides how much of the plan each node is shown, so this makes the
   // context-control design visible instead of buried in two JSON files.
   onSelectStep: (stepId, owners) => graph.highlight(stepId ? owners : []),
+});
+
+const files = new FilesPanel(el('files-list'), el('files-view'), {
+  onRead: (path) => api.readFile(state.session.id, path),
 });
 
 const inspector = new Inspector({
@@ -305,6 +310,17 @@ function wireJson() {
   });
 }
 
+/** Re-read the file listing. Called when the Files tab is opened. */
+async function refreshFiles() {
+  if (!state.session) return;
+  try {
+    files.render(await api.listFiles(state.session.id));
+  } catch (error) {
+    showError(error);
+  }
+}
+
+
 async function refresh() {
   if (!state.session) return;
   try {
@@ -497,6 +513,10 @@ function wireTabs(stripId) {
   strip.addEventListener('click', (event) => {
     const tab = event.target.closest('.tab');
     if (!tab) return;
+    // Loaded when opened rather than on every refresh: the listing walks two
+    // directory trees, and a session with 2,000 artifacts should not pay for
+    // that while somebody is reading the graph.
+    if (tab.dataset.tab === 'files') refreshFiles();
     for (const other of strip.querySelectorAll('.tab')) {
       other.classList.toggle('active', other === tab);
     }

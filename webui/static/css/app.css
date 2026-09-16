@@ -1440,3 +1440,123 @@ dialog label.required .field-note { color: var(--accent); }
   color: var(--text-faint);
   text-align: center;
 }
+
+/* ---------------------------------------------------------------------------
+   THE FILES TAB
+   A list on the left, one file on the right. The list is the narrow column
+   because a path is short and a training script is not.
+   --------------------------------------------------------------------------- */
+
+.files-layout {
+  display: grid;
+  grid-template-columns: minmax(200px, 300px) 1fr;
+  gap: 0;
+  height: 100%;
+  min-height: 0;          /* or the grid refuses to let its children scroll */
+}
+
+.files-list {
+  overflow-y: auto;
+  border-right: 1px solid var(--line);
+  padding: 4px 0;
+}
+
+.file-group > summary {
+  cursor: pointer;
+  padding: 6px 10px;
+  font-weight: 600;
+  font-size: 12px;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  opacity: 0.7;
+}
+
+.file-row {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 1px;
+  width: 100%;
+  padding: 5px 10px 5px 18px;
+  border: 0;
+  background: none;
+  text-align: left;
+  cursor: pointer;
+  font: inherit;
+  color: inherit;
+}
+
+.file-row:hover { background: var(--bg-raised); }
+.file-row.selected { background: var(--accent-dim); }
+.file-row.unreadable .file-name { opacity: 0.55; }
+
+.file-name {
+  font-family: var(--mono);
+  font-size: 12px;
+  /* A long path truncates at the FRONT: the tail is the file name, which is
+     the part that identifies it. */
+  direction: rtl;
+  text-align: left;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  max-width: 100%;
+}
+
+.file-meta { font-size: 11px; opacity: 0.6; }
+
+.file-tag {
+  display: inline-block;
+  margin-right: 5px;
+  padding: 0 4px;
+  border-radius: 3px;
+  background: var(--warn);
+  /* The palette's --warn is a light yellow and --text is near-white, so the
+     tag inherits its way to invisible. Named explicitly rather than left to
+     inherit. */
+  color: var(--bg);
+  font-size: 10px;
+  text-transform: uppercase;
+}
+
+.files-view {
+  overflow: auto;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+}
+
+.file-view-head {
+  display: flex;
+  gap: 10px;
+  align-items: baseline;
+  padding: 7px 12px;
+  border-bottom: 1px solid var(--line);
+  position: sticky;
+  top: 0;
+  background: var(--bg-panel);
+  z-index: 1;
+}
+
+.file-note { padding: 14px 12px; }
+.file-note.error { color: var(--danger); }
+
+.file-text {
+  display: flex;
+  gap: 12px;
+  margin: 0;
+  padding: 10px 12px;
+  font-family: var(--mono);
+  font-size: 12px;
+  line-height: 1.5;
+  overflow-x: auto;
+}
+
+.file-gutter {
+  text-align: right;
+  opacity: 0.35;
+  user-select: none;    /* so copying the code does not copy the numbers */
+  white-space: pre;
+}
+
+.file-body { white-space: pre; }
