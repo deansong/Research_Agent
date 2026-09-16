@@ -89,7 +89,7 @@ the last step it saw. Not a defect to fix here; the CLI does not send them.
 from __future__ import annotations
 
 from agent.backends._cli import CliBackend, usage_from_keys
-from agent.backends.base import Access, Usage
+from agent.backends.base import Access, BackendUnavailable, Usage
 
 #: state -> the phase vocabulary _progress.py already uses, so headline(),
 #: Turn.counts() and the web UI's activity panel work with no changes.
@@ -159,6 +159,23 @@ class AntigravityBackend(CliBackend):
         """
         if access is Access.NONE:
             return ["--sandbox"]
+
+        # Defence in depth, and not theoretical: build_backends checks a ROLE
+        # at the maximum access any node using it asks for, so a role shared
+        # between a read_only verifier and a write worker passes that check as
+        # "write" -- and the verifier would then fall through to the branch
+        # below and run with permission checks off. A node declared read_only
+        # silently getting --dangerously-skip-permissions is the worst outcome
+        # available here, so this refuses instead.
+        if access is Access.READ_ONLY:
+            raise BackendUnavailable(
+                "A node asked for read_only access on antigravity, which "
+                "cannot express that level -- see the module docstring. "
+                "Running it anyway would mean --dangerously-skip-permissions "
+                "for a node declared read_only.\n"
+                "Point that node's role at another provider:\n"
+                '    {"roles": {"checker": {"provider": "codex"}}}'
+            )
 
         if not self._warned_dangerous:
             self._warned_dangerous = True

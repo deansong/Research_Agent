@@ -273,7 +273,20 @@ def validate_folder(
             if backend is None:
                 continue
             needed = Access(config.access)
-            if not needed <= backend.max_access:
+            # Per NODE, and that is the point. build_backends can only check a
+            # role at the MAXIMUM access any node using it asks for, so a role
+            # shared between a read_only verifier and a write worker looks
+            # like "write" there and passes -- while the verifier goes on to
+            # get whatever flags the write level maps to. Here each node is
+            # checked as itself.
+            if needed in getattr(type(backend), "unsupported_access", frozenset()):
+                problems.append(Problem(
+                    "access_unsupported", f"node {name!r}",
+                    f"needs {config.access} access, and its backend "
+                    f"{config.backend!r} cannot express that level -- it can do "
+                    f"more, but not exactly this. Point this node's role at a "
+                    f"provider that can."))
+            elif not needed <= backend.max_access:
                 problems.append(Problem("access_unsupported", f"node {name!r}",
                                         f"needs {config.access} access but its backend "
                                         f"{config.backend!r} tops out at "

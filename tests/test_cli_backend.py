@@ -323,8 +323,10 @@ def test_antigravity_says_when_it_skips_permissions(capsys):
 def test_antigravity_sends_instructions_in_the_prompt():
     """The one asymmetry between the two providers: agy has no system-prompt
     flag, so a persona that is not prepended simply vanishes."""
+    # WRITE, not READ_ONLY: agy cannot express read_only at all and now says
+    # so, and this test is about where the persona goes, not about access.
     argv = _agy().argv(prompt="do the thing", instructions="You are the RUNNER.",
-                       access=Access.READ_ONLY, schema_path="/tmp/s.json",
+                       access=Access.WRITE, schema_path="/tmp/s.json",
                        session=[])
     assert "--append-system-prompt" not in argv
     body = argv[argv.index("-p") + 1]
@@ -538,3 +540,26 @@ def test_claude_maps_tool_use_into_the_shared_vocabulary():
         "delta": {"text": "tok"}}})
     assert delta["transient"] is True and delta["stream"] == "message"
     print("PASS  claude tool use becomes the records the project already reads")
+
+
+def test_a_read_only_node_sharing_a_role_with_a_writer_is_still_refused():
+    """The hole the per-role startup check cannot see.
+
+    build_backends checks a ROLE at the MAXIMUM access any node using it asks
+    for. A designer that uses "checker" for both its read_only verifiers and a
+    few write workers -- which a real one did -- makes that role look like
+    "write", so the startup guard passes and the verifier then reaches
+    access_flags asking for read_only.
+
+    Falling through to the write branch would hand a node declared read_only
+    --dangerously-skip-permissions, which is the worst outcome available here.
+    """
+    from agent.backends.base import BackendUnavailable
+
+    with pytest.raises(BackendUnavailable) as caught:
+        _agy().access_flags(Access.READ_ONLY)
+
+    message = str(caught.value)
+    assert "read_only" in message
+    assert "provider" in message, "say what to do about it"
+    print("PASS  read_only is refused at the flag mapping, not silently widened")

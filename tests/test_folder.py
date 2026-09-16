@@ -332,3 +332,52 @@ if __name__ == "__main__":
         if name.startswith("test_"):
             fn()
     print("\nAll folder tests passed.")
+
+
+def test_a_node_is_checked_against_its_backend_one_node_at_a_time():
+    """Per NODE, because per ROLE is not enough.
+
+    build_backends can only check a role at the MAXIMUM access any node using
+    it asks for, so a role shared between a read_only verifier and a write
+    worker looks like "write" there and passes -- which a real designed agent
+    did, using "checker" for both. validate_folder sees each node as itself,
+    and is the only place the verifier's own level is visible.
+    """
+    from agent.backends.base import Access
+
+    class Agy:
+        """Stands in for antigravity: can do FULL, cannot do READ_ONLY."""
+        name = "antigravity"
+        supports_repo_access = True
+        max_access = Access.FULL
+        unsupported_access = frozenset({Access.READ_ONLY})
+
+    graph = {
+        "format_version": 1, "name": "shared_role", "entry": "worker",
+        "nodes": [{"name": "worker", "kind": "agent"},
+                  {"name": "judge", "kind": "agent"},
+                  {"name": "review", "kind": "human"}],
+        "edges": [{"from": "worker", "to": "judge"}],
+        "branches": [{"from": "judge", "route_on": "verdict", "default": "review",
+                      "cases": [{"when": "ok", "to": "review",
+                                 "ask": {"purpose": "done", "resume_to": "judge"}}]}],
+    }
+    nodes = {
+        # Same ROLE, different access. The write one is what makes the role
+        # look acceptable to a check that only sees the maximum.
+        "worker": {"backend": "checker", "access": "write",
+                   "output": [{"name": "summary", "type": "string", "required": True}],
+                   "prompts": {"first": "go"}},
+        "judge": {"backend": "checker", "access": "read_only",
+                  "output": [{"name": "verdict", "type": "enum",
+                              "choices": ["ok"], "required": True}],
+                  "prompts": {"first": "check"}},
+        "review": {"commands": [{"name": "exit", "to": "__end__"}]},
+    }
+
+    problems = validate_folder(_folder(graph, nodes), backends={"checker": Agy()})
+    flagged = {p.where for p in problems if p.code == "access_unsupported"}
+
+    assert "node 'judge'" in flagged, [str(p) for p in problems]
+    assert "node 'worker'" not in flagged, "the write node is fine"
+    print("PASS  a read_only node is caught even when its role also serves a writer")
