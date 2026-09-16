@@ -89,7 +89,24 @@ the last step it saw. Not a defect to fix here; the CLI does not send them.
 from __future__ import annotations
 
 from agent.backends._cli import CliBackend, usage_from_keys
+from agent.backends._progress import _clip
 from agent.backends.base import Access, BackendUnavailable, Usage
+
+#: The parameter that says WHAT a tool acted on, per tool. Without it every
+#: non-command tool call reads "view_file" with no object, which is the same
+#: amount of information as "* tool" -- the thing this replaced.
+_TOOL_SUBJECT = ("CommandLine", "AbsolutePath", "DirectoryPath", "Pattern",
+                 "SearchDirectory", "Query", "TaskId")
+
+
+def _describe_tool(name: str, params: dict) -> str:
+    """`view_file /repo/train.py`, not `view_file`."""
+    for key in _TOOL_SUBJECT:
+        value = params.get(key)
+        if value:
+            return f"{name} {value}" if name else str(value)
+    return name
+
 
 #: state -> the phase vocabulary _progress.py already uses, so headline(),
 #: Turn.counts() and the web UI's activity panel work with no changes.
@@ -207,21 +224,51 @@ class AntigravityBackend(CliBackend):
         if step_type == "tool":
             info = step.get("tool_info") or {}
             params = info.get("parameters") or {}
+            tool_name = step.get("tool_name", "")
             entry = {
-                "kind": "command" if step.get("tool_name") == "run_command"
-                        else "tool",
+                "kind": "command" if tool_name == "run_command" else "tool",
                 "phase": phase,
-                "command": params.get("CommandLine") or step.get("tool_name", ""),
+                "command": (params.get("CommandLine")
+                            or _describe_tool(tool_name, params)),
             }
             error = info.get("error") or {}
             if error:
                 entry["output"] = str(error.get("message", ""))[:4000]
                 entry["exit_code"] = 1
+            elif info.get("output") is not None:
+                # MEASURED 2026-09-16, agy 1.2.4: tool_info.output carries what
+                # the command PRINTED, and this branch did not exist -- so a
+                # training run's "epoch 2/3 loss=0.712 acc=0.88" was parsed,
+                # thrown away, and the only thing left to watch was the step
+                # counter. The web UI has rendered `output` all along; nothing
+                # was ever putting it there for this provider.
+                #
+                # It arrives on the DONE step, so it is a record of what the
+                # command said, not a live feed while it says it.
+                entry["output"] = _clip(str(info["output"]))
+                if phase == "completed":
+                    entry["exit_code"] = 0
             return entry
 
         if step_type == "agent_response":
-            return {"kind": "reasoning", "phase": phase,
-                    "summary": [f"step {step.get('step_index')}"]}
+            # agy sends NO reasoning text -- measured against 1.2.4, and there
+            # is no flag for it: an agent_response step carries step_index,
+            # duration_seconds and usage, and nothing else. This used to render
+            # as "step 171", which is a line that repeats, says nothing, and
+            # crowds out the lines that do.
+            #
+            # So report the two facts it DOES carry. "thought for 41s" is the
+            # honest version of the thinking process from this provider, and
+            # unlike a step number it tells you whether a quiet stretch was
+            # deliberation or a hang.
+            seconds = step.get("duration_seconds")
+            thinking = (step.get("usage") or {}).get("thinking_tokens")
+            if phase != "completed" or not seconds:
+                return None
+            said = f"thought for {float(seconds):.0f}s"
+            if thinking:
+                said += f" ({int(thinking):,} thinking tokens)"
+            return {"kind": "reasoning", "phase": phase, "summary": [said]}
         return None
 
     def final_text(self, envelope):

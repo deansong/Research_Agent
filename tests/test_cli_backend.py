@@ -565,6 +565,19 @@ def test_a_read_only_node_sharing_a_role_with_a_writer_is_still_refused():
     print("PASS  read_only is refused at the flag mapping, not silently widened")
 
 
+class Phased(Fake):
+    """A provider that honours `phase` and `output`, like the real ones do."""
+
+    def record_for(self, event):
+        if event.get("event") == "result":
+            return None
+        entry = {"kind": "command", "phase": event.get("phase", "completed"),
+                 "command": event.get("command", "x")}
+        if event.get("output"):
+            entry["output"] = event["output"]
+        return entry
+
+
 def test_a_child_that_hangs_mid_command_says_which_command():
     """The failure this whole diagnosis exists for, driven end to end.
 
@@ -576,16 +589,6 @@ def test_a_child_that_hangs_mid_command_says_which_command():
     Asserting on silent_message alone cannot catch this: the loop has to
     actually hand the last announced line over, and it did not.
     """
-    class Phased(Fake):
-        """Honours a `phase` field, so a command can START and never finish --
-        which is what a long-running child looks like from out here."""
-
-        def record_for(self, event):
-            if event.get("event") == "result":
-                return None
-            return {"kind": "command", "phase": event.get("phase", "completed"),
-                    "command": event.get("command", "x")}
-
     body = (
         'import json, time\n'
         'print(json.dumps({"event":"step","phase":"started",'
@@ -602,3 +605,65 @@ def test_a_child_that_hangs_mid_command_says_which_command():
     # One event arrived, so the no-output branch is a false statement here.
     assert "Nothing arrived at all" not in message, message
     print("PASS  a hang mid-command names the command in the timeout")
+
+
+def test_progress_prefers_what_a_command_found_over_what_it_is_called():
+    """The complaint that started this: ten heartbeats reading
+
+        last: . step 171
+        last: . step 171
+
+    while a training run was in flight. The heartbeat showed the last
+    ANNOUNCEMENT, and an announcement is a name; what a researcher needs is
+    the number the command printed.
+    """
+    reports = []
+    body = (
+        'import json, time\n'
+        'print(json.dumps({"event":"s","phase":"started","command":"python train.py"}))\n'
+        'print(json.dumps({"event":"s","phase":"completed","command":"python train.py",'
+        '"output":"epoch 1/3 acc=0.84\\nepoch 2/3 acc=0.88\\nFINAL accuracy=0.921\\n"}))\n'
+        'time.sleep(6)\n'
+    )
+    backend = Phased(body, timeout=30, max_seconds=60)
+    backend.on_progress = reports.append
+    backend.cancel = threading.Event()
+    threading.Timer(5.5, backend.cancel.set).start()
+
+    with pytest.raises(BackendCancelled):
+        _run(backend)
+
+    lasts = [r["last"] for r in reports if r.get("last")]
+    assert lasts, "no progress was reported at all"
+    assert lasts[-1] == "FINAL accuracy=0.921", lasts
+    print("PASS  progress reports the result, not the command's name")
+
+
+def test_a_finished_result_does_not_stand_in_for_a_running_command():
+    """The other half, and the one that would have been a silent lie.
+
+    Keeping the last result standing means that while a forty-minute training
+    run is in flight the heartbeat shows the PREVIOUS command's output -- a
+    number that looks like progress and is forty minutes old. Cleared on
+    start, it falls back to naming the command that is actually running.
+    """
+    reports = []
+    body = (
+        'import json, time\n'
+        'print(json.dumps({"event":"s","phase":"completed","command":"ls",'
+        '"output":"stale-number=0.111\\n"}))\n'
+        'print(json.dumps({"event":"s","phase":"started","command":"python train.py"}))\n'
+        'time.sleep(6)\n'
+    )
+    backend = Phased(body, timeout=30, max_seconds=60)
+    backend.on_progress = reports.append
+    backend.cancel = threading.Event()
+    threading.Timer(5.5, backend.cancel.set).start()
+
+    with pytest.raises(BackendCancelled):
+        _run(backend)
+
+    last = [r["last"] for r in reports if r.get("last")][-1]
+    assert "stale-number" not in last, last
+    assert "python train.py" in last, last
+    print("PASS  a running command is never described by an old result")

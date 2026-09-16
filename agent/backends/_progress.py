@@ -92,6 +92,19 @@ def headline(entry: dict | None) -> str | None:
             return _line("!", f"exited {code}: {entry.get('command', '')}")
         return None
 
+    if kind == "tool":
+        # A tool that is not a shell command: view_file, list_dir, find_by_name,
+        # Read, Grep. BOTH CliBackend providers emit this kind, and nothing
+        # here matched it -- so every one of them fell through to the bottom
+        # and printed a bare "* tool". A transcript of "* tool" eleven times
+        # is indistinguishable from a transcript of nothing.
+        #
+        # Announced when it STARTS, for the same reason a command is: that is
+        # when knowing what it is doing has any value.
+        if phase != "started":
+            return None
+        return _line("*", entry.get("command") or "tool")
+
     if phase == "started":
         # Everything else is only interesting once it has some content.
         return None

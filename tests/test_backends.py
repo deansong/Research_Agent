@@ -1291,3 +1291,110 @@ def test_a_codex_turn_that_hangs_mid_command_says_which_command():
             assert "Nothing arrived at all" not in str(exc), str(exc)
 
     print("PASS  a Codex hang mid-command names the command too")
+
+
+# ---------------------------------------------------------------------------
+# WHAT A TURN SAYS WHILE IT IS RUNNING
+# ---------------------------------------------------------------------------
+# Event shapes below are COPIED from a real `agy 1.2.4` stream captured on
+# 2026-09-16, not invented. The capture is what established that agy sends no
+# reasoning text at all, which is a fact these tests depend on.
+
+def _agy_step(**fields):
+    return {"event": "step_update", "step_update": fields}
+
+
+def test_a_command_s_output_is_kept_rather_than_thrown_away():
+    """The metrics were arriving all along and being dropped on the floor.
+
+    agy puts what a command PRINTED in step_update.tool_info.output. The
+    parser read tool_info.error and nothing else, so a training run's
+    "epoch 2/3 loss=0.712 acc=0.88" was parsed and discarded -- and the web
+    UI, which has rendered `output` since it was written, had nothing to show.
+    Watching a four-hour experiment meant watching a step counter.
+    """
+    from agent.backends.antigravity import AntigravityBackend
+
+    agy = AntigravityBackend.__new__(AntigravityBackend)
+    entry = agy.record_for(_agy_step(
+        step_index=37, state="DONE", step_type="tool", tool_name="run_command",
+        tool_info={"name": "run_command",
+                   "parameters": {"CommandLine": "python train.py"},
+                   "output": "epoch 1/3  loss=0.812  acc=0.84\r\n"
+                             "epoch 2/3  loss=0.712  acc=0.88\r\n"
+                             "FINAL accuracy=0.921\r\n"}))
+
+    assert entry["kind"] == "command"
+    assert "acc=0.88" in entry["output"], entry
+    assert "FINAL accuracy=0.921" in entry["output"], entry
+    # A clean run is exit 0. Without it the UI cannot tell "finished" from
+    # "still going", because absence of an error is not presence of success.
+    assert entry["exit_code"] == 0, entry
+    print("PASS  a command's output survives the parser")
+
+
+def test_agy_reports_thinking_as_time_because_it_sends_no_text():
+    """"step 171", ten times in a row, was the whole progress report.
+
+    MEASURED against agy 1.2.4: an agent_response step carries step_index,
+    duration_seconds and usage -- and NO text. There is no flag for it either
+    (`agy --help` offers none). So the reasoning prose genuinely cannot be
+    shown for this provider, and printing a step number instead was worse than
+    printing nothing: it filled the log with a line that never varies in
+    content, only in number.
+
+    Time spent and tokens burned are what the provider does send, and they
+    answer the question a step counter does not: was that quiet minute
+    deliberation or a hang?
+    """
+    from agent.backends._progress import headline
+    from agent.backends.antigravity import AntigravityBackend
+
+    agy = AntigravityBackend.__new__(AntigravityBackend)
+    entry = agy.record_for(_agy_step(
+        step_index=171, state="DONE", step_type="agent_response",
+        duration_seconds=41.3,
+        usage={"input_tokens": 13427, "output_tokens": 118,
+               "thinking_tokens": 728, "total_tokens": 13545}))
+
+    line = headline(entry)
+    assert "41s" in line, line
+    assert "728 thinking tokens" in line, line
+    assert "step 171" not in line, line
+
+    # An ACTIVE agent_response has no duration yet and nothing to say. It used
+    # to print the step number twice.
+    assert agy.record_for(_agy_step(
+        step_index=171, state="ACTIVE", step_type="agent_response")) is None
+    print("PASS  thinking is reported as time and tokens, not as a counter")
+
+
+def test_a_tool_that_is_not_a_shell_command_says_what_it_touched():
+    """`* tool`, eleven times, on BOTH CliBackend providers.
+
+    claude_code and antigravity both emit kind "tool" for anything that is not
+    a shell command -- view_file, list_dir, Read, Grep -- and headline() had no
+    branch for it, so every one fell through to the unrecognised-kind fallback
+    and printed the word "tool". Eleven identical lines is the same amount of
+    information as none.
+    """
+    from agent.backends._progress import headline
+    from agent.backends.antigravity import AntigravityBackend
+
+    agy = AntigravityBackend.__new__(AntigravityBackend)
+
+    started = agy.record_for(_agy_step(
+        step_index=10, state="ACTIVE", step_type="tool", tool_name="view_file",
+        tool_info={"name": "view_file",
+                   "parameters": {"AbsolutePath": "/repo/train.py"}}))
+    assert headline(started) == "    * view_file /repo/train.py", headline(started)
+
+    # Announced once, when it starts -- the same rule commands follow. Twice
+    # is how a transcript doubles in length and halves in readability.
+    done = dict(started, phase="completed")
+    assert headline(done) is None, headline(done)
+
+    # The shared gap, so this does not silently become agy-only.
+    assert headline({"kind": "tool", "phase": "started", "command": "Grep"}) \
+        == "    * Grep"
+    print("PASS  a non-command tool names what it acted on")

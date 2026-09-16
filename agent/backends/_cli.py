@@ -63,6 +63,23 @@ from agent.backends.base import (Access, BackendCancelled, BackendError,
 #: Prefixes rather than names, because the list grows with every release.
 SCRUBBED_PREFIXES = ("CLAUDE_", "ANTHROPIC_", "CODEX_", "AGENT_", "AI_AGENT")
 
+def _last_line(text) -> str:
+    """The last line of a command's output that carries anything.
+
+    The last line is the one worth showing: a training script's tail is its
+    result, and its head is a banner. Blank and whitespace lines are skipped
+    because a trailing newline is universal and would otherwise make every
+    tail empty.
+    """
+    if not text:
+        return ""
+    for line in reversed(str(text).replace("\r\n", "\n").split("\n")):
+        line = line.strip()
+        if line:
+            return line
+    return ""
+
+
 #: How much stderr to keep. Enough to put the real reason in an error message,
 #: bounded because a chatty child can produce megabytes of deprecation notices.
 STDERR_TAIL = 8000
@@ -260,6 +277,13 @@ class CliBackend:
         recorded: list[dict] = []
         kinds: dict[str, int] = {}
         last_seen = [""]
+        #: The tail of the most recent command output. Tracked separately from
+        #: last_seen because it answers a different question: last_seen is
+        #: WHAT IT IS DOING, this is WHAT IT FOUND OUT -- and on a training run
+        #: that is the accuracy, the epoch, the loss. Preferred in the
+        #: heartbeat, because "last: . step 171" repeated ten times was the
+        #: complaint that started this.
+        last_result = [""]
         streamed = [0]
         live = _LiveText()
         envelope: list[dict | None] = [None]
@@ -306,6 +330,19 @@ class CliBackend:
 
                     entry["at"] = round(time.monotonic() - started, 2)
                     recorded.append(entry)
+                    if entry.get("phase") == "started":
+                        # Cleared, not left standing. A result belongs to the
+                        # command that produced it, and showing the PREVIOUS
+                        # command's tail while a training run is in flight is
+                        # worse than showing nothing: it looks like progress
+                        # and it is forty minutes old. With it cleared the
+                        # heartbeat falls back to last_seen -- "$ python
+                        # train.py" -- which is the true answer to what is
+                        # happening right now.
+                        last_result[0] = ""
+                    tail = _last_line(entry.get("output"))
+                    if tail:
+                        last_result[0] = tail
                     kind = str(entry.get("kind", "?"))
                     if entry.get("phase") != "started":
                         kinds[kind] = kinds.get(kind, 0) + 1
@@ -367,7 +404,7 @@ class CliBackend:
                         "elapsed": elapsed,
                         "idle": idle,
                         "counts": dict(kinds),
-                        "last": live.tail() or last_seen[0],
+                        "last": live.tail() or last_result[0] or last_seen[0],
                         "streamed": streamed[0],
                         "live": live.snapshot(),
                     })
@@ -378,7 +415,8 @@ class CliBackend:
                 from agent.backends._progress import headline  # noqa: F401
                 from agent.backends.codex import _heartbeat
                 print(_heartbeat(elapsed, idle, len(recorded), kinds,
-                                 live.tail() or last_seen[0], streamed[0]),
+                                 live.tail() or last_result[0] or last_seen[0],
+                                 streamed[0]),
                       flush=True)
                 last_line[0] = now
 
