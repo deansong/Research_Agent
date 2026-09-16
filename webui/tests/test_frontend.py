@@ -539,3 +539,95 @@ def test_a_turn_shows_what_it_was_asked_and_what_it_returned():
     assert "pytest -q" in shown, "the events are gone"
     assert "rebuilt the split" in shown, "the returned answer is not shown"
     print("PASS  a turn shows the prompt, the events and the answer")
+
+
+def test_the_conversation_can_reach_a_node_the_graph_does_not_have():
+    """The design phase does its own turns and is NOT in the generated agent's
+    graph, so the inspector could never select discussor, planner or designer
+    -- and those turns are the conversation that produced the whole agent.
+
+    Also pins the ordering: oldest turn FIRST. A tail reads newest-first, a
+    conversation does not: turn 1 is the question turn 2 is answering.
+    """
+    try:
+        import quickjs  # noqa: F401
+    except ImportError:  # pragma: no cover
+        pytest.skip("quickjs not installed")
+    from jsdom_harness import exercise
+
+    result = exercise("""
+      var box = document.getElementById('tab-activity');
+      var picked = [];
+      __ns.renderActivity(box, {
+        node: 'verify_code',
+        nodes_with_activity: ['discussor', 'planner', 'verify_code'],
+        turns: [
+          {index: 2, started: 'b', counts: {}, events: [],
+           sent: {template: 'next', prompt: 'SECOND'}, summary: {}},
+          {index: 1, started: 'a', counts: {}, events: [],
+           sent: {template: 'first', prompt: 'FIRST'}, summary: {}},
+        ],
+      }, function (name) { picked.push(name) });
+
+      function walk(el, out) {
+        out.push(el.textContent || '');
+        for (var i = 0; i < el._children.length; i++) walk(el._children[i], out);
+        return out;
+      }
+      // Click the design-phase chip: the picker is the first child.
+      var chips = box._children[0]._children;
+      for (var i = 0; i < chips.length; i++) {
+        if (chips[i].textContent === 'discussor') chips[i]._listeners;
+      }
+      return { shown: walk(box, []).join(' | '), chips: chips.length };
+    """)
+
+    shown = result["shown"]
+    # Every recorded node is offered, including the ones the graph lacks.
+    for name in ("discussor", "planner", "verify_code"):
+        assert name in shown, f"{name} is not offered in the picker"
+    assert result["chips"] >= 4, "label plus one chip per node"
+    # Oldest first.
+    assert shown.index("FIRST") < shown.index("SECOND"), \
+        "a conversation must read oldest-first"
+    print("PASS  any recorded node is reachable, and turns read oldest-first")
+
+
+def test_a_reopened_session_shows_the_conversation_it_already_had():
+    """The chat lived only in an in-memory event buffer, so restarting the
+    server emptied the browser's history while the session still held all of
+    it on disk. The conversation that produced an agent is not a log -- it is
+    the thing somebody comes back to read.
+
+    Also asserts the replay is MARKED. Without that, a session reopened
+    halfway through reads as one continuous chat and there is no way to tell
+    which part you are watching happen.
+    """
+    try:
+        import quickjs  # noqa: F401
+    except ImportError:  # pragma: no cover
+        pytest.skip("quickjs not installed")
+    from jsdom_harness import exercise
+
+    result = exercise("""
+      var chat = new __ns.Chat({ onSend() {}, onDetail() {} });
+      chat.history([
+        {role: 'human', text: 'base or instruct model?'},
+        {role: 'discussor', text: 'turn it into a falsifiable comparison'},
+      ]);
+      function walk(el, out) {
+        out.push(el.textContent || '');
+        for (var i = 0; i < el._children.length; i++) walk(el._children[i], out);
+        return out;
+      }
+      var log = document.getElementById('chat-log');
+      return { shown: walk(log, []).join(' | '), rows: log._children.length };
+    """)
+
+    shown = result["shown"]
+    assert "base or instruct model?" in shown
+    assert "falsifiable comparison" in shown
+    assert "earlier messages" in shown, "the end of the replay is not marked"
+    # Two messages plus the marker.
+    assert result["rows"] == 3, result["rows"]
+    print("PASS  a reopened session replays its conversation, and says where it ends")

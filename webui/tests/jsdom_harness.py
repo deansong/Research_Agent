@@ -118,7 +118,15 @@ var document = {
     return __ELEMENTS[id];
   },
   createElement() { return new El('created') },
-  createTextNode() { return new El('text') },
+  // Takes its text, as the real one does. Ignoring it meant a text node
+  // rendered nothing a test could see -- and chat.js builds every message
+  // with append(label, createTextNode(text)), so the message BODY was
+  // invisible to assertions while the label was not.
+  createTextNode(text) {
+    var node = new El('text');
+    node.textContent = text === undefined ? '' : String(text);
+    return node;
+  },
   addEventListener() {},
   querySelectorAll() { return [] },
   dispatchEvent() {},

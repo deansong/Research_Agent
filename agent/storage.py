@@ -273,6 +273,72 @@ def list_sessions(repo: Path) -> list[tuple[str, str, bool]]:
     return out
 
 
+#: How much of a transcript to hand back. A long design conversation is a few
+#: dozen entries; this is a bound against a pathological one, not a budget.
+MAX_TRANSCRIPT = 400
+
+
+def read_transcript(paths: SessionPaths) -> list[dict]:
+    """The session's conversation, read straight out of the checkpoint.
+
+    Why this exists: the browser's chat history lived ONLY in an in-memory
+    event buffer, so restarting the server emptied it -- and the conversation
+    that produced an agent is not a log, it is the thing somebody came back to
+    read. The checkpoint has had it all along.
+
+    Read-only, on its own connection, so opening a page can never disturb a
+    run that is writing to the same database. Both phases are returned in
+    order: the design conversation first, then the work one, because that is
+    the order they happened in and they are one session to the person reading.
+
+    Never raises. A session with no checkpoint yet, a database locked by
+    something else, a schema from an older version -- all mean "no history to
+    show", which is a fact about the page and not an error worth a traceback.
+    """
+    if not paths.checkpoint.exists():
+        return []
+
+    try:
+        import sqlite3
+
+        from langgraph.checkpoint.sqlite import SqliteSaver
+
+        conn = sqlite3.connect(f"file:{paths.checkpoint}?mode=ro", uri=True,
+                               check_same_thread=False)
+        try:
+            saver = SqliteSaver(conn)
+            # Newest checkpoint per thread. list() yields newest first, so the
+            # first sighting of a thread is the one to keep.
+            newest: dict[str, list] = {}
+            for item in saver.list(None, limit=1000):
+                thread = str(item.config.get("configurable", {}).get("thread_id", ""))
+                if thread in newest:
+                    continue
+                entries = item.checkpoint.get("channel_values", {}).get("transcript")
+                newest[thread] = list(entries) if isinstance(entries, list) else []
+        finally:
+            conn.close()
+    except Exception:  # noqa: BLE001 -- see the docstring
+        return []
+
+    out: list[dict] = []
+    # The design conversation first, then the work one -- the order they
+    # happened in, and one session to the person reading it.
+    #
+    # A plain sort is enough and is all that is here: every thread this
+    # project creates is "<session>:bootstrap", "<session>:work" or
+    # "<session>:work2", which sort into exactly that order. An earlier
+    # version had a bespoke key to force it; no test could tell the two
+    # apart, which is the definition of cleverness not worth keeping. A phase
+    # named so that this breaks would need a real ordering, and a test.
+    for thread in sorted(newest):
+        for entry in newest[thread]:
+            if isinstance(entry, dict) and entry.get("text"):
+                out.append({"role": str(entry.get("role", "?")),
+                            "text": str(entry["text"])})
+    return out[-MAX_TRANSCRIPT:]
+
+
 def builtin_agents_dir() -> Path:
     """Agents shipped with the tool itself."""
     return Path(__file__).resolve().parent / "builtin_agents"

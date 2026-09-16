@@ -250,6 +250,21 @@ nothing else on the record shows that.
 The whole tab exists because the terminal only ever said "313 events, last one
 7s ago", which is true and useless; see `agent/activity.py`.
 
+**Any node that has a record is selectable there**, from a row of chips — not
+just the one picked in the graph. That matters because the design phase does
+its own turns and is *not* in the generated agent's graph: `discussor`,
+`planner` and `designer` could never be selected, so the conversation that
+produced the whole agent sat on disk with no way to reach it. Turns read
+oldest-first, because a conversation does and a tail does not.
+
+**The chat panel replays its history when you open a session.** It used to
+live only in an in-memory event buffer, so restarting the server emptied the
+browser while the session still held every word — read now from the
+checkpoint (`storage.read_transcript`), which needs no graph, no backends and
+no provider. A dashed rule marks where the replay ends and the live feed
+begins; without it a session reopened halfway through reads as one continuous
+chat with no way to tell which part is happening now.
+
 ---
 
 ## The "still working" line

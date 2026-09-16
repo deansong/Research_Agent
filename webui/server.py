@@ -846,6 +846,10 @@ def _detail(runner: SessionRunner, task: str = "") -> SessionDetail:
         waiting=runner.waiting,
         pending=runner.pending.as_dict() if runner.pending else None,
         last_seq=runner.bus.last_seq,
+        # From the checkpoint, not the bus: a live run keeps the chat current
+        # through `state` events, but a session opened in a FRESH server has
+        # an empty bus and all of its history still on disk.
+        transcript=storage.read_transcript(paths),
         error=runner.error,
         problems=problems,
     )

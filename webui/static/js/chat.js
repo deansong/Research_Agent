@@ -82,6 +82,24 @@ export class Chat {
     this.append(node);
   }
 
+  /**
+   * The conversation that happened before this tab existed.
+   *
+   * Separate from message() so it can say where the replay ends: without a
+   * marker, a session reopened halfway through reads as one continuous chat
+   * and there is no way to tell which parts you are watching live.
+   */
+  history(entries) {
+    if (!entries.length) return;
+    for (const entry of entries) {
+      this.message(entry.role === 'human' ? 'you' : entry.role, entry.text);
+    }
+    const rule = document.createElement('div');
+    rule.className = 'history-end';
+    rule.textContent = `${entries.length} earlier messages, from the checkpoint`;
+    this.append(rule);
+  }
+
   /** A print() from inside a node, or a provider progress line. */
   logLine(text, kind) {
     // The heartbeat is special: it repeats every thirty seconds for as long

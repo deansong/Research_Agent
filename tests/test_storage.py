@@ -182,3 +182,74 @@ if __name__ == "__main__":
         if name.startswith("test_"):
             fn()
     print("\nAll storage tests passed.")
+
+
+def test_the_transcript_is_readable_straight_from_the_checkpoint():
+    """Because the browser's chat history had no other source.
+
+    It lived only in an in-memory event buffer, so restarting the server
+    emptied it while the session still held every word on disk. Reading the
+    checkpoint needs no graph, no backends and no provider -- which is what
+    makes it usable for merely OPENING a page.
+    """
+    import os
+    os.environ.setdefault("LANGGRAPH_STRICT_MSGPACK", "true")
+
+    import tempfile
+
+    from langgraph.checkpoint.sqlite import SqliteSaver
+
+    from agent import storage
+
+    with tempfile.TemporaryDirectory() as tmp:
+        repo = pathlib.Path(tmp)
+        paths = storage.session_paths(repo, "s1")
+
+        # Nothing written yet: a page with no history, not an error.
+        assert storage.read_transcript(paths) == []
+
+        with SqliteSaver.from_conn_string(str(paths.checkpoint)) as saver:
+            # Timestamps chosen so saver.list() -- newest first -- yields the
+            # WORK thread first. Without that, the two come back in whatever
+            # order they were inserted and the assertion below passes whether
+            # or not anything sorts them: measured, a mutation removing the
+            # sort went green.
+            for thread, ts, entries in (
+                (":bootstrap", "2026-01-01T00:00:00",
+                 [{"role": "human", "text": "first question"},
+                  {"role": "discussor", "text": "an answer"}]),
+                (":work", "2026-01-02T00:00:00",
+                 [{"role": "human", "text": "run it"}]),
+            ):
+                saver.put(
+                    {"configurable": {"thread_id": f"s1{thread}",
+                                      "checkpoint_ns": ""}},
+                    {"v": 1, "id": f"c{thread}", "ts": ts,
+                     "channel_values": {"transcript": entries},
+                     "channel_versions": {}, "versions_seen": {}},
+                    {}, {},
+                )
+
+        got = storage.read_transcript(paths)
+
+        # Design phase FIRST, then the work phase: the order they happened in,
+        # and one session to the person reading it. Written in the opposite
+        # order above, so this fails if the ordering is dropped entirely.
+        assert [e["text"] for e in got] == ["first question", "an answer", "run it"]
+    print("PASS  a session's conversation is readable from its checkpoint alone")
+
+
+def test_an_unreadable_checkpoint_means_no_history_not_an_error():
+    """Opening a page must not fail over a database it cannot read -- an older
+    schema, a file half-written, something else holding a lock."""
+    import tempfile
+
+    from agent import storage
+
+    with tempfile.TemporaryDirectory() as tmp:
+        paths = storage.session_paths(pathlib.Path(tmp), "s2")
+        paths.checkpoint.parent.mkdir(parents=True, exist_ok=True)
+        paths.checkpoint.write_text("this is not a database")
+
+        assert storage.read_transcript(paths) == []
+    print("PASS  a corrupt checkpoint shows no history rather than raising")

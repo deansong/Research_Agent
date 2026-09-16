@@ -73,6 +73,13 @@ class SessionDetail(SessionSummary):
     waiting: bool = False
     pending: dict[str, Any] | None = None
     last_seq: int = 0
+    transcript: list[dict[str, Any]] = Field(default_factory=list)
+    """The conversation so far, from the CHECKPOINT rather than the event bus.
+
+    The bus is an in-memory ring per server process, so restarting emptied the
+    browser's chat history while the session itself still had all of it. The
+    conversation that produced an agent is not a log -- it is the thing
+    somebody comes back to read."""
     error: str = ""
     problems: list[dict[str, Any]] = Field(default_factory=list)
 

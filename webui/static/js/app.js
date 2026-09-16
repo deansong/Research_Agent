@@ -99,6 +99,14 @@ async function openSession(detail) {
   chat.clear();
   state.agent = null;
   state.selected = null;
+
+  // The conversation so far, from the checkpoint. The event stream replays
+  // only what THIS server process has buffered, so a restart used to leave
+  // the chat blank while the session still held every word of it. Written
+  // before subscribing, so the replay that follows appends rather than
+  // interleaves.
+  chat.history(detail.transcript || []);
+
   renderSession(detail);
   loadAgent();
 
@@ -207,10 +215,25 @@ async function selectNode(name) {
   // Fetched separately from the context: one executor turn can be hundreds of
   // events with command output attached, and the form should not wait for it.
   try {
-    renderActivity(el('tab-activity'), await api.nodeActivity(state.session.id, name));
+    await showNodeActivity(name);
   } catch (error) {
     if (error.status !== 404) showError(error);
   }
+}
+
+/**
+ * One node's conversation, for any node that has a record.
+ *
+ * Deliberately NOT tied to the graph selection: the design-phase nodes --
+ * discussor, planner, designer -- are not in the generated agent's graph, so
+ * selecting them there is impossible, and their turns are the conversation
+ * that produced the agent in the first place.
+ */
+async function showNodeActivity(name) {
+  const payload = await api.nodeActivity(state.session.id, name);
+  renderActivity(el('tab-activity'), payload, (pick) => {
+    showNodeActivity(pick).catch((error) => showError(error));
+  });
 }
 
 async function saveNode(name, entry) {

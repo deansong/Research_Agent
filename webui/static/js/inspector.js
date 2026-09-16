@@ -615,20 +615,39 @@ const KIND_MARK = {
   error: '!',
 };
 
-export function renderActivity(container, payload) {
+export function renderActivity(container, payload, onPick) {
   container.replaceChildren();
+
+  // Every node that has a record, selectable -- INCLUDING the design phase.
+  // discussor, planner and designer do their own turns and are not in the
+  // generated agent's graph, so the inspector could never select them: six
+  // turns of the conversation that produced the whole agent sat on disk with
+  // no way to reach them. This row is that way.
+  if (payload?.nodes_with_activity?.length && onPick) {
+    container.append(nodePicker(payload.nodes_with_activity, payload.node, onPick));
+  }
 
   const turns = payload?.turns || [];
   if (!turns.length) {
-    const hint = payload?.nodes_with_activity?.length
-      ? `Nothing recorded for this node yet. Recorded: ${payload.nodes_with_activity.join(', ')}.`
+    const note = document.createElement('div');
+    note.className = 'empty-state';
+    const text = document.createElement('p');
+    text.className = 'muted';
+    text.textContent = payload?.nodes_with_activity?.length
+      ? 'Nothing recorded for this node yet. Pick one above that has run.'
       : 'Nothing recorded yet. Events appear once a node has run against a '
         + 'real provider (the fake backend emits a sample turn).';
-    container.innerHTML = `<div class="empty-state"><p class="muted">${hint}</p></div>`;
+    note.append(text);
+    container.append(note);
     return;
   }
 
-  for (const turn of turns) {
+  // Oldest first is the wrong default for a tail and the right one for a
+  // CONVERSATION: turn 1 is the question turn 2 is answering. The server
+  // sends newest first because the "still working" line wants the newest.
+  const ordered = [...turns].sort((a, b) => (a.index || 0) - (b.index || 0));
+
+  for (const turn of ordered) {
     const box = document.createElement('div');
     box.className = 'turn';
 
@@ -674,6 +693,28 @@ export function renderActivity(container, payload) {
     container.append(box);
   }
 }
+
+/** Every node with a record, as chips. The only route to the design phase. */
+function nodePicker(names, current, onPick) {
+  const row = document.createElement('div');
+  row.className = 'node-picker';
+
+  const label = document.createElement('span');
+  label.className = 'muted';
+  label.textContent = 'node:';
+  row.append(label);
+
+  for (const name of names) {
+    const chip = document.createElement('button');
+    chip.type = 'button';
+    chip.className = `cmd${name === current ? ' active' : ''}`;
+    chip.textContent = name;
+    chip.addEventListener('click', () => onPick(name));
+    row.append(chip);
+  }
+  return row;
+}
+
 
 /**
  * One side of the exchange -- what went in, or what came out -- collapsed.

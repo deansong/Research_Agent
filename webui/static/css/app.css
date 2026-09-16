@@ -1411,3 +1411,32 @@ dialog label.required .field-note { color: var(--accent); }
   white-space: pre-wrap;
   overflow-wrap: anywhere;
 }
+
+/* Every node that has a record, as chips above its conversation. The only
+   route to the design phase: discussor, planner and designer are not in the
+   generated agent's graph, so the graph cannot select them. */
+.node-picker {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  align-items: center;
+  margin-bottom: 10px;
+  padding-bottom: 8px;
+  border-bottom: 1px solid var(--line);
+}
+.node-picker .cmd.active {
+  border-color: var(--accent-dim);
+  color: var(--accent);
+}
+
+/* Where the replayed conversation ends and the live feed begins. Without a
+   marker a reopened session reads as one continuous chat, and there is no way
+   to tell which part you are watching happen. */
+.history-end {
+  margin: 10px 0;
+  padding-top: 6px;
+  border-top: 1px dashed var(--line-bright);
+  font-size: 10.5px;
+  color: var(--text-faint);
+  text-align: center;
+}
