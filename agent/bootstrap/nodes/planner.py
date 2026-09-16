@@ -54,7 +54,11 @@ def make_planner(backend, paths):
             )
 
         try:
-            activity.arm_progress(backend, state.get('session_dir', ''), 'planner')
+            sent = activity.exchange(thread_id=thread_id,
+                                     instructions=PLANNER_INSTRUCTIONS,
+                                     prompt=prompt)
+            activity.arm_progress(backend, state.get('session_dir', ''), 'planner',
+                                  sent=sent)
             run = backend.run_structured(
                 thread_id=thread_id,
                 repo_path=state["repo_path"],
@@ -67,7 +71,8 @@ def make_planner(backend, paths):
             # session_dir is already in BootstrapState, so no plumbing is needed --
             # see agent/activity.py for why this goes to disk and not to state.
             activity.disarm_progress(backend, state.get("session_dir", ""), "planner")
-            activity.write(state.get("session_dir", ""), "planner", run.events,
+            activity.write(state.get("session_dir", ""), "planner", run.events, sent=sent,
+                                                       summary=activity.scalars(run.data),
                            usage=usage_to_dict(run.usage) if run.usage else None)
         except BackendOutputError as exc:
             print(f"\n[planner] the model's reply did not fit the schema: {exc}")

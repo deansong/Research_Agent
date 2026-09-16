@@ -138,7 +138,7 @@
       <button class="tab active" data-tab="run">Run</button>
       <button class="tab" data-tab="configure">Configure</button>
       <button class="tab" data-tab="context">Context</button>
-      <button class="tab" data-tab="activity">Activity</button>
+      <button class="tab" data-tab="activity">Conversation</button>
       <button class="tab" data-tab="problems">Problems <span class="badge" id="problem-count" hidden>0</span></button>
     </div>
     <div class="tab-body active" id="tab-run">
@@ -156,8 +156,10 @@
     </div>
     <div class="tab-body" id="tab-activity">
       <div class="empty-state">
-        <p class="muted">Select a node to see what the provider actually did &mdash;
-          the commands it ran, their output, and the files it touched.</p>
+        <p class="muted">Select a node to see its exchange with the provider,
+          turn by turn &mdash; what it was asked, what it did, what it returned.
+          <em>Context</em> is the other half: what it is configured to send
+          next.</p>
       </div>
     </div>
     <div class="tab-body" id="tab-problems">

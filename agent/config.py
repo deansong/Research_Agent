@@ -89,9 +89,13 @@ DEFAULT_ROLE_BACKENDS: dict[str, tuple[str, str]] = {
     # Design is the expensive thing to get wrong: one turn writes a
     # 40,000-character document, and a weaker model there produces a graph
     # that fails validation three times and then gives up.
-    "discussor": ("claude_code", "opus"),
-    "planner": ("claude_code", "opus"),
-    "designer": ("claude_code", "opus"),
+    #"discussor": ("claude_code", "opus"),
+    #"planner": ("claude_code", "opus"),
+    #"designer": ("claude_code", "opus"),
+    "discussor": ("codex", "gpt-5.6-sol"),
+    "planner": ("codex", "gpt-5.6-sol"),
+    "designer": ("codex", "gpt-5.6-sol"),
+
 
     # Writing the experiment code is still Codex's flagship.
     "coder": ("codex", "gpt-5.6-sol"),

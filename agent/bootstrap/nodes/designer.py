@@ -75,7 +75,11 @@ def make_designer(backend):
             )
 
         try:
-            activity.arm_progress(backend, state.get('session_dir', ''), 'designer')
+            sent = activity.exchange(thread_id=thread_id,
+                                     instructions=DESIGNER_INSTRUCTIONS,
+                                     prompt=prompt)
+            activity.arm_progress(backend, state.get('session_dir', ''), 'designer',
+                                  sent=sent)
             run = backend.run_structured(
                 thread_id=thread_id,
                 repo_path=state["repo_path"],
@@ -88,7 +92,8 @@ def make_designer(backend):
             # session_dir is already in BootstrapState, so no plumbing is needed --
             # see agent/activity.py for why this goes to disk and not to state.
             activity.disarm_progress(backend, state.get("session_dir", ""), "designer")
-            activity.write(state.get("session_dir", ""), "designer", run.events,
+            activity.write(state.get("session_dir", ""), "designer", run.events, sent=sent,
+                                                        summary=activity.scalars(run.data),
                            usage=usage_to_dict(run.usage) if run.usage else None)
         except BackendOutputError as exc:
             # The model produced something that is not even a valid

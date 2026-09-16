@@ -227,11 +227,28 @@ the entry node.
 **JSON.** `graph.json` and `nodes.json` as text, parsed as you type. The escape
 hatch for anything the forms do not cover.
 
-**Configure / Context / Activity.** The selected node's settings, the prompt it
-will actually receive, and what the provider *did* — every command with its
-exit code and output, every file it touched, and its own reasoning. That last
-one exists because the terminal only ever said "313 events, last one 7s ago",
-which is true and useless; see `agent/activity.py`.
+**Configure / Context / Conversation.** The selected node's settings, then two
+halves that are easy to confuse and are deliberately kept apart:
+
+- **Context** is what the node will be sent *next* — its templates rendered
+  against the session's state **as it is now**.
+- **Conversation** is what actually happened, turn by turn: the prompt that
+  turn was really sent, the commands it ran with their exit codes and output,
+  the files it touched, its reasoning, and the structured answer it returned.
+
+They are different documents, and that is the point. A prompt is a template
+rendered at a moment; turn 3 of a retry loop carries the verifier's complaint
+and turn 1 did not. Re-rendering the template afterwards shows you today's
+state, not what the model read — so "why did it do that" used to have no
+answer anywhere, and each turn now records its own.
+
+Each turn also names which template it used (`prompts.first` or
+`prompts.next`). A loop that never converges often turns out to be re-sending
+`first` every time, because the provider thread was never continued, and
+nothing else on the record shows that.
+
+The whole tab exists because the terminal only ever said "313 events, last one
+7s ago", which is true and useless; see `agent/activity.py`.
 
 ---
 
@@ -270,9 +287,9 @@ Three different views, and it is worth knowing which answers which question:
 | --- | --- | --- |
 | the heartbeat line | what it is writing right now | last ~120 chars |
 | `show detail` on that line | the live streams + the turn's events | last 8 KB per stream, newest 120 events |
-| **Configure ▸ a node ▸ Activity** | every recorded turn, expandable | **the whole message**, up to 200 KB |
+| **Configure ▸ a node ▸ Conversation** | every recorded turn, expandable | **the whole message**, up to 200 KB |
 
-So: complete text, yes — in the node inspector's Activity tab, once the turn
+So: complete text, yes — in the node inspector's Conversation tab, once the turn
 has ended. The heartbeat and its expander are deliberately tails, because
 while a turn is running there is no end yet.
 

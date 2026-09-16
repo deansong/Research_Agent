@@ -493,3 +493,49 @@ def test_a_nodes_output_is_shown_as_fields_not_a_json_blob():
     # Pretty-printed JSON indents with NEWLINES, so strip all whitespace.
     assert "[0,1,2]" in "".join(shown.split()), "a list still renders as JSON"
     print("PASS  a node's output reads as fields, with strings unquoted")
+
+
+def test_a_turn_shows_what_it_was_asked_and_what_it_returned():
+    """The conversation, separated from the context.
+
+    The Context tab renders the template against TODAY's state. Turn 3 of a
+    retry loop was sent something else entirely -- it carried the verifier's
+    complaint -- so the two are different documents and conflating them means
+    "why did it do that" has no answer on the page.
+
+    Also asserts the returned answer appears: it was recorded all along and
+    displayed nowhere, so a node's actual output was invisible per turn.
+    """
+    try:
+        import quickjs  # noqa: F401
+    except ImportError:  # pragma: no cover
+        pytest.skip("quickjs not installed")
+    from jsdom_harness import exercise
+
+    result = exercise("""
+      var box = document.getElementById('tab-activity');
+      __ns.renderActivity(box, {turns: [{
+        index: 3, started: 'now', counts: {command: 1},
+        sent: {template: 'next', prompt: 'FIX: the split leaked into eval',
+               instructions: 'you write code'},
+        events: [{kind: 'command', phase: 'completed', command: 'pytest -q',
+                  exit_code: 0, output: 'ok'}],
+        summary: {files: 'src/loader.py', summary: 'rebuilt the split'},
+      }]});
+
+      function walk(el, out) {
+        out.push(el.textContent || '');
+        for (var i = 0; i < el._children.length; i++) walk(el._children[i], out);
+        return out;
+      }
+      return { shown: walk(box, []).join(' | ') };
+    """)
+
+    shown = result["shown"]
+    assert "FIX: the split leaked into eval" in shown, "the prompt is not shown"
+    # WHICH template, because a loop that never converges often turns out to
+    # be re-sending `first` every time -- the thread was never continued.
+    assert "prompts.next" in shown, "the template used is not named"
+    assert "pytest -q" in shown, "the events are gone"
+    assert "rebuilt the split" in shown, "the returned answer is not shown"
+    print("PASS  a turn shows the prompt, the events and the answer")

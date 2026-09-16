@@ -73,13 +73,24 @@ def make_agent_node(
         )
         prompt = render(template, context)
 
+        # What this turn ASKS, kept so it can be read back. A prompt is a
+        # template rendered against the state of the moment; re-rendering it
+        # later shows today's state, not what the model read. Which template
+        # was used matters too -- a retry loop that is not converging often
+        # turns out to be re-sending `first` every time.
+        sent = {
+            "template": "first" if use_first else "next",
+            "prompt": prompt,
+            "instructions": config.instructions,
+        }
+
         # ---- step 3: call the model ---------------------------------------
         # Armed per call, because only the node knows which node and which
         # session this turn belongs to. See CodexBackend.on_progress for why
         # per-call is safe here (no fan-out) -- and note it is cleared in the
         # finally, so a backend shared with another node never keeps a stale
         # callback pointing at this one.
-        arm_progress(backend, session_dir, name)
+        arm_progress(backend, session_dir, name, sent=sent)
         try:
             run = backend.run_structured(
                 thread_id=thread_id,
@@ -110,6 +121,7 @@ def make_agent_node(
             usage=usage_to_dict(run.usage) if run.usage else None,
             summary={k: v for k, v in data.items()
                      if isinstance(v, (str, int, float, bool))},
+            sent=sent,
         )
 
         _print_summary(name, config, data)

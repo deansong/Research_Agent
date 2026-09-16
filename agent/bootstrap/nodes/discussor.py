@@ -44,7 +44,11 @@ def make_discussor(backend):
                 f'things stand and set advice to "ready_to_plan".'
             )
 
-        activity.arm_progress(backend, state.get('session_dir', ''), 'discussor')
+        sent = activity.exchange(thread_id=thread_id,
+                                 instructions=DISCUSSOR_INSTRUCTIONS,
+                                 prompt=prompt)
+        activity.arm_progress(backend, state.get('session_dir', ''), 'discussor',
+                              sent=sent)
         run = backend.run_structured(
             thread_id=thread_id,
             repo_path=state["repo_path"],
@@ -57,7 +61,8 @@ def make_discussor(backend):
         # session_dir is already in BootstrapState, so no plumbing is needed --
         # see agent/activity.py for why this goes to disk and not to state.
         activity.disarm_progress(backend, state.get("session_dir", ""), "discussor")
-        activity.write(state.get("session_dir", ""), "discussor", run.events,
+        activity.write(state.get("session_dir", ""), "discussor", run.events, sent=sent,
+                                                         summary=activity.scalars(run.data),
                        usage=usage_to_dict(run.usage) if run.usage else None)
 
         role_threads["discussor"] = run.thread_id

@@ -300,3 +300,83 @@ if __name__ == "__main__":
         if name.startswith("test_"):
             fn()
     print("\nAll activity tests passed.")
+
+
+# ---- the conversation: what a turn was ASKED -------------------------------
+
+
+def test_a_turn_records_what_it_was_sent():
+    """A prompt is a template rendered against the state of the MOMENT.
+
+    The third turn of a retry loop is sent something quite different from the
+    first -- it carries the verifier's complaint -- so re-rendering the
+    template afterwards shows today's state, not what the model read. Without
+    this, "why did it do that" was a question nothing on disk could answer.
+    """
+    import tempfile
+
+    with tempfile.TemporaryDirectory() as tmp:
+        activity.write(tmp, "coder", [{"kind": "message", "text": "hi"}],
+                       sent={"template": "next", "prompt": "fix the thing",
+                             "instructions": "you write code"})
+
+        turn = activity.turns(tmp, "coder")[0]
+
+        assert turn.sent["prompt"] == "fix the thing"
+        # Which template, because a loop that is not converging often turns
+        # out to be re-sending `first` every time -- the thread was never
+        # continued -- and nothing else on the record would show that.
+        assert turn.sent["template"] == "next"
+        assert turn.sent["instructions"] == "you write code"
+        assert turn.as_dict()["sent"] == turn.sent, "it must reach the UI"
+
+
+def test_a_turn_with_no_events_is_still_recorded_when_it_asked_something():
+    """The most useful record of a turn that came back empty is the question.
+
+    A denied tool call on antigravity produces SUCCESS, no answer and no
+    events, and the only thing worth seeing afterwards is what was asked.
+    """
+    import tempfile
+
+    with tempfile.TemporaryDirectory() as tmp:
+        assert activity.write(tmp, "checker", [], sent={"prompt": "check it"})
+        assert activity.turns(tmp, "checker")[0].sent["prompt"] == "check it"
+
+        # And a record with neither is still nothing worth writing.
+        assert activity.write(tmp, "empty", []) is None
+
+
+def test_the_in_flight_record_carries_the_prompt_before_any_events():
+    """REGRESSION, and it could only ever have been found by running it.
+
+    `sent` arrives in **extra in write_in_flight, and reading it as a bare
+    name was a NameError that fired ONLY when `events` was empty -- the start
+    of every turn. The caller wraps this in `except Exception: pass`, so the
+    symptom was the in-flight record silently missing for the first seconds
+    of a turn, which is when somebody watching a long one goes looking.
+    """
+    import tempfile
+
+    with tempfile.TemporaryDirectory() as tmp:
+        path = activity.write_in_flight(tmp, "runner", [],
+                                        sent={"prompt": "run it"})
+
+        assert path is not None, "no in-flight record before the first event"
+        assert activity.turns(tmp, "runner")[0].sent["prompt"] == "run it"
+
+
+def test_a_very_long_prompt_is_clipped_and_says_so():
+    """A designer prompt runs to 20,000 characters and a retry loop keeps
+    several. Bounded, but the cut is announced -- a silently truncated prompt
+    is worse than a clipped one, because it reads as complete."""
+    import tempfile
+
+    with tempfile.TemporaryDirectory() as tmp:
+        activity.write(tmp, "designer", [{"kind": "message"}],
+                       sent={"prompt": "x" * (activity.MAX_SENT + 500)})
+
+        kept = activity.turns(tmp, "designer")[0].sent["prompt"]
+
+        assert len(kept) < activity.MAX_SENT + 200
+        assert "500 more characters" in kept, kept[-80:]

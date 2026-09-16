@@ -1442,3 +1442,41 @@ def test_the_approval_screen_shows_the_gates_and_the_checks():
     gated = [ln for ln in text.splitlines() if "[human gate]" in ln]
     assert len(gated) == 1 and "our method" in gated[0], gated
     print("PASS  the approval screen shows both gates and checks")
+
+
+def test_the_design_phase_nodes_record_what_they_were_sent():
+    """Through the real node, not through activity.exchange.
+
+    activity.py's own tests all pass with the call site deleted -- a helper
+    can be perfect and never run, and this project has shipped exactly that
+    before. The design-phase nodes are hand-written rather than built from
+    the node template, so wiring one does not wire the others: each has to be
+    checked where it actually calls the backend.
+    """
+    import tempfile
+
+    from agent import activity
+    from agent.backends.fake import FakeBackend
+    from agent.bootstrap.nodes import make_discussor
+
+    with tempfile.TemporaryDirectory() as tmp:
+        node = make_discussor(FakeBackend(model="m"))
+        node({
+            "repo_path": tmp,
+            "session_dir": tmp,
+            "user_request": "compare two things",
+            "transcript": [],
+            "providers": {},
+            "usage_by_role": {},
+        })
+
+        turn = activity.turns(tmp, "discussor")[0]
+
+        assert turn.sent, "the discussor recorded no prompt"
+        assert "compare two things" in turn.sent["prompt"]
+        # No thread yet on the opening turn, which is what `first` means.
+        assert turn.sent["template"] == "first"
+        assert turn.sent["instructions"], "the developer message was not kept"
+        # And what it returned, which was recorded nowhere before.
+        assert turn.summary.get("reply"), turn.summary
+    print("PASS  a design-phase node records the prompt it sent and the answer")

@@ -270,9 +270,10 @@ export class Inspector {
     box.append(nodeSummary(context));
 
     box.append(section(
-      'Prompt, as the model will receive it',
-      'Placeholders resolved against the session’s current state. An '
-      + 'unresolved one renders EMPTY rather than failing, so this is the only '
+      'Prompt it will receive NEXT',
+      'The template resolved against the session’s state AS IT IS NOW -- not '
+      + 'what any past turn was sent, which is in Conversation. An unresolved '
+      + 'placeholder renders EMPTY rather than failing, so this is the only '
       + 'place a misspelt {out.node.field} is visible.',
       pre(context.prompts.first.rendered || '(empty)'),
     ));
@@ -639,6 +640,20 @@ export function renderActivity(container, payload) {
     head.append(muted(`${turn.started}${counts ? '  —  ' + counts : ''}`));
     box.append(head);
 
+    // ---- what it was ASKED -------------------------------------------
+    // First, because it is the cause of everything below it. Collapsed: a
+    // prompt runs to thousands of characters and the events are usually what
+    // you came for -- but re-rendering the template in the Context tab shows
+    // TODAY's state, not what this turn actually read, so this is the only
+    // place the real question exists.
+    if (turn.sent?.prompt) {
+      box.append(exchange(
+        `asked  (prompts.${turn.sent.template || '?'})`,
+        turn.sent.prompt,
+        'sent',
+      ));
+    }
+
     for (const event of turn.events || []) {
       // Only the completion of a started/completed pair is worth a row: the
       // start carries nothing the completion does not, and showing both makes
@@ -647,9 +662,38 @@ export function renderActivity(container, payload) {
       box.append(eventRow(event));
     }
 
+    // ---- what it RETURNED --------------------------------------------
+    // The structured answer, which is what the next node actually reads.
+    // It was recorded all along and shown nowhere.
+    if (turn.summary && Object.keys(turn.summary).length) {
+      const body = Object.entries(turn.summary)
+        .map(([key, value]) => `${key}: ${value}`).join('\n');
+      box.append(exchange('returned', body, 'returned'));
+    }
+
     container.append(box);
   }
 }
+
+/**
+ * One side of the exchange -- what went in, or what came out -- collapsed.
+ *
+ * A <details> rather than a pre: the prompt is the biggest thing on the page
+ * and it is not what you look at first. Open it when the events do not
+ * explain themselves.
+ */
+function exchange(label, body, kind) {
+  const box = document.createElement('details');
+  box.className = `exchange exchange-${kind}`;
+  const summary = document.createElement('summary');
+  summary.textContent = `${label}  (${body.length.toLocaleString()} chars)`;
+  const pre = document.createElement('pre');
+  pre.className = 'exchange-body';
+  pre.textContent = body;
+  box.append(summary, pre);
+  return box;
+}
+
 
 function eventRow(event) {
   const row = document.createElement('div');

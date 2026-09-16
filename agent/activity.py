@@ -54,6 +54,19 @@ class Turn:
     events: list[dict]
     usage: dict | None = None
     summary: dict | None = None
+    sent: dict | None = None
+    """What this node was ASKED, on this turn: {template, prompt, instructions}.
+
+    Recorded because it is not recoverable afterwards. A prompt is a template
+    rendered against the state of the moment, and the third turn of a retry
+    loop is sent something quite different from the first -- it carries the
+    verifier's complaint. Re-rendering the template later shows you today's
+    state, not what the model actually read, so "why did it do that" was a
+    question nothing on disk could answer.
+
+    `template` is "first" or "next", which is the other half: a loop that is
+    not converging often turns out to be re-sending `first` every time,
+    because the thread was never continued."""
     progress: dict | None = None
     """How the turn is going, as the backend last reported it.
 
@@ -96,10 +109,58 @@ class Turn:
             "counts": self.counts(),
             "partial": self.partial,
             "progress": self.progress,
+            "sent": self.sent,
             "events": self.events,
             "usage": self.usage,
             "summary": self.summary,
         }
+
+
+#: How much of a prompt to keep per turn. The designer's runs to 20,000
+#: characters and a retry loop keeps several, so this is bounded -- but
+#: generously, because the whole point is to read what was actually sent.
+MAX_SENT = 24000
+
+
+def exchange(*, thread_id, instructions: str, prompt: str) -> dict:
+    """The `sent` record for one turn, built the same way everywhere.
+
+    Shared because the bootstrap nodes and the generated-node template both
+    need it and had no reason to disagree -- and because `template` has a
+    precise meaning that is easy to get wrong: "first" is what a turn with no
+    conversation yet is sent. A retry loop that never converges often turns
+    out to be re-sending `first` every time, which nothing else on the record
+    would show.
+    """
+    return {
+        "template": "first" if thread_id is None else "next",
+        "prompt": prompt,
+        "instructions": instructions,
+    }
+
+
+def scalars(data) -> dict:
+    """A structured answer reduced to what is worth showing beside a turn.
+
+    Scalars only: a design's `nodes` is a 40,000-character object, and the
+    turn record is a summary, not a second copy of the output.
+    """
+    raw = data.model_dump() if hasattr(data, "model_dump") else dict(data or {})
+    return {k: v for k, v in raw.items() if isinstance(v, (str, int, float, bool))}
+
+
+def _clip_sent(sent: dict | None) -> dict | None:
+    """Bound what a turn's record can grow to, and SAY when it was cut."""
+    if not sent:
+        return None
+    out = {}
+    for key, value in sent.items():
+        text = value if isinstance(value, str) else str(value)
+        if len(text) > MAX_SENT:
+            text = (text[:MAX_SENT]
+                    + f"\n\n... [{len(text) - MAX_SENT} more characters]")
+        out[key] = text
+    return out
 
 
 def directory(session_dir: str | Path, node: str) -> Path:
@@ -107,7 +168,8 @@ def directory(session_dir: str | Path, node: str) -> Path:
 
 
 def write(session_dir: str | Path, node: str, events: list[dict], *,
-          usage: dict | None = None, summary: dict | None = None) -> Path | None:
+          usage: dict | None = None, summary: dict | None = None,
+          sent: dict | None = None) -> Path | None:
     """Append one turn's record. Returns the file, or None if there was nothing.
 
     Never raises. A node's real work must not fail because we could not write
@@ -119,7 +181,10 @@ def write(session_dir: str | Path, node: str, events: list[dict], *,
     # is a RELATIVE path, so a caller with no session -- a test, or a folder
     # driven outside one -- silently created ./activity/ in whatever directory
     # the process happened to be in.
-    if not events or not str(session_dir).strip():
+    # `sent` counts as content: a turn that produced no events still asked
+    # the model something, and that question is the most useful thing about a
+    # turn that came back empty.
+    if not (events or sent) or not str(session_dir).strip():
         return None
     try:
         folder = directory(session_dir, node)
@@ -132,6 +197,7 @@ def write(session_dir: str | Path, node: str, events: list[dict], *,
             "started": _now(),
             "usage": usage,
             "summary": summary,
+            "sent": _clip_sent(sent),
             "events": events,
         }, indent=1) + "\n")
         return path
@@ -152,7 +218,12 @@ def write_in_flight(session_dir: str | Path, node: str, events: list[dict],
     through a line. A whole-file write is not atomic either, so readers
     tolerate a JSONDecodeError -- see turns().
     """
-    if not events or not str(session_dir).strip():
+    # `sent` arrives in **extra here, not as a parameter -- and reading it as
+    # a bare name was a NameError that only fired when `events` was EMPTY,
+    # which is precisely the start of a turn. The caller wraps this in
+    # `except Exception: pass`, so the symptom was the in-flight record
+    # silently not appearing for the first seconds of every turn.
+    if not (events or extra.get("sent")) or not str(session_dir).strip():
         return None
     try:
         folder = directory(session_dir, node)
@@ -209,6 +280,7 @@ def turns(session_dir: str | Path, node: str, *,
             events=list(raw.get("events") or []),
             usage=raw.get("usage"),
             summary=raw.get("summary"),
+            sent=raw.get("sent"),
             partial=path.name == IN_FLIGHT,
             progress={k: raw[k] for k in
                       ("elapsed", "idle", "streamed", "last", "live")
@@ -260,7 +332,8 @@ def _safe(name: str) -> str:
     return "".join(c if c.isalnum() or c in "-_." else "-" for c in name) or "node"
 
 
-def arm_progress(backend, session_dir: str | Path, node: str) -> None:
+def arm_progress(backend, session_dir: str | Path, node: str, *,
+                 sent: dict | None = None) -> None:
     """Point a backend's progress callback at this node's in-flight record.
 
     A one-liner with a docstring because the ownership is the interesting
@@ -280,6 +353,10 @@ def arm_progress(backend, session_dir: str | Path, node: str) -> None:
         # said anywhere.
         write_in_flight(
             session_dir, node, report.get("events") or [],
+            # Carried on the in-flight record too, so the prompt is readable
+            # WHILE a twenty-minute turn runs -- which is exactly when
+            # somebody is looking for it.
+            sent=_clip_sent(sent),
             elapsed=round(report.get("elapsed", 0.0), 1),
             idle=round(report.get("idle", 0.0), 1),
             counts=report.get("counts") or {},

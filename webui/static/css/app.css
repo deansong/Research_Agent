@@ -1372,3 +1372,42 @@ dialog label.required .field-note { color: var(--accent); }
    and truncating them loses the thing being looked up. */
 .output-facts { grid-template-columns: 130px 1fr; }
 .output-facts dd { white-space: pre-wrap; color: var(--text); }
+
+/* ---------- the conversation: what a turn was asked, and returned ---------- */
+/*
+  Collapsed by default. The prompt is the biggest thing on the page and it is
+  not what you look at first -- but it is the only place the REAL question
+  exists, because the Context tab re-renders the template against today's
+  state rather than the state this turn actually read.
+*/
+.exchange {
+  margin: 4px 0 6px;
+  border-left: 2px solid var(--line-bright);
+  padding-left: 8px;
+}
+.exchange > summary {
+  cursor: pointer;
+  font-size: 11px;
+  color: var(--text-dim);
+  list-style: none;
+}
+.exchange > summary::before { content: '▸ '; }
+.exchange[open] > summary::before { content: '▾ '; }
+.exchange-sent > summary { color: var(--human); }
+.exchange-returned > summary { color: var(--accent); }
+.exchange-sent { border-left-color: var(--human); }
+.exchange-returned { border-left-color: var(--accent-dim); }
+
+.exchange-body {
+  margin: 6px 0 0;
+  padding: 8px 10px;
+  max-height: 340px;
+  overflow: auto;
+  background: var(--bg-input);
+  border: 1px solid var(--line);
+  border-radius: 4px;
+  font-family: var(--mono);
+  font-size: 11px;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
