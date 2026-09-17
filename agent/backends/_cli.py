@@ -386,7 +386,7 @@ class CliBackend:
                 self._abandon(proc, worker)
                 raise BackendTimeout(silent_message(
                     self.label, idle, elapsed, len(recorded), streamed[0], live,
-                    last_seen[0], self.roles))
+                    last_seen[0], self.roles, self.max_seconds))
             if elapsed >= self.max_seconds:
                 self._abandon(proc, worker)
                 raise BackendTimeout(runaway_message(

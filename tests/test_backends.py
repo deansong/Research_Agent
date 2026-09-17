@@ -1526,3 +1526,30 @@ def test_an_unknown_access_level_falls_back_to_the_measured_signature():
     assert "refused tool call" not in known_write, known_write
     assert "has not said why" in known_write, known_write
     print("PASS  an unknown access level falls back to the measured signature")
+
+
+def test_raising_the_idle_timeout_alone_is_not_advised_when_the_cap_binds():
+    """Advice that walks you into the next wall.
+
+    MEASURED on a real run: an ag_news training cell takes ~60 min/epoch x 3
+    epochs = ~3h of silence. The idle limit was 1h and the absolute cap 2h.
+    This message said "raise the timeout" and printed one setting -- follow it
+    and the turn dies at max_seconds instead, with a DIFFERENT message
+    recommending a DIFFERENT fix (split the node). Two limits, one edit.
+    """
+    from agent.backends._progress import silent_message
+
+    both = silent_message("Antigravity", 3600, 3936, 290, 0, None, "$ train",
+                          ("runner",), max_seconds=7200)
+    assert '"timeout": 14400' in both, both
+    assert '"max_seconds"' in both, both
+    # And it says WHY the second one is there, or it reads like a typo.
+    assert "caps the whole turn at 7200s" in both, both
+
+    # When the cap is comfortably above the suggestion, it stays out of the
+    # snippet: a setting nobody needs is a setting somebody has to evaluate.
+    only = silent_message("Antigravity", 300, 645, 242, 0, None, "$ train",
+                          ("runner",), max_seconds=86400)
+    assert '"timeout": 1200' in only, only
+    assert "max_seconds" not in only, only
+    print("PASS  the advice accounts for the cap that would bind next")

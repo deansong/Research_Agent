@@ -489,7 +489,7 @@ class CodexBackend:
     def _silent_message(self, idle: float, elapsed: float, events: int,
                         streamed: int = 0, live=None, last: str = "") -> str:
         return silent_message("Codex", idle, elapsed, events, streamed, live,
-                              last, self.roles)
+                              last, self.roles, self.max_seconds)
 
     def _flood_message(self, streamed: int, elapsed: float) -> str:
         return flood_message("Codex", streamed, elapsed)

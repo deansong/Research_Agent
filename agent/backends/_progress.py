@@ -404,7 +404,7 @@ def _snake(class_name: str) -> str:
 
 def silent_message(provider: str, idle: float, elapsed: float, events: int,
                    streamed: int = 0, live=None, last: str = "",
-                   roles: tuple[str, ...] = ()) -> str:
+                   roles: tuple[str, ...] = (), max_seconds: float = 0.0) -> str:
     """What went quiet, and -- the part that was missing -- what it had
     already said.
 
@@ -473,18 +473,41 @@ def silent_message(provider: str, idle: float, elapsed: float, events: int,
     # somebody who has already set 600 and hit it again.
     suggested = max(600, int(idle) * 4 // 60 * 60)
 
+    # RAISING `timeout` ALONE IS OFTEN USELESS, and saying so here is the
+    # difference between one config edit and two. `max_seconds` is a separate
+    # cap on the WHOLE turn: set the idle limit above it and the turn dies at
+    # max_seconds instead, with a different message recommending a different
+    # fix. MEASURED on a real run -- an ag_news training cell takes ~3h, the
+    # idle limit was 1h and the absolute cap 2h, and this message advised
+    # raising only the first.
+    also_capped = max_seconds and suggested >= max_seconds
+    options = f'"timeout": {suggested}'
+    if also_capped:
+        # Enough room for the longer silence plus the work around it, rounded
+        # to the hour. A cap below the timeout it is paired with is a trap.
+        cap = max(int(max_seconds), (suggested * 2 + 3599) // 3600 * 3600)
+        options += f', "max_seconds": {cap}'
+
     if roles:
         named = ", ".join(f"`{r}`" for r in roles)
         which = (f"This backend serves {named}, so that raises the limit for "
                  f"every node on {'them' if len(roles) > 1 else 'it'}.")
         snippet = ('    {"roles": {%s}}'
-                   % ", ".join(f'"{r}": {{"options": {{"timeout": {suggested}}}}}'
+                   % ", ".join(f'"{r}": {{"options": {{{options}}}}}'
                                for r in roles))
     else:
         which = ("Use the role name this node declares as its `backend` -- "
                  "which may well be shared with other nodes.")
-        snippet = ('    {"roles": {"<role>": {"options": {"timeout": %d}}}}'
-                   % suggested)
+        snippet = ('    {"roles": {"<role>": {"options": {%s}}}}' % options)
+
+    if also_capped:
+        which += (
+            f"\n\nBOTH limits are in there because raising the idle timeout "
+            f"alone would not have helped: `max_seconds` caps the whole turn "
+            f"at {max_seconds:.0f}s, below the {suggested}s silence being "
+            f"allowed, so the turn would have been killed by that instead -- "
+            f"with a different message, recommending a different fix."
+        )
 
     return (
         head + body
