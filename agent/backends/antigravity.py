@@ -278,47 +278,111 @@ class AntigravityBackend(CliBackend):
         parsed = result.get("structured_output")
         return json.dumps(parsed) if parsed is not None else ""
 
-    def _why_empty(self, envelope):
-        """Say what was actually refused, and do NOT suggest widening a verifier.
+    def _why_empty(self, envelope, access=None):
+        """Say what was actually refused -- and only when something was.
 
-        The envelope carries `denied_actions` -- measured:
-        [{"action": "command", "display_name": "RunCommand"}] -- so the turn
-        can be named instead of guessed at.
+        MEASURED, agy 1.2.4, from a real failing envelope:
 
-        The advice this replaced was "give the node write access". For the
-        node that hits this most, a `check_*` verifier, that is the one change
-        it must not make: a verifier is read_only BY DESIGN, and
-        _verification_problems identifies one structurally as read_only with
-        no steps that is the source of a branch. Widening it stops it counting
-        as a verifier at all, and hands the judge the power to fix the work it
-        is judging -- which is the single rule this project's graphs are built
-        around.
+            status: 'ERROR'
+            denied_actions: None
+            error: 'API error (attempt 1): UNAVAILABLE (code 503): No capacity
+                    available for model gemini-3.8-flash-medium on the server'
+
+        THE ENVELOPE SAYS WHY, IN `error`, AND THIS FUNCTION USED TO IGNORE IT.
+        Every empty answer got the same paragraph about the permission model
+        and the same advice to move `checker` to codex -- told, in the case
+        above, to somebody whose failing node was a `runner` with WRITE access
+        during a capacity outage. Nothing in the advice applied, the real
+        reason was in the envelope all along, and the one sentence that would
+        have ended it in ten seconds was thrown away to make room for a guess.
+
+        The permission diagnosis is real, and it is the right one when agy
+        lists denied_actions or the node ran read_only -- which the startup
+        check in build_backends now prevents in the first place. It is not the
+        right one for everything else, and the two are distinguishable.
         """
         result = envelope.get("result") or envelope
         denied = result.get("denied_actions") or []
         names = sorted({str(d.get("display_name") or d.get("action"))
                         for d in denied if isinstance(d, dict)})
-        refused = (f"agy refused {', '.join(names)}"
-                   if names else
-                   f"agy reported status={result.get('status')!r} and sent no "
-                   f"structured_output, which is what a refused tool call "
-                   f"looks like")
+        reported = str(result.get("error") or "").strip()
+        read_only = access is not None and str(getattr(access, "value", access)) \
+            == Access.READ_ONLY.value
 
+        # The provider's own words first, whenever it gave any. Even an error
+        # this file has never seen beats a confident sentence about the wrong
+        # subsystem, and an unrecognised one is how the next measurement
+        # starts.
+        if reported and not names:
+            return (
+                f"agy reported status={result.get('status')!r} and said:\n\n"
+                f"    {reported}\n\n"
+                f"That is the provider's own account of the failure, so start "
+                f"there -- it is not this node's prompt, its access level or "
+                f"its plan steps.\n\n"
+                f"A 503 or 'no capacity' is the model being full and says "
+                f"nothing about the run: try again, or pin this role to a "
+                f"model with room:\n"
+                f'    {{"roles": {{{self._role_hint()}: '
+                f'{{"model": "gemini-3.1-pro"}}}}}}\n'
+                f"in <repo>/.agent/config.json."
+            )
+
+        # SUCCESS with no answer and no denials IS the measured denial
+        # signature -- that is the shape the read_only hole produces, and it
+        # is what the original measurement recorded. So when the access level
+        # is not known (an older call path, a direct test), that shape is
+        # still the best available reading. What it must NOT override is a
+        # known-good access level: WRITE can do everything on this CLI, so a
+        # denial there is impossible however empty the answer is.
+        status = str(result.get("status") or "")
+        looks_denied = access is None and status == "SUCCESS"
+
+        if names or read_only or looks_denied:
+            refused = (f"agy refused {', '.join(names)}" if names else
+                       f"agy reported status={result.get('status')!r} and sent "
+                       f"no structured_output, which is what a refused tool "
+                       f"call looks like"
+                       + (", and this node ran read_only" if read_only else ""))
+            return (
+                f"{refused}.\n\n"
+                f"This is agy's permission model, not the model failing. It "
+                f"has no setting between --dangerously-skip-permissions and "
+                f"refusing every tool call, so a node that must read files or "
+                f"run commands cannot run on this provider under read_only."
+                f"\n\n"
+                f"Point the role at a provider that can, which for a verifier "
+                f"is the right fix and costs one line:\n"
+                f'    {{"roles": {{{self._role_hint()}: '
+                f'{{"provider": "codex"}}}}}}\n'
+                f"in <repo>/.agent/config.json.\n\n"
+                f"Do NOT give a check_* node write access to get past this. A "
+                f"verifier is read_only by design -- that is what stops the "
+                f"judge fixing the work it is judging, and it is how the "
+                f"validator recognises a verifier at all."
+            )
+
+        # Nothing refused, nothing reported, nothing read_only. Say exactly
+        # that rather than picking a cause: the status and the absence of an
+        # error message are the whole of what is known.
         return (
-            f"{refused}.\n\n"
-            f"This is agy's permission model, not the model failing. It has no "
-            f"setting between --dangerously-skip-permissions and refusing "
-            f"every tool call, so a node that must read files or run commands "
-            f"cannot run on this provider under read_only.\n\n"
-            f"Point the role at a provider that can, which for a verifier is "
-            f"the right fix and costs one line:\n"
-            f'    {{"roles": {{"checker": {{"provider": "codex"}}}}}}\n'
-            f"in <repo>/.agent/config.json.\n\n"
-            f"Do NOT give a check_* node write access to get past this. A "
-            f"verifier is read_only by design -- that is what stops the judge "
-            f"fixing the work it is judging, and it is how the validator "
-            f"recognises a verifier at all."
+            f"agy reported status={result.get('status')!r}, listed no denied "
+            f"actions and gave no error message, so it has not said why.\n\n"
+            f"The node ran with "
+            f"{str(getattr(access, 'value', access) or 'unknown')} access, "
+            f"which is a level this provider can express -- so this is not "
+            f"the permission hole that usually empties an agy answer. Rerun "
+            f"it; if it repeats, the turn's events are in the Conversation "
+            f"panel and the last one is where it stopped."
         )
+
+    def _role_hint(self) -> str:
+        """The role names to put in the config snippet.
+
+        Hardcoding "checker" sent people to change a role their failing node
+        did not use. build_backends stamps the real ones onto the instance.
+        """
+        return ", ".join(f'"{role}"' for role in self.roles) or '"<role>"'
 
     def usage_from(self, envelope) -> Usage | None:
         result = envelope.get("result") or envelope

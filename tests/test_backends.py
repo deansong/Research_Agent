@@ -1398,3 +1398,131 @@ def test_a_tool_that_is_not_a_shell_command_says_what_it_touched():
     assert headline({"kind": "tool", "phase": "started", "command": "Grep"}) \
         == "    * Grep"
     print("PASS  a non-command tool names what it acted on")
+
+
+def test_the_envelope_s_own_error_beats_a_guess_about_permissions():
+    """An empty answer was ALWAYS blamed on the permission model.
+
+    MEASURED, agy 1.2.4, from a real failing envelope captured for this:
+
+        status: 'ERROR'
+        denied_actions: None
+        error: 'API error (attempt 1): UNAVAILABLE (code 503): No capacity
+                available for model gemini-3.8-flash-medium on the server'
+
+    The reason was in the envelope, in a field this function did not read.
+    Instead every empty answer got the same paragraph about read_only and the
+    same advice to move `checker` to codex -- delivered, in this case, to
+    somebody whose failing node was a `runner` with WRITE access during a
+    capacity outage. None of the advice applied to anything.
+    """
+    from agent.backends.antigravity import AntigravityBackend
+    from agent.backends.base import Access
+
+    agy = AntigravityBackend.__new__(AntigravityBackend)
+    agy.roles = ("runner",)
+
+    said = agy._why_empty({"result": {
+        "status": "ERROR", "denied_actions": None, "response": "",
+        "error": "API error (attempt 1): UNAVAILABLE (code 503): No capacity "
+                 "available for model gemini-3.8-flash-medium on the server",
+    }}, Access.WRITE)
+
+    assert "No capacity available" in said, said
+    assert "503" in said, said
+    # The advice that did not apply, and the role name that was not theirs.
+    assert "read_only" not in said, said
+    assert '"checker"' not in said, said
+    assert "verifier" not in said, said
+    print("PASS  the envelope's own error beats a guess about permissions")
+
+
+def test_a_real_denial_is_still_diagnosed_as_one():
+    """The permission diagnosis is right when agy actually refused something,
+    and narrowing it must not cost that -- it took three measurements and a
+    wasted 45,000-token turn to write."""
+    from agent.backends.antigravity import AntigravityBackend
+    from agent.backends.base import Access
+
+    agy = AntigravityBackend.__new__(AntigravityBackend)
+    agy.roles = ("checker",)
+
+    listed = agy._why_empty({"result": {
+        "status": "SUCCESS",
+        "denied_actions": [{"action": "command", "display_name": "RunCommand"}],
+    }}, Access.READ_ONLY)
+    assert "refused RunCommand" in listed, listed
+    assert "permission model" in listed, listed
+    assert '"checker"' in listed, listed
+    assert "Do NOT give a check_* node write access" in listed, listed
+
+    # And with no denied_actions listed, read_only alone is still enough --
+    # agy does not always fill that field, and the measured SUCCESS-with-no-
+    # answer case is exactly a read_only node.
+    quiet = agy._why_empty({"result": {"status": "SUCCESS"}}, Access.READ_ONLY)
+    assert "permission model" in quiet, quiet
+    print("PASS  a real denial is still diagnosed as one")
+
+
+def test_nothing_known_is_reported_as_nothing_known():
+    """No denials, no error text, an access level the provider CAN express.
+
+    Nothing is known about the cause, and the honest report says so. The old
+    code's answer here was the permission paragraph, which is a confident
+    claim about the one thing the access level rules out.
+    """
+    from agent.backends.antigravity import AntigravityBackend
+    from agent.backends.base import Access
+
+    agy = AntigravityBackend.__new__(AntigravityBackend)
+    agy.roles = ("runner",)
+
+    said = agy._why_empty({"result": {"status": "SUCCESS"}}, Access.WRITE)
+    assert "has not said why" in said, said
+    assert "not the permission hole" in said, said
+    assert "Rerun" in said, said
+    print("PASS  an unexplained empty answer is reported as unexplained")
+
+
+def test_the_config_snippet_names_the_role_that_actually_failed():
+    """Hardcoded "checker" sent people to change a role their failing node did
+    not use. build_backends stamps the real ones; a shared instance names all
+    of them, because raising one of a shared pair fixes nothing."""
+    from agent.backends.antigravity import AntigravityBackend
+    from agent.backends.base import Access
+
+    agy = AntigravityBackend.__new__(AntigravityBackend)
+    agy.roles = ("executor", "runner")
+    said = agy._why_empty({"result": {"status": "SUCCESS"}}, Access.READ_ONLY)
+    assert '"executor", "runner"' in said, said
+
+    # An instance built outside the factory still says something usable.
+    agy.roles = ()
+    assert "<role>" in agy._why_empty({"result": {"status": "SUCCESS"}},
+                                      Access.READ_ONLY)
+    print("PASS  the snippet names the role that actually failed")
+
+
+def test_an_unknown_access_level_falls_back_to_the_measured_signature():
+    """SUCCESS, no answer, no denials IS what the read_only hole produces --
+    that is the shape the original measurement recorded.
+
+    So when the access level is not known, that reading is still the best one
+    available. What it must not do is override a level that IS known: WRITE
+    can do everything on this CLI, so a denial there is impossible however
+    empty the answer is, and saying otherwise is the bug this pair pins.
+    """
+    from agent.backends.antigravity import AntigravityBackend
+    from agent.backends.base import Access
+
+    agy = AntigravityBackend.__new__(AntigravityBackend)
+    agy.roles = ("checker",)
+    envelope = {"result": {"status": "SUCCESS", "response": ""}}
+
+    unknown = agy._why_empty(envelope)
+    assert "refused tool call" in unknown, unknown
+
+    known_write = agy._why_empty(envelope, Access.WRITE)
+    assert "refused tool call" not in known_write, known_write
+    assert "has not said why" in known_write, known_write
+    print("PASS  an unknown access level falls back to the measured signature")

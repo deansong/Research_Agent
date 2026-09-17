@@ -213,7 +213,7 @@ class CliBackend:
             )
 
         text = self.final_text(envelope)
-        data = self._validate(text, output_model, envelope)
+        data = self._validate(text, output_model, envelope, access)
 
         resolved = minted or self.session_id_from(envelope) or ""
         return StructuredRun(
@@ -225,7 +225,7 @@ class CliBackend:
         )
 
     def _validate(self, text: str, output_model: type[OutputT],
-                  envelope: dict) -> OutputT:
+                  envelope: dict, access: Access | None = None) -> OutputT:
         """Parse, or raise BackendOutputError.
 
         No in-backend repair turn. designer.py and planner.py already catch
@@ -248,10 +248,10 @@ class CliBackend:
 
         raise BackendOutputError(
             f"{self.label} returned no answer at all.\n\n"
-            f"{self._why_empty(envelope)}"
+            f"{self._why_empty(envelope, access)}"
         )
 
-    def _why_empty(self, envelope: dict) -> str:
+    def _why_empty(self, envelope: dict, access: Access | None = None) -> str:
         return ("The turn reported success but carried no structured output. "
                 "The usual cause is a tool call it was not permitted to make.")
 

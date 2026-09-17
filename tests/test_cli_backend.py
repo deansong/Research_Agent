@@ -667,3 +667,31 @@ def test_a_finished_result_does_not_stand_in_for_a_running_command():
     assert "stale-number" not in last, last
     assert "python train.py" in last, last
     print("PASS  a running command is never described by an old result")
+
+
+def test_the_access_level_reaches_the_empty_answer_diagnosis():
+    """The wire, not the message.
+
+    `_why_empty` can only avoid blaming the permission model if it is TOLD
+    what access the turn ran with, and that value starts in run_structured.
+    Asserting on _why_empty alone passes whether or not anything passes it.
+    """
+    seen = {}
+
+    class Watching(Fake):
+        def _why_empty(self, envelope, access=None):
+            seen["access"] = access
+            return "why"
+
+    # A result envelope with no answer in it -- the whole point of _why_empty.
+    body = ('import json\n'
+            'print(json.dumps({"event":"result","id":"c","out":""}))\n')
+
+    with pytest.raises(BackendOutputError):
+        _run(Watching(body), access=Access.WRITE)
+    assert seen["access"] == Access.WRITE, seen
+
+    with pytest.raises(BackendOutputError):
+        _run(Watching(body), access=Access.READ_ONLY)
+    assert seen["access"] == Access.READ_ONLY, seen
+    print("PASS  the access level reaches the empty-answer diagnosis")

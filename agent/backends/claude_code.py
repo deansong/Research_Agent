@@ -214,7 +214,10 @@ class ClaudeCodeBackend(CliBackend):
             return ""
         return str(envelope.get("result") or "")
 
-    def _why_empty(self, envelope):
+    def _why_empty(self, envelope, access=None):
+        # `access` is accepted and unused: this provider's envelope already
+        # names its own denials, so it never had to infer them from the level.
+        # The parameter exists because the base class passes it.
         denials = envelope.get("permission_denials") or []
         detail = (f" It was denied {len(denials)} tool call(s); a node "
                   f"declared read_only cannot write." if denials else "")
