@@ -21,7 +21,12 @@ from agent.agentfolder.schema import (
     GraphFile,
     HumanNodeConfig,
     NodeConfig,
+    OrchestratorNodeConfig,
 )
+
+#: kind in graph.json -> the model its nodes.json entry is parsed with.
+CONFIG_FOR_KIND = {"agent": AgentNodeConfig, "human": HumanNodeConfig,
+                   "orchestrator": OrchestratorNodeConfig}
 
 GRAPH_FILE = "graph.json"
 NODES_FILE = "nodes.json"
@@ -48,6 +53,14 @@ class AgentFolder:
             for name, config in self.nodes.items()
             if isinstance(config, AgentNodeConfig)
         }
+
+    def orchestrator(self) -> tuple[str, OrchestratorNodeConfig] | None:
+        """The hub's (name, config), or None for an agent without one."""
+        for ref in self.graph.nodes:
+            config = self.nodes.get(ref.name)
+            if ref.kind == "orchestrator" and isinstance(config, OrchestratorNodeConfig):
+                return ref.name, config
+        return None
 
 
 def load_agent_folder(path: Path) -> AgentFolder:
@@ -76,7 +89,7 @@ def load_agent_folder(path: Path) -> AgentFolder:
     nodes: dict[str, NodeConfig] = {}
 
     for name, entry in nodes_raw.items():
-        model = HumanNodeConfig if kinds.get(name) == "human" else AgentNodeConfig
+        model = CONFIG_FOR_KIND.get(kinds.get(name) or "agent", AgentNodeConfig)
         if name not in kinds:
             nodes[name] = _lenient(name, entry)
             continue
@@ -92,7 +105,7 @@ def load_agent_folder(path: Path) -> AgentFolder:
 
 def _lenient(name: str, entry: object) -> NodeConfig:
     """Best-effort parse for a node graph.json does not mention."""
-    for model in (AgentNodeConfig, HumanNodeConfig):
+    for model in (AgentNodeConfig, OrchestratorNodeConfig, HumanNodeConfig):
         try:
             return model.model_validate(entry)
         except ValidationError:

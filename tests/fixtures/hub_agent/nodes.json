@@ -1,0 +1,66 @@
+{
+  "orchestrator": {"validator": "validator", "paper": "paper", "review": "review"},
+  "s1_data": {
+    "backend": "coder", "access": "write", "steps": ["1"],
+    "instructions": "Do your step.",
+    "output": [
+      {"name": "status", "type": "enum", "choices": ["finished", "working"], "required": true},
+      {"name": "summary", "type": "string"},
+      {"name": "report", "type": "string"}
+    ],
+    "prompts": {"first": "{task_brief}\n\n{my_steps}\n\n{handoff}", "next": "{handoff}"},
+    "capture": ["turn_changes"]
+  },
+  "s2_eval": {
+    "backend": "coder", "access": "write", "steps": ["2"],
+    "instructions": "Do your step.",
+    "output": [
+      {"name": "status", "type": "enum", "choices": ["finished", "working"], "required": true},
+      {"name": "summary", "type": "string"},
+      {"name": "report", "type": "string"}
+    ],
+    "prompts": {"first": "{task_brief}\n\n{my_steps}\n\n{handoff}", "next": "{handoff}"},
+    "capture": ["turn_changes"]
+  },
+  "validator": {
+    "backend": "validator", "access": "read_only",
+    "instructions": "Judge the work. Change nothing.",
+    "output": [
+      {"name": "verdict", "type": "enum", "choices": ["pass", "fail", "unsure"], "required": true},
+      {"name": "problem", "type": "string"},
+      {"name": "suspected_origin", "type": "string"},
+      {"name": "suspected_step", "type": "string"},
+      {"name": "evidence", "type": "string"},
+      {"name": "suggested_fix", "type": "string"}
+    ],
+    "prompts": {"first": "{handoff}"}
+  },
+  "paper": {
+    "backend": "paper_writer", "access": "write",
+    "instructions": "Write the paper.",
+    "output": [
+      {"name": "status", "type": "enum", "choices": ["finished", "working"], "required": true},
+      {"name": "summary", "type": "string"},
+      {"name": "report", "type": "string"},
+      {"name": "paper_dir", "type": "string"}
+    ],
+    "prompts": {"first": "{task_brief}\n\n{handoff}", "next": "{handoff}"}
+  },
+  "review": {
+    "commands": [
+      {"name": "continue", "to": "orchestrator", "purposes": ["orchestrator", "gate", "guard", "finish_review"],
+       "argument": "[guidance]", "summary": "Carry on", "sets": {"answer": "{argument}"}},
+      {"name": "approve", "to": "orchestrator", "purposes": ["gate"], "argument": "[note]",
+       "summary": "Approve the gated step", "sets": {"gate": "approved", "answer": "{argument}"}},
+      {"name": "accept", "to": "__end__", "purposes": ["finish_review"], "argument": "[note]",
+       "summary": "Do what the review recommends", "outcome": "accept", "sets": {"note": "{argument}"}},
+      {"name": "replan", "to": "__end__", "purposes": ["finish_review"], "argument": "[what to change]",
+       "summary": "Change the plan and run again", "outcome": "replan", "sets": {"note": "{argument}"}},
+      {"name": "redesign", "to": "__end__", "purposes": ["finish_review"], "argument": "[what to change]",
+       "summary": "Redesign the agent and run again", "outcome": "redesign", "sets": {"note": "{argument}"}},
+      {"name": "finish", "to": "__end__", "purposes": ["finish_review"],
+       "summary": "Stop here", "outcome": "finish"},
+      {"name": "exit", "to": "__end__", "aliases": ["quit", "q"], "summary": "Stop now", "outcome": "exit"}
+    ]
+  }
+}

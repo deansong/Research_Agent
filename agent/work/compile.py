@@ -16,11 +16,17 @@ from langgraph.graph import END, START, StateGraph
 
 from agent.agentfolder.load import AgentFolder
 from agent.agentfolder.outputs import build_output_model
-from agent.agentfolder.schema import END_TARGET, AgentNodeConfig, HumanNodeConfig
+from agent.agentfolder.schema import (
+    END_TARGET,
+    AgentNodeConfig,
+    HumanNodeConfig,
+    OrchestratorNodeConfig,
+)
 from agent.backends.base import Access
 from agent.work.state import WorkState
 from agent.work.templates.agent_node import DEFAULT_ROUTE, make_agent_node
 from agent.work.templates.human_node import make_human_node
+from agent.work.templates.orchestrator_node import make_orchestrator_node
 
 # Appended to every write-access node's instructions by the loader, not the
 # folder -- so a generated agent cannot opt out of it. The session checkpoint
@@ -113,7 +119,30 @@ def backends_needed(folder: AgentFolder) -> dict[str, Access]:
         current = needed.get(config.backend)
         if current is None or current.rank < access.rank:
             needed[config.backend] = access
+    hub = folder.orchestrator()
+    if hub and hub[1].backend not in needed:
+        needed[hub[1].backend] = Access.READ_ONLY
     return needed
+
+
+def hub_roster(folder: AgentFolder) -> dict[str, dict]:
+    """A hub agent's nodes as its orchestrator sees them, in graph order:
+    node -> {kind: work|validator|paper|human, steps, role, access}."""
+    hub = folder.orchestrator()
+    if hub is None:
+        return {}
+    _, config = hub
+    roster: dict[str, dict] = {}
+    for ref in folder.graph.nodes:
+        node = folder.nodes.get(ref.name)
+        if isinstance(node, HumanNodeConfig):
+            roster[ref.name] = {"kind": "human", "steps": [], "role": "", "access": "none"}
+        elif isinstance(node, AgentNodeConfig):
+            kind = ("validator" if ref.name == config.validator
+                    else "paper" if ref.name == config.paper else "work")
+            roster[ref.name] = {"kind": kind, "steps": list(node.steps),
+                                "role": node.backend, "access": node.access}
+    return roster
 
 
 def compile_agent(
@@ -135,10 +164,20 @@ def compile_agent(
     builder = StateGraph(WorkState)
 
     transitions = _transitions(folder)
+    roster = hub_roster(folder)
 
     # ---- nodes -----------------------------------------------------------
     for ref in folder.graph.nodes:
         config = folder.nodes[ref.name]
+
+        if isinstance(config, OrchestratorNodeConfig):
+            builder.add_node(ref.name, make_orchestrator_node(
+                ref.name,
+                config.model_copy(update={"instructions": config.instructions + isolation
+                                          + sandbox_note(backends.get(config.backend),
+                                                         "read_only")}),
+                roster=roster, backend=backends[config.backend], session_dir=session_dir))
+            continue
 
         if isinstance(config, HumanNodeConfig):
             builder.add_node(ref.name, make_human_node(ref.name, config, registry=registry,
@@ -163,6 +202,7 @@ def compile_agent(
                 output_model=build_output_model(ref.name, config.output),
                 transition=transitions.get(ref.name),
                 session_dir=session_dir,
+                hub_role=roster.get(ref.name, {}).get("kind", "") if roster else "",
             ),
         )
 
@@ -193,7 +233,7 @@ def compile_agent(
     all_targets = {ref.name: ref.name for ref in folder.graph.nodes}
     all_targets[END_TARGET] = END
     for ref in folder.graph.nodes:
-        if isinstance(folder.nodes[ref.name], HumanNodeConfig):
+        if isinstance(folder.nodes[ref.name], (HumanNodeConfig, OrchestratorNodeConfig)):
             builder.add_conditional_edges(ref.name, _router(ref.name), dict(all_targets))
 
     return builder.compile(checkpointer=checkpointer)

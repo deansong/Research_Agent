@@ -67,7 +67,9 @@ class NodeRef(FolderModel):
     """One entry in graph.json's node list. Config lives in nodes.json."""
 
     name: str = Field(pattern=NODE_NAME)
-    kind: Literal["agent", "human"]
+    kind: Literal["agent", "human", "orchestrator"]
+    """"orchestrator" is the hub of a hub agent: it decides, turn by turn,
+    which node runs next -- see OrchestratorNodeConfig."""
 
 
 class EdgeSpec(FolderModel):
@@ -237,7 +239,56 @@ class HumanNodeConfig(FolderModel):
     commands: list[CommandSpec] = Field(default_factory=list, max_length=12)
 
 
-NodeConfig = AgentNodeConfig | HumanNodeConfig
+class OrchestratorNodeConfig(FolderModel):
+    """Config for a kind: "orchestrator" node -- the hub of a hub agent.
+
+    A hub agent has no branches. Every work node, the validator and the paper
+    node have one edge, back to the orchestrator; the orchestrator decides
+    each time where the run goes next -- a node to do work, the validator to
+    check it, the human to ask, or the end. That is what lets a failure found
+    in step 3 go back to step 1, where it started, rather than only to the
+    step that was just checked. agent/work/templates/orchestrator_node.py.
+
+    Every setting has a default; a designed agent writes only the wiring.
+    """
+
+    backend: str = Field(default="orchestrator", min_length=1, max_length=64)
+    """A role name. "orchestrator" runs where the discussor does unless it is
+    configured itself (roles.ROLE_ALIASES), so it can continue the
+    discussor's own conversation."""
+
+    instructions: str = ""
+    """Extra, experiment-specific instructions. The orchestrator's rules
+    themselves come from code."""
+
+    validator: str = Field(pattern=NODE_NAME)
+    """The one node it sends work to be checked."""
+    paper: str = Field(default="", pattern=r"^([a-z][a-z0-9_]{0,31})?$")
+    """The node that writes the paper; the run does not finish before it has
+    written one that passed validation. Empty: no paper."""
+    review: str = Field(pattern=NODE_NAME)
+    """The human node it asks: a gate, a question it cannot settle, the
+    decision at the end of the run."""
+
+    # ---- loop guards: hitting one asks the human ---------------------------
+    max_turns: int = Field(default=80, ge=1, le=2000)
+    """Decisions it may make in one run."""
+    max_visits: int = Field(default=8, ge=1, le=200)
+    """Times one node may be sent work in one run."""
+    max_failures: int = Field(default=3, ge=1, le=50)
+    """Validations one node may fail in a row before a person is asked."""
+
+    # ---- context -------------------------------------------------------------
+    roll_percent: int = Field(default=70, ge=10, le=95)
+    """When its conversation fills this much of the model's context window,
+    the next turn starts a fresh one, seeded from its memory."""
+    context_window: int = Field(default=0, ge=0)
+    """Tokens. 0: the provider's own figure, else backends/models.py's."""
+
+    announce: str = ""
+
+
+NodeConfig = AgentNodeConfig | HumanNodeConfig | OrchestratorNodeConfig
 
 
 # ---------------------------------------------------------------------------
@@ -273,6 +324,18 @@ def node_entry(kind: str | None, values: dict) -> dict:
     """
     if kind == "human":
         return {"commands": [command_entry(c) for c in values.get("commands", [])]}
+    if kind == "orchestrator":
+        # Wiring always, settings only where they differ from the default --
+        # a hub agent's file then shows exactly what was tuned.
+        defaults = OrchestratorNodeConfig(validator="x", review="x").model_dump()
+        out = {}
+        for key in ORCHESTRATOR_KEYS:
+            value = values.get(key)
+            if key in ("validator", "review"):
+                out[key] = value
+            elif value not in (None, "", [], {}) and value != defaults.get(key):
+                out[key] = value
+        return out
 
     out: dict = {}
     for key in AGENT_KEYS:
@@ -292,6 +355,13 @@ def node_entry(kind: str | None, values: dict) -> dict:
         else:
             out[key] = value
     return out
+
+
+#: An orchestrator node's keys, in the order they are written.
+ORCHESTRATOR_KEYS: tuple[str, ...] = (
+    "backend", "instructions", "validator", "paper", "review", "max_turns",
+    "max_visits", "max_failures", "roll_percent", "context_window", "announce",
+)
 
 
 #: One output field's keys, in the order they are written.

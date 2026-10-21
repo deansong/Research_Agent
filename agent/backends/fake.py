@@ -66,6 +66,18 @@ class FakeBackend:
             return self._canned(output_model, _MINIMAL_AGENT, turn,
                                 "a minimal but genuinely valid two-node agent")
 
+        if _looks_like_an_orchestrator(output_model):
+            print("[fake] returning a decision read off the [state] line")
+            # It CONTINUES the conversation it was given, like a real one:
+            # that is what carries the discussor into the run.
+            return StructuredRun(
+                data=output_model.model_validate(_orchestrate(output_model, prompt)),
+                thread_id=thread_id or f"fake-thread-{turn}",
+                is_new_thread=thread_id is None,
+                usage=Usage(input_tokens=1000, cached_input_tokens=400, output_tokens=50,
+                            context_window=200_000),
+                events=_fake_events(turn))
+
         fields = _placeholder_fields(output_model, turn)
 
         # Special case so a fake run actually TERMINATES. A node with an
@@ -109,6 +121,39 @@ class FakeBackend:
 
     def close(self) -> None:
         return None
+
+
+def _looks_like_an_orchestrator(output_model) -> bool:
+    """A hub agent's orchestrator -- checked BEFORE the older `action`
+    router special case below, which would otherwise catch it."""
+    return {"action", "target", "subject", "include"} <= set(output_model.model_fields)
+
+
+def _orchestrate(output_model, prompt: str) -> dict:
+    """A plausible orchestrator, played from the [state] line its prompt ends
+    with: do each step in order, validate each, send a failure to where the
+    validator says it started, then the paper, then finish."""
+    import re
+
+    line = next((l for l in reversed(prompt.splitlines()) if l.startswith("[state]")), "")
+    state = dict(re.findall(r"(\w+)=(\S+)", line))
+    targets = [t for t in _choices(output_model, "target") if t != "none"]
+    kind, todo = state.get("kind", "start"), state.get("todo", "none")
+    decision = {"action": "finish", "target": "none", "subject": "none",
+                "reason": f"[fake] after {kind}", "handoff": "[fake] do your step",
+                "include": [], "thread": "fresh", "step_status": [], "note": "",
+                "verdict": "done", "summary": "[fake] every step done and checked",
+                "findings": [], "plan_feedback": "", "design_feedback": ""}
+    if kind in ("work", "paper") and state.get("last") in targets:
+        decision.update(action="validate", subject=state["last"], thread="fresh")
+    elif kind == "validation" and state.get("verdict") not in ("pass", "none"):
+        origin = state.get("origin")
+        decision.update(action="dispatch",
+                        target=origin if origin in targets else state.get("subject", todo),
+                        handoff="[fake] fix what the validator found")
+    elif todo in targets:
+        decision.update(action="dispatch", target=todo)
+    return decision
 
 
 def _looks_like_a_planner(output_model) -> bool:

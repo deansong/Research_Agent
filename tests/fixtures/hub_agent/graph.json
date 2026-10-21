@@ -1,0 +1,20 @@
+{
+  "format_version": 1,
+  "name": "hub-fixture",
+  "description": "A hub agent: an orchestrator, two work steps, one validator, a paper, a person.",
+  "entry": "orchestrator",
+  "nodes": [
+    {"name": "orchestrator", "kind": "orchestrator"},
+    {"name": "s1_data", "kind": "agent"},
+    {"name": "s2_eval", "kind": "agent"},
+    {"name": "validator", "kind": "agent"},
+    {"name": "paper", "kind": "agent"},
+    {"name": "review", "kind": "human"}
+  ],
+  "edges": [
+    {"from": "s1_data", "to": "orchestrator"},
+    {"from": "s2_eval", "to": "orchestrator"},
+    {"from": "validator", "to": "orchestrator"},
+    {"from": "paper", "to": "orchestrator"}
+  ]
+}

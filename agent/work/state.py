@@ -124,6 +124,26 @@ class WorkState(TypedDict, total=False):
     ask. Set by whichever transition led into it. This is the declarative form
     of today's human.question / human.purpose / human.return_to."""
 
+    # ---- a hub agent's orchestrator (agent/work/templates/orchestrator_node.py)
+    handoff: dict
+    """What the orchestrator handed the node it sent work to: {to, text,
+    fresh, subject, turn}. Rendered as {handoff} for that node only."""
+
+    orchestrator: dict
+    """The orchestrator's own bookkeeping, one writer: its step book (each
+    step's status and, once validated, its final report), guard counters,
+    the last dispatch and validation, its notes. Small by design -- the
+    detail of a step stays with the node that did it."""
+
+    ledger: Annotated[list[dict], operator.add]
+    """One short line per event of a hub run -- a node reported, the
+    validator judged, the orchestrator decided, a person answered. The
+    orchestrator is shown the newest few."""
+
+    supervision: dict
+    """{mode, iteration, max_iterations}: how the end of this run is decided.
+    Written once at start."""
+
     last_answer: str
     outcome: str
     """"" | "done" | "exit" | "new_task" -- why the run ended."""
@@ -139,6 +159,9 @@ def initial_work_state(
     artifacts_dir: str = "",
     plan: dict | None = None,
     threads: dict[str, str] | None = None,
+    thread_providers: dict[str, str] | None = None,
+    orchestrator: dict | None = None,
+    supervision: dict | None = None,
 ) -> dict[str, Any]:
     """Build the input for a fresh run of a generated agent.
 
@@ -155,13 +178,17 @@ def initial_work_state(
         "transcript": [{"role": "human", "text": task_brief}],
         "outputs": {},
         "threads": dict(threads or {}),
-        "thread_providers": {},
+        "thread_providers": dict(thread_providers or {}),
         "thread_marks": {},
         "counters": {},
         "vars": {},
         "route": {},
         "usage": {},
         "pending": {},
+        "handoff": {},
+        "orchestrator": dict(orchestrator or {}),
+        "ledger": [],
+        "supervision": dict(supervision or {}),
         "last_answer": "",
         "outcome": "",
         "next_request": "",
@@ -173,6 +200,7 @@ def render_context(
     *,
     argument: str = "",
     steps: list[str] | None = None,
+    node: str = "",
 ) -> dict[str, Any]:
     """Build the mapping agentfolder.render.render() reads.
 
@@ -193,6 +221,11 @@ def render_context(
         "last_answer": state.get("last_answer", ""),
         "transcript": format_transcript(state.get("transcript", [])),
         "argument": argument,
+        # Only for the node it was handed to: a stale handoff to another
+        # node must never leak into this one's prompt.
+        "handoff": (handoff.get("text", "")
+                    if node and (handoff := state.get("handoff") or {}).get("to") == node
+                    else ""),
         "out": state.get("outputs", {}),
         "var": state.get("vars", {}),
     }

@@ -34,6 +34,10 @@ SIMPLE_TOKENS = (
     "my_steps",
     "plan_outline",
     "argument",
+    # What a hub agent's orchestrator handed THIS node for this turn -- its
+    # instructions and the context it chose to pass on. Empty for any other
+    # node, and in an agent without an orchestrator.
+    "handoff",
 )
 
 
@@ -120,9 +124,15 @@ def mermaid(folder) -> str:
     `grandalf` package and draw_mermaid() needs a compiled graph -- neither is
     available at the moment you most want the picture.)
     """
-    from agent.agentfolder.schema import HumanNodeConfig
+    from agent.agentfolder.schema import HumanNodeConfig, OrchestratorNodeConfig
 
     lines = ["graph TD;", f"  __start__ --> {folder.graph.entry};"]
+    for name, config in folder.nodes.items():
+        if isinstance(config, OrchestratorNodeConfig):
+            for ref in folder.graph.nodes:
+                if ref.name != name:
+                    lines.append(f"  {name} -. dispatch .-> {ref.name};")
+            lines.append(f"  {name} -. finish .-> __end__;")
 
     for edge in folder.graph.edges:
         lines.append(f"  {edge.from_} --> {edge.to};")

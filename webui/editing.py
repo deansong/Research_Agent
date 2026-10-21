@@ -46,11 +46,13 @@ from typing import Any
 
 from agent import activity
 from agent.agentfolder.load import AgentFolderError, load_agent_folder
+from agent.agentfolder.load import CONFIG_FOR_KIND
 from agent.agentfolder.schema import (
     END_TARGET,
     AgentNodeConfig,
     GraphFile,
     HumanNodeConfig,
+    OrchestratorNodeConfig,
     graph_document,
     node_entry,
 )
@@ -188,7 +190,7 @@ def save_folder(path: Path, document: dict, *, staging: Path) -> SaveResult:
     nodes: dict[str, Any] = {}
     for name, raw in (document.get("nodes") or {}).items():
         kind = kinds.get(name)
-        model = HumanNodeConfig if kind == "human" else AgentNodeConfig
+        model = CONFIG_FOR_KIND.get(kind or "agent", AgentNodeConfig)
         try:
             checked = model.model_validate(raw)
         except Exception as exc:  # pydantic.ValidationError
@@ -288,6 +290,18 @@ def graph_view(folder, plan: dict | None = None) -> dict:
             for command in config.commands:
                 edges.append({"from": name, "to": command.to, "kind": "command",
                               "label": f"/{command.name}", "asks": False})
+        elif isinstance(config, OrchestratorNodeConfig):
+            # The hub's exits are decided turn by turn, so draw every one it
+            # can take: each node it can send work to, the end.
+            for ref in folder.graph.nodes:
+                if ref.name == name:
+                    continue
+                label = ("validate" if ref.name == config.validator
+                         else "ask" if ref.name == config.review else "dispatch")
+                edges.append({"from": name, "to": ref.name, "kind": "dispatch",
+                              "label": label, "asks": ref.name == config.review})
+            edges.append({"from": name, "to": END_TARGET, "kind": "dispatch",
+                          "label": "finish", "asks": False})
 
     return {"name": folder.graph.name, "description": folder.graph.description,
             "entry": folder.graph.entry, "nodes": nodes, "edges": edges}
@@ -333,6 +347,17 @@ def node_context(folder, name: str, *, state: dict, artifacts_dir: str = "",
             "name": name,
             "kind": "human",
             "commands": [c.model_dump(mode="json") for c in config.commands],
+        }
+    if isinstance(config, OrchestratorNodeConfig):
+        # Its prompt is built by code each turn from the step book, not from
+        # a template -- see agent/work/templates/orchestrator_node.py. Its
+        # last turn shows what it was actually sent.
+        last = activity.latest(session_dir, name) if session_dir else None
+        return {
+            "name": name,
+            "kind": "orchestrator",
+            "settings": config.model_dump(mode="json"),
+            "last_prompt": ((last.sent or {}).get("prompt", "") if last else ""),
         }
 
     context = render_context(state, steps=list(config.steps))

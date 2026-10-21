@@ -37,6 +37,7 @@ def make_agent_node(
     output_model,
     transition: EdgeSpec | BranchSpec | None,
     session_dir: str = "",
+    hub_role: str = "",
 ):
     """Build the node function for one `kind: "agent"` entry.
 
@@ -46,6 +47,11 @@ def make_agent_node(
     why the branch is evaluated TWICE -- once here (to pick the ask) and once
     in the router (to pick the target). Both lookups are pure and read the same
     `cases` list; see the comment in compile.py.
+
+    `hub_role` is set when the node is a spoke of a hub agent: "work",
+    "validator" or "paper". Such a node also takes a fresh conversation when
+    the orchestrator says so, appends its line to the ledger, and -- a work
+    or paper node that finished -- saves its final report.
     """
 
     def agent_node(state: WorkState) -> dict[str, Any]:
@@ -53,10 +59,15 @@ def make_agent_node(
             print(f"\n[{name}] {config.announce}")
 
         # ---- step 1: which provider conversation is this? -----------------
-        context = render_context(state, steps=list(config.steps))
+        context = render_context(state, steps=list(config.steps), node=name)
         thread_suffix = render(config.thread_key, context) if config.thread_key else ""
         thread_id_key = f"{name}/{thread_suffix}"
         thread_id = state.get("threads", {}).get(thread_id_key)
+        handoff = state.get("handoff") or {}
+        if hub_role and handoff.get("to") == name and handoff.get("fresh"):
+            # The orchestrator asked for a clean start: a new substep, or a
+            # judge that must not remember its last verdict.
+            thread_id = None
 
         # A conversation belongs to the provider that started it. Moved to
         # another (Runs on, mid-run): start a new one, with the first prompt
@@ -199,7 +210,15 @@ def make_agent_node(
                 counter: int(counters.get(counter, 0)) + 1 for counter in config.bump
             }
         after = render_context({**state, "outputs": {**state.get("outputs", {}), name: data}},
-                               steps=list(config.steps))
+                               steps=list(config.steps), node=name)
+        if hub_role:
+            update["ledger"] = [_ledger_line(name, hub_role, data,
+                                             record.stem if record else "",
+                                             handoff.get("subject", ""))]
+            saved = _save_report(state.get("artifacts_dir", ""), name, hub_role, data)
+            if saved:
+                data["report_path"] = saved
+                update["outputs"] = {name: data}
 
         if config.record:
             # Re-render with this turn's output already visible, so a node can
@@ -219,6 +238,51 @@ def make_agent_node(
         return update
 
     return agent_node
+
+
+#: A hub node's final report is saved here, under the run's artifacts.
+REPORTS_DIR = "reports"
+
+
+def _ledger_line(name: str, hub_role: str, data: dict, turn: str, subject: str) -> dict:
+    """One short line for the orchestrator's ledger, made by code -- a model
+    is not asked to summarise its own work twice."""
+    if hub_role == "validator":
+        digest = f"{data.get('verdict', '?')} on {subject or '?'}"
+        if data.get("verdict") != "pass":
+            if data.get("problem"):
+                digest += f": {data['problem']}"
+            if data.get("suspected_origin") not in (None, "", subject):
+                digest += f" (origin: {data['suspected_origin']})"
+    else:
+        digest = f"{data.get('status') or 'reported'}: {data.get('summary') or ''}".strip()
+    return {"node": name, "kind": "validation" if hub_role == "validator" else hub_role,
+            "subject": subject if hub_role == "validator" else name,
+            "verdict": str(data.get("verdict", "")) if hub_role == "validator" else "",
+            "digest": digest[:300], "turn": turn}
+
+
+def _save_report(artifacts_dir: str, name: str, hub_role: str, data: dict) -> str:
+    """Write a finished node's final report to <artifacts>/reports/<node>.md.
+
+    The report is what outlives the node's turn: the orchestrator carries it
+    forward instead of the node's logs, and the paper is written from it.
+    Only once the node says it is finished -- a substep's progress note is
+    not a report."""
+    report = str(data.get("report") or "").strip()
+    if hub_role == "validator" or not report or not artifacts_dir:
+        return ""
+    if data.get("status") not in (None, "", "finished"):
+        return ""
+    from pathlib import Path
+
+    path = Path(artifacts_dir) / REPORTS_DIR / f"{name}.md"
+    try:
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text(report + "\n")
+    except OSError:
+        return ""
+    return str(path)
 
 
 def _resolve_transition(transition, data: dict) -> tuple[str, Any]:

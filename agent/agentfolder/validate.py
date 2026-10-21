@@ -35,6 +35,7 @@ from agent.agentfolder.schema import (
     AgentNodeConfig,
     AskSpec,
     HumanNodeConfig,
+    OrchestratorNodeConfig,
 )
 from agent.backends.base import Access
 
@@ -142,6 +143,10 @@ def validate_folder(
         elif kind == "agent" and not isinstance(config, AgentNodeConfig):
             problems.append(Problem("kind_mismatch", f"node {name!r}",
                                     'kind is "agent" but its config looks like a human node.'))
+        elif kind == "orchestrator" and not isinstance(config, OrchestratorNodeConfig):
+            problems.append(Problem("kind_mismatch", f"node {name!r}",
+                                    'kind is "orchestrator" but its config does not name its '
+                                    '`validator` and `review` nodes.'))
 
     # ---- the vocabularies placeholders may draw on -----------------------
     counters = {c for cfg in folder.agent_nodes().values() for c in cfg.bump}
@@ -189,7 +194,8 @@ def validate_folder(
             problems.append(Problem("fan_out", f"node {name!r}",
                                     "has more than one plain outgoing edge. Parallel branches "
                                     "are not supported yet; use a branch to choose one."))
-        if (not out_edges and not branch and kinds.get(name) != "human"
+        # Human nodes and the hub route wherever they decide at run time.
+        if (not out_edges and not branch and kinds.get(name) not in ("human", "orchestrator")
                 and not incomplete):
             problems.append(Problem("dead_end", f"node {name!r}",
                                     "has no outgoing edge or branch, so the run stops there. "
@@ -304,8 +310,82 @@ def validate_folder(
                                 "no human command routes to \"__end__\", so there is no way to "
                                 "stop the agent by hand.", warning=True))
 
-    problems.extend(_verification_problems(folder, kinds, strict=strict))
+    hub = _hub_problems(folder, kinds, edges_by_source, branch_by_source)
+    problems.extend(hub)
+    if folder.orchestrator() is None:
+        problems.extend(_verification_problems(folder, kinds, strict=strict))
 
+    return problems
+
+
+def _hub_problems(folder: AgentFolder, kinds: dict[str, str],
+                  edges_by_source: dict, branch_by_source: dict) -> list[Problem]:
+    """The shape a hub agent must have.
+
+    One orchestrator, and it is the entry. Every other model node -- work
+    nodes, the validator, the paper node -- has exactly one plain edge, back
+    to the orchestrator, and no branch: deciding where the run goes is the
+    orchestrator's job alone, which is what lets it send a fault back to the
+    step it started in. The validator judges and changes nothing.
+    """
+    hubs = [name for name, kind in kinds.items() if kind == "orchestrator"]
+    if not hubs:
+        return []
+    problems: list[Problem] = []
+    if len(hubs) > 1:
+        problems.append(Problem("hub_count", "graph.json",
+                                f"has {len(hubs)} orchestrator nodes ({', '.join(hubs)}); "
+                                f"a hub agent has exactly one."))
+    hub = hubs[0]
+    config = folder.nodes.get(hub)
+    if folder.graph.entry != hub:
+        problems.append(Problem("hub_entry", "graph.json",
+                                f"entry is {folder.graph.entry!r}; a hub agent starts at its "
+                                f"orchestrator {hub!r}."))
+    if edges_by_source.get(hub) or branch_by_source.get(hub):
+        problems.append(Problem("hub_outgoing", f"node {hub!r}",
+                                "an orchestrator decides where to go each turn; give it no "
+                                "edges or branches of its own."))
+
+    for name, kind in kinds.items():
+        if kind != "agent":
+            continue
+        if branch_by_source.get(name):
+            problems.append(Problem("hub_branch", f"node {name!r}",
+                                    f"branches on its own output. In a hub agent only the "
+                                    f"orchestrator decides where the run goes: give {name!r} "
+                                    f"one edge, to {hub!r}."))
+        edges = edges_by_source.get(name, [])
+        if edges and any(edge.to != hub for edge in edges):
+            problems.append(Problem("hub_spoke", f"node {name!r}",
+                                    f"has an edge to {edges[0].to!r}. In a hub agent every "
+                                    f"model node reports back to the orchestrator {hub!r}."))
+
+    if not isinstance(config, OrchestratorNodeConfig):
+        return problems
+    validator = folder.nodes.get(config.validator)
+    if kinds.get(config.validator) != "agent" or not isinstance(validator, AgentNodeConfig):
+        problems.append(Problem("hub_validator", f"node {hub!r}",
+                                f"validator is {config.validator!r}, which is not an agent "
+                                f"node."))
+    else:
+        verdict = next((f for f in validator.output if f.name == "verdict"), None)
+        if validator.access != "read_only" or validator.steps:
+            problems.append(Problem("hub_validator", f"node {config.validator!r}",
+                                    "the validator must be read_only and own no plan steps: "
+                                    "a judge that can change the work, or that has work of "
+                                    "its own, is not independent."))
+        if (verdict is None or verdict.type != "enum"
+                or not {"pass", "fail"} <= set(verdict.choices)):
+            problems.append(Problem("hub_validator", f"node {config.validator!r}",
+                                    "needs an enum output field `verdict` whose choices "
+                                    "include pass and fail."))
+    if config.paper and kinds.get(config.paper) != "agent":
+        problems.append(Problem("hub_paper", f"node {hub!r}",
+                                f"paper is {config.paper!r}, which is not an agent node."))
+    if kinds.get(config.review) != "human":
+        problems.append(Problem("hub_review", f"node {hub!r}",
+                                f"review is {config.review!r}, which is not a human node."))
     return problems
 
 
@@ -491,6 +571,11 @@ def _reachability(folder, edges_by_source, branch_by_source):
                 targets.append(case.to)
                 if case.ask:
                     targets.append(case.ask.resume_to)
+
+        # The hub can go anywhere, the end included.
+        if kinds.get(current) == "orchestrator":
+            targets.extend(kinds)
+            targets.append(END_TARGET)
 
         # A human node's exits are its commands, which live in nodes.json.
         if kinds.get(current) == "human":
