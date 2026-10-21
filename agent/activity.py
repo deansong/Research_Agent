@@ -364,6 +364,40 @@ def latest(session_dir: str | Path, node: str) -> Turn | None:
     return found[0] if found else None
 
 
+def latest_finished(session_dir: str | Path, node: str) -> Turn | None:
+    """The newest turn that has ENDED -- not the one still in flight."""
+    return next((t for t in turns(session_dir, node, limit=2) if not t.partial), None)
+
+
+#: How much of one command's output log_tail keeps.
+LOG_LINES = 40
+
+
+def log_tail(turn: Turn | None, *, lines: int = LOG_LINES, commands: int = 12) -> str:
+    """What a turn's commands printed: each command, its exit code and the end
+    of its output, newest last.
+
+    For the validator and the orchestrator. A node's own report says what it
+    THINKS happened; this is what the shell said. Only the last `commands`
+    commands, each cut to its last `lines` lines -- the end of a log is where
+    a failure is.
+    """
+    if turn is None:
+        return ""
+    done = [e for e in turn.events
+            if e.get("kind") in ("command", "tool") and e.get("phase") in ("completed", "error")]
+    out = []
+    for event in done[-commands:]:
+        text = str(event.get("output") or "").rstrip().split("\n")
+        cut = len(text) - lines
+        body = ("\n".join(([f"... {cut} earlier lines"] if cut > 0 else []) + text[-lines:])
+                if text != [""] else "(no output)")
+        code = event.get("exit_code")
+        out.append(f"$ {event.get('command', '')}" + (f"   [exit {code}]" if code not in (None, 0) else "")
+                   + "\n" + body)
+    return "\n\n".join(out)
+
+
 def nodes_with_activity(session_dir: str | Path) -> list[str]:
     root = Path(session_dir) / "activity"
     if not root.is_dir():

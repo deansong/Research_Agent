@@ -133,6 +133,14 @@ DEFAULT_ROLE_BACKENDS: dict[str, tuple[str, str]] = {
     # See AntigravityBackend.unsupported_access, which now refuses this
     # combination at startup rather than mid-turn.
     "checker": ("codex", "gpt-5.6-sol"),
+
+    # A hub agent's validator: read-only for the same reason as `checker`,
+    # and the same model -- it is the one judge of every step.
+    "validator": ("codex", "gpt-5.6-sol"),
+
+    # Writes the ACL-style paper at the end of every run: long, careful
+    # prose over many result files.
+    "paper_writer": ("claude_code", "opus"),
 }
 
 # LangGraph raises GraphRecursionError after this many super-steps in one
@@ -213,6 +221,10 @@ def backend_for(cfg: AgentConfig, role: str) -> BackendConfig:
     """
     override = cfg.roles.get(role)
     if override is None:
+        # An alias runs where its target does, unless it was configured itself.
+        alias = roles.ROLE_ALIASES.get(role)
+        if alias and alias in cfg.roles:
+            return backend_for(cfg, alias)
         return cfg.default
 
     return BackendConfig(

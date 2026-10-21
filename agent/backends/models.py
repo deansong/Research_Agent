@@ -182,3 +182,43 @@ def list_all(providers=None, *, refresh: bool = False) -> list[ModelList]:
             except Exception as exc:
                 out.append(ModelList(name, error=f"No answer: {exc}"))
         return out
+
+
+# ---- how much a model can read ---------------------------------------------
+
+#: Context windows, in tokens, by provider and model-name prefix -- for
+#: providers that do not report one. Codex does (Usage.context_window, from
+#: its token-usage notifications), and what it reports wins. Conservative
+#: where a model has a larger opt-in window (Claude's 1M is a beta).
+CONTEXT_WINDOWS: dict[str, tuple[tuple[str, int], ...]] = {
+    "claude_code": (("", 200_000),),
+    "antigravity": (("gemini", 1_000_000), ("claude", 200_000), ("opus", 200_000),
+                    ("sonnet", 200_000), ("gpt", 272_000), ("", 200_000)),
+    "codex": (("", 272_000),),
+    "fake": (("", 200_000),),
+}
+
+#: When nothing is known about a model.
+DEFAULT_CONTEXT_WINDOW = 128_000
+
+#: Roughly how many characters one token of English prose and code is.
+CHARS_PER_TOKEN = 4
+
+
+def context_window(provider: str, model: str | None, reported: int | None = None) -> int:
+    """How many tokens `model` on `provider` can read: the provider's own
+    figure when it reported one, else the table above."""
+    if reported:
+        return int(reported)
+    name = (model or "").lower()
+    for prefix, window in CONTEXT_WINDOWS.get(provider, ()):
+        if name.startswith(prefix) or (prefix and prefix in name):
+            return window
+    return DEFAULT_CONTEXT_WINDOW
+
+
+def prompt_budget_chars(provider: str, model: str | None, reported: int | None = None,
+                        share: float = 0.5) -> int:
+    """How many characters one prompt may use: `share` of the window, leaving
+    the rest for the conversation so far, the instructions and the answer."""
+    return int(context_window(provider, model, reported) * share * CHARS_PER_TOKEN)

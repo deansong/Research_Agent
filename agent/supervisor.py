@@ -131,10 +131,19 @@ def next_iteration(session_dir: str | Path) -> int:
     return (max(done) + 1) if done else 1
 
 
+#: The timeline row that ends an iteration of a hub agent, whose orchestrator
+#: makes the supervisor's call itself (see Runtime.conclude_iteration).
+ITERATION_END = "iteration_end"
+
+
 def run_visits(session_dir: str | Path) -> list[dict]:
-    """The timeline since the last supervisor review: this run's visits."""
+    """The timeline since the last iteration ended: this run's visits.
+
+    An iteration ends at a supervisor review (a pipeline agent) or at an
+    `iteration_end` row (a hub agent's orchestrator decided)."""
     visits = activity.timeline(session_dir)
-    last = max((i for i, v in enumerate(visits) if v.get("node") == ROLE), default=-1)
+    last = max((i for i, v in enumerate(visits)
+                if v.get("node") == ROLE or v.get("kind") == ITERATION_END), default=-1)
     return visits[last + 1:]
 
 
@@ -227,6 +236,17 @@ def archive(*, session_dir: str | Path, agent_dir: str | Path, iteration: int,
 def _clip(text: str, limit: int) -> str:
     text = str(text or "")
     return text if len(text) <= limit else text[:limit] + f" ... [{len(text) - limit} more]"
+
+
+def clip_middle(text: str, limit: int) -> str:
+    """Keep the head and the tail -- a log's start says what ran, its end
+    what happened -- and say how much was left out."""
+    text = str(text or "")
+    if len(text) <= limit:
+        return text
+    half = max(limit // 2, 1)
+    return (text[:half] + f"\n... [{len(text) - 2 * half} characters left out] ...\n"
+            + text[-half:])
 
 
 # ---------------------------------------------------------------------------

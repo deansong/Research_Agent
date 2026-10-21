@@ -48,7 +48,7 @@ from typing import Any, Iterator
 
 from langgraph.checkpoint.sqlite import SqliteSaver
 
-from agent import storage
+from agent import roles, storage
 from agent.agentfolder.load import AgentFolder, AgentFolderError, load_agent_folder
 from agent.agentfolder.validate import Problem, validate_folder
 from agent.backends import build_backends
@@ -160,7 +160,12 @@ class Runtime:
         cfg = cfg or self.cfg
         built = build_backends(cfg, needed, codex_client=self.codex_client(needed, cfg))
         built = dict(built)
-        for role, spec in (cfg.delegation or {}).items():
+        delegation = dict(cfg.delegation or {})
+        # An alias that is not configured itself delegates like its target.
+        for alias, target in roles.ROLE_ALIASES.items():
+            if alias not in delegation and alias not in cfg.roles and target in delegation:
+                delegation[alias] = delegation[target]
+        for role, spec in delegation.items():
             if role not in needed:
                 continue
             # Its OWN primary instance: build_backends shares one instance

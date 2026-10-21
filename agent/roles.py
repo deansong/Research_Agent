@@ -41,5 +41,17 @@ RUNNER = "runner"
 CHECKER = "checker"
 SUPERVISOR = "supervisor"
 
+# A hub agent's two fixed roles besides the orchestrator: the one validator
+# the orchestrator sends work to, and the node that writes the paper.
+VALIDATOR = "validator"
+PAPER_WRITER = "paper_writer"
+
+#: A role that, unless configured itself, runs where another does. The
+#: orchestrator IS the discussor carried into the run -- it continues the
+#: discussor's conversation -- so it must run on the same provider and model,
+#: or that conversation cannot carry over.
+ROLE_ALIASES: dict[str, str] = {ORCHESTRATOR: DISCUSSOR}
+
 ALL_ROLES: tuple[str, ...] = (DISCUSSOR, RESEARCHER, PLANNER, DESIGNER, ORCHESTRATOR,
-                              EXECUTOR, CODER, CODER_LIGHT, RUNNER, CHECKER, SUPERVISOR)
+                              EXECUTOR, CODER, CODER_LIGHT, RUNNER, CHECKER, SUPERVISOR,
+                              VALIDATOR, PAPER_WRITER)
