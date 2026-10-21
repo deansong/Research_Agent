@@ -389,11 +389,12 @@ def _decided(state, review: dict, decision: str, note: str) -> dict:
     return {"decision": decision, "feedback": feedback, "error": "", "review": review}
 
 
-def feedback_for(review: dict, decision: str, note: str = "") -> str:
+def feedback_for(review: dict, decision: str, note: str = "", *,
+                 who: str = "A supervisor") -> str:
     """What the planner or designer is told for the next iteration."""
     if decision == "finish":
         return ""
-    parts = [f"A supervisor reviewed the last run ({review.get('verdict')}): "
+    parts = [f"{who} reviewed the last run ({review.get('verdict')}): "
              f"{review.get('summary', '')}"]
     parts += [f"- {f}" for f in review.get("findings", [])]
     if decision == "replan" and review.get("plan_feedback"):

@@ -48,7 +48,7 @@ from typing import Any, Iterator
 
 from langgraph.checkpoint.sqlite import SqliteSaver
 
-from agent import roles, storage
+from agent import activity, roles, storage
 from agent.agentfolder.load import AgentFolder, AgentFolderError, load_agent_folder
 from agent.agentfolder.validate import Problem, validate_folder
 from agent.backends import build_backends
@@ -157,13 +157,15 @@ class Runtime:
         caches identically-configured roles onto one instance, so the same
         object legitimately appears under several role names.
         """
-        cfg = cfg or self.cfg
+        configured = cfg or self.cfg
+        cfg = self._with_orchestrator(configured, needed)
         built = build_backends(cfg, needed, codex_client=self.codex_client(needed, cfg))
         built = dict(built)
         delegation = dict(cfg.delegation or {})
         # An alias that is not configured itself delegates like its target.
         for alias, target in roles.ROLE_ALIASES.items():
-            if alias not in delegation and alias not in cfg.roles and target in delegation:
+            if (alias not in delegation and alias not in configured.roles
+                    and target in delegation):
                 delegation[alias] = delegation[target]
         for role, spec in delegation.items():
             if role not in needed:
@@ -187,6 +189,32 @@ class Runtime:
             backend.writable_roots = writable
         self._built.update(built)
         return built
+
+    def _with_orchestrator(self, cfg: AgentConfig, needed) -> AgentConfig:
+        """`cfg`, with the orchestrator role pinned to where the discussor
+        actually ran -- unless the orchestrator was configured itself.
+
+        The orchestrator continues the discussor's conversation, and a
+        conversation lives on one provider. The discussor may have been
+        moved for this session (bootstrap.json), so the alias in roles.py --
+        which only sees the config -- is not enough: the memory says where
+        it really ran, and the session's design settings say where it would.
+        """
+        role = roles.ORCHESTRATOR
+        if role not in needed or role in cfg.roles:
+            return cfg
+        from agent.bootstrap import settings
+        from agent.config import BackendConfig
+        from agent.work import memory
+
+        saved = memory.load(self.paths.session)
+        if saved.get("provider"):
+            pinned = BackendConfig(provider=saved["provider"], model=saved.get("model") or None,
+                                   options=backend_for(cfg, roles.DISCUSSOR).options)
+        else:
+            design = settings.effective_config(cfg, settings.load(self.paths.session))
+            pinned = backend_for(design, roles.DISCUSSOR)
+        return replace(cfg, roles={**cfg.roles, role: pinned})
 
     def arm_cancel(self, event, pause=None) -> None:
         """Give every backend a way to be told to stop mid-turn.
@@ -237,6 +265,7 @@ class Runtime:
             max_attempts=cfg.max_design_attempts,
             prompts=settings.effective_prompts(overrides),
             research=cfg.research,
+            topology=cfg.design_topology,
         )
         return bootstrap_session(
             graph=graph,
@@ -256,7 +285,30 @@ class Runtime:
         brief = (values.get("design") or {}).get("task_brief", "").strip()
         if brief:
             self.paths.brief.write_text(brief + "\n")
+        # The same moment the design phase hands the run its orchestrator:
+        # the discussor's conversation, and what was agreed.
+        self.handover(values)
         return brief
+
+    def handover(self, values: dict) -> None:
+        """Write what the run's orchestrator inherits from the design phase
+        into its memory. See agent/work/memory.py."""
+        from agent.work import memory
+
+        last = activity.latest(self.paths.session, roles.DISCUSSOR)
+        memory.handover_from_bootstrap(
+            self.paths.session, values or {},
+            provider=(last.provider if last else "") or "",
+            model=(last.model if last else "") or "")
+
+    def _bootstrap_values(self) -> dict:
+        """The design phase's final state, read straight from the checkpoint."""
+        try:
+            snapshot = self.checkpointer.get_tuple(
+                {"configurable": {"thread_id": f"{self.paths.session.name}:bootstrap"}})
+        except Exception:  # noqa: BLE001 -- a missing or odd checkpoint is not fatal
+            return {}
+        return (snapshot.checkpoint.get("channel_values") or {}) if snapshot else {}
 
     # ---- resolving and checking a folder ---------------------------------
 
@@ -375,20 +427,94 @@ class Runtime:
         if iteration > 1:
             suffix = f":i{iteration}" + suffix
 
+        threads = dict(threads or {})
+        providers: dict[str, str] = {}
+        recursion_limit = self.cfg.work_recursion_limit
+        hub = folder.orchestrator()
+        if hub is not None:
+            from agent.work import memory
+            from agent.work.templates.orchestrator_node import THREAD_KEY
+
+            saved = memory.load(self.paths.session)
+            if not saved.get("handed_over"):
+                # A session designed before hub agents, or resumed without
+                # passing through the design phase: hand over now.
+                self.handover(self._bootstrap_values())
+                saved = memory.load(self.paths.session)
+            # The orchestrator continues ITS conversation: the discussor's,
+            # carried over -- or, after the first run, its own.
+            if saved.get("thread_id") and THREAD_KEY not in threads:
+                threads[THREAD_KEY] = saved["thread_id"]
+                providers[THREAD_KEY] = saved.get("provider", "")
+            # A hub takes ~4 graph steps per piece of work; its own max_turns
+            # is the budget that should bind.
+            recursion_limit = max(recursion_limit, 6 * hub[1].max_turns)
+
         return work_session(
             folder=folder,
             graph=graph,
             thread_id=f"{self.paths.session.name}:work{suffix}",
-            recursion_limit=self.cfg.work_recursion_limit,
+            recursion_limit=recursion_limit,
             initial_state=initial_work_state(
                 repo_path=str(self.paths.workspace),
                 task_brief=task_brief,
                 agent_dir=str(folder.path),
                 artifacts_dir=str(self.paths.artifacts),
                 plan=self.load_plan(),
-                threads=threads or {},
+                threads=threads,
+                thread_providers=providers,
+                supervision={"mode": self.cfg.supervisor, "iteration": iteration,
+                             "max_iterations": self.cfg.max_iterations},
             ),
         )
+
+    def conclude_iteration(self, values: dict, *, iteration: int, folder: AgentFolder,
+                           task_brief: str) -> dict:
+        """The end of a hub agent's run: what the supervisor graph does for a
+        pipeline agent, without a second model. The orchestrator already
+        reviewed the run (its finish), and in manual mode the person already
+        answered (the outcome); this turns that into a decision, keeps the
+        iteration on disk and in memory, and says what the planner or
+        designer is told next. Returns {decision, feedback, review}."""
+        from agent import supervisor
+        from agent.work import memory
+
+        own = values.get("orchestrator") or {}
+        final = dict(own.get("final") or {})
+        verdict = final.get("verdict") or ("stop" if values.get("outcome") == "exit" else "done")
+        final.setdefault("verdict", verdict)
+        final.setdefault("summary", "")
+        final.setdefault("findings", [])
+        suggested = supervisor.ACTIONS.get(verdict, "finish")
+        outcome = values.get("outcome") or ""
+        at_limit = iteration >= self.cfg.max_iterations
+        if outcome in ("replan", "redesign", "finish"):
+            decision = outcome
+        elif outcome == "accept":
+            decision = suggested
+        elif outcome == "auto":
+            decision = "finish" if at_limit else suggested
+        else:
+            decision = "finish"
+        note = str((values.get("vars") or {}).get("note") or "")
+        if outcome == "auto" and decision != suggested:
+            print(f"[orchestrator] auto: {decision} (iteration limit "
+                  f"{self.cfg.max_iterations} reached)")
+        review = {**final, "decision": decision, "note": note}
+        report = supervisor.run_report(
+            session_dir=self.paths.session, artifacts_dir=self.paths.artifacts,
+            plan=self.load_plan(), brief=task_brief, values=values, iteration=iteration)
+        supervisor.archive(session_dir=self.paths.session, agent_dir=folder.path,
+                           iteration=iteration, report=report, review=review)
+        memory.update(self.paths.session, iterations=[{
+            "n": iteration, "verdict": verdict, "summary": final.get("summary", ""),
+            "decision": decision, "note": note}])
+        activity.record_visit(self.paths.session, roles.ORCHESTRATOR,
+                              kind=supervisor.ITERATION_END, iteration=iteration,
+                              verdict=verdict, decision=decision)
+        return {"decision": decision, "review": review,
+                "feedback": supervisor.feedback_for(review, decision, note,
+                                                    who="The orchestrator")}
 
     def adopt_new_task(self, task_brief: str) -> None:
         """Point this session at a different task, keeping the same agent.
@@ -446,8 +572,22 @@ class Runtime:
         human.update(question="", context="", purpose="",
                      return_to="planner" if decision == "replan" else "designer",
                      auto_approve=auto)
-        graph.update_state(config, {"design": design, "human": human, "outcome": ""},
-                           as_node="human")
+        changes = {"design": design, "human": human, "outcome": ""}
+        # One conversation across the session: a /discuss during re-design
+        # continues the orchestrator's own, which now holds the run -- when
+        # the discussor still runs where the orchestrator did.
+        from agent.bootstrap import settings
+        from agent.work import memory
+
+        saved = memory.load(self.paths.session)
+        discussor = backend_for(settings.effective_config(
+            self.cfg, settings.load(self.paths.session)), roles.DISCUSSOR)
+        if saved.get("thread_id") and saved.get("provider") == discussor.provider:
+            providers = dict(values.get("providers") or {})
+            providers["role_threads"] = {**(providers.get("role_threads") or {}),
+                                         roles.DISCUSSOR: saved["thread_id"]}
+            changes["providers"] = providers
+        graph.update_state(config, changes, as_node="human")
         return session
 
     # ---- the plan --------------------------------------------------------

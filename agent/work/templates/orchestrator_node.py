@@ -644,9 +644,11 @@ def _decide(name, decision, event, own, book, config, roster, state, session_dir
         return ask(f"{target} has failed validation {entry['failures']} times in a row. "
                    f"Last problem: {entry.get('problem') or '?'}\n\n{reason}\n\n"
                    f"/continue [guidance] to try again, or /exit.", "guard", target)
-    gates = sorted(set(gated_ids(state.get("plan") or {}))
-                   & set(roster.get(target, {}).get("steps") or [])
-                   - set(own.get("approved_gates") or []))
+    owned = roster.get(target, {}).get("steps") or []
+    gates = sorted(g for g in set(gated_ids(state.get("plan") or {}))
+                   - set(own.get("approved_gates") or [])
+                   # A node owning step 2 owns its substeps' gates (2.3).
+                   if any(g == s or g.startswith(f"{s}.") for s in owned))
     if gates:
         own["gate_ids"] = gates
         return ask(f"{target} is about to start, and step(s) {', '.join(gates)} need your "

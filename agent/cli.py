@@ -353,12 +353,20 @@ def _supervised(runtime, folder, cfg, paths, backends, task_brief) -> None:
     while True:
         values, parked = _run_work_phase(runtime, folder, cfg, paths, backends,
                                          task_brief, iteration)
-        if parked or cfg.supervisor == "off":
+        if parked:
             return
-
-        decided = drive(runtime.supervisor_session(
-            iteration=iteration, values=values, task_brief=task_brief,
-            agent_dir=folder.path), cfg)
+        if folder.orchestrator() is not None:
+            # A hub agent's orchestrator reviewed its own run; keep it.
+            decided = runtime.conclude_iteration(values, iteration=iteration,
+                                                 folder=folder, task_brief=task_brief)
+            if cfg.supervisor == "off":
+                return
+        elif cfg.supervisor == "off":
+            return
+        else:
+            decided = drive(runtime.supervisor_session(
+                iteration=iteration, values=values, task_brief=task_brief,
+                agent_dir=folder.path), cfg)
         if decided.get("decision") not in ("replan", "redesign"):
             print(f"\nFinished after {iteration} iteration(s). Each one is kept "
                   f"under {paths.session / supervisor.ITERATIONS}.")
@@ -639,6 +647,10 @@ def _parse_args():
                      help="Most design-and-run iterations the supervisor may take")
     run.add_argument("--no-research", action="store_true",
                      help="Do not let the discussor ask the research agent first")
+    run.add_argument("--design-topology", choices=("hub", "pipeline"),
+                     help="The shape of agent to design: hub (default -- the discussor "
+                          "orchestrates the run, one validator, an ACL paper at the end) "
+                          "or pipeline (workers each followed by a checker)")
     run.add_argument("--delegate", action="append", metavar="ROLE=PROVIDER[:MODEL]",
                      help="When ROLE's provider is out of credits, run its turns here "
                           "instead of waiting. Repeatable; off unless given.")
@@ -667,6 +679,10 @@ def _parse_args():
                      help="Most design-and-run iterations the supervisor may take")
     web.add_argument("--no-research", action="store_true",
                      help="Do not let the discussor ask the research agent first")
+    web.add_argument("--design-topology", choices=("hub", "pipeline"),
+                     help="The shape of agent to design: hub (default -- the discussor "
+                          "orchestrates the run, one validator, an ACL paper at the end) "
+                          "or pipeline (workers each followed by a checker)")
     web.add_argument("--delegate", action="append", metavar="ROLE=PROVIDER[:MODEL]",
                      help="When ROLE's provider is out of credits, run its turns here "
                           "instead of waiting. Repeatable; off unless given.")

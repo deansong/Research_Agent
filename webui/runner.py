@@ -324,14 +324,24 @@ class SessionRunner:
             runtime.arm_cancel(self._cancel, self._pause)
             self._set_phase("running", agent=loaded.folder.graph.name)
             values = self._work_loop(loaded.folder, backends, task_brief, iteration)
-            if values is _STOP or runtime.cfg.supervisor == "off":
+            if values is _STOP:
                 return
-
-            # ---- the supervisor: review the run, and maybe go round again --
-            self._set_phase("supervising", iteration=iteration)
-            decided = self._pump(runtime.supervisor_session(
-                iteration=iteration, values=values, task_brief=task_brief,
-                agent_dir=loaded.path))
+            if loaded.folder.orchestrator() is not None:
+                # A hub agent's orchestrator reviewed its own run -- and in
+                # manual mode the person already answered it in the run.
+                decided = runtime.conclude_iteration(values, iteration=iteration,
+                                                     folder=loaded.folder,
+                                                     task_brief=task_brief)
+                if runtime.cfg.supervisor == "off":
+                    return
+            elif runtime.cfg.supervisor == "off":
+                return
+            else:
+                # ---- the supervisor: review the run, maybe go round again --
+                self._set_phase("supervising", iteration=iteration)
+                decided = self._pump(runtime.supervisor_session(
+                    iteration=iteration, values=values, task_brief=task_brief,
+                    agent_dir=loaded.path))
             if decided is _STOP or decided.get("decision") not in ("replan", "redesign"):
                 return
 
