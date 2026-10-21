@@ -32,7 +32,7 @@ from webui import server  # noqa: E402
 TIMEOUT = 20.0
 
 
-def _client(tmp: pathlib.Path) -> TestClient:
+def _client(tmp: pathlib.Path, supervisor: str = "off") -> TestClient:
     """A fresh app over an empty repo, with every role on the fake backend."""
     server._RUNNERS.clear()
 
@@ -42,9 +42,11 @@ def _client(tmp: pathlib.Path) -> TestClient:
         backend_role = None
         config = None
         session = None
-        # One run, no review: these tests are about other things. The
-        # supervisor has its own, in tests/test_supervisor.py.
-        supervisor = "off"
+        # One run, no review, by default: these tests are about other things.
+        # The supervisor has its own, in tests/test_supervisor.py.
+        pass
+
+    Args.supervisor = supervisor
 
     return TestClient(server.create_app(tmp, Args()))
 
@@ -89,7 +91,9 @@ def test_a_whole_session_over_http():
     """
     with temp_repo() as tmp:
         repo = pathlib.Path(tmp)
-        client = _client(repo)
+        # manual: a hub agent's orchestrator then stops at the end of the run
+        # to ask what next -- the designed agent's own question.
+        client = _client(repo, supervisor="manual")
 
         created = client.post("/api/sessions", json={
             "repo": str(repo), "task": "survey the repository", "backend": "fake",
@@ -135,15 +139,17 @@ def test_a_whole_session_over_http():
         assert client.post(f"/api/sessions/{sid}/answer",
                            json={"text": "/approve"}).status_code == 200
 
-        # Only now is the designed agent running, and asking its own question.
+        # Only now is the designed agent running, and asking its own question:
+        # its orchestrator, at the end of the run, what happens next.
         work = _wait_for_question(client, sid)
         assert work["phase"] == "running", work
+        assert work["pending"]["purpose"] == "finish_review", work["pending"]
         assert work["agent_name"] == "fake-generated", work["agent_name"]
         assert (pathlib.Path(work["folder"]) / "approved").exists(), \
             "approval must be recorded on disk"
 
         assert client.post(f"/api/sessions/{sid}/answer",
-                           json={"text": "/exit"}).status_code == 200
+                           json={"text": "/finish"}).status_code == 200
         done = _wait_until_done(client, sid)
         assert done["phase"] == "finished", done
         assert not done["error"], done["error"]

@@ -173,6 +173,11 @@ def _gate_problems(folder, plan: dict) -> str:
     for branch in folder.graph.branches:
         after.setdefault(branch.from_, set()).update(
             {case.to for case in branch.cases} | {branch.default})
+    # A hub's orchestrator can go to any node -- the person included -- and
+    # it enforces gates itself, in code (orchestrator_node.py).
+    for name, kind in kinds.items():
+        if kind == "orchestrator":
+            after.setdefault(name, set()).update(kinds)
     # A human node's commands are transitions too, so a gate satisfied only
     # further along a command edge is still satisfied.
     for name in humans:
@@ -258,6 +263,11 @@ def _describe(folder_path: Path) -> tuple[str, str]:
                             if n in r and folder.nodes[c].access == "read_only"
                             and not folder.nodes[c].steps)
                   for n in reads}
+    hub = folder.orchestrator()
+    if hub is not None:
+        # The validator reads whatever the orchestrator hands it: every step.
+        checked_by = {n: ([] if n == hub[1].validator else [hub[1].validator])
+                      for n in reads}
 
     lines = [f"{folder.graph.name}: {len(folder.graph.nodes)} nodes", "",
              f"  {'node':34} {'steps':7} {'role (model)':13} {'access':9} "
@@ -270,6 +280,9 @@ def _describe(folder_path: Path) -> tuple[str, str]:
             lines.append(f"  {ref.name:34} {','.join(config.steps) or '-':7} "
                          f"{config.backend:13} {config.access:9} "
                          f"{len(reads.get(ref.name, ())):5}  {checker}")
+        elif ref.kind == "orchestrator":
+            lines.append(f"  {ref.name:34} {'-':7} {config.backend:13} {'read_only':9} "
+                         f"{'all':5}  decides every step; checks via {config.validator}")
         else:
             lines.append(f"  {ref.name:34} human   commands "
                          + ", ".join(f"/{c.name}" for c in config.commands))

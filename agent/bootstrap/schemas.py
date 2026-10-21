@@ -236,6 +236,11 @@ class NodeProposal(StrictModel):
     # ---- human nodes ----
     commands: list[CommandProposal] = Field(default_factory=list, max_length=12)
 
+    # ---- an orchestrator (hub agents): the nodes it is wired to ----
+    validator: str = ""
+    paper: str = ""
+    review: str = ""
+
 
 class DesignerOutput(StrictModel):
     """A complete agent folder, plus the brief that agent will start from."""
@@ -271,7 +276,10 @@ class NodeSpec(StrictModel):
     """
 
     name: str
-    role: Literal["worker", "runner", "checker", "router", "human"]
+    role: Literal["worker", "runner", "checker", "router", "human",
+                  "orchestrator", "validator", "paper_writer"]
+    """A hub agent's orchestrator, validator and paper_writer are fixed by
+    code, one each; the designer gives them instructions only."""
     steps: list[str] = Field(default_factory=list, max_length=20)
     """A work node's own leaf step id -- fixed by the plan. Others own none."""
     tier: Literal["light", "standard"] = "standard"

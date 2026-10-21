@@ -50,13 +50,15 @@ from agent.telemetry import record_usage, usage_to_dict
 
 def make_designer(backend, instructions: str = DESIGNER_INSTRUCTIONS,
                   reference: str | None = None,
-                  repair_prefix: str = REPAIR_PREFIX):
+                  repair_prefix: str = REPAIR_PREFIX,
+                  topology: str = "hub"):
     # All three are parameters so a session can replace them -- see
     # agent/bootstrap/settings.py, which also owns the default reference.
+    # `topology` is which starting design it edits: "hub" or "pipeline".
     if reference is None:
         from agent.bootstrap.settings import designer_reference
 
-        reference = designer_reference()
+        reference = designer_reference(topology)
 
     def designer(state: BootstrapState):
         design = dict(state.get("design", {}))
@@ -80,12 +82,18 @@ def make_designer(backend, instructions: str = DESIGNER_INSTRUCTIONS,
         else:
             # A fresh design starts from the CURRENT plan: a starting design
             # kept from an earlier one may belong to an older plan.
-            current, valid = _starting_design(state, plan)
+            current, valid = _starting_design(state, plan, topology)
             if valid:
                 print(f"[designer] starting design built from the plan: "
                       f"{len(valid['graph']['nodes'])} nodes, valid")
             review = str(design.get("review_feedback") or "").strip()
-            if review and design.get("valid_spec"):
+            last_ran = design.get("valid_spec") or {}
+            # An agent of the other shape -- a pipeline that ran before hubs,
+            # say -- is not a starting point for this one.
+            same_shape = (any(n.get("role") == "orchestrator"
+                              for n in last_ran.get("nodes") or [])
+                          == (topology != "pipeline"))
+            if review and last_ran and same_shape:
                 # A redesign after a supervisor's review: start from the
                 # design that last ran, if it still fits the plan -- the
                 # findings are about THAT agent, not a fresh one.
@@ -230,7 +238,7 @@ def make_designer(backend, instructions: str = DESIGNER_INSTRUCTIONS,
 # the starting agent, and applying an edit to it
 # ---------------------------------------------------------------------------
 
-def _starting_design(state, plan: dict) -> tuple[dict, dict]:
+def _starting_design(state, plan: dict, topology: str = "hub") -> tuple[dict, dict]:
     """(the starting design, the folder it compiles to), or ({}, {}).
 
     The folder is checked through the REAL writer and validator before it is
@@ -247,6 +255,7 @@ def _starting_design(state, plan: dict) -> tuple[dict, dict]:
             plan,
             request=str(state.get("user_request", "")),
             requirements=str((state.get("discussion") or {}).get("requirements", "")),
+            topology=topology,
         )
         proposal = compile_design(start, plan)
     except (blueprint.BlueprintError, SpecError) as exc:

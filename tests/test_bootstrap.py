@@ -134,6 +134,9 @@ def _run(designs: list[dict], answers: list[str], *, max_attempts: int = 3):
     graph = build_bootstrap_graph(
         {"discussor": backend, "planner": backend, "designer": backend},
         paths, InMemorySaver(), max_attempts=max_attempts,
+        # The repair loop is exercised on the pipeline, whose graph the
+        # designer writes; a hub's graph is fixed by code.
+        topology="pipeline",
     )
     config = {"configurable": {"thread_id": "b"}, "recursion_limit": 100}
     graph.invoke(
@@ -436,7 +439,7 @@ def _research_folder(tmp: pathlib.Path):
         {"id": "4", "title": "Analysis and report", "substeps": [
             {"id": "4.1", "title": "Write the report"}]},
     ]}
-    proposal = compile_design(starting_design(plan), plan)
+    proposal = compile_design(starting_design(plan, topology="pipeline"), plan)
     paths = types.SimpleNamespace(staging=str(tmp / "agent"), brief=str(tmp / "brief.md"))
     make_writer(paths)({"design": {"proposal": proposal}})
     return tmp / "agent"
@@ -633,7 +636,7 @@ def test_every_design_phase_prompt_knows_this_is_ml_research():
     for stage in ("1. code what has to be written",
                   "2. experiment design what will be run",
                   "3. run running it, and keeping every result",
-                  "4. analysis and report what the numbers mean"):
+                  "4. analysis what the numbers mean"):
         assert stage in planner, f"the planner no longer names stage {stage!r}"
     assert "seeds" in planner and "config" in planner, "the variables must be pinned"
     assert "out of scope" in planner
@@ -688,7 +691,7 @@ def test_the_designer_is_told_it_is_building_a_langgraph():
     from the first line; a loop needs an exit BECAUSE the recursion limit
     kills it rather than hanging.
     """
-    from agent.bootstrap.prompts import DESIGNER_INSTRUCTIONS
+    from agent.bootstrap.prompts import PIPELINE_DESIGNER_INSTRUCTIONS as DESIGNER_INSTRUCTIONS
 
     text = DESIGNER_INSTRUCTIONS
     assert "LangGraph" in text or "LANGGRAPH" in text, "name the framework"
@@ -803,7 +806,7 @@ def test_every_field_the_designer_can_emit_is_in_its_prompt():
     have to say what it means. The bulky fields -- prompts, outputs, access --
     are not the designer's any more; bootstrap/spec.py derives them.
     """
-    from agent.bootstrap.prompts import DESIGNER_INSTRUCTIONS
+    from agent.bootstrap.prompts import PIPELINE_DESIGNER_INSTRUCTIONS as DESIGNER_INSTRUCTIONS
     from agent.bootstrap.schemas import NodeSpec
 
     missing = [field for field in NodeSpec.model_fields
@@ -835,7 +838,7 @@ def test_the_prompt_still_shows_the_shapes_that_need_showing():
     # design prompt -- built from the session's own plan.
     from agent.bootstrap.blueprint import starting_design
 
-    shown = json.dumps(starting_design(_PLAN))
+    shown = json.dumps(starting_design(_PLAN, topology="pipeline"))
     assert '"commands"' in shown, "a human node's commands must be shown"
     assert '"sets"' in shown, "setting a var from a command must be shown"
     assert '"ask"' in shown, "a branch case with an ask must be shown"
@@ -973,7 +976,7 @@ def test_the_designer_is_told_not_to_draft_and_not_to_explore():
     minutes on `git show` of a deletion commit, auditing a repository it does
     not need to read to lay out a graph.
     """
-    from agent.bootstrap.prompts import DESIGNER_INSTRUCTIONS as text
+    from agent.bootstrap.prompts import PIPELINE_DESIGNER_INSTRUCTIONS as text
 
     lowered = " ".join(text.lower().split())
     assert "placeholder" in lowered and "once" in lowered, \
@@ -996,7 +999,8 @@ def test_the_designer_is_told_not_to_let_a_node_check_itself():
     orchestrator: no single node can route back to twenty others.
     """
     from agent.bootstrap.blueprint import starting_design
-    from agent.bootstrap.prompts import DESIGNER_INSTRUCTIONS, VERIFIER_LOOP
+    from agent.bootstrap.prompts import VERIFIER_LOOP
+    from agent.bootstrap.prompts import PIPELINE_DESIGNER_INSTRUCTIONS as DESIGNER_INSTRUCTIONS
 
     rule = DESIGNER_INSTRUCTIONS.lower()
     assert "no node judges its own success" in rule, "the rule is missing"
@@ -1006,7 +1010,7 @@ def test_the_designer_is_told_not_to_let_a_node_check_itself():
 
     # The exact shape is shown in the STARTING DESIGN that ends the prompt.
     assert "THE VERIFIER LOOP" in VERIFIER_LOOP, "the rationale for the shape is missing"
-    design = starting_design(_PLAN)
+    design = starting_design(_PLAN, topology="pipeline")
     roles = {n["name"]: n["role"] for n in design["nodes"]}
     for branch in design["graph"]["branches"]:
         redo = [c["to"] for c in branch["cases"] if c["when"].startswith("redo")]
@@ -1078,7 +1082,8 @@ def test_the_designer_is_told_to_split_work_across_nodes():
     DESIGNER may not re-cut it -- code fixes one work node per leaf step, so
     a merged node is not something a design can even express.
     """
-    from agent.bootstrap.prompts import DESIGNER_INSTRUCTIONS, PLANNER_INSTRUCTIONS
+    from agent.bootstrap.prompts import PLANNER_INSTRUCTIONS
+    from agent.bootstrap.prompts import PIPELINE_DESIGNER_INSTRUCTIONS as DESIGNER_INSTRUCTIONS
 
     designer = " ".join(DESIGNER_INSTRUCTIONS.lower().split())
     assert "one work node per top-level plan step" in designer, "the contract is unstated"
@@ -1371,3 +1376,18 @@ def test_the_discussor_asks_everything_at_once_with_a_suggestion_each():
     assert "2. [Run] How many seeds?" in text and "   Suggested: 3" in text
     assert "/plan" in text and "suggestion stands" in text
     assert _ask([]) == ""
+
+
+def test_the_hub_designer_is_told_the_shape_is_fixed_and_what_it_designs():
+    """A hub's graph is written by code; the designer shapes what each node
+    is told. Its instructions must say both, and stay under Codex's limit."""
+    from agent.backends.codex import SAFE_INSTRUCTIONS_CHARS
+    from agent.bootstrap.prompts import DESIGNER_INSTRUCTIONS
+
+    flat = " ".join(DESIGNER_INSTRUCTIONS.lower().split())
+    for rule in ("one work node per top-level plan step", "cannot add, remove, rename",
+                 "validator", "the orchestrator", "where the fault started",
+                 "acl-style paper", "plan_issues", "`instructions`", "`tier`",
+                 "`outputs`"):
+        assert rule in flat, rule
+    assert len(DESIGNER_INSTRUCTIONS) < SAFE_INSTRUCTIONS_CHARS * 0.6

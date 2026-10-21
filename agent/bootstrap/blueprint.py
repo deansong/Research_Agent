@@ -55,6 +55,17 @@ MAX_STEPS = 6
 REVIEW = "review"
 FEEDBACK_VAR = "review_feedback"
 
+#: A hub agent's fixed nodes besides the work: the orchestrator at its
+#: centre, the one validator, the node that writes the paper. See
+#: agent/work/templates/orchestrator_node.py.
+ORCHESTRATOR = "orchestrator"
+VALIDATOR = "validator"
+PAPER = "paper"
+HUB_FIXED = (ORCHESTRATOR, VALIDATOR, PAPER, REVIEW)
+
+#: Which shape of agent the designer starts from (config `design_topology`).
+TOPOLOGIES = ("hub", "pipeline")
+
 
 #: A unit whose title STARTS with one of these verbs runs something, and
 #: becomes a runner -- "Run the Llama baseline matrix", "Execute the primary
@@ -353,13 +364,101 @@ def problems(blueprint: Blueprint, plan: dict) -> list[str]:
 # expanding it
 # ---------------------------------------------------------------------------
 
-def starting_design(plan: dict, *, request: str = "", requirements: str = "") -> dict:
+def starting_design(plan: dict, *, request: str = "", requirements: str = "",
+                    topology: str = "hub") -> dict:
     """The starting design for `plan`, in the designer's own answer format:
     {task_brief, rationale, graph, nodes: [spec]}. spec.compile_design()
-    turns it into a folder; the designer is shown it to edit."""
-    design = expand(from_plan(plan, request=request, requirements=requirements), plan)
+    turns it into a folder; the designer is shown it to edit.
+
+    `topology` "hub" (the default): an orchestrator dispatching the work
+    nodes, one validator, a paper; "pipeline": the older chain of workers and
+    checkers."""
+    if topology == "pipeline":
+        design = expand(from_plan(plan, request=request, requirements=requirements), plan)
+    else:
+        design = hub_design(plan, request=request, requirements=requirements)
     design["plan_issues"] = plan_issues(plan)
     return design
+
+
+# ---------------------------------------------------------------------------
+# a hub agent
+# ---------------------------------------------------------------------------
+
+def hub_design(plan: dict, *, request: str = "", requirements: str = "") -> dict:
+    """The hub agent for `plan`: one work node per top-level step, an
+    orchestrator that decides each turn which runs next, one validator, the
+    paper node, and the person. No branches and no checkers: routing is the
+    orchestrator's, judging is the validator's."""
+    if not _steps(plan):
+        raise BlueprintError("there is no plan to build an agent from")
+    work = work_nodes(plan)
+    if len(work) + len(HUB_FIXED) > MAX_NODES + 1:
+        raise BlueprintError(f"the plan has {len(work)} steps; group them into at most "
+                             f"{MAX_STEPS}.")
+    summary = str((plan or {}).get("summary", "")).strip()
+    specs = [_spec(ORCHESTRATOR, "orchestrator")]
+    specs += [_spec(w["name"], w["role"], steps=[w["step"]]) for w in work]
+    specs += [_spec(VALIDATOR, "validator"), _spec(PAPER, "paper_writer"),
+              {**_spec(REVIEW, "human"), "commands": hub_review_commands()}]
+    return {
+        "task_brief": default_brief(plan, request=request, requirements=requirements),
+        "rationale": ("A hub: the orchestrator sends each step's work to its node, "
+                      "has the validator check it, sends a fault back to the step it "
+                      "started in, and has the paper written at the end."),
+        "graph": hub_graph(_slug(request or summary or "designed_agent")[:64]
+                           or "designed_agent", summary[:500], [w["name"] for w in work]),
+        "nodes": specs,
+    }
+
+
+def hub_graph(name: str, description: str, work: list[str], *,
+              orchestrator: str = ORCHESTRATOR, validator: str = VALIDATOR,
+              paper: str = PAPER, review: str = REVIEW) -> dict:
+    """graph.json for a hub agent. Fixed by code: every spoke has one edge,
+    back to the orchestrator, which decides each turn where to go."""
+    spokes = list(work) + [validator, paper]
+    return {
+        "name": name or "designed_agent",
+        "description": description,
+        "entry": orchestrator,
+        "nodes": ([{"name": orchestrator, "kind": "orchestrator"}]
+                  + [{"name": n, "kind": "agent"} for n in spokes]
+                  + [{"name": review, "kind": "human"}]),
+        "edges": [{"from": n, "to": orchestrator} for n in spokes],
+        "branches": [],
+    }
+
+
+def hub_review_commands() -> list[dict]:
+    """The person's commands in a hub agent. Every answer goes back to the
+    orchestrator, except the end-of-run decisions, which end the run and
+    say what happens next (Runtime.conclude_iteration)."""
+    asked = ["orchestrator", "gate", "guard", "finish_review", "unrouted"]
+    return [
+        _command("continue", ORCHESTRATOR, asked, "Carry on (with guidance, if any)",
+                 argument="[guidance]", sets={"answer": "{argument}"}),
+        _command("approve", ORCHESTRATOR, ["gate"], "Approve the gated step",
+                 argument="[note]", sets={"gate": "approved", "answer": "{argument}"}),
+        _command("accept", "__end__", ["finish_review"], "Do what the review recommends",
+                 argument="[note]", sets={"note": "{argument}"}, outcome="accept"),
+        _command("replan", "__end__", ["finish_review"],
+                 "Change the plan, then redesign and run again",
+                 argument="[what to change]", sets={"note": "{argument}"}, outcome="replan"),
+        _command("redesign", "__end__", ["finish_review"],
+                 "Keep the plan, redesign the agent, and run again",
+                 argument="[what to change]", sets={"note": "{argument}"},
+                 outcome="redesign"),
+        _command("finish", "__end__", ["finish_review"], "Stop here; keep everything",
+                 outcome="finish"),
+        _command("exit", "__end__", [], "Stop the run (everything finished is saved)",
+                 aliases=["quit", "q"], outcome="exit"),
+    ]
+
+
+def _spec(name: str, role: str, *, steps=()) -> dict:
+    return {"name": name, "role": role, "steps": list(steps), "tier": "standard",
+            "reads": [], "instructions": "", "outputs": [], "commands": []}
 
 
 def expand(blueprint: Blueprint, plan: dict) -> dict:
@@ -502,8 +601,9 @@ def _onward(node, after, gates, last_worker, by_name, review_commands):
     }
 
 
-def _command(name, to, purposes, summary, *, aliases=(), argument="", sets=None):
+def _command(name, to, purposes, summary, *, aliases=(), argument="", sets=None,
+             outcome=""):
     return {"name": name, "to": to, "purposes": list(purposes), "aliases": list(aliases),
             "argument": argument, "summary": summary, "record": "",
             "sets": [{"name": k, "value": v} for k, v in (sets or {}).items()],
-            "outcome": ""}
+            "outcome": outcome}

@@ -74,7 +74,7 @@ def test_a_session_created_without_starting_shows_its_design_agent(tmp_path):
     names = [p["name"] for p in designer["prompts"]]
     assert names == ["instructions", "reference", "repair_prefix"]
     reference = next(p for p in designer["prompts"] if p["name"] == "reference")
-    assert "QUESTIONS FOR THE PERSON" in reference["value"], "the real reference is shown"
+    assert "WHAT EACH NODE IS GIVEN" in reference["value"], "the real reference is shown"
     assert all(not p["modified"] for p in designer["prompts"])
     assert view["nodes"]["human"]["commands"], "the slash commands are listed"
 

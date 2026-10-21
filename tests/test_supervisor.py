@@ -91,7 +91,10 @@ def test_the_report_has_the_run_the_outputs_the_files_and_earlier_reviews():
 
 # ---- whole sessions through the web API ----------------------------------------------
 
-def _client(repo: pathlib.Path, mode: str, iterations: int = 3):
+def _client(repo: pathlib.Path, mode: str, iterations: int = 3, topology: str = "pipeline"):
+    """A web client on the fake backend. `topology` "pipeline" by default:
+    these tests are about the separate supervisor, which reviews pipeline
+    agents; hub agents' own reviews are tests/test_orchestrator_session.py."""
     from fastapi.testclient import TestClient
 
     from webui import server
@@ -106,6 +109,7 @@ def _client(repo: pathlib.Path, mode: str, iterations: int = 3):
         session = None
         supervisor = mode
         max_iterations = iterations
+        design_topology = topology
 
     return TestClient(server.create_app(repo, Args()))
 

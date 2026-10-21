@@ -60,13 +60,14 @@ from agent.bootstrap.nodes import (
     make_writer,
 )
 from agent import storage
-from agent.bootstrap.prompts import (DESIGNER_INSTRUCTIONS, DISCUSSOR_INSTRUCTIONS,
-                                   PLANNER_INSTRUCTIONS, RESEARCHER_INSTRUCTIONS)
+from agent.bootstrap.prompts import (DISCUSSOR_INSTRUCTIONS, PLANNER_INSTRUCTIONS,
+                                   RESEARCHER_INSTRUCTIONS)
 from agent.bootstrap.state import BootstrapState
 
 
 def build_bootstrap_graph(backends, paths, checkpointer, *, max_attempts: int,
-                          prompts: dict | None = None, research: bool = False):
+                          prompts: dict | None = None, research: bool = False,
+                          topology: str = "hub"):
     """`prompts` is node -> field -> text, from settings.effective_prompts;
     None means prompts.py's defaults throughout."""
     prompts = prompts or {}
@@ -98,8 +99,11 @@ def build_bootstrap_graph(backends, paths, checkpointer, *, max_attempts: int,
     builder.add_node("human", make_human(paths))
     builder.add_node("planner", make_planner(
         backends["planner"], paths, **own("planner", PLANNER_INSTRUCTIONS)))
+    from agent.bootstrap.settings import designer_instructions
+
     builder.add_node("designer", make_designer(
-        backends["designer"], **own("designer", DESIGNER_INSTRUCTIONS)))
+        backends["designer"], topology=topology,
+        **own("designer", designer_instructions(topology))))
     builder.add_node("writer", make_writer(paths))
     builder.add_node("validator", make_validator(paths, max_attempts=max_attempts))
 

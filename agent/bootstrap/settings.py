@@ -77,10 +77,16 @@ MAX_ATTEMPTS_LIMIT = 20
 # the static prompts, and where each one is sent
 # ---------------------------------------------------------------------------
 
-def designer_reference() -> str:
+def designer_reference(topology: str = "hub") -> str:
     """The bulky reference appended to the designer's first prompt."""
-    return (P.RESEARCH_CONTEXT + P.VERIFIER_LOOP + P.PROMPT_REFERENCE
-            + P.CONTROL_FLOW)
+    if topology == "pipeline":
+        return (P.RESEARCH_CONTEXT + P.VERIFIER_LOOP + P.PROMPT_REFERENCE
+                + P.CONTROL_FLOW)
+    return P.RESEARCH_CONTEXT + P.HUB_REFERENCE_NOTE
+
+
+def designer_instructions(topology: str = "hub") -> str:
+    return P.PIPELINE_DESIGNER_INSTRUCTIONS if topology == "pipeline" else P.DESIGNER_INSTRUCTIONS
 
 
 #: node -> field -> (label, where it is sent, default text).

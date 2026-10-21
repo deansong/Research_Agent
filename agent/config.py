@@ -197,6 +197,12 @@ class AgentConfig:
     research: bool = True
     """Let the discussor ask the research agent before it suggests answers."""
 
+    design_topology: str = "hub"
+    """The shape of agent the designer starts from: "hub" -- an orchestrator
+    (the discussor, carried into the run) dispatching one node per plan step,
+    one validator, a paper at the end; "pipeline" -- the older chain of
+    workers each followed by a checker. See agent/bootstrap/blueprint.py."""
+
     delegation: dict = field(default_factory=dict)
     """role -> BackendConfig to run that role's turns on when its own provider
     is out of credits. Only roles a person chose; see backends/delegate.py."""
@@ -261,6 +267,7 @@ class _ConfigFile(BaseModel):
     supervisor: Literal["manual", "auto", "off"] | None = None
     max_iterations: int | None = None
     research: bool | None = None
+    design_topology: Literal["hub", "pipeline"] | None = None
     work_recursion_limit: int | None = None
     default_agent: str | None = None
 
@@ -354,7 +361,7 @@ def load_config(
             recursion_limit = parsed.recursion_limit
         for name in ("max_design_attempts", "supervisor", "max_iterations",
                      "work_recursion_limit", "default_agent", "sessions_root",
-                     "research"):
+                     "research", "design_topology"):
             value = getattr(parsed, name)
             if value is not None:
                 extras[name] = value
@@ -379,6 +386,9 @@ def load_config(
     if env.get("AGENT_RESEARCH", "").strip().lower() in ("0", "1", "true", "false", "on", "off"):
         extras["research"] = env["AGENT_RESEARCH"].strip().lower() in ("1", "true", "on")
         sources.append("AGENT_RESEARCH")
+    if env.get("AGENT_DESIGN_TOPOLOGY") in ("hub", "pipeline"):
+        extras["design_topology"] = env["AGENT_DESIGN_TOPOLOGY"]
+        sources.append("AGENT_DESIGN_TOPOLOGY")
     if env.get("AGENT_SESSIONS_ROOT"):
         extras["sessions_root"] = env["AGENT_SESSIONS_ROOT"]
         sources.append("AGENT_SESSIONS_ROOT")
@@ -454,6 +464,9 @@ def load_config(
         elif getattr(cli, "no_research", False) is True:
             extras["research"] = False
             sources.append("--no-research")
+        if getattr(cli, "design_topology", None) in ("hub", "pipeline"):
+            extras["design_topology"] = cli.design_topology
+            sources.append("--design-topology")
         if getattr(cli, "sessions_root", None):
             extras["sessions_root"] = cli.sessions_root
             sources.append("--sessions-root")

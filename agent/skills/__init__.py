@@ -41,3 +41,15 @@ def fill(text: str) -> str:
 
 def research() -> str:
     return fill(research_template())
+
+
+def acl_paper_template() -> str:
+    """How the paper node writes the paper, with `{tools}` and `{paper_dir}`
+    where the command and the folder go -- the text a person edits."""
+    return (HERE / "acl_paper.md").read_text().strip()
+
+
+def acl_paper(paper_dir: str = "{artifacts_dir}/paper") -> str:
+    """The paper skill, ready to send. `paper_dir` stays a placeholder by
+    default, so the run fills in its own artifacts directory."""
+    return fill(acl_paper_template()).replace("{paper_dir}", paper_dir)

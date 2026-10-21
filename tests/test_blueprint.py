@@ -63,7 +63,7 @@ def _flat(count: int = 20) -> dict:
 
 
 def _compiled(plan: dict) -> dict:
-    return compile_design(B.starting_design(plan, request="compare two optimisers"), plan)
+    return compile_design(B.starting_design(plan, request="compare two optimisers", topology="pipeline"), plan)
 
 
 def _write_and_check(proposal: dict, plan: dict) -> str:
@@ -152,7 +152,7 @@ def test_problems_name_what_is_wrong(change, expected):
 # ---- the compiler: any graph, from specs -----------------------------------
 
 def _start(plan):
-    return B.starting_design(plan, request="compare two optimisers")
+    return B.starting_design(plan, request="compare two optimisers", topology="pipeline")
 
 
 def test_a_loop_through_a_router_compiles_and_is_wired_into_the_prompts():
@@ -247,7 +247,8 @@ def _design(backend, *, max_attempts: int = 3):
     tmp = pathlib.Path(tempfile.mkdtemp())
     paths = storage.session_paths(tmp, "test")
     graph = build_bootstrap_graph({r: backend for r in ("discussor", "planner", "designer")},
-                                  paths, InMemorySaver(), max_attempts=max_attempts)
+                                  paths, InMemorySaver(), max_attempts=max_attempts,
+                                  topology="pipeline")
     config = {"configurable": {"thread_id": "b"}, "recursion_limit": 200}
     graph.invoke(initial_bootstrap_state(repo_path=str(tmp), session_dir=str(paths.session),
                                          request="compare two optimisers"), config=config)

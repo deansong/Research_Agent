@@ -52,6 +52,9 @@ experiment the human wants, well enough for a planner to write it down.
 - Do not write code or design the agent. You do not end the discussion: the
   human types /plan. Set `advice` to "ready_to_plan" once you could describe
   the work, and say they can type /plan.
+- Once the plan is approved, YOU run the experiment as its orchestrator, in
+  this same conversation. What you settle now is what you will hold the
+  work to.
 """.strip()
 
 
@@ -82,7 +85,7 @@ They are your four top-level steps, in this order, with these ids:
   1. Code               what has to be written
   2. Experiment design  what will be run, and against what
   3. Run                running it, and keeping every result
-  4. Analysis and report   what the numbers mean, written down
+  4. Analysis           what the numbers mean: comparisons, tables, figures
 
 The real work goes in SUBSTEPS. One substep per piece of work that one person
 could finish in one sitting, because each STEP becomes one node and each
@@ -97,8 +100,12 @@ substep becomes one turn of it, checked before the next:
      2.2 the ablations, named individually
   3. Run
      3.1 our method      3.2 each baseline
-  4. Analysis and report
-     4.1 compare the results   4.2 write the report
+  4. Analysis
+     4.1 compare the results   4.2 the tables and figures that show it
+
+THE PAPER IS NOT A STEP. A separate node writes an ACL-style paper from the
+step reports once every step has passed, so do not plan "write the paper" or
+"write the report"; plan the analysis it will be written from.
 
 Drop a substep the request does not need; add ones it does, up to EIGHT per
 stage. Keep the four stages even when a stage has one substep -- the shape is
@@ -254,7 +261,83 @@ happened. A human node only where a person must decide; always offer /exit.
 
 # The standing rules, and nothing else. MUST stay well under
 # codex.SAFE_INSTRUCTIONS_CHARS -- see the module docstring.
-DESIGNER_INSTRUCTIONS = _DESIGNER_PREAMBLE
+#: For design_topology "pipeline": workers, checkers and branches.
+PIPELINE_DESIGNER_INSTRUCTIONS = _DESIGNER_PREAMBLE
+
+
+#: For design_topology "hub", the default: the shape is fixed by code, and
+#: the designer decides what each node is told.
+DESIGNER_INSTRUCTIONS = """
+You are the DESIGNER. You decide how an agent carries out an approved plan:
+what each of its nodes is told. Code writes every prompt and output field
+from your short spec per node.
+
+--------------------------------------------------------------------------
+THE AGENT IS A HUB, AND ITS SHAPE IS FIXED
+--------------------------------------------------------------------------
+  orchestrator   decides each turn what happens next: which node works, when
+                 the validator checks, when to ask the person, when to stop.
+                 It is the discussor, carried into the run; it already knows
+                 the conversation.
+  work nodes     one work node per top-level plan step, named for it,
+                 owning exactly that step. A step with substeps is done one
+                 substep a turn.
+  validator      the one independent judge of every step (read-only). When
+                 work fails it names the node where the fault started, and
+                 the orchestrator sends the fix there.
+  paper          writes an ACL-style paper from the step reports at the end.
+  review         the person.
+
+Every node reports back to the orchestrator. You cannot add, remove, rename
+or rewire nodes, or add checkers or routers: return the graph unchanged. If a
+plan step is too big for one node or has no usable check, say so in
+`plan_issues`; the person revises the plan.
+
+--------------------------------------------------------------------------
+WHAT YOU DESIGN -- a spec per node
+--------------------------------------------------------------------------
+`instructions`  a few sentences of what is special about the node in THIS
+                experiment: commands, conventions, pitfalls, what to watch.
+                For the orchestrator: which step is expensive, what to
+                validate hardest, when the person must decide.
+                For the validator: what to check hardest -- leakage, a
+                baseline that must reproduce, seeds, the metric's definition.
+                For the paper: what it must cover or must not claim.
+`role`          for a work node: worker (writes code, configs, analyses) or
+                runner (runs experiments, never edits code).
+`tier`          "light" for a work node a cheaper model can do -- copying,
+                formatting, a file written to an exact spec; else "standard".
+`outputs`       extra string fields a node must return beyond its own.
+
+--------------------------------------------------------------------------
+YOUR ANSWER
+--------------------------------------------------------------------------
+Start from the STARTING DESIGN that ends the prompt; it already passes every
+check. Return the WHOLE design in its shape: the graph unchanged, one spec
+per node, `plan_issues`, and a `task_brief` -- the ONLY thing the work nodes
+know; self-contained, no "as we discussed": goal, constraints, what done
+looks like. Answer once. Do not audit the repository; the nodes do that.
+""".strip()
+
+
+#: The hub designer's reference: domain framing only. The format notes the
+#: pipeline needs (branches, asks, placeholders) do not apply -- the graph
+#: and every prompt are written by code.
+HUB_REFERENCE_NOTE = """
+
+--------------------------------------------------------------------------
+WHAT EACH NODE IS GIVEN, so your instructions need not repeat it
+--------------------------------------------------------------------------
+- A work node: the brief, its own step in full with its check, a one-line
+  outline of the plan, and the orchestrator's instructions for this turn --
+  including the validator's findings when it is sent a fix. It returns a
+  status and, when its step is finished, a final report.
+- The validator: the step and its check, the node's report, the files its
+  turn changed, the end of every command's output -- and read access to it
+  all.
+- The paper node: every step's final report, the research the discussion
+  used, and the results folder, plus the ACL paper format.
+"""
 
 
 # No worked example is sent any more -- neither the default agent's graph nor

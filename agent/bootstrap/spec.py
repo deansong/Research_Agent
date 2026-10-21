@@ -104,6 +104,8 @@ def compile_design(design: DesignerSpec | dict, plan: dict) -> dict:
 
     if isinstance(design, dict):
         design = DesignerSpec.model_validate(design)
+    if any(spec.role == "orchestrator" for spec in design.nodes):
+        return _compile_hub(design, plan)
     # exclude_none: an edge with no question has no `ask` key at all, which is
     # the canonical form the web editor writes -- so a designed agent saved
     # unchanged in the editor is byte-identical, not a diff of "ask": null.
@@ -424,3 +426,199 @@ def _defuse(text: str) -> str:
     fail validation; "{ seed }" is not a placeholder and reads the same.
     """
     return _TOKEN.sub(lambda m: "{ " + m.group(1) + " }", text)
+
+
+# ---------------------------------------------------------------------------
+# a hub agent: an orchestrator, the work nodes, one validator, the paper
+# ---------------------------------------------------------------------------
+
+HUB_ROLES = ("orchestrator", "validator", "paper_writer")
+HUB_ROLE = {"worker": "coder", "runner": "runner", "validator": "validator",
+            "paper_writer": "paper_writer"}
+HUB_ACCESS = {"worker": "write", "runner": "write", "validator": "read_only",
+              "paper_writer": "write"}
+
+_STATUS = {"name": "status", "type": "enum", "choices": ["finished", "working"],
+           "description": "finished when your whole step is complete; working when "
+                          "more of it (another substep) is still to do.",
+           "required": True}
+_REPORT = ("report", "When finished: your step's FINAL REPORT, in Markdown -- what you "
+                     "did, the results with their file paths and numbers, deviations "
+                     "from the plan, caveats. It is what the orchestrator and the paper "
+                     "keep of your work; your logs are not kept. Empty while working.")
+
+HUB_FIELDS = {
+    "worker": [("summary", "One or two sentences: what this turn did."), _REPORT,
+               ("files", "Every path you created or changed, one per line."),
+               ("how_to_run", "The exact command that runs or reproduces it.")],
+    "runner": [("summary", "The headline numbers, or why there are none."), _REPORT,
+               ("results_path", "Where under the artifacts directory the results went."),
+               ("log_tail", "The last ~40 lines, or the whole error if it failed.")],
+    "validator": [("problem", "One sentence. Empty when the work passes."),
+                  ("suspected_origin", "The node where the fault STARTED -- often not "
+                                       "the one you were asked about -- or 'plan', or "
+                                       "'unknown'."),
+                  ("suspected_step", "The plan step or substep id it is in, if known."),
+                  ("evidence", "Each command you ran or file you read, and what it "
+                               "showed. Not a summary of the report."),
+                  ("suggested_fix", "What should change, concretely.")],
+    "paper_writer": [("summary", "One or two sentences: what this turn did."), _REPORT,
+                     ("paper_dir", "The folder the paper is in."),
+                     ("pdf_path", "main.pdf, if it was compiled; empty if not."),
+                     ("title", "The paper's title."),
+                     ("abstract", "The abstract.")],
+}
+
+HUB_RULES = {
+    "worker": RULES["worker"] + (
+        " The ORCHESTRATOR sends you each piece of work and reads your report; "
+        "an independent validator checks it."),
+    "runner": RULES["runner"] + (
+        " The ORCHESTRATOR sends you each run and reads your report; an "
+        "independent validator checks it."),
+    "validator": (
+        "You are the VALIDATOR: the one independent judge of every step's work. "
+        "You never fix anything -- you are read-only, and the point of you is "
+        "that you did not do the work. Read the files and results themselves, "
+        "not the report about them; run the tests; apply each step's own check. "
+        "pass only when the check is met and the node changed only what its step "
+        "needs. When it fails, find WHERE the fault started: a wrong number in "
+        "this step may come from an earlier step's data or code -- name that "
+        "node in suspected_origin, with the evidence. unsure only when the "
+        "evidence cannot be had, and say what would settle it."),
+    "paper_writer": (
+        "You write the paper for this run: an ACL-style paper, from the step "
+        "reports and the result files -- never from memory or from what the "
+        "results were hoped to be. Write only under the artifacts directory."),
+}
+
+_WORK_REPORTING = (
+    "\n\nWhen your step is complete -- every substep, if it has them -- set "
+    "`status` to finished and write `report`: the step's final report. Until "
+    "then, `status` working, and say in `summary` what this turn did.")
+
+
+def _compile_hub(design: DesignerSpec, plan: dict) -> dict:
+    """A hub agent's folder. The graph is FIXED by code -- the designer's
+    answer only shapes what each node is told -- so the designer cannot
+    leave a node unreachable or a step unchecked."""
+    from agent.bootstrap import blueprint
+
+    specs: dict = {}
+    problems: list[str] = []
+    for spec in design.nodes:
+        if spec.name in specs:
+            problems.append(f"node {spec.name!r} has two specs. Send one per node.")
+        specs[spec.name] = spec
+    by_role: dict[str, list[str]] = {}
+    for name, spec in specs.items():
+        by_role.setdefault(spec.role, []).append(name)
+    for role in HUB_ROLES + ("human",):
+        if len(by_role.get(role, [])) != 1:
+            problems.append(f"a hub agent has exactly one {role} node; this design has "
+                            f"{len(by_role.get(role, []))}: {by_role.get(role, [])}.")
+    for role in ("checker", "router"):
+        for name in by_role.get(role, []):
+            problems.append(f"node {name!r} is a {role}. A hub agent has no {role}s: the "
+                            f"orchestrator decides where the run goes and the validator "
+                            f"judges every step. Remove it.")
+    for name, spec in specs.items():
+        if spec.role not in ("human",) and spec.commands:
+            problems.append(f"node {name!r}: only a human node has commands.")
+        for extra in spec.outputs:
+            if not re.fullmatch(FIELD_NAME, extra.name) or extra.name in RESERVED_OUTPUT_FIELDS:
+                problems.append(f"node {name!r}: output {extra.name!r} is not a usable "
+                                f"field name (lowercase, digits, underscores).")
+    problems += _plan_contract(specs, plan)
+    if problems:
+        raise SpecError(problems)
+
+    orchestrator = by_role["orchestrator"][0]
+    validator = by_role["validator"][0]
+    paper = by_role["paper_writer"][0]
+    review = by_role["human"][0]
+    work = [w["name"] for w in blueprint.work_nodes(plan)] if (plan or {}).get("steps") \
+        else [n for n, sp in specs.items() if sp.role in WORK_ROLES]
+    graph = blueprint.hub_graph(design.graph.name, design.graph.description, work,
+                                orchestrator=orchestrator, validator=validator,
+                                paper=paper, review=review)
+
+    entries = [{"name": orchestrator, "backend": "orchestrator",
+                "instructions": _defuse(specs[orchestrator].instructions.strip()),
+                "validator": validator, "paper": paper, "review": review}]
+    for name in work + [validator, paper]:
+        entries.append(_hub_entry(specs[name], plan))
+    entries.append({"name": review, "commands": blueprint.hub_review_commands()})
+    return {"task_brief": design.task_brief.strip(), "rationale": design.rationale.strip(),
+            "graph": graph, "nodes": entries}
+
+
+def _hub_fields(spec, looping: bool) -> list[dict]:
+    role = spec.role
+    if role == "validator":
+        out = [{"name": "verdict", "type": "enum", "choices": ["pass", "fail", "unsure"],
+                "description": "", "required": True}]
+    else:
+        out = [dict(_STATUS)]
+    out += [_field(n, d, required=(n == "summary")) for n, d in HUB_FIELDS[role]]
+    if looping:
+        out.append(_field("substep", "The id of the ONE substep you did this turn.",
+                          required=True))
+    taken = {f["name"] for f in out}
+    out += [_field(e.name, e.description) for e in spec.outputs if e.name not in taken]
+    return out[:12]
+
+
+def _hub_entry(spec, plan: dict) -> dict:
+    from agent import skills
+
+    role = spec.role
+    looping = role in WORK_ROLES and _has_substeps(spec, plan)
+    if role in WORK_ROLES:
+        first = ("{task_brief}\n\nYOUR STEP -- the only work that is yours:\n{my_steps}\n\n"
+                 + ("This step has substeps. Do exactly the one the orchestrator names "
+                    "below -- one per turn -- and put its id in `substep`.\n\n"
+                    if looping else "")
+                 + "The whole plan, for context only:\n{plan_outline}\n\n"
+                 "The repository is at {repo_path}. What the run produces goes under "
+                 "{artifacts_dir}.\n\nFROM THE ORCHESTRATOR, for this turn:\n{handoff}"
+                 + (("\n\nRun what you are asked: results under {artifacts_dir}, nothing "
+                     "overwritten, no edits to the code.") if role == "runner" else
+                    "\n\nDo it completely and run it; report every file you created or "
+                    "changed and the command that runs it.")
+                 + _WORK_REPORTING)
+        following = ("FROM THE ORCHESTRATOR, for this turn:\n{handoff}\n\nYour step, for "
+                     "reference:\n{my_steps}\n\nDo exactly that -- fix what it names "
+                     "without starting again, and change nothing it does not mention."
+                     + _WORK_REPORTING)
+    elif role == "validator":
+        first = ("{handoff}\n\nJudge it: `verdict` pass, fail or unsure. If it fails, "
+                 "say where the fault started (`suspected_origin`), with `evidence`.")
+        following = ("{handoff}\n\nYou may have judged this node before. Say whether "
+                     "the specific problem you found is gone, and look for anything the "
+                     "fix broke.")
+    else:   # paper_writer
+        skill = _defuse(skills.acl_paper()).replace("{ artifacts_dir }", "{artifacts_dir}")
+        first = ("{task_brief}\n\nFROM THE ORCHESTRATOR:\n{handoff}\n\n" + skill
+                 + "\n\nThe repository is at {repo_path}; the results are under "
+                   "{artifacts_dir}." + _WORK_REPORTING)
+        following = ("FROM THE ORCHESTRATOR:\n{handoff}\n\nRevise the paper in "
+                     "{artifacts_dir}/paper as asked, keeping to the format you were "
+                     "given." + _WORK_REPORTING)
+
+    instructions = HUB_RULES[role]
+    if spec.instructions.strip():
+        instructions += "\n\nFor this node in particular:\n" + _defuse(spec.instructions.strip())
+    backend = (LIGHT_ROLE if role == "worker" and spec.tier == "light" else HUB_ROLE[role])
+    return {
+        "name": spec.name, "backend": backend, "access": HUB_ACCESS[role],
+        "steps": list(spec.steps) if role in WORK_ROLES else [],
+        "instructions": instructions,
+        "output": _hub_fields(spec, looping), "prompts": {"first": first, "next": following},
+        "thread_key": "", "refresh_on": "", "bump": [],
+        "capture": ["turn_changes"] if role in WORK_ROLES + ("paper_writer",) else [],
+        "record": "",
+        "announce": (f"working on step {', '.join(spec.steps)}..." if spec.steps
+                     else f"{spec.name}..."),
+        "commands": [],
+    }
