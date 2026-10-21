@@ -305,6 +305,7 @@ def make_orchestrator_node(
 
         changes: dict[str, Any] = {
             "thread_id": run.thread_id, "provider": provider, "model": model,
+            "fill": own.get("fill"), "turns": own.get("turns"), "window": own.get("window"),
             "book": {n: {k: v for k, v in b.items() if k != "report"} for n, b in book.items()},
             "decisions": [f"{memory_lib.now()} {ledger['digest']}"],
         }

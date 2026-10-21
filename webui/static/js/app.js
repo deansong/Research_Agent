@@ -15,7 +15,7 @@ import { AuthPanel } from './auth.js';
 import { BootstrapPanel } from './bootstrap.js';
 import { Chat } from './chat.js';
 import { FilesPanel } from './files.js';
-import { IterationsPanel, TimelinePanel } from './history.js';
+import { IterationsPanel, OrchestratorPanel, TimelinePanel } from './history.js';
 import { modelOverrides, resetModelPicker, wireModelPicker } from './models.js';
 import { GraphPanel } from './graph.js';
 import { Inspector, renderActivity } from './inspector.js';
@@ -65,6 +65,7 @@ const plan = new PlanPanel(el('tab-plan'), {
 // The supervisor's reviews, and every node visit in order -- both read-only,
 // loaded when their tab is opened and refreshed while it is the one showing.
 const iterations = new IterationsPanel(el('tab-iterations'));
+const orchestrator = new OrchestratorPanel(el('tab-orchestrator'));
 const timeline = new TimelinePanel(el('tab-timeline'));
 
 const files = new FilesPanel(el('files-list'), el('files-view'), {
@@ -363,10 +364,12 @@ function wireJson() {
 async function refreshHistory(force = '') {
   if (!state.session) return;
   const showing = el('tab-iterations').classList.contains('active') ? 'iterations'
-    : el('tab-timeline').classList.contains('active') ? 'timeline' : '';
+    : el('tab-timeline').classList.contains('active') ? 'timeline'
+    : el('tab-orchestrator').classList.contains('active') ? 'orchestrator' : '';
   const which = force || showing;
   try {
     if (which === 'iterations') iterations.render(await api.iterations(state.session.id));
+    if (which === 'orchestrator') orchestrator.render(await api.orchestrator(state.session.id));
     if (which === 'timeline') timeline.render(await api.timeline(state.session.id));
   } catch (error) {
     if (error.status !== 404) showError(error);
@@ -585,7 +588,7 @@ function wireTabs(stripId) {
     // directory trees, and a session with 2,000 artifacts should not pay for
     // that while somebody is reading the graph.
     if (tab.dataset.tab === 'files') refreshFiles();
-    if (tab.dataset.tab === 'iterations' || tab.dataset.tab === 'timeline') {
+    if (['iterations', 'timeline', 'orchestrator'].includes(tab.dataset.tab)) {
       refreshHistory(tab.dataset.tab);
     }
     for (const other of strip.querySelectorAll('.tab')) {

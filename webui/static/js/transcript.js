@@ -19,8 +19,8 @@ const MEANINGFUL = new Set(['command', 'tool', 'file_change', 'reasoning', 'mess
                             'web_search', 'plan', 'error']);
 
 //: Where a model's JSON message keeps its prose, most telling first.
-const PROSE_KEYS = ['summary', 'reply', 'detail', 'problem', 'finding', 'message', 'text',
-                    'decision'];
+const PROSE_KEYS = ['summary', 'reason', 'reply', 'detail', 'problem', 'finding', 'message',
+                    'text', 'decision'];
 
 const OUTPUT_LINES = 4;
 const MESSAGE_CHARS = 700;
@@ -52,9 +52,12 @@ export function messageText(text) {
     const value = JSON.parse(raw);
     // A checker's verdict ("next", "retry", "blocked") is the one word that
     // says whether the step went wrong: lead with it.
-    const verdict = ['verdict', 'status'].map((k) => value[k])
-      .find((v) => typeof v === 'string' && v && v.length <= 24);
-    const lead = verdict ? `[${verdict}] ` : '';
+    // An orchestrator's `action` the same: dispatch, validate, finish.
+    const verdict = ['verdict', 'action', 'status'].map((k) => value[k])
+      .find((v) => typeof v === 'string' && v && v !== 'none' && v.length <= 24);
+    const target = ['target', 'subject'].map((k) => value[k])
+      .find((v) => typeof v === 'string' && v && v !== 'none');
+    const lead = verdict ? `[${verdict}${target ? ` ${target}` : ''}] ` : '';
     for (const key of PROSE_KEYS) {
       if (typeof value[key] === 'string' && value[key].trim()) return lead + value[key].trim();
     }

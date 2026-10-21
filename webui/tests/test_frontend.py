@@ -1053,3 +1053,37 @@ def test_the_stream_reads_like_a_transcript_not_a_list_of_notices():
     """)
     assert shown == ['sed -n "1,20p" a.py && rg x', "ls -la", "pytest -q", "pkg/cli.py"], shown
     print("PASS  bookkeeping hidden, a command is one row, a message is prose")
+
+
+def test_the_orchestrator_tab_shows_its_step_book_and_decisions():
+    """What the orchestrator knows, as it knows it: each step's status, its
+    last decisions, the conversation it continues and how full that is."""
+    try:
+        import quickjs  # noqa: F401
+    except ImportError:  # pragma: no cover
+        pytest.skip("quickjs not installed")
+    from jsdom_harness import exercise
+
+    result = exercise("""
+      var panel = new __ns.OrchestratorPanel(document.getElementById('tab-orchestrator'));
+      panel.render({hub: true, memory: {
+        thread_id: 'thread-abc', provider: 'codex', model: 'gpt', thread_from: 'discussor',
+        fill: 42.5, turns: 7, requirements: 'compare A and B',
+        book: {s1_code: {status: 'done', visits: 1, failures: 0, summary: 'loader written',
+                         report_path: '/x/reports/s1_code.md'},
+               s2_run: {status: 'failed', visits: 2, failures: 1, problem: 'empty data'}},
+        decisions: ['t dispatch -> s1_code: start', 't validate s2_run: check'],
+        notes: ['seed 0 is broken'], iterations: []}});
+      function text(n) {
+        return (n.textContent || '') + ' ' + (n._children || []).map(text).join(' ');
+      }
+      var shown = text(document.getElementById('tab-orchestrator'));
+      panel.render({hub: false, memory: {}});
+      return {shown: shown, pipeline: text(document.getElementById('tab-orchestrator'))};
+    """)
+    shown = result["shown"]
+    for expected in ("the discussor's, continued", "42.5% of its context window",
+                     "s1_code", "done", "problem: empty data", "seed 0 is broken",
+                     "validate s2_run", "compare A and B", "reports/s1_code.md"):
+        assert expected in shown, expected
+    assert "pipeline" in result["pipeline"]

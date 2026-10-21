@@ -112,6 +112,13 @@ export class TimelinePanel {
       let what = visit.node;
       if (visit.kind === 'human') what = `${visit.node}  (${visit.purpose || 'you'})`;
       if (visit.kind === 'supervisor') what = `supervisor — iteration ${visit.iteration}: ${visit.verdict}`;
+      if (visit.kind === 'orchestrator') {
+        what = `${visit.node} — ${visit.action}${visit.target && visit.target !== visit.node
+          ? ` → ${visit.target}` : ''}${visit.reason ? `: ${visit.reason}` : ''}`;
+      }
+      if (visit.kind === 'iteration_end') {
+        what = `iteration ${visit.iteration} ends — ${visit.verdict}, ${visit.decision}`;
+      }
       let route = visit.route ?? '';
       if (visit.kind === 'human' && visit.answer) route = `${visit.answer} → ${visit.route}`;
       const model = visit.model || visit.provider
@@ -125,5 +132,85 @@ export class TimelinePanel {
     const wrap = node('div', 'tl-wrap');
     wrap.append(table);
     this.container.replaceChildren(wrap);
+  }
+}
+
+
+const STATUS_CLASS = {
+  done: 'ok', finished: 'ok', failed: 'warn', stale: 'warn', blocked: 'warn',
+  doing: '', validating: '', todo: 'muted',
+};
+
+/**
+ * What the orchestrator knows and has decided -- its memory
+ * (<session>/orchestrator/memory.json): the step book, its notes, its last
+ * decisions, and how full its conversation is. The one place to see the
+ * run's state as the orchestrator sees it.
+ */
+export class OrchestratorPanel {
+  constructor(container) {
+    this.container = container;
+  }
+
+  render(payload) {
+    const memory = payload?.memory || {};
+    if (!Object.keys(memory).length) {
+      empty(this.container, payload?.hub === false
+        ? 'This agent has no orchestrator: it is a pipeline of workers and checkers.'
+        : 'Nothing yet. Once the design is approved, the discussor runs the '
+          + 'experiment as its orchestrator, and what it knows shows here.');
+      return;
+    }
+    const parts = [];
+    const conv = [`conversation ${memory.thread_id ? memory.thread_id.slice(0, 18) : '(none)'}`,
+                  `${memory.provider || '?'}/${memory.model || 'default'}`];
+    if (memory.thread_from === 'discussor') conv.push("the discussor's, continued");
+    if (memory.fill != null) conv.push(`${memory.fill}% of its context window`);
+    if (memory.turns != null) conv.push(`${memory.turns} decision(s) this run`);
+    parts.push(node('div', 'it-head muted', conv.join('  ·  ')));
+
+    const book = memory.book || {};
+    if (Object.keys(book).length) {
+      const table = node('table', 'tl-table');
+      const head = node('tr');
+      for (const label of ['step', 'status', 'visits', 'failed', 'summary', 'report']) {
+        head.append(node('th', '', label));
+      }
+      table.append(head);
+      for (const [name, entry] of Object.entries(book)) {
+        const row = node('tr');
+        row.append(node('td', '', name));
+        row.append(node('td', `it-verdict ${STATUS_CLASS[entry.status] || ''}`, entry.status || 'todo'));
+        row.append(node('td', '', entry.visits ?? 0));
+        row.append(node('td', '', entry.failures ?? 0));
+        row.append(node('td', '', entry.status === 'failed' && entry.problem
+          ? `problem: ${entry.problem}` : (entry.summary || '')));
+        row.append(node('td', 'muted', (entry.report_path || '').split('/').slice(-2).join('/')));
+        table.append(row);
+      }
+      const wrap = node('div', 'tl-wrap');
+      wrap.append(table);
+      parts.push(wrap);
+    }
+
+    const sections = [
+      ['What was agreed', memory.requirements ? [memory.requirements] : []],
+      ['Its notes', memory.notes || []],
+      ['Its last decisions', (memory.decisions || []).slice(-15).reverse()],
+      ['Earlier iterations', (memory.iterations || []).map(
+        (i) => `${i.n}: ${i.verdict} — ${i.summary || ''} → ${i.decision}`
+          + (i.note ? ` (you: ${i.note})` : ''))],
+      ['Fresh conversations', memory.rolled_at || []],
+    ];
+    for (const [title, items] of sections) {
+      if (!items.length) continue;
+      const card = node('div', 'it-card');
+      card.append(node('strong', '', title));
+      const list = node('ul', 'it-findings');
+      for (const item of items) list.append(node('li', '', item));
+      card.append(list);
+      parts.push(card);
+    }
+    this.container.replaceChildren(...parts);
   }
 }

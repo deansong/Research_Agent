@@ -586,6 +586,43 @@ cannot start or fails, the discussor carries on without it and says so.
 
 ---
 
+## The orchestrator, and the Orchestrator tab
+
+A designed agent is a **hub** by default: the discussor you talked to becomes
+its **orchestrator** and runs the experiment -- in the same conversation, so it
+knows what was discussed. The **Graph** tab draws it in the middle (purple),
+with dashed lines to every node it can send work to: one per plan step, the
+**validator**, the **paper** node, and you. In the conversation each of its
+decisions is a line -- `dispatch → s1_code: …`, `validate s1_code: …`, `ask
+the person: …`, `finish (done): …` -- and the live stream shows its reasoning
+like any other node's.
+
+The **Orchestrator** tab is what it knows (`orchestrator/memory.json`):
+
+- the **step book** -- each step's status (`todo`, `doing`, `validating`,
+  `done`, `failed`, `stale`), how often it was sent work and failed, its
+  summary or its open problem, and where its final report is;
+- what was agreed in the discussion, its own **notes**, its **last decisions**;
+- earlier **iterations** and what was decided after each;
+- its conversation, where it runs, and **how full** its context window is --
+  past 70% it continues in a fresh conversation briefed from this memory.
+
+It asks you only for what it cannot decide: a **gate** (`/approve`), a limit
+reached (`/continue [guidance]`), and at the end of the run (manual mode) what
+next -- `/accept`, `/replan [what]`, `/redesign [what]`, `/finish`, or
+`/continue [what]` to keep working. Anything you type instead goes to it as an
+answer.
+
+Its role is under **Runs on** like the others; unless you set it, it runs
+where the discussor ran (shown as an alias), which is what lets it continue
+that conversation.
+
+Every step's **final report** is in Files under `artifacts/reports/`, and the
+**paper** under `artifacts/paper/` -- `main.tex` in ACL style, its appendices
+with the full results and settings, and `paper.md` to read here.
+
+---
+
 ## The task field
 
 **It is the opening line of a conversation, not a specification.** The
@@ -740,7 +777,8 @@ signature, and about when to do it properly instead.
 | `GET` | `/api/sessions/{id}/nodes/{name}/activity` | every provider event for that node's turns |
 | `GET` | `/api/sessions/{id}/activity` | the turn running *right now*, whichever node it is |
 | `GET` | `/api/sessions/{id}/timeline` | every node visit, in order |
-| `GET` | `/api/sessions/{id}/iterations` | the supervisor's reviews, one per run |
+| `GET` | `/api/sessions/{id}/iterations` | each run's review (orchestrator or supervisor), one per run |
+| `GET` | `/api/sessions/{id}/orchestrator` | the orchestrator's memory: step book, notes, decisions, context fill |
 | `GET` | `/api/sessions/{id}/files` | the session folder's files: code, session, results |
 | `GET` | `/api/sessions/{id}/files/content?path=` | one of them; nothing outside the folder |
 | `GET` | `/api/models` | each provider's models; `?refresh=true` to ask again |

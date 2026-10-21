@@ -79,8 +79,8 @@ _QUIET_KINDS = frozenset({
 
 #: Where a model's JSON message keeps its prose, most telling first
 #: (the same list as webui/static/js/transcript.js).
-_PROSE_KEYS = ("summary", "reply", "detail", "problem", "finding", "message", "text",
-               "decision")
+_PROSE_KEYS = ("summary", "reason", "reply", "detail", "problem", "finding", "message",
+               "text", "decision")
 
 
 _SHELL_WRAP = re.compile(r"""^(?:/(?:usr/)?bin/)?(?:ba|z)?sh\s+-l?c\s+(["'])([\s\S]*)\1$""")
@@ -110,9 +110,11 @@ def message_prose(text: str) -> str:
         return raw
     if not isinstance(value, dict):
         return raw
-    verdict = next((v for v in (value.get("verdict"), value.get("status"))
-                    if isinstance(v, str) and v and len(v) <= 24), "")
-    lead = f"[{verdict}] " if verdict else ""
+    verdict = next((v for v in (value.get("verdict"), value.get("action"), value.get("status"))
+                    if isinstance(v, str) and v and v != "none" and len(v) <= 24), "")
+    target = next((v for v in (value.get("target"), value.get("subject"))
+                   if isinstance(v, str) and v and v != "none"), "")
+    lead = f"[{verdict}{' ' + target if target else ''}] " if verdict else ""
     for key in _PROSE_KEYS:
         if isinstance(value.get(key), str) and value[key].strip():
             return lead + value[key].strip()

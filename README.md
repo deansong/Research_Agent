@@ -652,6 +652,7 @@ the sessions that were running when the server last stopped).
 | `--config PATH` | config file (replaces the default two) |
 | `--supervisor manual\|auto\|off` | what happens after each run (default manual) |
 | `--no-research` | do not let the discussor ask the research agent first |
+| `--design-topology hub\|pipeline` | the shape of agent to design (default hub: the discussor orchestrates, one validator, a paper) |
 | `--max-iterations N` | most design-and-run iterations the supervisor may take |
 | `--explain` | print config + agent shape and exit, spending nothing |
 
@@ -675,8 +676,11 @@ the sessions that were running when the server last stopped).
         bootstrap.json      your changes to the design agent, if any
         agent/              the agent designed for this session
         artifacts/          where a run puts what it PRODUCES
+            reports/<node>.md   each step's final report
+            paper/              the ACL-style paper: main.tex, appendices, tables, figures
+        orchestrator/memory.json  what the orchestrator knows, across runs (Orchestrator tab)
         activity/           every turn, in full, and timeline.jsonl
-        iterations/<n>/     the supervisor's review of each run
+        iterations/<n>/     each run's review (the orchestrator's, or the supervisor's)
         checkpoint.sqlite   every phase, its own thread ids
     agents/<name>/          promoted, committed, reusable
 ```
@@ -752,7 +756,117 @@ tab, or the file for every session.
 folder as data, so `writer` is `json.dump` — which makes "no `exec`, no
 `eval`, no generated Python" structural rather than a promise.
 
+### The agent it builds: a hub, run by the discussor
+
+By default (`design_topology: "hub"`) every designed agent has the same shape,
+built by code from the approved plan:
+
+```
+                 ┌──────────── orchestrator ────────────┐   (the discussor, carried on)
+                 │   decides every turn what happens next │
+        dispatch │          validate │        ask │       │ finish
+                 ▼                   ▼            ▼       ▼
+   s1_… s2_… s3_… s4_…           validator      review    END
+   (one per plan step)          (read-only)    (you)
+                 └─────── every node reports back to the orchestrator ───────┘
+                                  paper  (an ACL-style paper, last)
+```
+
+- **The orchestrator is the discussor.** The same conversation: once you
+  approve the design, the discussor's provider conversation is continued with
+  the orchestrator's instructions ("the discussion is over; you now run it"),
+  so it knows everything that was discussed. The `orchestrator` role runs
+  wherever the discussor ran unless you set it yourself (Runs on). It is
+  read-only.
+- **One validator** checks every step's work when the orchestrator sends it
+  (its rule: validate each piece of work before relying on it). It reads the
+  files itself and, when work fails, names the node where the fault
+  **started** (`suspected_origin`) with its evidence.
+- **Root-cause routing.** The orchestrator sends the fix to that node, not to
+  the one just checked -- a wrong number in step 3 that comes from step 1's
+  data goes back to step 1, with the validator's findings in its
+  instructions. Later steps are marked **stale** and run again in order once
+  the fix passes.
+- **The paper.** When every step has passed, the orchestrator dispatches
+  `paper`, which writes an ACL-style paper from the step reports and the
+  results (see below), and has it validated. The run cannot finish before.
+- **Guards, in code:** `max_turns` decisions per run (80), `max_visits` per
+  node (8), `max_failures` in a row on one node (3) -- each asks you rather
+  than looping on. **Gates** (`gate: true` on a plan step) are enforced by the
+  orchestrator: it asks you to `/approve` before the step's node first runs.
+
+#### Context: what the orchestrator keeps, and what it is sent
+
+It keeps a **step book**, not transcripts: each step's status and, once
+validated, its **final report** (every work node writes one when it finishes
+its step -- what it did, results with file paths and numbers, deviations --
+saved to `artifacts/reports/<node>.md`). Not the logs, not the diffs.
+
+- **Validation gets the detail**: the step and its check, the node's output
+  and report, the files its turn changed, the end of every command's output,
+  and read access to the workspace. **After a pass it collapses** to one line:
+  the evidence stays in the validator's own record. After a failure the
+  orchestrator keeps the short problem, origin and fix until the step passes.
+- **Pull on demand.** The orchestrator can ask for any node's `report`,
+  `output`, `changes`, `log`, `prompt` or `turn` (`include`), for itself
+  (`inspect`) or to pass on to the node it dispatches or to the validator --
+  this is how it decides which node's context a turn needs.
+- **Budgets come from the model**, not small fixed caps: up to about half of
+  the model's context window per prompt (the window Codex reports, else a
+  table: Claude 200k tokens, Gemini 1M, GPT-5.x 272k). Clipping is only a
+  safety net for a huge single item, and keeps a log's head and tail.
+- **Its conversation rolls** to a fresh one when it is 70% full
+  (`roll_percent`), or when the provider changed: the new one is briefed from
+  its **memory**, `<session>/orchestrator/memory.json` -- the thread, what
+  was agreed, its notes, the step book, its last decisions and every
+  iteration -- which survives runs, iterations and restarts.
+
+The **Orchestrator** tab shows that memory: the step book with each node's
+status and report, its notes, its last decisions, earlier iterations, and how
+full its conversation is.
+
+#### The end of a run
+
+The orchestrator's `finish` is the review the supervisor used to write --
+verdict `done`, `improve_experiment`, `improve_agent` or `stop`, a summary and
+findings -- with everything it saw during the run behind it. Then, by the
+`supervisor` setting: `manual` asks you (`/accept`, `/replan [what]`,
+`/redesign [what]`, `/finish`, or `/continue [what]` to keep working); `auto`
+acts on the verdict up to `max_iterations`; `off` stops. A re-design continues
+the same conversation, so `/discuss` during it talks to the orchestrator that
+just ran the experiment.
+
+#### The paper
+
+`agent/skills/acl_paper.md`, editable: LaTeX in the official ACL style
+(`acl.sty` and `acl_natbib.bst` fetched from `acl-org/acl-style-files`; a
+plain two-column article, said so, when offline), `references.bib` with only
+papers confirmed by the research agent or a lookup, tables and figures
+generated by scripts from the result files, and `paper.md` to read without
+LaTeX. The body keeps to 8 pages with the required **Limitations** section;
+the **appendices are unlimited** and hold the full results (every
+configuration, seed and run, failed ones included), the full experimental
+settings, how to reproduce it, extra analyses, and the run record (the
+approved plan, deviations, each step's report, the validator's findings).
+`main.pdf` is compiled when `tectonic` or `pdflatex` is installed; otherwise
+the folder is ready to upload to Overleaf. All of it is in
+`<session>/artifacts/paper/`.
+
+#### The older shape: a pipeline
+
+`--design-topology pipeline` (or `"design_topology": "pipeline"`,
+`AGENT_DESIGN_TOPOLOGY=pipeline`) designs the earlier shape -- each work node
+followed by a checker that can only send work back to the step it watches,
+and a separate supervisor after the run. Agents designed before hubs keep
+running as they are. The two sections below describe it.
+
 ### How the designer builds the agent
+
+For a hub, the graph is fixed by code and the designer decides what each node
+is told: per node `instructions` (what to watch in this experiment -- for the
+orchestrator, which step is expensive; for the validator, what to check
+hardest), a `tier` and extra `outputs`, plus the agent's `task_brief` and any
+`plan_issues`. For a pipeline, as follows.
 
 The approved plan is the contract, and four rules hold it to that. They are
 checked by code, not asked for in a prompt:
@@ -781,9 +895,10 @@ How a design is made:
 The design review shows a row per node: its step, role (which decides the
 model), access, how many nodes it reads, and which checker checks it.
 
-### The supervisor: review, then go round again
+### The supervisor: review, then go round again (pipeline agents)
 
-After every run, a supervisor (role `supervisor`, read-only) reviews it: the
+After every run of a pipeline agent, a supervisor (role `supervisor`,
+read-only) reviews it -- a hub agent's orchestrator does this itself: the
 brief, the plan and its checks, every node visit with the model that ran it
 and the route it took, each node's last outputs and checkers' evidence, the
 files under the artifacts directory, and earlier iterations' reviews. It

@@ -660,6 +660,22 @@ def _register(app: FastAPI) -> None:
 
         return {"visits": activity.timeline(_runner(session_id).paths.session)}
 
+    @app.get("/api/sessions/{session_id}/orchestrator")
+    def get_orchestrator(session_id: str):
+        """What a hub agent's orchestrator knows: its memory -- the step
+        book, notes, last decisions, iterations, conversation and how full
+        it is. See agent/work/memory.py."""
+        from agent.work import memory
+
+        runner = _runner(session_id)
+        hub = None
+        if runner.paths.has_agent():
+            try:
+                hub = load_agent_folder(runner.paths.agent_dir).orchestrator() is not None
+            except AgentFolderError:
+                hub = None
+        return {"memory": memory.load(runner.paths.session), "hub": hub}
+
     @app.get("/api/sessions/{session_id}/iterations")
     def get_iterations(session_id: str):
         """Every design-and-run iteration the supervisor reviewed, oldest first:
@@ -1280,6 +1296,7 @@ def _resolved_backends(runner, folder) -> dict:
     same role share an answer, and this keeps the front end from having to
     know anything about config layering.
     """
+    from agent import roles as roles_lib
     from agent.agentfolder.schema import AgentNodeConfig
 
     # The SESSION's settings -- its New-dialog models and the changes made
@@ -1290,12 +1307,27 @@ def _resolved_backends(runner, folder) -> dict:
     for name, config in folder.nodes.items():
         if isinstance(config, AgentNodeConfig) and config.backend:
             users.setdefault(config.backend, []).append(name)
+    hub = folder.orchestrator()
+    if hub is not None:
+        users.setdefault(hub[1].backend, []).append(hub[0])
     chosen = _role_overrides(runner.paths)
 
     resolved = {}
     for role in sorted(users):
         spec = backend_for(cfg, role)
+        alias = ""
+        if role in roles_lib.ROLE_ALIASES and role not in cfg.roles:
+            # Runs where the discussor ran, so it can continue that
+            # conversation -- the memory says where that was.
+            from agent.config import BackendConfig
+            from agent.work import memory
+
+            alias = roles_lib.ROLE_ALIASES[role]
+            saved = memory.load(runner.paths.session)
+            if saved.get("provider"):
+                spec = BackendConfig(provider=saved["provider"], model=saved.get("model") or None)
         resolved[role] = {
+            "alias_of": alias,
             "provider": spec.provider,
             "model": spec.model,
             # False means "nobody named this role, it fell through to the

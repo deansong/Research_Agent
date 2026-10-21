@@ -29,6 +29,8 @@
 const KIND_COLOUR = {
   agent: '#35d6c4',
   human: '#d99b4a',
+  // A hub agent's orchestrator: it decides, each turn, where the run goes.
+  orchestrator: '#c48ae0',
   // A node that calls no model -- the design agent's writer and validator.
   tool: '#7a8aa6',
   end: '#5d6a80',
@@ -38,6 +40,8 @@ const EDGE_COLOUR = {
   edge: '#4a5a78',
   case: '#7a6bc4',
   command: '#d99b4a',
+  // The orchestrator's possible next steps -- chosen at run time, not wired.
+  dispatch: '#8a6ba8',
 };
 
 export class GraphPanel {
@@ -62,7 +66,7 @@ export class GraphPanel {
 
     const canvas = document.createElement('div');
     canvas.className = 'cy-canvas';
-    this.container.append(canvas, legend());
+    this.container.append(canvas, legend(view.nodes.some((n) => n.kind === 'orchestrator')));
 
     this.cy = cytoscape({
       container: canvas,
@@ -148,6 +152,10 @@ function subtitle(node) {
     return node.commands?.length ? node.commands.map((c) => `/${c}`).join(' ') : 'human';
   }
   if (node.kind === 'end') return '';
+  if (node.kind === 'orchestrator') {
+    return [node.model ? `${node.backend} · ${node.model}` : node.backend,
+            'decides every step'].filter(Boolean).join(' · ');
+  }
   // Role AND model. The role name alone cannot tell you whether this node is
   // about to run on a flagship or on the cheap tier, which for a checker is
   // the difference between a verifier and a rubber stamp -- and it is the
@@ -164,7 +172,9 @@ function toEdge(edge, index) {
       id: `e${index}-${edge.from}-${edge.to}-${edge.kind}`,
       source: edge.from,
       target: edge.to,
-      label: edge.label || '',
+      // A hub dispatches to every node: label only the special ones, or the
+      // picture is the word "dispatch" a dozen times.
+      label: edge.kind === 'dispatch' && edge.label === 'dispatch' ? '' : (edge.label || ''),
       kind: edge.kind,
     },
     classes: [edge.kind, edge.asks ? 'asks' : ''].filter(Boolean).join(' '),
@@ -230,6 +240,8 @@ const STYLE = [
   },
   { selector: 'edge.case', style: { 'line-style': 'dashed' } },
   { selector: 'edge.command', style: { 'line-style': 'dotted' } },
+  { selector: 'edge.dispatch', style: { 'line-style': 'dashed', width: 1.2, opacity: 0.8 } },
+  { selector: 'node.orchestrator', style: { 'border-width': 3 } },
   // An edge that asks a human something is thicker: those are the points where
   // the run stops and waits for you, which is worth spotting at a glance.
   { selector: 'edge.asks', style: { width: 2.6 } },
@@ -244,10 +256,17 @@ const LAYOUT = {
   padding: 30,
 };
 
-function legend() {
+function legend(hub = false) {
   const box = document.createElement('div');
   box.className = 'legend';
-  const entries = [
+  const entries = hub ? [
+    ['orchestrator', KIND_COLOUR.orchestrator, 'node'],
+    ['agent', KIND_COLOUR.agent, 'node'],
+    ['human', KIND_COLOUR.human, 'node'],
+    ['reports back', EDGE_COLOUR.edge, 'solid'],
+    ['can send to', EDGE_COLOUR.dispatch, 'dashed'],
+    ['/command', EDGE_COLOUR.command, 'dotted'],
+  ] : [
     ['agent', KIND_COLOUR.agent, 'node'],
     ['human', KIND_COLOUR.human, 'node'],
     ['edge', EDGE_COLOUR.edge, 'solid'],

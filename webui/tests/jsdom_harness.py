@@ -35,7 +35,7 @@ MODULES: list[tuple[str, list[str]]] = [
                        "transcriptRow"]),
     ("chat.js", ["Chat"]),
     ("files.js", ["FilesPanel"]),
-    ("history.js", ["IterationsPanel", "TimelinePanel"]),
+    ("history.js", ["IterationsPanel", "OrchestratorPanel", "TimelinePanel"]),
     ("models.js", ["loadModelPicker", "modelOverrides", "resetModelPicker",
                    "wireModelPicker"]),
     ("graph.js", ["GraphPanel"]),
