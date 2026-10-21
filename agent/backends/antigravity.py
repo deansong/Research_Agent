@@ -112,6 +112,13 @@ def _describe_tool(name: str, params: dict) -> str:
 #: Turn.counts() and the web UI's activity panel work with no changes.
 _PHASE = {"ACTIVE": "started", "DONE": "completed", "ERROR": "error"}
 
+#: An ERROR envelope whose `error` says the model was full rather than the
+#: request wrong -- the measured 503 in _why_empty below is the model case.
+#: Retried a few times with backoff by _cli.py.
+_TRANSIENT = ("unavailable", "no capacity", "503", "502", "429",
+              "resource_exhausted", "overloaded", "rate limit",
+              "deadline_exceeded", "try again")
+
 
 class AntigravityBackend(CliBackend):
     name = "antigravity"
@@ -278,6 +285,18 @@ class AntigravityBackend(CliBackend):
         parsed = result.get("structured_output")
         return json.dumps(parsed) if parsed is not None else ""
 
+    def refusal_text(self, envelope):
+        result = envelope.get("result") or envelope
+        if str(result.get("status") or "").upper() != "ERROR":
+            return ""
+        if result.get("structured_output") is not None:
+            return ""
+        return str(result.get("error") or "")
+
+    def transient_error(self, envelope):
+        text = self.refusal_text(envelope)
+        return text if any(m in text.lower() for m in _TRANSIENT) else ""
+
     def _why_empty(self, envelope, access=None):
         """Say what was actually refused -- and only when something was.
 
@@ -324,7 +343,7 @@ class AntigravityBackend(CliBackend):
                 f"nothing about the run: try again, or pin this role to a "
                 f"model with room:\n"
                 f'    {{"roles": {{{self._role_hint()}: '
-                f'{{"model": "gemini-3.1-pro"}}}}}}\n'
+                f'{{"model": "gemini-4-argon-medium"}}}}}}\n'
                 f"in <repo>/.agent/config.json."
             )
 

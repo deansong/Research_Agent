@@ -68,7 +68,13 @@ function describeValidation(errors) {
 }
 
 export const api = {
-  listSessions:  (repo) => request('GET', `/api/sessions${repo ? `?repo=${encodeURIComponent(repo)}` : ''}`),
+  listSessions:  (repo, root) => {
+    const query = new URLSearchParams();
+    if (repo) query.set('repo', repo);
+    if (root) query.set('root', root);
+    const text = query.toString();
+    return request('GET', `/api/sessions${text ? `?${text}` : ''}`);
+  },
   createSession: (body) => request('POST', '/api/sessions', body),
   getSession:    (id)   => request('GET', `/api/sessions/${encodeURIComponent(id)}`),
   startSession:  (id, body) => request('POST', `/api/sessions/${encodeURIComponent(id)}/start`, body || {}),
@@ -76,13 +82,22 @@ export const api = {
   pauseSession:  (id)   => request('POST', `/api/sessions/${encodeURIComponent(id)}/pause`, {}),
   stopSession:   (id)   => request('POST', `/api/sessions/${encodeURIComponent(id)}/stop`, {}),
   closeSession:  (id)   => request('DELETE', `/api/sessions/${encodeURIComponent(id)}`),
+  deleteSession: (id, body) => request('POST', `/api/sessions/${encodeURIComponent(id)}/delete`, body),
+  setRole:       (id, role, body) => request('PUT',
+    `/api/sessions/${encodeURIComponent(id)}/roles/${encodeURIComponent(role)}`, body),
   getPlan:       (id)   => request('GET', `/api/sessions/${encodeURIComponent(id)}/plan`),
   putPlan:       (id, plan) => request('PUT', `/api/sessions/${encodeURIComponent(id)}/plan`, { plan }),
+  // The design agent (bootstrap graph): its models and prompts, per session.
+  getBootstrap:  (id)   => request('GET', `/api/sessions/${encodeURIComponent(id)}/bootstrap`),
+  putBootstrap:  (id, body) => request('PUT', `/api/sessions/${encodeURIComponent(id)}/bootstrap`, body),
+  resetBootstrap: (id)  => request('DELETE', `/api/sessions/${encodeURIComponent(id)}/bootstrap`),
   getAgent:      (id)   => request('GET', `/api/sessions/${encodeURIComponent(id)}/agent`),
   putAgent:      (id, doc) => request('PUT', `/api/sessions/${encodeURIComponent(id)}/agent`, doc),
   validateAgent: (id, doc) => request('POST', `/api/sessions/${encodeURIComponent(id)}/agent/validate`, doc),
   nodeContext:   (id, name) =>
     request('GET', `/api/sessions/${encodeURIComponent(id)}/nodes/${encodeURIComponent(name)}/context`),
+  timeline:      (id)   => request('GET', `/api/sessions/${encodeURIComponent(id)}/timeline`),
+  iterations:    (id)   => request('GET', `/api/sessions/${encodeURIComponent(id)}/iterations`),
   nodeActivity:  (id, name) =>
     request('GET', `/api/sessions/${encodeURIComponent(id)}/nodes/${encodeURIComponent(name)}/activity`),
   // The turn running right now, whichever node it belongs to -- what the
@@ -102,7 +117,10 @@ export const api = {
   loginInput:    (p, text) =>
     request('POST', `/api/auth/${encodeURIComponent(p)}/login/input`, { text }),
   loginCancel:   (p)     => request('POST', `/api/auth/${encodeURIComponent(p)}/login/cancel`, {}),
-  config:        ()     => request('GET', '/api/config'),
+  config:        (repo) => request('GET', `/api/config${repo ? `?repo=${encodeURIComponent(repo)}` : ''}`),
+  // Slow on first call (each provider is asked, a few seconds each); cached
+  // on the server after that.
+  models:        (refresh) => request('GET', `/api/models${refresh ? '?refresh=true' : ''}`),
   schema:        ()     => request('GET', '/api/schema'),
   defaults:      ()     => request('GET', '/api/defaults'),
 };

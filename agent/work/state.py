@@ -96,6 +96,11 @@ class WorkState(TypedDict, total=False):
     The discussor gets "discussor/"; an executor with
     thread_key "{out.planner.workstream}" gets "executor/main"."""
 
+    thread_providers: Annotated[dict[str, str], operator.or_]
+    """Same keys as `threads` -> the provider the conversation lives on. A
+    conversation id means nothing to another provider: a node moved from
+    codex to antigravity mid-run handed agy a Codex thread id."""
+
     thread_marks: Annotated[dict[str, int], operator.or_]
     """Same keys as `threads` -> the counter value when that conversation last
     ran. Compared against `counters` to decide first-vs-next prompt."""
@@ -150,6 +155,7 @@ def initial_work_state(
         "transcript": [{"role": "human", "text": task_brief}],
         "outputs": {},
         "threads": dict(threads or {}),
+        "thread_providers": {},
         "thread_marks": {},
         "counters": {},
         "vars": {},

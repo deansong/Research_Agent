@@ -12,8 +12,11 @@
 
 import { api, subscribe } from './api.js';
 import { AuthPanel } from './auth.js';
+import { BootstrapPanel } from './bootstrap.js';
 import { Chat } from './chat.js';
 import { FilesPanel } from './files.js';
+import { IterationsPanel, TimelinePanel } from './history.js';
+import { modelOverrides, resetModelPicker, wireModelPicker } from './models.js';
 import { GraphPanel } from './graph.js';
 import { Inspector, renderActivity } from './inspector.js';
 import { PlanPanel, ownersByStep } from './plan.js';
@@ -42,6 +45,15 @@ const graph = new GraphPanel(el('tab-graph'), {
   onSelect: (name) => selectNode(name),
 });
 
+const bootstrap = new BootstrapPanel(el('tab-bootstrap'), {
+  load: () => api.getBootstrap(state.session.id),
+  save: (body) => api.putBootstrap(state.session.id, body),
+  reset: () => api.resetBootstrap(state.session.id),
+  start: () => startConversation(),
+  models: (refresh) => api.models(refresh),
+  onError: (error) => showError(error),
+});
+
 const plan = new PlanPanel(el('tab-plan'), {
   onSave: savePlan,
   // Clicking a plan step lights up the nodes that own it. `steps` is what
@@ -50,6 +62,11 @@ const plan = new PlanPanel(el('tab-plan'), {
   onSelectStep: (stepId, owners) => graph.highlight(stepId ? owners : []),
 });
 
+// The supervisor's reviews, and every node visit in order -- both read-only,
+// loaded when their tab is opened and refreshed while it is the one showing.
+const iterations = new IterationsPanel(el('tab-iterations'));
+const timeline = new TimelinePanel(el('tab-timeline'));
+
 const files = new FilesPanel(el('files-list'), el('files-view'), {
   onRead: (path) => api.readFile(state.session.id, path),
 });
@@ -57,6 +74,15 @@ const files = new FilesPanel(el('files-list'), el('files-view'), {
 const inspector = new Inspector({
   onSave: saveNode,
   onSelectSteps: () => {},
+  getBackends: () => state.agent?.backends || {},
+  onSetRole: async (role, body) => {
+    const result = await api.setRole(state.session.id, role, body);
+    // Redraw with the new model: the graph labels and Context use it too.
+    if (state.agent) state.agent.backends = result.backends;
+    await loadAgent();
+    return result;
+  },
+  models: (refresh) => api.models(refresh),
 });
 
 const auth = new AuthPanel({
@@ -79,7 +105,7 @@ document.addEventListener('select-node', (event) => {
 });
 
 // Cytoscape cannot notice the column being dragged; it has to be told.
-document.addEventListener('panels-resized', () => graph.resize());
+document.addEventListener('panels-resized', () => { graph.resize(); bootstrap.resize(); });
 
 // ---------------------------------------------------------------------------
 // driving a session
@@ -114,12 +140,25 @@ async function openSession(detail) {
 
   renderSession(detail);
   loadAgent();
+  await bootstrap.refresh();
+
+  // A session nobody has started yet opens on the design agent, so the
+  // first thing you see is what is about to interview you -- and where to
+  // change it -- rather than an empty graph tab.
+  if (!detail.busy && !detail.has_agent && !(detail.transcript || []).length) {
+    showTab('canvas-tabs', 'bootstrap');
+    chat.status('Not started. Review the design agent, then press Start conversation.');
+  }
 
   // Anything the session already emitted -- a run that started before this tab
   // opened, or a reconnect -- arrives as replay before the live feed.
   state.unsubscribe = subscribe(detail.id, {
     status: (e) => {
       if (e.phase) setPhase(e.phase);
+      refreshHistory();
+      // A supervisor's redesign replaces the agent on disk, so a new run
+      // starting is the moment to redraw the graph.
+      if (e.phase === 'running') loadAgent();
       if (e.detail) chat.logLine(e.detail, 'node');
       if (e.title) chat.logLine(`===== ${e.title} =====`, 'node');
       refresh();
@@ -146,12 +185,22 @@ async function openSession(detail) {
     },
     done: (e) => {
       setPhase(e.error ? 'error' : 'finished');
+      refreshHistory();
       chat.question(null);
       chat.status(e.error || 'finished');
       refresh();          // refresh() calls syncRunControls()
     },
     onerror: () => chat.status('reconnecting...'),
   });
+}
+
+/** Begin a session that was created without starting -- see the New dialog. */
+async function startConversation() {
+  if (!state.session) return;
+  const detail = await api.startSession(state.session.id, {});
+  state.session = detail;
+  renderSession(detail);
+  chat.status('started');
 }
 
 async function loadAgent() {
@@ -310,6 +359,20 @@ function wireJson() {
   });
 }
 
+/** Re-read the history tab that is showing, if either is. */
+async function refreshHistory(force = '') {
+  if (!state.session) return;
+  const showing = el('tab-iterations').classList.contains('active') ? 'iterations'
+    : el('tab-timeline').classList.contains('active') ? 'timeline' : '';
+  const which = force || showing;
+  try {
+    if (which === 'iterations') iterations.render(await api.iterations(state.session.id));
+    if (which === 'timeline') timeline.render(await api.timeline(state.session.id));
+  } catch (error) {
+    if (error.status !== 404) showError(error);
+  }
+}
+
 /** Re-read the file listing. Called when the Files tab is opened. */
 async function refreshFiles() {
   if (!state.session) return;
@@ -343,7 +406,7 @@ function renderSession(detail) {
   setPhase(detail.phase);
 
   if (detail.waiting && detail.pending) {
-    chat.question(detail.pending);
+    chat.question(detail.pending, detail.commands);
   }
 
   el('run-facts').replaceChildren(...facts({
@@ -358,6 +421,9 @@ function renderSession(detail) {
   state.problems = detail.problems || [];
   renderProblems();
   syncRunControls();
+  // Editing the design agent is refused while it runs, so the panel has to
+  // follow the busy flag rather than whatever it was when it last loaded.
+  bootstrap.setBusy(Boolean(detail.busy));
 }
 
 function facts(pairs) {
@@ -390,6 +456,8 @@ function syncRunControls() {
   const running = Boolean(state.session?.busy);
   el('btn-pause').disabled = !running;
   el('btn-stop').disabled = !running;
+  // The live view of the turn in flight follows the same flag.
+  chat.setLive(running);
 }
 
 function wireRunControls() {
@@ -517,6 +585,9 @@ function wireTabs(stripId) {
     // directory trees, and a session with 2,000 artifacts should not pay for
     // that while somebody is reading the graph.
     if (tab.dataset.tab === 'files') refreshFiles();
+    if (tab.dataset.tab === 'iterations' || tab.dataset.tab === 'timeline') {
+      refreshHistory(tab.dataset.tab);
+    }
     for (const other of strip.querySelectorAll('.tab')) {
       other.classList.toggle('active', other === tab);
     }
@@ -524,6 +595,9 @@ function wireTabs(stripId) {
     for (const body of panel.querySelectorAll('.tab-body')) {
       body.classList.toggle('active', body.id === `tab-${tab.dataset.tab}`);
     }
+    // Drawn while hidden, a graph has no size to lay out into.
+    if (tab.dataset.tab === 'bootstrap') requestAnimationFrame(() => bootstrap.resize());
+    if (tab.dataset.tab === 'graph') requestAnimationFrame(() => graph.resize());
   });
 }
 
@@ -584,8 +658,11 @@ function wireDialogs() {
   const syncStart = () => { startButton.disabled = !taskBox.value.trim(); };
   taskBox.addEventListener('input', syncStart);
 
+  wireModelPicker(el('new-repo'));
+
   el('btn-new').addEventListener('click', () => {
     el('new-error').hidden = true;
+    resetModelPicker();
     syncStart();
     newDialog.showModal();
     taskBox.focus();
@@ -595,11 +672,21 @@ function wireDialogs() {
 
   el('form-new').addEventListener('submit', async (event) => {
     event.preventDefault();
+    const prebuilt = el('new-prebuilt').value.trim() || null;
     const body = {
       repo: el('new-repo').value.trim() || '.',
       task: el('new-task').value.trim(),
       session_dir: el('new-session-dir').value.trim() || null,
-      pre_build_agent: el('new-prebuilt').value.trim() || null,
+      sessions_root: sessionsRoot(),
+      pre_build_agent: prebuilt,
+      research: el('new-research').checked,
+      supervisor: el('new-supervisor').value || null,
+      backend_role: modelOverrides(),
+      max_iterations: Number(el('new-max-iterations').value) || null,
+      // Reviewing means: create the session, show the design agent, and let
+      // the Start button on that tab begin it. A pre-built agent skips the
+      // design phase, so there is nothing to review.
+      start: !(el('new-review').checked && !prebuilt),
     };
     try {
       const detail = await api.createSession(body);
@@ -617,7 +704,8 @@ function wireDialogs() {
     list.replaceChildren();
     let sessions = [];
     try {
-      sessions = await api.listSessions(el('new-repo').value.trim() || '.');
+      sessions = await api.listSessions(el('new-repo').value.trim() || '.',
+                                        sessionsRoot());
     } catch (error) {
       showError(error);
       return;
@@ -628,6 +716,8 @@ function wireDialogs() {
     }
 
     for (const session of sessions) {
+      const item = document.createElement('div');
+      item.className = 'session-item';
       const row = document.createElement('button');
       row.type = 'button';
       row.className = 'session-row';
@@ -645,6 +735,7 @@ function wireDialogs() {
           const detail = await api.createSession({
             repo: el('new-repo').value.trim() || '.',
             session: session.name,
+            sessions_root: sessionsRoot(),
             start: true,
           });
           openDialog.close();
@@ -653,17 +744,99 @@ function wireDialogs() {
           showError(error);
         }
       });
-      list.append(row);
+      item.append(row, deleteControls(session, item));
+      list.append(item);
     }
     openDialog.showModal();
   });
 }
 
+/**
+ * A Delete button for one row of the Open list, which asks before it does
+ * anything: the folder -- conversation, agent, results -- goes for good, and
+ * the session's branch (its code) only if that box is ticked.
+ */
+function deleteControls(session, item) {
+  const box = document.createElement('div');
+  box.className = 'session-delete';
+  const ask = document.createElement('button');
+  ask.type = 'button';
+  ask.className = 'btn ghost small';
+  ask.textContent = 'Delete…';
+
+  const confirmBox = document.createElement('div');
+  confirmBox.className = 'session-delete-confirm';
+  confirmBox.hidden = true;
+  const warning = document.createElement('p');
+  warning.textContent = `Delete ${session.name} for good? Its folder goes: `
+    + 'the conversation, the agent, and every result under artifacts/. '
+    + (session.open ? 'It is running now and will be stopped first. ' : '');
+  const branchLabel = document.createElement('label');
+  const branch = document.createElement('input');
+  branch.type = 'checkbox';
+  branchLabel.append(branch, ` Also delete its git branch agent/${session.name} `
+    + '(the code it wrote), if it has one');
+  const yes = document.createElement('button');
+  yes.type = 'button';
+  yes.className = 'btn danger small';
+  yes.textContent = 'Delete for good';
+  const no = document.createElement('button');
+  no.type = 'button';
+  no.className = 'btn ghost small';
+  no.textContent = 'Cancel';
+  confirmBox.append(warning, branchLabel, yes, no);
+
+  ask.addEventListener('click', () => { confirmBox.hidden = false; ask.hidden = true; });
+  no.addEventListener('click', () => { confirmBox.hidden = true; ask.hidden = false; });
+  yes.addEventListener('click', async () => {
+    yes.disabled = true;
+    try {
+      const result = await api.deleteSession(session.id, {
+        repo: el('new-repo').value.trim() || '.',
+        sessions_root: sessionsRoot(),
+        drop_branch: branch.checked,
+      });
+      // The page was showing it: start clean rather than leave a view of a
+      // session that no longer exists.
+      if (state.session?.id === session.id) {
+        window.location.reload();
+        return;
+      }
+      item.remove();
+      chat.status(result.detail);
+    } catch (error) {
+      yes.disabled = false;
+      warning.textContent = String(error);
+    }
+  });
+  box.append(ask, confirmBox);
+  return box;
+}
+
 // ---------------------------------------------------------------------------
+
+// The sessions folder: what the server resolves (flag, config, or
+// <repo>/.agent/sessions) unless you changed it here -- then yours, remembered
+// in this browser, so the next New and Open look in the same place.
+const ROOT_KEY = 'sessionsRoot';
+let defaultRoot = '';
+
+function sessionsRoot() {
+  const value = el('new-sessions-root').value.trim();
+  try {
+    if (value && value !== defaultRoot) localStorage.setItem(ROOT_KEY, value);
+    else localStorage.removeItem(ROOT_KEY);
+  } catch { /* storage blocked: still used for this request */ }
+  return value && value !== defaultRoot ? value : null;
+}
 
 // Show the real path this server was started for, rather than a bare "."
 // that could mean two different directories.
 api.defaults().then((defaults) => {
+  defaultRoot = defaults.sessions_dir || '';
+  let remembered = '';
+  try { remembered = localStorage.getItem(ROOT_KEY) || ''; } catch { /* none */ }
+  el('new-sessions-root').value = remembered || defaultRoot;
   el('new-repo').value = defaults.repo;
   el('new-repo').title = 'Absolute path, so there is no doubt which project '
     + 'this is. A relative path here is taken from ' + defaults.repo;
@@ -688,4 +861,4 @@ wireDialogs();
 
 // Exported so the panels added in later steps can reach the shared bits
 // without importing app.js and creating a cycle.
-export { state, chat, graph, plan, inspector, topology, auth, refresh, showError };
+export { state, chat, graph, plan, inspector, topology, auth, bootstrap, refresh, showError };

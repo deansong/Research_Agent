@@ -28,7 +28,7 @@ from agent.session import GraphSession
 ABORT = object()
 
 
-def drive(session: GraphSession, cfg) -> dict[str, Any]:
+def drive(session: GraphSession, cfg, *, rerun_finished: bool = False) -> dict[str, Any]:
     """Run one graph until it ends. Returns its final state values.
 
     ------------------------------------------------------------------
@@ -57,6 +57,11 @@ def drive(session: GraphSession, cfg) -> dict[str, Any]:
 
     print(f"\n===== {session.title} =====")
 
+    if snapshot.values and not snapshot.next and not rerun_finished:
+        # Finished already: its result, not a second run -- see the same
+        # check in webui/runner.py::_pump for the measured case.
+        print(f"(already finished: {config['configurable']['thread_id']})")
+        return snapshot.values
     if snapshot.values and snapshot.next:
         # Non-empty `next` means the graph stopped mid-run last time, i.e. it
         # is parked on an interrupt waiting for an answer.

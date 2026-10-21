@@ -34,36 +34,11 @@ def make_validator(paths, *, max_attempts: int):
                 staging, (state.get("design") or {}).get("plan") or {})
 
         if not problems_text:
-            # Success. The rename is what makes this durable -- see writer.py.
-            target = Path(paths.agent_dir)
-            if target.exists():
-                shutil.rmtree(target)
-            staging.rename(target)
-            print(f"\n[validator] the design is valid. Agent written to {target}")
-
-            # STOP HERE. This used to set outcome="ready", which ended phase 1
-            # and started executing immediately -- so the first time you saw
-            # the graph was while it was already running. A designed agent is
-            # exactly the artifact most worth looking at before it touches
-            # anything, and the folder is on disk now, so this is the moment
-            # when editing it is both possible and free.
-            summary, warnings = _describe(target)
-            return {
-                "design": merge_section(design, written_to=str(target), problems=""),
-                "human": merge_section(
-                    state.get("human"),
-                    purpose="design_review",
-                    question=(
-                        "The agent is designed and written to disk. Look it over "
-                        "before it runs.\n\n/approve to execute it, /retry to "
-                        "design again, /discuss to talk it through, or /exit.\n\n"
-                        "You can also edit the graph first -- in the web UI, or "
-                        "by hand in the folder. /approve re-reads it from disk."
-                    ),
-                    context=summary + warnings,
-                    return_to="human",
-                ),
-            }
+            # This design passed: it is now the one a fallback or a
+            # supervisor's redesign starts from.
+            design = merge_section(design, valid=design.get("proposal") or design.get("valid"),
+                                   valid_spec=design.get("spec") or design.get("valid_spec"))
+            return _accept(state, design, staging)
 
         print(f"\n[validator] the design has problems:\n{problems_text}")
 
@@ -73,6 +48,23 @@ def make_validator(paths, *, max_attempts: int):
             return {"design": merge_section(design, problems=problems_text)}
 
         print(f"[validator] gave up after {max_attempts} attempts.")
+
+        # Never end worse than the start: the designer began from an agent
+        # that passed (see nodes/designer.py). Offer that, with what went
+        # wrong, rather than nothing.
+        valid = design.get("valid") or {}
+        if valid:
+            from agent.bootstrap.nodes.writer import make_writer
+
+            make_writer(paths)({"design": {"proposal": valid,
+                                           "task_brief": valid.get("task_brief", "")}})
+            fallback = Path(paths.staging)
+            if not _check(fallback, (state.get("design") or {}).get("plan") or {}):
+                print("[validator] falling back to the last agent that passed.")
+                return _accept(state, merge_section(
+                    design, proposal=valid, task_brief=valid.get("task_brief", ""),
+                    rationale=valid.get("rationale", "")), fallback, rejected=problems_text)
+
         return {
             "design": merge_section(design, problems=problems_text),
             "human": merge_section(
@@ -84,6 +76,53 @@ def make_validator(paths, *, max_attempts: int):
                     f"/use to run the built-in default agent, or /exit."
                 ),
                 context=problems_text,
+                return_to="human",
+            ),
+        }
+
+    def _accept(state, design: dict, staging: Path, *, rejected: str = ""):
+        # Success. The rename is what makes this durable -- see writer.py.
+        target = Path(paths.agent_dir)
+        if target.exists():
+            shutil.rmtree(target)
+        staging.rename(target)
+        print(f"\n[validator] the design is valid. Agent written to {target}")
+
+        # STOP HERE. This used to set outcome="ready", which ended phase 1
+        # and started executing immediately -- so the first time you saw
+        # the graph was while it was already running. A designed agent is
+        # exactly the artifact most worth looking at before it touches
+        # anything, and the folder is on disk now, so this is the moment
+        # when editing it is both possible and free.
+        summary, warnings = _describe(target)
+        issues = list(design.get("plan_issues") or [])
+        if issues:
+            # Not blocking: the designer cannot fix the plan, and the person
+            # may accept it as it is. But this is the moment to see it.
+            warnings += ("\n\nPLAN ISSUES (the work nodes follow the plan "
+                         "exactly; change the plan to change them):\n"
+                         + "\n".join(f"  - {i}" for i in issues))
+        head = "The agent is designed and written to disk."
+        if rejected:
+            head = (f"The designer's changes were still rejected after "
+                    f"{max_attempts} attempts, so this is the last agent "
+                    f"that passed -- the one built from your plan. What "
+                    f"was wrong with the changes is at the end.")
+            warnings += "\n\nREJECTED CHANGES:\n" + rejected
+        return {
+            "design": merge_section(design, written_to=str(target), problems=""),
+            "human": merge_section(
+                state.get("human"),
+                purpose="design_review",
+                question=(
+                    f"{head} Look it over "
+                    "before it runs.\n\n/approve to execute it, /retry to "
+                    "design again, /revise <what> to change the plan, /discuss "
+                    "to talk it through, or /exit.\n\n"
+                    "You can also edit the graph first -- in the web UI, or "
+                    "by hand in the folder. /approve re-reads it from disk."
+                ),
+                context=summary + warnings,
                 return_to="human",
             ),
         }
@@ -164,6 +203,11 @@ def _gate_problems(folder, plan: dict) -> str:
         # that was never meant to be owned directly.
         wanted = {step_id} | {str(sub.get("id", ""))
                               for sub in step.get("substeps", []) or []}
+        # And the other way: a node that owns a whole step owns its substeps
+        # -- which is how designed agents are built now, one node per step
+        # working through its substeps a turn at a time.
+        wanted |= {str(parent.get("id", "")) for parent in (plan or {}).get("steps", [])
+                   if step_id in {str(s.get("id", "")) for s in parent.get("substeps") or []}}
         owners = [name for name, config in folder.nodes.items()
                   if wanted & set(getattr(config, "steps", None) or [])]
 
@@ -201,16 +245,34 @@ def _describe(folder_path: Path) -> tuple[str, str]:
     except Exception as exc:  # noqa: BLE001 -- the summary is a nicety
         return f"(could not summarise: {exc})", ""
 
-    lines = [f"{folder.graph.name}: {len(folder.graph.nodes)} nodes", ""]
+    from agent.agentfolder.render import find_tokens
+
+    # Who reads whom, from the prompts themselves: what each node is actually
+    # given, and which checker looks at each node's work.
+    reads: dict[str, set[str]] = {}
+    for name, config in folder.nodes.items():
+        if isinstance(config, AgentNodeConfig):
+            reads[name] = {t.split(".")[1] for t in find_tokens(config.prompts.first)
+                           if t.startswith("out.")} - {name}
+    checked_by = {n: sorted(c for c, r in reads.items()
+                            if n in r and folder.nodes[c].access == "read_only"
+                            and not folder.nodes[c].steps)
+                  for n in reads}
+
+    lines = [f"{folder.graph.name}: {len(folder.graph.nodes)} nodes", "",
+             f"  {'node':34} {'steps':7} {'role (model)':13} {'access':9} "
+             f"{'reads':5}  checked by"]
     for ref in folder.graph.nodes:
         config = folder.nodes[ref.name]
         if isinstance(config, AgentNodeConfig):
-            detail = f"{config.backend}/{config.access}"
-            if config.steps:
-                detail += f" steps {','.join(config.steps)}"
+            checker = ", ".join(checked_by.get(ref.name, [])) or (
+                "-" if config.access == "read_only" else "NOBODY")
+            lines.append(f"  {ref.name:34} {','.join(config.steps) or '-':7} "
+                         f"{config.backend:13} {config.access:9} "
+                         f"{len(reads.get(ref.name, ())):5}  {checker}")
         else:
-            detail = "commands " + ", ".join(f"/{c.name}" for c in config.commands)
-        lines.append(f"  {ref.name:22} {ref.kind:6} {detail}")
+            lines.append(f"  {ref.name:34} human   commands "
+                         + ", ".join(f"/{c.name}" for c in config.commands))
 
     lines += ["", mermaid(folder)]
 

@@ -31,9 +31,15 @@ STATIC = pathlib.Path(__file__).resolve().parents[1] / "static"
 MODULES: list[tuple[str, list[str]]] = [
     ("api.js", ["Problem", "api", "subscribe"]),
     ("auth.js", ["AuthPanel"]),
+    ("transcript.js", ["isNoise", "messageText", "renderTranscript", "shellCommand", "shortPath", "transcriptEntries",
+                       "transcriptRow"]),
     ("chat.js", ["Chat"]),
     ("files.js", ["FilesPanel"]),
+    ("history.js", ["IterationsPanel", "TimelinePanel"]),
+    ("models.js", ["loadModelPicker", "modelOverrides", "resetModelPicker",
+                   "wireModelPicker"]),
     ("graph.js", ["GraphPanel"]),
+    ("bootstrap.js", ["BootstrapPanel"]),
     ("plan.js", ["PlanPanel", "ownersByStep"]),
     ("inspector.js", ["Inspector", "renderActivity"]),
     ("topology.js", ["TopologyPanel"]),
@@ -89,8 +95,15 @@ El.prototype.prepend = function () {
   this.childElementCount = this._children.length;
 };
 El.prototype.remove = function () {};
-El.prototype.addEventListener = function (type) {
+// Stored as a property, which is close enough for what a test reads back:
+// bootstrap.js builds every element through setAttribute.
+El.prototype.setAttribute = function (key, value) { this[key] = value };
+El.prototype.replaceWith = function () {};
+El.prototype.scrollIntoView = function () {};
+El.prototype.addEventListener = function (type, handler) {
   __clicks[this.id + ':' + type] = (__clicks[this.id + ':' + type] || 0) + 1;
+  // Kept as well as counted, so a test can fire one: node._listeners.click[0]().
+  (this._listeners[type] = this._listeners[type] || []).push(handler);
 };
 El.prototype.removeEventListener = function () {};
 El.prototype.setPointerCapture = function () {};
@@ -141,6 +154,12 @@ var document = {
 };
 
 var window = { innerWidth: 1600, addEventListener() {} };
+// Timers that never fire: the live view polls on an interval, and a test
+// drives a poll by calling it, not by waiting. Counted, so a test can ask
+// whether polling started and stopped.
+var __timers = { set: 0, cleared: 0 };
+function setInterval() { __timers.set += 1; return __timers.set; }
+function clearInterval() { __timers.cleared += 1; }
 var CustomEvent = function (type, opts) { this.type = type; this.detail = (opts || {}).detail };
 var EventSource = function () {
   this.addEventListener = function () {}; this.close = function () {};

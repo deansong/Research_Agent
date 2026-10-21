@@ -43,8 +43,15 @@ def _human_input(state: BootstrapState, paths):
         "context": human.get("context", ""),
     }
 
-    # ---- STOP. Everything below runs only after a resume. ----------------
-    answer = str(interrupt(payload)).strip()
+    if human.get("auto_approve") and purpose in ("plan_review", "design_review"):
+        # The supervisor in auto mode re-planned or redesigned, and nobody is
+        # there to approve: approve, and say so -- the transcript and the
+        # timeline both record that it was not a person.
+        print(f"\n[human] auto-approved ({purpose}) by the supervisor.")
+        answer = "/approve"
+    else:
+        # ---- STOP. Everything below runs only after a resume. ------------
+        answer = str(interrupt(payload)).strip()
 
     parsed = command_lib.parse(answer, purpose=purpose, registry=BOOTSTRAP_REGISTRY)
 

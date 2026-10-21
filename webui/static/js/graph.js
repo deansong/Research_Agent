@@ -29,6 +29,8 @@
 const KIND_COLOUR = {
   agent: '#35d6c4',
   human: '#d99b4a',
+  // A node that calls no model -- the design agent's writer and validator.
+  tool: '#7a8aa6',
   end: '#5d6a80',
 };
 

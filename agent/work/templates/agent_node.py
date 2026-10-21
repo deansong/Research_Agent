@@ -11,14 +11,16 @@ CONCEPT: A LangGraph node is a function (state) -> partial update. This one is
 
 from __future__ import annotations
 
+import time
 from typing import Any
 
 from agent import activity
 from agent.activity import arm_progress, disarm_progress
 from agent.agentfolder.render import render
 from agent.agentfolder.schema import END_TARGET, AgentNodeConfig, BranchSpec, EdgeSpec
+from agent.backends.delegate import Delegated
 from agent.backends.base import Access
-from agent.git_utils import snapshot
+from agent.git_utils import fingerprint, snapshot, turn_changes
 from agent.telemetry import record_usage, usage_to_dict
 from agent.work.state import WorkState, render_context
 
@@ -56,6 +58,22 @@ def make_agent_node(
         thread_id_key = f"{name}/{thread_suffix}"
         thread_id = state.get("threads", {}).get(thread_id_key)
 
+        # A conversation belongs to the provider that started it. Moved to
+        # another (Runs on, mid-run): start a new one, with the first prompt
+        # -- the new model has seen none of the old conversation. A run from
+        # before providers were recorded: the node's last recorded turn says.
+        provider = getattr(backend, "name", "") or ""
+        owner = state.get("thread_providers", {}).get(thread_id_key)
+        if thread_id and owner is None and session_dir:
+            from agent import activity as _activity
+
+            last = _activity.latest(session_dir, name)
+            owner = (getattr(last, "provider", "") or None) if last else None
+        if thread_id and owner and provider and owner != provider:
+            print(f"[{name}] now runs on {provider}: starting a new conversation "
+                  f"(its {owner} one cannot carry over).")
+            thread_id = None
+
         # ---- step 2: first prompt or next prompt? -------------------------
         # THE ONE RULE: `first` when there is no conversation yet, OR when the
         # counter named by refresh_on has moved since this conversation last
@@ -90,16 +108,37 @@ def make_agent_node(
         # per-call is safe here (no fan-out) -- and note it is cleared in the
         # finally, so a backend shared with another node never keeps a stale
         # callback pointing at this one.
+        # Taken BEFORE the turn, so turn_changes is this node's own edits and
+        # not everything every earlier node has changed too.
+        before = fingerprint(state["repo_path"]) if "turn_changes" in config.capture else None
+        started = time.monotonic()
         arm_progress(backend, session_dir, name, sent=sent)
-        try:
-            run = backend.run_structured(
-                thread_id=thread_id,
+
+        def call(thread, text):
+            return backend.run_structured(
+                thread_id=thread,
                 repo_path=state["repo_path"],
                 access=Access(config.access),
                 developer_instructions=config.instructions,
-                prompt=prompt,
+                prompt=text,
                 output_model=output_model,
             )
+
+        try:
+            try:
+                run = call(thread_id, prompt)
+            except Delegated:
+                # Out of credits, and this role delegates (you chose so, under
+                # Runs on): the same turn on the delegate, as a NEW
+                # conversation with the first prompt -- it has seen none of
+                # the old one. See agent/backends/delegate.py.
+                thread_id, use_first = None, True
+                provider = getattr(backend, "name", "") or ""
+                prompt = render(config.prompts.first, context)
+                sent = {"template": "first", "prompt": prompt,
+                        "instructions": config.instructions, "delegated": True}
+                arm_progress(backend, session_dir, name, sent=sent)
+                run = call(None, prompt)
         finally:
             disarm_progress(backend, session_dir, name)
         data = run.data.model_dump()
@@ -111,17 +150,20 @@ def make_agent_node(
                 data["git_status"] = git.status
             if "git_diff" in config.capture:
                 data["git_diff"] = git.diff_stat
+            if "turn_changes" in config.capture:
+                data["turn_changes"] = (turn_changes(state["repo_path"], before)
+                                        or "(no files changed)")
 
         # ---- step 4b: keep what the provider actually did ----------------
         # Written to disk rather than into state -- see agent/activity.py for
         # why. No guard needed: activity.write does nothing when there is no
         # session_dir, which is the case for a folder driven outside a session.
-        activity.write(
+        record = activity.write(
             session_dir, name, run.events,
             usage=usage_to_dict(run.usage) if run.usage else None,
             summary={k: v for k, v in data.items()
                      if isinstance(v, (str, int, float, bool))},
-            sent=sent,
+            sent=sent, backend=backend, thread_id=run.thread_id, output=data,
         )
 
         _print_summary(name, config, data)
@@ -129,12 +171,23 @@ def make_agent_node(
         # ---- step 5: decide where we are going, and what to ask -----------
         route_value, ask = _resolve_transition(transition, data)
 
+        activity.record_visit(
+            session_dir, name, kind="agent", steps=list(config.steps),
+            provider=getattr(backend, "name", ""), model=getattr(backend, "model", "") or "",
+            role=config.backend, thread=run.thread_id,
+            prompt="first" if use_first else "next",
+            turn=record.stem if record else "", route=route_value,
+            seconds=round(time.monotonic() - started, 1),
+            output_tokens=getattr(run.usage, "output_tokens", None),
+        )
+
         update: dict[str, Any] = {
             # Each of these returns ONLY this node's own entry. The reducers on
             # these channels merge them; returning the whole dict would erase
             # every other node's. See work/state.py.
             "outputs": {name: data},
             "threads": {thread_id_key: run.thread_id},
+            "thread_providers": {thread_id_key: provider},
             "route": {name: route_value},
             "usage": {thread_id_key: _usage_dict(run.usage)},
         }

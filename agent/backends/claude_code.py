@@ -70,11 +70,23 @@ from agent.backends.base import Access, Usage
 _READ_ONLY_TOOLS = "Read,Glob,Grep,Bash(git status:*),Bash(git diff:*),Bash(git log:*)"
 _WRITING_TOOLS = "Write,Edit,MultiEdit,NotebookEdit"
 
+#: An is_error envelope whose text says the SERVICE refused, not the request.
+#: Retried a few times with backoff by _cli.py; everything else is final.
+_TRANSIENT = ("overloaded", "529", "503", "502", "rate limit", "rate_limit",
+              "service unavailable", "temporarily unavailable", "try again",
+              "api error: 5", "internal server error", "connection error",
+              "econnreset", "timed out")
+
 
 class ClaudeCodeBackend(CliBackend):
     name = "claude_code"
     label = "Claude Code"
     executable_default = "claude"
+
+    #: MEASURED 2026-09-24, claude 2.1.281: `-p` with no positional prompt
+    #: reads it from stdin. Sent that way because an argv entry is capped at
+    #: 128 KB by the kernel, and a designer prompt is already ~45 KB.
+    prompt_via_stdin = True
 
     supports_repo_access = True
     max_access = Access.FULL
@@ -91,7 +103,9 @@ class ClaudeCodeBackend(CliBackend):
         import json
         import pathlib
 
-        argv = [self.executable, "-p", prompt,
+        # No prompt here: it goes on stdin (prompt_via_stdin), which has no
+        # size limit. `prompt` stays in the signature for the other CLIs.
+        argv = [self.executable, "-p",
                 "--output-format", "stream-json", "--include-partial-messages",
                 "--verbose",
                 "--json-schema", pathlib.Path(schema_path).read_text(),
@@ -126,9 +140,13 @@ class ClaudeCodeBackend(CliBackend):
             return ["--allowed-tools", _READ_ONLY_TOOLS,
                     "--disallowed-tools", _WRITING_TOOLS,
                     "--permission-mode", "acceptEdits"]
+        # Folders it may edit besides its working directory: the session's
+        # results folder, when the session works in its own workspace.
+        extra = [flag for root in getattr(self, "writable_roots", None) or []
+                 for flag in ("--add-dir", root)]
         if access is Access.WRITE:
-            return ["--permission-mode", "acceptEdits"]
-        return ["--permission-mode", "bypassPermissions"]
+            return ["--permission-mode", "acceptEdits", *extra]
+        return ["--permission-mode", "bypassPermissions", *extra]
 
     def session_args(self, thread_id):
         """Mint the id rather than scraping it back.
@@ -213,6 +231,15 @@ class ClaudeCodeBackend(CliBackend):
         if envelope.get("is_error"):
             return ""
         return str(envelope.get("result") or "")
+
+    def refusal_text(self, envelope):
+        if not envelope.get("is_error"):
+            return ""
+        return str(envelope.get("result") or envelope.get("subtype") or "")
+
+    def transient_error(self, envelope):
+        text = self.refusal_text(envelope)
+        return text if any(m in text.lower() for m in _TRANSIENT) else ""
 
     def _why_empty(self, envelope, access=None):
         # `access` is accepted and unused: this provider's envelope already

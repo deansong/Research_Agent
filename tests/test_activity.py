@@ -276,6 +276,30 @@ def test_nothing_is_silently_invisible_any_more():
     print("PASS  unknown events are visible; only the noisy kinds stay quiet")
 
 
+def test_codex_bookkeeping_is_quiet_and_a_json_message_reads_as_prose():
+    """Counted across a real session: token usage and moderation notices 535
+    each, diff notices 299, against 663 commands -- each printed as a line, so
+    the log was mostly "* thread token usage updated". And a checker's
+    message was a line of braces."""
+    import json
+
+    from agent.backends._progress import headline
+
+    for kind in ("thread_token_usage_updated", "turn_moderation_metadata",
+                 "turn_diff_updated", "user_message",
+                 "item_guardian_approval_review_started"):
+        assert headline({"kind": kind, "phase": "other"}) is None, kind
+
+    said = headline({"kind": "message", "phase": "completed", "text": json.dumps(
+        {"verdict": "retry", "problem": "", "detail": "pytest fails on the loader"})})
+    assert said == "    > [retry] pytest fails on the loader", said
+    plain = headline({"kind": "message", "phase": "completed", "text": "Reading the repo."})
+    assert plain == "    > Reading the repo.", plain
+    ran = headline({"kind": "command", "phase": "started",
+                    "command": '/bin/bash -lc "sed -n \\"1,9p\\" cli.py"'})
+    assert ran == '    $ sed -n "1,9p" cli.py', ran
+
+
 def test_heartbeat_says_what_is_happening():
     """The line itself. Three numbers and no information was the whole
     problem, so the replacement has to carry a breakdown and the last thing

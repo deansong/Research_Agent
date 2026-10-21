@@ -20,6 +20,9 @@ Output is deliberately terse and prefixed, so a long turn reads as a log:
 
 from __future__ import annotations
 
+import json
+import re
+import time
 from typing import Any
 
 MAX_LINE = 100
@@ -59,7 +62,63 @@ def describe(event: Any) -> str | None:
 #: Kinds that would be noise rather than progress.
 #:  turn_started/turn_completed  bracket the turn we already announced
 #:  token_count                  arrives constantly and says nothing
-_QUIET_KINDS = frozenset({"turn_started", "turn_completed", "token_count"})
+#:  the rest                     Codex's bookkeeping. Counted across a real
+#:                               session's turns: token usage and moderation
+#:                               metadata 535 each, diff notices 299, the
+#:                               prompt echoed back 122, approval reviews 92
+#:                               -- against 663 commands. Each was a line
+#:                               ("* thread token usage updated"), so most
+#:                               of the log said nothing.
+_QUIET_KINDS = frozenset({
+    "turn_started", "turn_completed", "token_count",
+    "thread_token_usage_updated", "turn_moderation_metadata", "turn_diff_updated",
+    "user_message", "item_guardian_approval_review_started",
+    "item_guardian_approval_review_completed", "terminal_interaction",
+    "rate_limit_event",
+})
+
+#: Where a model's JSON message keeps its prose, most telling first
+#: (the same list as webui/static/js/transcript.js).
+_PROSE_KEYS = ("summary", "reply", "detail", "problem", "finding", "message", "text",
+               "decision")
+
+
+_SHELL_WRAP = re.compile(r"""^(?:/(?:usr/)?bin/)?(?:ba|z)?sh\s+-l?c\s+(["'])([\s\S]*)\1$""")
+
+
+def shell_command(command: str) -> str:
+    """The command as typed: Codex wraps every one in `/bin/bash -lc "..."`
+    (the same rule as transcript.js)."""
+    text = str(command or "").strip()
+    wrapped = _SHELL_WRAP.match(text)
+    if not wrapped:
+        return text
+    if wrapped.group(1) == '"':
+        return re.sub(r'\\(["\\$`])', r"\1", wrapped.group(2))
+    return wrapped.group(2)
+
+
+def message_prose(text: str) -> str:
+    """A message's prose: the text, or -- for a JSON message -- its verdict
+    and first prose field, rather than a line of braces."""
+    raw = str(text or "").strip()
+    if not raw.startswith("{"):
+        return raw
+    try:
+        value = json.loads(raw)
+    except ValueError:
+        return raw
+    if not isinstance(value, dict):
+        return raw
+    verdict = next((v for v in (value.get("verdict"), value.get("status"))
+                    if isinstance(v, str) and v and len(v) <= 24), "")
+    lead = f"[{verdict}] " if verdict else ""
+    for key in _PROSE_KEYS:
+        if isinstance(value.get(key), str) and value[key].strip():
+            return lead + value[key].strip()
+    first = next((v for v in value.values()
+                  if isinstance(v, str) and v.strip() and v != verdict), "")
+    return (lead + first.strip()) if first else (lead.strip() or raw)
 
 _MARKERS = {
     "command": "$",
@@ -86,10 +145,10 @@ def headline(entry: dict | None) -> str | None:
         # Announced when it STARTS, because that is when you want to know what
         # is taking so long. On completion, only a failure is worth a line.
         if phase == "started":
-            return _line("$", entry.get("command", ""))
+            return _line("$", shell_command(entry.get("command", "")))
         code = entry.get("exit_code")
         if phase == "completed" and code not in (None, 0):
-            return _line("!", f"exited {code}: {entry.get('command', '')}")
+            return _line("!", f"exited {code}: {shell_command(entry.get('command', ''))}")
         return None
 
     if kind == "tool":
@@ -124,7 +183,7 @@ def headline(entry: dict | None) -> str | None:
     if kind == "message":
         if entry.get("is_final_json"):
             return None       # comes back through the normal return path
-        return _line(">", entry.get("text", ""))
+        return _line(">", message_prose(entry.get("text", "")))
 
     if kind == "web_search":
         return _line("?", f"searched: {entry.get('query', '')}")
@@ -214,6 +273,12 @@ MAX_MESSAGE = 200_000
 #: feed the same buffer: the model's reasoning arrives as both
 #: `reasoning_text` and `reasoning_summary_text`, and there is no useful
 #: distinction when what you want is "what is it saying right now".
+#: How often a running turn's in-flight record is rewritten -- what the web
+#: UI's live view polls. Every second: the record is small (the stream tails
+#: and the newest events, see activity.write_in_flight), and five seconds
+#: made the "live" view visibly lag the provider.
+LIVE_FLUSH_SECONDS = 1.0
+
 _DELTA_STREAMS = {
     "agent_message_delta": "message",
     "reasoning_text_delta": "reasoning",
@@ -570,3 +635,33 @@ def poll_seconds(timeout: float, max_seconds: float, cancel=None) -> float:
         # join timeout costs nothing to shorten.
         limit = min(limit, 0.25)
     return max(0.02, limit)
+
+
+def wait_or_cancel(seconds: float, cancel=None, pause=None) -> None:
+    """Sleep for a retry backoff, but give up the moment Stop -- or Pause --
+    is pressed.
+
+    Pause counts here, unlike during a turn: nothing is in flight while we
+    wait, so abandoning the node loses nothing, and the next Start runs it
+    again. Without this, Pause during an hours-long credit wait did nothing.
+
+    A plain time.sleep() here was a Stop button that did nothing: a credit
+    wait is twenty one-minute sleeps, and pressing Stop during one meant
+    another nineteen minutes before anything happened. Sliced, so ctrl-C is
+    also noticed within a fraction of a second.
+    """
+    from agent.backends.base import BackendCancelled
+
+    deadline = time.monotonic() + max(0.0, seconds)
+    watched = cancel is not None or pause is not None
+    while True:
+        for event, verb in ((cancel, "Stopped"), (pause, "Paused")):
+            if event is not None and event.is_set():
+                raise BackendCancelled(
+                    f"{verb} by request while waiting to retry. Everything the "
+                    f"graph had already finished is checkpointed; Start carries "
+                    f"on from the node that was waiting.")
+        remaining = deadline - time.monotonic()
+        if remaining <= 0:
+            return
+        time.sleep(min(0.25 if watched else 1.0, remaining))

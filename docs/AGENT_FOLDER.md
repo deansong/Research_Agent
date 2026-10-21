@@ -335,7 +335,8 @@ fix starts acquiring a baseline and a seed sweep. All three say so.
 
 ### The interview, and what it produces
 
-The discussor works through two lists, one question per turn. The first settles
+The discussor works through two lists and asks every open question at once,
+each with a suggested answer; unanswered ones keep the suggestion. The first settles
 what the experiment *is* (above). The second settles what the **steps** are,
 and its answers become plan steps and then nodes, close to one each:
 

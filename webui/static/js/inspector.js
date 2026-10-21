@@ -31,12 +31,23 @@
   schemas drifted a whole version apart.
 */
 
+import { renderTranscript } from './transcript.js';
+
 const el = (id) => document.getElementById(id);
 
 export class Inspector {
-  constructor({ onSave, onSelectSteps }) {
+  /**
+   * `getBackends()` -> role -> {provider, model, nodes, ...} for the agent on
+   * screen; `onSetRole(role, {provider, model})` saves a role's backend for
+   * the session; `models(refresh)` -> GET /api/models.
+   */
+  constructor({ onSave, onSelectSteps, getBackends, onSetRole, models }) {
     this.onSave = onSave;
     this.onSelectSteps = onSelectSteps;
+    this.getBackends = getBackends;
+    this.onSetRole = onSetRole;
+    this.models = models;
+    this.modelLists = null;   // provider -> [{id, label, default}], once loaded
     this.configure = el('tab-configure');
     this.context = el('tab-context');
     this.schema = null;
@@ -107,9 +118,10 @@ export class Inspector {
     const box = document.createElement('div');
 
     box.append(
-      this.text('backend', 'Backend', this.node.backend || '',
-                'A role name. Resolved by config.backend_for, so it can be '
-                + 'anything -- override it with --backend-role <name>=codex.'),
+      this.text('backend', 'Backend (role)', this.node.backend || '',
+                'A role name. Nodes that share a role share its model; give '
+                + 'this node a new name to set its model on its own.'),
+      this.runsOn(),
       this.choice('access', 'Access', this.node.access || 'read_only',
                   this.schema?.node_access_levels || ['none', 'read_only', 'write'],
                   'write is the only level that can change your files.'),
@@ -332,6 +344,170 @@ export class Inspector {
   }
 
   // ---- form helpers ----------------------------------------------------
+
+  /**
+   * Which provider and model this node's ROLE runs on, changeable here.
+   *
+   * There was no way to do this once a session had an agent: the New dialog
+   * chooses models before the session exists, and the Design agent tab only
+   * covers the design phase's own nodes. Saved with the session; applied at
+   * the next Start, because a run builds its backends when it starts.
+   */
+  runsOn() {
+    const role = this.node.backend || '';
+    const resolved = this.getBackends?.()?.[role];
+    const box = document.createElement('div');
+    box.className = 'runs-on';
+    if (!role || !this.onSetRole) return box;
+
+    const providers = (this.schema?.providers || ['codex', 'claude_code', 'antigravity'])
+      .filter((p) => p !== 'api');
+    const pickProvider = (value) => {
+      const select = document.createElement('select');
+      for (const name of providers) {
+        const option = document.createElement('option');
+        option.value = name;
+        option.textContent = name;
+        select.append(option);
+      }
+      select.value = value;
+      return select;
+    };
+    // A model dropdown that follows a provider dropdown: that provider's own
+    // list, with `currentFor(provider)` kept selectable even if unlisted.
+    const pickModel = (providerSelect, currentFor) => {
+      const select = document.createElement('select');
+      const refill = () => {
+        select.replaceChildren();
+        const offered = this.modelLists?.[providerSelect.value] || [];
+        const current = currentFor(providerSelect.value);
+        const blank = document.createElement('option');
+        blank.value = '';
+        blank.textContent = '(provider default)';
+        select.append(blank);
+        if (current && !offered.some((m) => m.id === current)) {
+          const kept = document.createElement('option');
+          kept.value = current;
+          kept.textContent = current;
+          select.append(kept);
+        }
+        for (const m of offered) {
+          const option = document.createElement('option');
+          option.value = m.id;
+          option.textContent = m.id + (m.default ? '  (default)' : '');
+          select.append(option);
+        }
+        select.value = current;
+      };
+      refill();
+      providerSelect.addEventListener('change', refill);
+      select.refill = refill;
+      return select;
+    };
+
+    const provider = pickProvider(resolved?.provider || 'codex');
+
+    const model = document.createElement('select');
+    const fill = () => {
+      model.replaceChildren();
+      const offered = this.modelLists?.[provider.value] || [];
+      const current = provider.value === resolved?.provider ? (resolved?.model || '') : '';
+      const blank = document.createElement('option');
+      blank.value = '';
+      blank.textContent = '(provider default)';
+      model.append(blank);
+      if (current && !offered.some((m) => m.id === current)) {
+        const kept = document.createElement('option');
+        kept.value = current;
+        kept.textContent = current;
+        model.append(kept);
+      }
+      for (const m of offered) {
+        const option = document.createElement('option');
+        option.value = m.id;
+        option.textContent = m.id + (m.default ? '  (default)' : '');
+        model.append(option);
+      }
+      model.value = current;
+    };
+    // GPU: Codex runs commands in a sandbox that hides the GPUs; this runs
+    // the role's write turns without it. Only offered for Codex -- the other
+    // providers have no sandbox to switch off.
+    const gpu = document.createElement('input');
+    gpu.type = 'checkbox';
+    gpu.checked = Boolean(resolved?.gpu);
+    const gpuLabel = document.createElement('label');
+    gpuLabel.className = 'runs-on-gpu';
+    gpuLabel.append(gpu, ' GPU — run its write turns without Codex\'s sandbox, '
+      + 'which hides the GPUs');
+    const syncGpu = () => { gpuLabel.hidden = provider.value !== 'codex'; };
+
+    // Delegation: only when ticked. A delegate is a different model, so it is
+    // never chosen for you -- see agent/backends/delegate.py.
+    const chosen = resolved?.delegate || null;
+    const delegateOn = document.createElement('input');
+    delegateOn.type = 'checkbox';
+    delegateOn.checked = Boolean(chosen);
+    const delegateProvider = pickProvider(chosen?.provider || 'antigravity');
+    const delegateModel = pickModel(delegateProvider,
+      (p) => (chosen && p === chosen.provider ? chosen.model || '' : ''));
+    const syncDelegate = () => {
+      delegateProvider.disabled = !delegateOn.checked;
+      delegateModel.disabled = !delegateOn.checked;
+    };
+    delegateOn.addEventListener('change', syncDelegate);
+    syncDelegate();
+    const delegateLabel = document.createElement('label');
+    delegateLabel.className = 'runs-on-delegate';
+    delegateLabel.append(delegateOn, ' If its provider runs out of credits, delegate to');
+    const delegateRow = document.createElement('div');
+    delegateRow.className = 'runs-on-row';
+    delegateRow.append(delegateProvider, delegateModel);
+
+    fill();
+    syncGpu();
+    provider.addEventListener('change', () => { fill(); syncGpu(); });
+    if (!this.modelLists && this.models) {
+      this.models(false).then((listed) => {
+        this.modelLists = Object.fromEntries((listed.providers || [])
+          .map((p) => [p.provider, p.models || []]));
+        fill();
+        delegateModel.refill();
+      }).catch(() => { /* typed model ids still work: the default stays */ });
+    }
+
+    const status = document.createElement('span');
+    status.className = 'muted';
+    const apply = button('Use for this role', 'btn tiny', async () => {
+      apply.disabled = true;
+      try {
+        const result = await this.onSetRole(role, {
+          provider: provider.value, model: model.value,
+          gpu: provider.value === 'codex' && gpu.checked,
+          delegate: delegateOn.checked
+            ? { provider: delegateProvider.value, model: delegateModel.value } : null,
+        });
+        status.textContent = result.detail || 'saved';
+      } catch (error) {
+        status.textContent = String(error);
+      } finally {
+        apply.disabled = false;
+      }
+    });
+
+    const row = document.createElement('div');
+    row.className = 'runs-on-row';
+    row.append(provider, model, apply);
+    const shared = resolved?.nodes?.length > 1
+      ? `Role "${role}" is used by ${resolved.nodes.join(', ')} -- this changes all of them.`
+      : `Role "${role}".`;
+    const where = resolved?.session_choice ? ' Chosen for this session.' : '';
+    return this.field('Runs on', `${shared}${where} Used when the run starts; `
+                      + 'a run already going needs Pause, then Start.',
+                      (() => { const wrap = document.createElement('div');
+                               wrap.append(row, gpuLabel, delegateLabel, delegateRow, status);
+                               return wrap; })());
+  }
 
   field(label, hint, control) {
     // A div, not a <label>. Some of these controls contain BUTTONS -- the ×
@@ -605,15 +781,6 @@ function section(title, hint, body) {
   last one is why you came looking.
 */
 
-const KIND_MARK = {
-  command: '$',
-  file_change: '~',
-  reasoning: '·',
-  message: '>',
-  web_search: '?',
-  plan: '=',
-  error: '!',
-};
 
 export function renderActivity(container, payload, onPick) {
   container.replaceChildren();
@@ -658,6 +825,16 @@ export function renderActivity(container, payload, onPick) {
     head.innerHTML = `<strong>turn ${turn.index}</strong>`;
     head.append(muted(`${turn.started}${counts ? '  —  ' + counts : ''}`));
     box.append(head);
+    // Which model actually ran it, and in which conversation: the check that
+    // a node meant for a cheap model ran on one, and the key to every earlier
+    // turn that was in its context (same conversation = same id).
+    if (turn.provider || turn.model || turn.thread_id) {
+      const ran = document.createElement('div');
+      ran.className = 'turn-model';
+      const thread = turn.thread_id ? `  ·  conversation ${String(turn.thread_id).slice(0, 12)}` : '';
+      ran.textContent = `ran on ${turn.provider || '?'} / ${turn.model || '(provider default)'}${thread}`;
+      box.append(ran);
+    }
 
     // ---- what it was ASKED -------------------------------------------
     // First, because it is the cause of everything below it. Collapsed: a
@@ -673,20 +850,21 @@ export function renderActivity(container, payload, onPick) {
       ));
     }
 
-    for (const event of turn.events || []) {
-      // Only the completion of a started/completed pair is worth a row: the
-      // start carries nothing the completion does not, and showing both makes
-      // every command appear twice.
-      if (event.phase === 'started' && event.kind !== 'error') continue;
-      box.append(eventRow(event));
-    }
+    // What it did, as a transcript: its words, each command with the end of
+    // its output (the whole of it a click away), each edit and search --
+    // the provider's bookkeeping left out. See transcript.js.
+    renderTranscript(box, turn.events || [], { full: true });
 
     // ---- what it RETURNED --------------------------------------------
     // The structured answer, which is what the next node actually reads.
     // It was recorded all along and shown nowhere.
-    if (turn.summary && Object.keys(turn.summary).length) {
-      const body = Object.entries(turn.summary)
-        .map(([key, value]) => `${key}: ${value}`).join('\n');
+    // `output` is the whole answer, lists included; older records only have
+    // the scalar `summary`.
+    const returned = turn.output && Object.keys(turn.output).length ? turn.output : turn.summary;
+    if (returned && Object.keys(returned).length) {
+      const body = Object.entries(returned)
+        .map(([key, value]) => `${key}: ${typeof value === 'string' ? value : JSON.stringify(value, null, 1)}`)
+        .join('\n');
       box.append(exchange('returned', body, 'returned'));
     }
 
@@ -736,99 +914,7 @@ function exchange(label, body, kind) {
 }
 
 
-function eventRow(event) {
-  const row = document.createElement('div');
-  row.className = `event event-${event.kind}`;
-
-  const head = document.createElement('div');
-  head.className = 'event-head';
-
-  const mark = document.createElement('span');
-  mark.className = 'event-mark';
-  mark.textContent = KIND_MARK[event.kind] || '•';
-
-  const label = document.createElement('span');
-  label.className = 'event-label';
-  label.textContent = headline(event);
-
-  head.append(mark, label);
-  if (event.at != null) head.append(muted(`${event.at}s`));
-  if (event.exit_code != null && event.exit_code !== 0) {
-    const code = document.createElement('span');
-    code.className = 'event-fail';
-    code.textContent = `exit ${event.exit_code}`;
-    head.append(code);
-  }
-  row.append(head);
-
-  // The output is the part the terminal never shows, so it is the part most
-  // worth having here. Collapsed, because a pytest run is hundreds of lines.
-  const body = detail(event);
-  if (body) {
-    const details = document.createElement('details');
-    // A failure is opened by default; nobody wants to click to see why.
-    details.open = event.exit_code != null && event.exit_code !== 0;
-    const summary = document.createElement('summary');
-    summary.textContent = event.kind === 'command' ? 'output' : 'detail';
-    const pre = document.createElement('pre');
-    pre.className = 'event-output';
-    pre.textContent = body;
-    details.append(summary, pre);
-    row.append(details);
-  }
-  return row;
-}
-
-function headline(event) {
-  switch (event.kind) {
-    case 'command': return event.command || '(command)';
-    case 'file_change':
-      return (event.changes || []).map((c) => c.path).join(', ') || 'edited files';
-    case 'reasoning': return (event.summary || [])[0] || 'thinking';
-    case 'message':
-      // Still labelled, because knowing it is THE answer is useful -- but the
-      // size too, so an empty-looking row is distinguishable from a big one
-      // you have not expanded yet.
-      return event.is_final_json
-        ? `the final answer (${(event.text || '').length.toLocaleString()} chars)`
-        : firstLine(event.text);
-    case 'web_search': return `searched: ${event.query || ''}`;
-    case 'plan': return firstLine(event.text);
-    case 'error': return event.message || 'error';
-    default: return event.kind;
-  }
-}
-
-function detail(event) {
-  if (event.kind === 'command') return event.output || '';
-  if (event.kind === 'reasoning') return (event.summary || []).join('\n\n');
-  // The final structured answer INCLUDED. It used to be skipped as "a
-  // duplicate of the normal return path", which is true for the designer --
-  // its answer becomes graph.json, two tabs away -- and false for every
-  // other node, whose answer becomes state you cannot read anywhere. Either
-  // way, hiding the one artefact the turn produced is the wrong default.
-  if (event.kind === 'message') return prettyIfJson(event.text || '');
-  if (event.kind === 'plan') return event.text || '';
-  return '';
-}
-
 /** Pretty-print JSON, or hand back the text unchanged. */
-function prettyIfJson(text) {
-  const trimmed = String(text || '').trim();
-  if (!trimmed.startsWith('{') && !trimmed.startsWith('[')) return trimmed;
-  try {
-    return JSON.stringify(JSON.parse(trimmed), null, 2);
-  } catch {
-    // A clipped or half-written document. Showing it raw beats showing
-    // nothing, which is what happened before.
-    return trimmed;
-  }
-}
-
-function firstLine(text) {
-  return String(text || '').split('\n')[0].slice(0, 120);
-}
-
 function muted(text) {
   const node = document.createElement('span');
   node.className = 'muted';

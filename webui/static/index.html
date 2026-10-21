@@ -100,11 +100,24 @@
   <!-- CENTRE: plan and graph. Steps 2 and 3 fill these in. -->
   <section class="panel panel-canvas" id="panel-canvas">
     <div class="panel-head tabs" id="canvas-tabs">
+      <!--
+        The agent that designs yours: its graph, the model behind each node,
+        and every prompt it sends. First, because it is what runs first --
+        and the one place to change it before it interviews you.
+      -->
+      <button class="tab" data-tab="bootstrap">Design agent</button>
       <button class="tab active" data-tab="graph">Graph</button>
       <button class="tab" data-tab="plan">Plan</button>
       <button class="tab" data-tab="wiring">Wiring</button>
       <button class="tab" data-tab="files">Files</button>
+      <button class="tab" data-tab="iterations">Iterations</button>
+      <button class="tab" data-tab="timeline">Timeline</button>
       <button class="tab" data-tab="json">JSON</button>
+    </div>
+    <div class="tab-body bs-panel" id="tab-bootstrap">
+      <div class="empty-state">
+        <p class="muted">Open or start a session to see the agent that designs yours.</p>
+      </div>
     </div>
     <div class="tab-body active" id="tab-graph">
       <div class="empty-state">
@@ -128,6 +141,12 @@
           <div class="empty-state"><p class="muted">Pick a file to read it.</p></div>
         </div>
       </div>
+    </div>
+    <div class="tab-body" id="tab-iterations">
+      <div class="empty-state"><p class="muted">No iterations yet.</p></div>
+    </div>
+    <div class="tab-body" id="tab-timeline">
+      <div class="empty-state"><p class="muted">Nothing has run yet.</p></div>
     </div>
     <div class="tab-body" id="tab-json">
       <div class="json-head">
@@ -192,24 +211,70 @@
       <!--
         Worded as an opening line rather than a specification, because it is
         one: the discussor's first prompt is "The human wants this done: <this>.
-        Begin discovery. Ask exactly one high-value question." Someone read the
+        Begin discovery." -- it then asks every open question at once, each
+        with a suggested answer. Someone read the
         old label as "write the whole brief here" and wondered what the
         discussion was then for.
       -->
       <span class="muted">One sentence is enough &mdash; it is the first thing
-        you say, and the agent will ask you questions from there. It also names
-        the session.</span>
+        you say, and the agent will ask you questions from there. Its first
+        words go into the new session's id.</span>
       <textarea name="task" id="new-task" rows="4"
                 placeholder="e.g. Add tests for the parser"></textarea>
     </label>
     <label>
-      Session folder <span class="muted">(optional &mdash; otherwise derived from the task)</span>
+      Sessions folder <span class="muted">&mdash; every session gets its own new
+        folder in here, with a unique id. Outside the repository keeps one
+        session's files out of another's sight.</span>
+      <input name="sessions_root" id="new-sessions-root" spellcheck="false"
+             placeholder="<repo>/.agent/sessions">
+    </label>
+    <label>
+      Exact session folder <span class="muted">(optional &mdash; use this folder
+        instead, e.g. one holding a brief.txt)</span>
       <input name="session_dir" id="new-session-dir" spellcheck="false"
-             placeholder="e.g. ~/experiments/parser-tests — leave empty for a derived name">
+             placeholder="e.g. ~/experiments/parser-tests — leave empty for a new folder">
     </label>
     <label>
       Pre-built agent <span class="muted">(optional &mdash; skips the design phase)</span>
       <input name="pre_build_agent" id="new-prebuilt" spellcheck="false" placeholder="e.g. default — leave empty to design a new agent">
+    </label>
+    <label class="check-row">
+      <input type="checkbox" id="new-research" checked>
+      <span>Let the discussor ask the research agent first
+        <span class="muted">&mdash; it looks up papers, datasets, baselines and
+          typical settings (arXiv, Hugging Face, the web) so the suggested
+          answers are grounded. Adds a few minutes. Runs on antigravity by
+          default.</span></span>
+    </label>
+    <label>
+      After each run <span class="muted">&mdash; a supervisor reviews the run;
+        then you decide (manual), it decides (auto), or nothing happens (off)</span>
+      <span class="supervisor-row">
+        <select id="new-supervisor">
+          <option value="">as configured (manual unless set)</option>
+          <option value="manual">manual &mdash; you decide what to do next</option>
+          <option value="auto">auto &mdash; re-plan or redesign on its own</option>
+          <option value="off">off &mdash; one run, no review</option>
+        </select>
+        <input type="number" id="new-max-iterations" min="1" max="20" step="1"
+               placeholder="max iterations (3)">
+      </span>
+    </label>
+    <details class="model-picker" id="new-models">
+      <summary>Models <span class="muted">&mdash; which model each role runs on</span></summary>
+      <p class="muted" id="new-models-status">Open to load the models each provider offers.</p>
+      <table class="model-table">
+        <thead><tr><th>Role</th><th>Provider</th><th>Model</th></tr></thead>
+        <tbody id="new-models-rows"></tbody>
+      </table>
+      <button type="button" class="btn ghost small" id="new-models-refresh">Ask the providers again</button>
+    </details>
+    <label class="check-row">
+      <input type="checkbox" id="new-review" checked>
+      <span>Review the design agent before it starts
+        <span class="muted">&mdash; see and change its models and prompts
+          first. Ignored with a pre-built agent, which skips design.</span></span>
     </label>
     <p class="dialog-error" id="new-error" hidden></p>
     <menu>

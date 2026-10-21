@@ -42,6 +42,9 @@ def _client(tmp: pathlib.Path) -> TestClient:
         backend_role = None
         config = None
         session = None
+        # One run, no review: these tests are about other things. The
+        # supervisor has its own, in tests/test_supervisor.py.
+        supervisor = "off"
 
     return TestClient(server.create_app(tmp, Args()))
 
@@ -375,3 +378,26 @@ if __name__ == "__main__":
         if name.startswith("test_"):
             fn()
     print("\nAll web API tests passed.")
+
+
+def test_the_models_route_lists_every_provider(tmp_path, monkeypatch):
+    """Each provider is listed, and one that cannot answer says why rather than
+    failing the whole request."""
+    from agent.backends import models as listing
+
+    monkeypatch.setitem(listing._LISTERS, "codex",
+                        lambda: listing.ModelList("codex", (listing.ModelInfo("m1", "M1", True),)))
+    monkeypatch.setitem(listing._LISTERS, "antigravity",
+                        lambda: (_ for _ in ()).throw(RuntimeError("not signed in")))
+    listing._cache.clear()
+
+    with _client(tmp_path) as client:
+        body = client.get("/api/models?refresh=true").json()
+    by_name = {entry["provider"]: entry for entry in body["providers"]}
+
+    assert by_name["codex"]["models"] == [{"id": "m1", "label": "M1", "default": True}]
+    assert "not signed in" in by_name["antigravity"]["error"]
+    assert by_name["antigravity"]["models"] == []
+    assert by_name["fake"]["models"][0]["id"] == "fake"
+    assert any(m["id"] == "opus" for m in by_name["claude_code"]["models"])
+    listing._cache.clear()  # the patched answers must not outlive this test

@@ -18,11 +18,19 @@
   invented a command, which they do constantly.
 */
 
+import { isNoise, messageText, renderTranscript } from './transcript.js';
+
 const el = (id) => document.getElementById(id);
 
 //: The heartbeat line, which is the one log line we treat as an update rather
 //: than an event. Matched on its own prefix; see codex.py::_heartbeat.
 const HEARTBEAT = /^\s*\.\.\.\s*working:/;
+
+//: How often the live view asks for the turn in flight, how much of each
+//: stream it shows, and how many recent commands and edits.
+const LIVE_POLL_MS = 1500;
+const LIVE_CHARS = 2000;
+const LIVE_EVENTS = 12;
 
 export class Chat {
   constructor({ onSend, onDetail }) {
@@ -125,6 +133,18 @@ export class Chat {
    * you. So the summary streams and the detail waits to be asked for.
    */
   heartbeat(text) {
+    this.ensureBeat();
+    this.beatText.textContent = text.replace(/^\s*\.\.\.\s*/, '');
+    // If the detail is open, it follows the summary rather than needing its
+    // own timer: the two are the same turn seen at two zoom levels, and one
+    // clock for both is one thing that cannot fall out of step.
+    if (this.detailOpen) void this.refreshDetail();
+    // Keep it visible while it is the newest thing, but do not fight a reader
+    // who has scrolled up to look at something.
+    this.scroll();
+  }
+
+  ensureBeat() {
     if (!this.beat) {
       this.beat = document.createElement('div');
       this.beat.className = 'logline heartbeat';
@@ -142,21 +162,61 @@ export class Chat {
       this.beatDetail.className = 'beat-detail';
       this.beatDetail.hidden = true;
 
+      // The live stream: what the model is writing and running, as it does.
+      this.beatStream = document.createElement('div');
+      this.beatStream.className = 'beat-stream';
+
       const head = document.createElement('div');
       head.className = 'beat-head';
       head.append(this.beatText, this.beatButton);
-      this.beat.append(head, this.beatDetail);
+      this.beat.append(head, this.beatStream, this.beatDetail);
       this.append(this.beat);
     }
+  }
 
-    this.beatText.textContent = text.replace(/^\s*\.\.\.\s*/, '');
-    // If the detail is open, it follows the summary rather than needing its
-    // own timer: the two are the same turn seen at two zoom levels, and one
-    // clock for both is one thing that cannot fall out of step.
-    if (this.detailOpen) void this.refreshDetail();
-    // Keep it visible while it is the newest thing, but do not fight a reader
-    // who has scrolled up to look at something.
-    this.scroll();
+  // ---- the live view of the turn in flight -------------------------------
+  //
+  // Every backend reads its provider's stream as it arrives and keeps the
+  // tail of what the model is writing, and the commands and edits it makes,
+  // in the turn's in-flight record (agent/activity.py, rewritten every
+  // second). This polls that record while the session runs, so the row shows
+  // the turn as it happens -- from its first second, rather than the old
+  // heartbeat's thirty-second summary.
+
+  /** Follow the session's turns while it runs; stop when it stops. */
+  setLive(on) {
+    if (on && !this.liveTimer && this.onDetail) {
+      this.liveTimer = setInterval(() => void this.pollLive(), LIVE_POLL_MS);
+      void this.pollLive();
+    } else if (!on && this.liveTimer) {
+      clearInterval(this.liveTimer);
+      this.liveTimer = null;
+    }
+  }
+
+  async pollLive() {
+    if (this.polling) return;
+    this.polling = true;
+    try {
+      const payload = await this.onDetail();
+      const turn = payload?.running ? payload.turn : null;
+      if (!turn) {
+        if (this.beat && this.beatKey) this.endHeartbeat();
+        return;
+      }
+      const key = `${turn.node}:${turn.index}`;
+      if (this.beat && this.beatKey && this.beatKey !== key) this.endHeartbeat();
+      this.ensureBeat();
+      this.beatKey = key;
+      this.beatText.textContent = summarise(turn);
+      renderStream(this.beatStream, turn);
+      if (this.detailOpen) renderTurn(this.beatDetail, payload);
+      this.scroll();
+    } catch {
+      // A poll that fails is just a frame not drawn; the next one tries again.
+    } finally {
+      this.polling = false;
+    }
   }
 
   /** A turn has finished: stop updating that row, and let the next one start
@@ -164,6 +224,7 @@ export class Chat {
   endHeartbeat() {
     if (this.beat) this.beat.classList.add('done');
     this.beat = null;
+    this.beatKey = '';
     this.detailOpen = false;
   }
 
@@ -196,9 +257,11 @@ export class Chat {
   }
 
   clear() {
+    this.setLive(false);
     this.log.replaceChildren();
     this.empty = null;
     this.beat = null;
+    this.beatKey = '';
     this.detailOpen = false;
     this.question(null);
   }
@@ -214,7 +277,9 @@ export class Chat {
     }
 
     el('question-purpose').textContent = pending.purpose || 'input';
-    el('question-text').textContent = pending.question || 'Your input is required.';
+    const text = el('question-text');
+    text.textContent = pending.question || 'Your input is required.';
+    text.scrollTop = 0;     // a new question is read from its first line
 
     const context = el('question-context');
     context.hidden = !pending.context;
@@ -301,6 +366,47 @@ function classify(text) {
  * because a long turn can hold thousands and the point is the recent shape
  * of what it is doing.
  */
+/** One line: which node, how long, what it has done so far. */
+function summarise(turn) {
+  // Counted the way the transcript shows them: the bookkeeping left out.
+  const parts = Object.entries(turn.counts || {})
+    .filter(([k]) => !isNoise({ kind: k }))
+    .map(([k, n]) => `${n} ${k}`);
+  const streamed = turn.progress?.streamed;
+  if (streamed) parts.push(`writing ${(streamed / 1000).toFixed(1)}k`);
+  const elapsed = turn.progress?.elapsed;
+  const model = turn.model ? ` (${turn.provider || ''}/${turn.model})` : '';
+  return `${turn.node}${model} — working${elapsed ? ` ${Math.round(elapsed)}s` : ''}`
+    + (parts.length ? ` · ${parts.join(' · ')}` : '');
+}
+
+/**
+ * The live part: the tail of what the model is writing (its answer, else its
+ * reasoning), and the last few things it ran or edited. Always shown while a
+ * turn runs; the full event list stays behind "show detail".
+ */
+function renderStream(container, turn) {
+  const live = turn.progress?.live || {};
+  container.replaceChildren();
+  // What it has done, as a transcript: its words, each command with the end
+  // of its output, each edit -- the bookkeeping left out. See transcript.js.
+  renderTranscript(container, turn.events || [], { limit: LIVE_EVENTS });
+
+  // And what it is typing right now, which no event carries yet: the
+  // reasoning, a command's output as it prints, the answer's prose.
+  for (const name of ['reasoning', 'plan', 'output', 'message']) {
+    let text = live[name];
+    if (!text) continue;
+    if (name === 'message') text = messageText(text);
+    const box = document.createElement('pre');
+    box.className = `beat-live beat-live-${name}`;
+    box.textContent = `${name === 'message' ? 'writing' : name} ▸ ${String(text).slice(-LIVE_CHARS)}`;
+    container.append(box);
+    box.scrollTop = box.scrollHeight;
+  }
+  container.hidden = !container.childElementCount;
+}
+
 function renderTurn(container, payload) {
   container.replaceChildren();
 
@@ -312,7 +418,10 @@ function renderTurn(container, payload) {
   const turn = payload.turn;
   const head = document.createElement('div');
   head.className = 'beat-detail-head';
-  const parts = Object.entries(turn.counts || {}).map(([k, n]) => `${n} ${k}`);
+  // Counted the way the transcript shows them: the bookkeeping left out.
+  const parts = Object.entries(turn.counts || {})
+    .filter(([k]) => !isNoise({ kind: k }))
+    .map(([k, n]) => `${n} ${k}`);
   // Typed tokens, said separately from work done. For a node whose answer is
   // a 12,000-token document this is most of the wait, and reporting it as
   // "12000 events" -- which is what used to happen -- reads as activity.
@@ -324,61 +433,21 @@ function renderTurn(container, payload) {
     + (parts.length ? `  ·  ${parts.join(' · ')}` : '');
   container.append(head);
 
-  // What it is writing RIGHT NOW, above the event list. During a long answer
-  // the events stop entirely -- the model is producing one document, not
-  // running commands -- so without this the expander is empty at exactly the
-  // moment somebody opens it to find out what is happening.
+  // Every step so far, as a transcript (bookkeeping left out).
+  renderTranscript(container, turn.events || [], { limit: 120, full: true });
+
+  // And what it is writing RIGHT NOW, last, where a terminal would show it.
+  // During a long answer the events stop entirely -- the model is producing
+  // one document, not running commands -- so without this the expander is
+  // empty at exactly the moment somebody opens it to find out what is
+  // happening.
   for (const [name, text] of Object.entries(turn.progress?.live || {})) {
     if (!text) continue;
-    const row = document.createElement('div');
+    const row = document.createElement('pre');
     row.className = `beat-live beat-live-${name}`;
-    row.textContent = `${name} ▸ ${text}`;
-    container.append(row);
-  }
-
-  const events = (turn.events || []).filter(
-    (e) => e.phase !== 'started' || e.kind === 'command',
-  );
-  const shown = events.slice(-120);
-  if (shown.length < events.length) {
-    const note = document.createElement('div');
-    note.className = 'muted';
-    note.textContent = `(showing the last ${shown.length} of ${events.length})`;
-    container.append(note);
-  }
-
-  for (const event of shown) {
-    const row = document.createElement('div');
-    row.className = `beat-event beat-${event.kind}`;
-    const at = event.at != null ? `${String(event.at).padStart(6)}s  ` : '';
-    row.textContent = at + describeEvent(event);
+    row.textContent = `${name === 'message' ? 'writing' : name} ▸ `
+      + (name === 'message' ? messageText(text) : text);
     container.append(row);
   }
 }
 
-function describeEvent(event) {
-  switch (event.kind) {
-    case 'command': {
-      const code = event.exit_code;
-      const mark = event.phase === 'started' ? '$' : (code ? '!' : '$');
-      const tail = code ? `  (exit ${code})` : '';
-      return `${mark} ${event.command || ''}${tail}`;
-    }
-    case 'file_change':
-      return `~ ${(event.changes || []).map((c) => c.path).join(', ')}`;
-    case 'reasoning':
-      return `· ${(event.summary || []).slice(-1)[0] || ''}`;
-    case 'message':
-      return event.is_final_json
-        ? `> the final answer (${(event.text || '').length.toLocaleString()} chars)`
-        : `> ${firstLine(event.text)}`;
-    case 'web_search': return `? ${event.query || ''}`;
-    case 'plan': return `= ${firstLine(event.text)}`;
-    case 'error': return `! ${event.message || ''}`;
-    default: return `* ${event.kind}`;
-  }
-}
-
-function firstLine(text) {
-  return String(text || '').split('\n')[0];
-}

@@ -30,7 +30,7 @@ import json
 import os
 from dataclasses import dataclass, field, replace
 from pathlib import Path
-from typing import Any, Mapping
+from typing import Any, Literal, Mapping
 
 from pydantic import BaseModel, ConfigDict, ValidationError
 
@@ -69,7 +69,7 @@ DEFAULT_MODEL = "gpt-5.6-sol"
 #: PAIRS -- the pair is the unit, because a model id belongs to the
 #: provider it was named for.
 #:
-#: The split the research skeleton already sets up: `coder` writes code and
+#: The split the generated agents use: `coder` writes code and
 #: reports and takes the default, while `runner` and `checker` -- the roles
 #: that execute experiments and judge the results -- go to the mini tier.
 #: Running an experiment is mostly obedience: take this command, run it, put
@@ -89,12 +89,30 @@ DEFAULT_ROLE_BACKENDS: dict[str, tuple[str, str]] = {
     # Design is the expensive thing to get wrong: one turn writes a
     # 40,000-character document, and a weaker model there produces a graph
     # that fails validation three times and then gives up.
-    "discussor": ("claude_code", "opus"),
-    "planner": ("claude_code", "opus"),
-    "designer": ("claude_code", "opus"),
+    #"discussor": ("claude_code", "opus"),
+    #"planner": ("claude_code", "opus"),
+    #"designer": ("claude_code", "opus"),
+    # The research agent the discussor asks before it suggests answers: on
+    # antigravity for its built-in web search, and for running the paper
+    # lookups in agent/skills/research_tools.py.
+    "researcher": ("antigravity", "gemini-4-argon-medium"),
+    "discussor": ("codex", "gpt-5.6-sol"),
+    "planner": ("codex", "gpt-5.6-sol"),
+    "designer": ("codex", "gpt-5.6-sol"),
+
 
     # Writing the experiment code is still Codex's flagship.
     "coder": ("codex", "gpt-5.6-sol"),
+
+    # A work node the designer marked tier "light": copying, formatting, a
+    # file written to an exact spec. Codex's balanced tier ("for
+    # straightforward work") rather than the flagship. Its checker still runs
+    # on `checker`, so a cheap worker is never also cheaply judged.
+    "coder_light": ("codex", "gpt-5.6-terra"),
+
+    # Reviews a whole run and decides whether to re-plan or redesign: the
+    # most consequential judgement after the design itself.
+    "supervisor": ("codex", "gpt-5.6-sol"),
 
     # Running an experiment is mostly obedience -- take this command, run it,
     # put the numbers there -- so it goes to the cheapest tier that can hold a
@@ -146,9 +164,12 @@ class AgentConfig:
     default: BackendConfig
     roles: dict[str, BackendConfig]
     session: str | None = None
-    """None means "derive a name from the task" -- see storage.session_name_for.
-    A fixed default would make every task share one session, and a session owns
-    exactly one task."""
+    """None means "start a new session" -- see storage.new_session_id. A
+    session is only ever resumed by naming it."""
+
+    sessions_root: str | None = None
+    """The folder every session's own folder is made in. None means
+    <repo>/.agent/sessions. Relative paths are relative to the repository."""
 
     recursion_limit: int = DEFAULT_RECURSION_LIMIT
 
@@ -156,6 +177,21 @@ class AgentConfig:
     max_design_attempts: int = 3
     """How many times the designer may be asked to fix a bad folder before
     giving up and asking the human."""
+
+    supervisor: str = "manual"
+    """What happens after a run: "manual" -- a supervisor reviews it and you
+    decide whether to finish, re-plan or redesign; "auto" -- it acts on its
+    own review, up to max_iterations; "off" -- nothing, as before."""
+
+    max_iterations: int = 3
+    """How many design-and-run iterations the supervisor may take in all."""
+
+    research: bool = True
+    """Let the discussor ask the research agent before it suggests answers."""
+
+    delegation: dict = field(default_factory=dict)
+    """role -> BackendConfig to run that role's turns on when its own provider
+    is out of credits. Only roles a person chose; see backends/delegate.py."""
 
     work_recursion_limit: int = 200
     """Step budget for a generated agent. Lower than the bootstrap graph's:
@@ -207,8 +243,12 @@ class _ConfigFile(BaseModel):
     default: _BackendFile | None = None
     roles: dict[str, _BackendFile] = {}
     session: str | None = None
+    sessions_root: str | None = None
     recursion_limit: int | None = None
     max_design_attempts: int | None = None
+    supervisor: Literal["manual", "auto", "off"] | None = None
+    max_iterations: int | None = None
+    research: bool | None = None
     work_recursion_limit: int | None = None
     default_agent: str | None = None
 
@@ -300,7 +340,9 @@ def load_config(
             session = parsed.session
         if parsed.recursion_limit:
             recursion_limit = parsed.recursion_limit
-        for name in ("max_design_attempts", "work_recursion_limit", "default_agent"):
+        for name in ("max_design_attempts", "supervisor", "max_iterations",
+                     "work_recursion_limit", "default_agent", "sessions_root",
+                     "research"):
             value = getattr(parsed, name)
             if value is not None:
                 extras[name] = value
@@ -319,6 +361,15 @@ def load_config(
     if env.get("AGENT_MODEL"):
         default = replace(default, model=env["AGENT_MODEL"])
         sources.append("AGENT_MODEL")
+    if env.get("AGENT_SUPERVISOR") in ("manual", "auto", "off"):
+        extras["supervisor"] = env["AGENT_SUPERVISOR"]
+        sources.append("AGENT_SUPERVISOR")
+    if env.get("AGENT_RESEARCH", "").strip().lower() in ("0", "1", "true", "false", "on", "off"):
+        extras["research"] = env["AGENT_RESEARCH"].strip().lower() in ("1", "true", "on")
+        sources.append("AGENT_RESEARCH")
+    if env.get("AGENT_SESSIONS_ROOT"):
+        extras["sessions_root"] = env["AGENT_SESSIONS_ROOT"]
+        sources.append("AGENT_SESSIONS_ROOT")
 
     # Scan for ANY AGENT_BACKEND_<ROLE> / AGENT_MODEL_<ROLE>, rather than only
     # the roles we happen to name in roles.py. A generated agent invents its
@@ -356,8 +407,44 @@ def load_config(
                 model=spec.model if spec.model is not None else existing.model,
             )
             sources.append(f"--backend-role {item}")
+        # Delegation a session chose, per role: "coder=antigravity:claude-opus-5-5-high".
+        delegation = {}
+        for item in getattr(cli, "delegate", None) or []:
+            role_name, spec = _parse_role_override(item)
+            delegation[role_name] = BackendConfig(provider=spec.provider,
+                                                  model=spec.model, options={})
+        if delegation:
+            extras["delegation"] = delegation
+            sources.append("delegation")
+        # Per-role backend options a SESSION chose -- {"coder": {"gpu": true}}
+        # from the web UI's Runs on row, kept in its options.json.
+        for role_name, opts in (getattr(cli, "role_options", None) or {}).items():
+            if not isinstance(opts, dict) or not opts:
+                continue
+            existing = role_configs.get(role_name, BackendConfig(provider="", model=None))
+            role_configs[role_name] = replace(existing, options={**existing.options, **opts})
+            sources.append(f"session options for {role_name}")
         if getattr(cli, "session", None):
             session = cli.session
+        if getattr(cli, "supervisor", None):
+            if cli.supervisor not in ("manual", "auto", "off"):
+                raise SystemExit(f"--supervisor must be manual, auto or off, "
+                                 f"got {cli.supervisor!r}.")
+            extras["supervisor"] = cli.supervisor
+            sources.append("--supervisor")
+        if getattr(cli, "max_iterations", None):
+            extras["max_iterations"] = int(cli.max_iterations)
+            sources.append("--max-iterations")
+        # `research` from the web UI's checkbox; `no_research` from --no-research.
+        if isinstance(getattr(cli, "research", None), bool):
+            extras["research"] = cli.research
+            sources.append("research checkbox")
+        elif getattr(cli, "no_research", False) is True:
+            extras["research"] = False
+            sources.append("--no-research")
+        if getattr(cli, "sessions_root", None):
+            extras["sessions_root"] = cli.sessions_root
+            sources.append("--sessions-root")
 
     # Layer 1 in PRECEDENCE, last in code -- see _apply_role_defaults.
     role_configs = _apply_role_defaults(default, role_configs)
@@ -494,7 +581,8 @@ def describe(cfg: AgentConfig, paths=None) -> str:
         if paths.input_brief.exists():
             lines.append(f"  task read from   {paths.input_brief}")
     else:
-        lines.append(f"  session          {cfg.session or '(derived from the task)'}")
+        lines.append(f"  session          {cfg.session or '(a new one)'}")
+        lines.append(f"  sessions root    {cfg.sessions_root or '<repo>/.agent/sessions'}")
     lines.append(f"  recursion limit  {cfg.recursion_limit}")
     lines.append("")
     lines.append("  settings from: " + ", ".join(cfg.sources))

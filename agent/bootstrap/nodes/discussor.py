@@ -19,7 +19,17 @@ from agent.statelib import merge_section
 from agent.telemetry import record_usage, usage_to_dict
 
 
-def make_discussor(backend):
+def make_discussor(backend, instructions: str = DISCUSSOR_INSTRUCTIONS,
+                   checklist: str = "", research: bool = False):
+    """`instructions` (the persona) and `checklist` (the experiment-design
+    skill, agent/skills/experiment_design.md) are parameters so a session can
+    replace them -- see agent/bootstrap/settings.py. `research`: whether it
+    may ask the research agent before it asks you."""
+    from agent import skills
+    from agent.bootstrap.nodes.researcher import MAX_ROUNDS, report_text
+
+    checklist = checklist or skills.experiment_design()
+
     def discussor(state: BootstrapState):
         print("\n[discussor] thinking about what you need...")
 
@@ -29,23 +39,48 @@ def make_discussor(backend):
 
         human = dict(state.get("human", {}))
         last_answer = human.get("last_answer", "").strip()
+        found = dict(state.get("research") or {})
+        fresh = bool(found.get("fresh")) and bool(found.get("reports"))
+        may_research = research and not fresh and int(found.get("rounds", 0)) < MAX_ROUNDS
+        availability = (
+            "\n\nResearch is available: if a suggestion depends on the literature, "
+            "put up to three short questions in `research` and ask the human "
+            "nothing yet -- you will get the findings first."
+            if may_research else
+            "\n\nResearch is not available this turn: leave `research` empty.")
 
-        if thread_id is None:
+        if fresh:
+            # Back from the research agent: the same conversation, now with
+            # the findings, and this time the human IS asked.
+            prompt = (
+                f"The research agent answered your questions:\n\n"
+                f"{report_text(found['reports'][-1])}\n\n"
+                f"Now ask the human everything still open, all at once, with "
+                f"suggestions grounded in these findings -- cite the source in "
+                f"the suggestion. Update `requirements`."
+                + availability
+            )
+        elif thread_id is None:
             prompt = (
                 f"The human wants this done:\n\n{state['user_request']}\n\n"
-                f"Begin discovery. Ask exactly one high-value question about either the work "
-                f"itself or the shape of agent that should do it. The human ends the "
-                f"discussion by typing /plan; you only advise."
+                f"Begin discovery. Inspect the repository, then ask EVERY question you "
+                f"still need, all in this one turn, each with your suggested answer. "
+                f"Fill `requirements` with their answers so far and your suggestions "
+                f"marked (assumed). The human ends the discussion by typing /plan; "
+                f"you only advise.\n\n{checklist}"
+                + availability
             )
         else:
             prompt = (
                 f"The human replied:\n\n{last_answer or '(nothing -- they came back to talk more)'}"
-                f"\n\nContinue. Ask one more genuinely useful question, or summarise where "
-                f'things stand and set advice to "ready_to_plan".'
+                f"\n\nAny question they did not answer keeps your suggested answer. "
+                f"Update `requirements`. Ask only the follow-ups their answers opened, "
+                f"all at once -- or none, and set advice to \"ready_to_plan\"."
+                + availability
             )
 
         sent = activity.exchange(thread_id=thread_id,
-                                 instructions=DISCUSSOR_INSTRUCTIONS,
+                                 instructions=instructions,
                                  prompt=prompt)
         activity.arm_progress(backend, state.get('session_dir', ''), 'discussor',
                               sent=sent)
@@ -53,7 +88,7 @@ def make_discussor(backend):
             thread_id=thread_id,
             repo_path=state["repo_path"],
             access=Access.READ_ONLY,
-            developer_instructions=DISCUSSOR_INSTRUCTIONS,
+            developer_instructions=instructions,
             prompt=prompt,
             output_model=DiscussorOutput,
         )
@@ -62,15 +97,22 @@ def make_discussor(backend):
         # see agent/activity.py for why this goes to disk and not to state.
         activity.disarm_progress(backend, state.get("session_dir", ""), "discussor")
         activity.write(state.get("session_dir", ""), "discussor", run.events, sent=sent,
-                                                         summary=activity.scalars(run.data),
-                       usage=usage_to_dict(run.usage) if run.usage else None)
+                       summary=activity.scalars(run.data),
+                       usage=usage_to_dict(run.usage) if run.usage else None,
+                       backend=backend, thread_id=run.thread_id,
+                       output=run.data.model_dump(mode="json", by_alias=True))
+        activity.record_visit(state.get("session_dir", ""), "discussor", kind="design",
+                              provider=getattr(backend, "name", ""),
+                              model=getattr(backend, "model", "") or "",
+                              thread=run.thread_id)
 
         role_threads["discussor"] = run.thread_id
         providers["role_threads"] = role_threads
         usage = record_usage(state.get("usage_by_role", {}), "discussor", run.usage)
 
         reply = run.data.reply.strip()
-        question = run.data.question.strip()
+        questions = [q for q in run.data.questions if q.question.strip()]
+        question = _ask(questions)
         requirements = run.data.requirements.strip()
 
         if reply:
@@ -83,11 +125,19 @@ def make_discussor(backend):
                 + " -- type /plan when you are ready."
             )
 
-        spoken = reply
-        if question:
-            spoken = f"{spoken}\n\nQuestion: {question}" if spoken else f"Question: {question}"
+        wants = ([q.strip() for q in run.data.research if q.strip()][:3]
+                 if may_research else [])
+        if wants:
+            # The graph goes to the researcher next; the human is asked after.
+            question = ""
+            print("[discussor] asking the research agent first: " + "; ".join(wants))
+            spoken = (f"{reply}\n\n" if reply else "") + "Looking these up first:\n" + \
+                "\n".join(f"- {q}" for q in wants)
+        else:
+            spoken = f"{reply}\n\n{question}".strip() if question else reply
 
         return {
+            "research": merge_section(found, questions=wants, fresh=False),
             # Only the NEW entry -- the operator.add reducer appends it.
             "transcript": [{"role": "discussor", "text": spoken}],
             "providers": providers,
@@ -109,3 +159,19 @@ def make_discussor(backend):
         }
 
     return discussor
+
+
+def _ask(questions) -> str:
+    """All the open questions as one message, each with its suggestion -- so
+    the human can answer only the ones they disagree with."""
+    if not questions:
+        return ""
+    lines = ["Answer any of these by number. Anything you leave out, my "
+             "suggestion stands -- or type /plan to go ahead with all of them.", ""]
+    for number, item in enumerate(questions, 1):
+        lines.append(f"{number}. [{item.topic.strip()}] {item.question.strip()}")
+        if item.suggestion.strip():
+            lines.append(f"   Suggested: {item.suggestion.strip()}")
+        if item.why.strip():
+            lines.append(f"   Why it matters: {item.why.strip()}")
+    return "\n".join(lines)

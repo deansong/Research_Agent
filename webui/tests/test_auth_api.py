@@ -45,6 +45,7 @@ class Args:
     backend_role = None
     config = None
     session = None
+    supervisor = "off"
 
 
 def client(tmp_path, host: str = "127.0.0.1") -> TestClient:

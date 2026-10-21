@@ -32,72 +32,40 @@ from __future__ import annotations
 import json
 
 DISCUSSOR_INSTRUCTIONS = """
-You are the DISCUSSOR in a system that DESIGNS coding agents.
+You are the DISCUSSOR in a system that designs research agents. Find out what
+experiment the human wants, well enough for a planner to write it down.
 
-Ask at most ONE question per turn, and only when the answer would change the
-work or the shape of the agent. Inspect the repository read-only whenever that
-would answer your own question faster than asking -- most of what you need is
-usually already there, and asking about it wastes the human's turn.
+- Read the repository first (read-only). Never ask what you can read.
+- Work through the EXPERIMENT DESIGN CHECKLIST in the prompt. Ask, all in this
+  one turn, every item that is still open and would change the work. Each
+  question gets a specific suggested answer and why it matters; the human
+  answers only the ones they disagree with.
+- When research is available and a suggestion depends on the literature --
+  the standard datasets and baselines, typical results, usual settings, cost
+  -- put up to three short questions in `research` instead of guessing. You
+  get the findings back before the human sees anything, and your suggestions
+  should then cite them. Do not research what the human or the repository
+  already settled.
+- Keep `requirements` complete under the checklist headings: the human's
+  answers, else your suggestion marked "(assumed)". The planner reads only
+  that field.
+- Do not write code or design the agent. You do not end the discussion: the
+  human types /plan. Set `advice` to "ready_to_plan" once you could describe
+  the work, and say they can type /plan.
+""".strip()
 
-Do not write code. Do not design the graph; the designer does that, and it
-reads this whole conversation.
 
---------------------------------------------------------------------------
-WHAT YOU ARE FINDING OUT
---------------------------------------------------------------------------
-Work here is machine-learning research, and the plan that follows is always
-four stages. Your questions are the same four, plus the claim they serve.
-Skip anything the human has already said or you can read yourself.
+RESEARCHER_INSTRUCTIONS = """
+You are the RESEARCHER. The discussor, who is interviewing a human about an
+experiment, sends you a few questions; find the answers in the literature and
+on the Hugging Face Hub, so its suggestions are grounded rather than guessed.
 
-0. THE CLAIM. What result would support it, and what would refute it?
-   "Improve the model" is not a claim. "LoRA rank 16 matches full
-   fine-tuning on this task to within one point" is. Everything below is
-   only worth asking once this is settled.
-
-1. CODE. What has to be WRITTEN, and what already exists? Split by kind, not
-   by file: the data loading, the method, each baseline. Each becomes one
-   node, so "the baselines" is not an answer -- which baselines.
-   Also the ENVIRONMENT: anything that has to be installed or built before
-   any of it runs -- a driver, a package, a compiled kernel -- and whether it
-   is already done here.
-
-2. EXPERIMENT DESIGN. Which dataset and split; which model and where the
-   weights come from; the hyperparameters; which ablations are IN and which
-   are explicitly out; how many seeds. Be pedantic here. "A few
-   configurations" becomes an agent that cannot say when it is finished.
-
-3. RUN. What COMPUTE: which hardware, and how long ONE run takes. Then which
-   experiments actually get run, and in what order. Compute decides more
-   about the shape of the agent than anything else you will ask, and together
-   with the metrics it is what people leave out and then lose days to.
-
-4. ANALYSIS AND REPORT. Which numbers settle the question, how big a
-   difference is worth believing, and what the deliverable is: a table, a
-   figure, a written finding, a merged change?
-
-Then two questions about the work rather than the experiment, because they
-become the graph's shape rather than its nodes:
-
-5. CHECKS. For each piece of work above, how would you TELL it worked? A
-   test, a number in a range, a file that exists.
-6. GATES. Which of them must a PERSON approve before the run continues?
-   Anything expensive or irreversible -- a long training run, publishing a
-   result, touching shared data. Default to none: a gate stops the whole run
-   until somebody comes back to it.
-
-Record the answers in `requirements` under those headings as you get them.
-The planner reads that field and not your reasoning.
-
-If the request is NOT research -- a refactor, a tool, a bug -- do not force it
-into an experiment. Ask about the work instead. Questions 1, 5 and 6 still
-apply: they are about work, not about experiments.
-
---------------------------------------------------------------------------
-
-IMPORTANT: you do not decide when discussion ends. The human ends it by typing
-/plan. Your `advice` field is a suggestion they may ignore. Set it to
-"ready_to_plan" once you could describe both the work and a sensible shape.
-Never say you are moving on; say they can type /plan when ready.
+Use the RESEARCH SKILLS in the prompt. Every finding names its source (an
+arXiv id, a dataset or model id, or a URL); say plainly what you could not
+find. Do not change any file in the repository; anything you save goes under
+the run directory you are given. Answer in the schema: a short summary, the
+findings, what the discussor should suggest in light of them, and what is
+still unanswered.
 """.strip()
 
 
@@ -117,7 +85,8 @@ They are your four top-level steps, in this order, with these ids:
   4. Analysis and report   what the numbers mean, written down
 
 The real work goes in SUBSTEPS. One substep per piece of work that one person
-could finish in one sitting, because one substep becomes one node:
+could finish in one sitting, because each STEP becomes one node and each
+substep becomes one turn of it, checked before the next:
 
   1. Code
      1.1 a single dataloader every method and baseline uses
@@ -134,6 +103,8 @@ could finish in one sitting, because one substep becomes one node:
 Drop a substep the request does not need; add ones it does, up to EIGHT per
 stage. Keep the four stages even when a stage has one substep -- the shape is
 what makes the plan readable at a glance and the graph easy to map onto it.
+At most SIX top-level steps, ever: each is a node of the agent, so twelve
+steps make an agent too big to follow. Group work into stages instead.
 More than eight baselines to implement means the stage is really a sweep: one
 substep that runs a list, not eight substeps.
 
@@ -196,116 +167,88 @@ person: short titles, detail only where the title is not enough.
 
 
 _DESIGNER_PREAMBLE = """
-You are the DESIGNER. You produce a complete agent -- a graph of nodes -- to
-do the work discussed with the human.
-
-You do NOT write Python. You fill in a JSON structure. Each node names a
-`kind`: a node template that already exists.
+You are the DESIGNER. You decide how an agent -- a graph of nodes -- carries
+out an approved plan. You write the whole graph.json and a short SPEC per
+node; code writes every prompt and output field from them.
 
 --------------------------------------------------------------------------
 IT IS A LANGGRAPH StateGraph
 --------------------------------------------------------------------------
-Your two files are compiled into one, and that answers most questions about
-what is allowed:
-
     a node          add_node, wrapping ONE model turn
     `edges`         add_edge
     `branches`      add_conditional_edges, with a path_map
     "__end__"       END
     a "human" node  interrupt(), resumed with Command(resume=...)
 
-Four consequences to design around:
-
-- ONE SHARED STATE. A node's `output` fields merge into it, and
-  {out.<node>.<field>} is how a later node reads them. Nothing else passes
-  between nodes.
-- CHECKPOINTED AFTER EVERY NODE. A failure discards that node's turn and
-  nothing before it -- which is why nodes are ATOMIC, and why eight small
-  ones beat three big ones: the retry is cheaper.
-- interrupt() RE-RUNS THE NODE FROM ITS FIRST LINE when the human answers.
-  A human node therefore does no work of its own; it asks, and routes.
-- A STEP BUDGET (recursion_limit). Every node visit spends one, so a loop
-  with no exit does not hang -- it dies at the limit with nothing to show.
-
-You are given an APPROVED PLAN of four STAGES -- code, experiment design,
-run, analysis and report -- with the work in SUBSTEPS. Design a graph that
-carries it out, naming each node's own substeps in its `steps` field:
-
-    {"name": "write_method", "steps": ["1.2"], ...}
-
-That is the context control: a node is sent only its own steps, in full.
-
-Rules for the mapping:
-- ONE SUBSTEP per node. A substep is one piece of work; a stage is several,
-  so a node owning a bare "1" is a node doing three jobs.
-- The unit is "what one turn can finish", not "what belongs together".
-  Count the ARTEFACTS: three files means three nodes, chained.
-- Only a node that genuinely does the whole stage takes a stage id.
+- ONE SHARED STATE. A node's outputs merge into it; that is the only way
+  anything passes between nodes.
+- CHECKPOINTED AFTER EVERY NODE. A failure costs only that node's turn.
+- interrupt() RE-RUNS THE NODE FROM ITS FIRST LINE when the human answers,
+  so a human node does no work; it asks, and routes.
+- A STEP BUDGET (recursion_limit). A loop with no exit dies at the limit.
 
 --------------------------------------------------------------------------
-THE TWO NODE KINDS
+THE WORK NODES ARE FIXED
 --------------------------------------------------------------------------
-"agent"  One structured model turn: `instructions`, an `output` (the
-         fields it must return), `prompts` (what to send it), and `access`
-         (none / read_only / write).
+The plan is the contract. Code made ONE work node per top-level plan step,
+named for it, owning exactly that step. A step with substeps is done ONE
+SUBSTEP PER TURN: its checker returns `next` to send it on to the following
+substep, so keep that `next` case pointing back at it. You cannot rename,
+merge, split or drop work nodes, or add work the plan does not have. If a step is too big for one turn or has no usable check, say so in
+`plan_issues`; the person revises the plan.
 
-"human"  Asks the person. You give it `commands`: the slash commands it
-         accepts and where each goes. Plain text goes back to whichever node
-         asked, so you need not configure that.
+What you design is everything AROUND the work: who checks what, loops,
+routers, gates, what each node reads, and which model tier runs it.
+
+--------------------------------------------------------------------------
+A SPEC PER NODE
+--------------------------------------------------------------------------
+`role`  worker   writes code, configs, analyses, reports   (work node)
+        runner   runs experiments, never edits code         (work node)
+        checker  judges others' work, never fixes it        (read_only)
+        router   decides what happens next, does no work    (read_only)
+        human    asks the person; give it `commands`
+`steps`         a work node's own step id, as given. Others: none.
+`tier`          "light" for a work node a cheaper model can do -- copying,
+                formatting, a file written to an exact spec; "standard"
+                otherwise. Light is cheaper; wrong is dearer than both.
+`reads`         nodes whose outputs it is shown -- its inputs, and ONLY
+                those: every extra node costs context. Empty means the nodes
+                that lead straight into it.
+`instructions`  a few sentences of what is special about it.
+`outputs`       extra string fields beyond its role's standard ones.
 
 --------------------------------------------------------------------------
 HOW CONTROL FLOWS
 --------------------------------------------------------------------------
-`edges`     unconditional: after A, always go to B.
-`branches`  conditional: switch on ONE of the node's own output fields. It
-            must be type "enum", and every choice needs a case or a default.
-
-Exactly one edge OR one branch per node -- never both, never two edges.
-
-Any transition INTO a human node must carry an `ask`
-({purpose, resume_to, question, context}). `resume_to` is where plain text
-goes -- normally the node that asked.
+`edges`     after A, always go to B.
+`branches`  route_on names a field; code makes it an enum of exactly your
+            cases' `when` values. Give every branch a `default`.
+Exactly one edge OR one branch per agent node. A human node routes by its
+commands. A transition INTO a human node carries an `ask`
+({purpose, resume_to, question, context}); `resume_to` gets plain text.
 
 --------------------------------------------------------------------------
 CHECKING WORK
 --------------------------------------------------------------------------
-No node judges its own success. Work that matters is followed by a SEPARATE
-read_only verifier that branches: ok -> next, redo -> back to the worker,
-blocked -> a human. Never loop a worker to itself on its own `status` --
-that is self-assessment. One verifier per STAGE: a branch allows only
-8 cases. The prompt has the shapes, including an ORCHESTRATOR: one node
-that only decides.
+No node judges its own success. EVERY work node must be in the `reads` of a
+read_only verifier -- a checker -- that branches: ok -> on, redo -> back to
+the worker, blocked -> a human. Never loop a worker to itself: that is
+self-assessment. A branch allows 8 cases, so one checker covers at most six
+nodes. A checker is shown what each node changed and must report evidence.
 
 --------------------------------------------------------------------------
-ONE ANSWER, AND ALL OF IT
+YOUR ANSWER
 --------------------------------------------------------------------------
-Answer once, with the WHOLE design. Count two things first:
+Start from the STARTING DESIGN that ends the prompt; it already passes every
+check. Return the WHOLE design in its shape: the whole graph, one spec per
+node in graph.nodes, `plan_issues`, and a `task_brief` -- the ONLY thing the
+agent knows; self-contained, no "as we discussed": goal, constraints, what
+done looks like. Answer once: no drafts, no "placeholder" nodes. Do not
+audit the repository or read its git history; the nodes do that.
 
-- `nodes` has ONE entry per name in `graph.nodes`. Same length.
-- every node is the `from` of exactly one edge or branch.
-
-20 names with 3 entries is not a short design, it is a broken one, and it
-costs an attempt. Send no drafts and no "placeholder" nodes -- but what to
-avoid is a SECOND message, not length. Be as long as the design needs.
-
-The plan is your input. Do not audit the repository or read its git
-history; the nodes you design do that.
-
---------------------------------------------------------------------------
-JUDGEMENT
---------------------------------------------------------------------------
-- No node that interviews the human about requirements: that already
-  happened. Your agent starts knowing what to do.
-- A human node only where a person must genuinely decide, or to stop the run.
-  Always give them a way to exit.
-- Only give a node "write" access if it must change files.
-- A run's output goes under {artifacts_dir}, and every node that produces
-  any must be TOLD SO IN ITS PROMPT: a node cannot follow a rule it is
-  never given. Changing the project's own source is different, and belongs
-  in the repository.
-- The `task_brief` is the ONLY thing the new agent knows; it never sees this
-  conversation. Self-contained: no "as we discussed". State the goal, the
-  constraints, and what done looks like.
+No node that interviews the human about requirements: that already
+happened. A human node only where a person must decide; always offer /exit.
 """.strip()
 
 
@@ -314,39 +257,15 @@ JUDGEMENT
 DESIGNER_INSTRUCTIONS = _DESIGNER_PREAMBLE
 
 
-# The default agent's own graph.json used to be sent here too, as "a real,
-# working agent". It has been dropped, and what replaced it is better on
-# every count:
+# No worked example is sent any more -- neither the default agent's graph nor
+# the research skeleton that replaced it. The designer is shown the STARTING
+# DESIGN built from its own plan (bootstrap/blueprint.py), which is a better
+# example on every count: it is the right size and shape for this work, and
+# it is checked by the real validator before it is shown.
 #
-#   - CONTROL_FLOW shows the orchestrator branch as JSON, which was the only
-#     thing that topology uniquely taught;
-#   - RESEARCH_GRAPH is a complete, valid graph.json for the shape this
-#     project actually builds;
-#   - RESEARCH_NODES is four complete node entries that run experiments,
-#     rather than five that hold a conversation.
-#
-# Its justification was "read from disk, so it cannot drift from what the
-# loader accepts". The replacements are validated by a test that writes them
-# to disk and runs validate_folder(strict=True) over the result, which is a
-# stronger guarantee than being read from a file that happens to be correct.
-#
-# RESEARCH_CONTEXT above moved out of DESIGNER_INSTRUCTIONS for the same
-# reason, after that file hit two characters of headroom for the fifth time
-# in a row. It is domain framing rather than format reference, so it is the
-# one piece here that is arguably in the wrong file -- but the instruction
-# limit is a MEASURED cliff at ~6 KB where a turn never completes, the prompt
-# has no known one, and both arrive in the same turn either way. The split
-# exists only because of that cliff.
-#
-# One real difference: developer_instructions are re-sent on every call, so
-# a repair turn still carries them, while the prompt is only sent once and
-# the repair relies on the provider conversation remembering it. That is
-# already true of the worked shapes and of the plan itself.
-#
-# Dropping it also bought back the instruction budget: RULES THAT WILL GET
-# YOUR DESIGN REJECTED could then move into PROMPT_REFERENCE above, where a
-# list mirroring the validator belongs, leaving DESIGNER_INSTRUCTIONS with
-# room for a rule again instead of three characters.
+# RESEARCH_CONTEXT below is domain framing. It rides in the prompt rather than
+# DESIGNER_INSTRUCTIONS only because instructions have a MEASURED cliff at
+# ~6 KB where a Codex turn never completes, and the prompt has no known one.
 
 RESEARCH_CONTEXT = """
 
@@ -380,76 +299,41 @@ DIFFERENT node whose only job is to look at the result.
                                    -. redo    .-> build_scorer
                                    -. blocked .-> human_review
 
-A plain edge INTO the verifier, a branch OUT of it. The research skeleton
-below is this shape with real names and complete node entries --
-write_method -> check_method -> branch -- so read it there rather than twice.
-
-The verifier is access "read_only" -- it judges, it never fixes -- with
-`verdict` as an enum of ok/redo/blocked, and its prompt reading the worker's
-claim so it checks rather than is told. It owns no plan step, so `steps: []`.
-
-Two things a design usually gets wrong:
-
-1. `redo` points at the WORKER, which then uses prompts.next -- so put
-   {out.<verifier>.problem} in that prompt, or it repeats its mistake.
-2. `default` is a human node, never "__end__". An unhandled verdict that
-   silently ends the run is the worst outcome available.
+A plain edge INTO the verifier, a branch OUT of it -- the starting design
+is this shape. The verifier has role "checker" and owns no plan step. `redo`
+points at the WORKER, and code shows the worker the checker's complaint when
+it comes back. `default` is a human node, never "__end__": an unhandled
+verdict that silently ends the run is the worst outcome available.
 """
 
 
 PROMPT_REFERENCE = """
 
 --------------------------------------------------------------------------
-PROMPTS
+QUESTIONS FOR THE PERSON -- the one place you write placeholders
 --------------------------------------------------------------------------
-`prompts.first` when the node has no conversation yet, or when a counter in
-`refresh_on` changed; otherwise `prompts.next`. Brief once at length, follow
-up briefly -- a large token saving.
+An `ask`'s question and context may use these, and NOTHING else:
+    {task_brief}  {last_answer}  {repo_path}  {artifacts_dir}
+    {out.<node>.<field>}    a field that node returns: its role's standard
+                            ones (worker: summary, files, how_to_run;
+                            runner: summary, results_path, log_tail, ran;
+                            checker: problem, detail; router: reason,
+                            next_task), its route_on field, and its `outputs`
+    {var.<name>}            a value a human command `sets`
 
-Placeholders you may use, and NOTHING else:
-    {task_brief}            the brief you are writing, below
-    {transcript}            the conversation with the human
-    {last_answer}           what the human last typed
-    {repo_path}             the repository path
-    {artifacts_dir}         where this run should put what it PRODUCES
-    {my_steps}              the plan steps THIS node is responsible for
-    {plan_outline}          one line per step, so the node knows the context
-    {out.<node>.<field>}    another node's output field
-    {var.<name>}            a value set by a human command
+A question that is ONLY a placeholder renders BLANK when that field is
+empty. Always add a sentence saying what the person can do:
 
-A placeholder naming a field a node does not declare is a hard error, and so
-is any placeholder not on this list.
-
-An `ask.question` that is ONLY a placeholder renders BLANK when that field
-happens to be empty, and the person then sees nothing to act on. Always
-append a static sentence saying what they can do:
-
-    "{out.reviewer.question}\n\nAnything to add? /approve or /revise."
-
-Five fields that no example below happens to use, because each is one line:
-
-    "thread_key": "sweep"        share ONE provider conversation between
-                                 several nodes, so they remember each other
-    "refresh_on": "attempt"      start a fresh conversation whenever that
-                                 counter changes (and use prompts.first again)
-    "bump": ["attempt"]          increment a counter when this node runs
-    "capture": ["git_status"]    prepend the repo's git status, or git_diff,
-                                 to this node's prompt
-    "record": "ran the sweep"    a line written into the transcript after
-                                 this node runs, for later nodes to read
-
-A counter is NOT a placeholder: `bump` and `refresh_on` are the only things
-that read one, and no prompt can render its value.
+    "{out.check_run.problem}\n\nType guidance, or /exit."
 
 --------------------------------------------------------------------------
 RULES THAT WILL GET YOUR DESIGN REJECTED
 --------------------------------------------------------------------------
 - Every node reachable from `entry`, and some path must reach "__end__".
-- Every node needs exactly one outgoing edge OR one branch, never both, never
-  two edges.
-- No output field called git_status or git_diff; use `capture` for those.
+- Every agent node needs exactly one outgoing edge OR one branch.
 - Node names: lowercase letters, digits, underscores; start with a letter.
-- `nodes` must contain exactly one entry per node in `graph.nodes`.
+- Exactly one spec in `nodes` per node in `graph.nodes`, and every leaf plan
+  step in exactly one node's `steps`.
 """
 
 
@@ -461,7 +345,7 @@ CONDITIONAL EDGES, AND WHEN TO USE AN ORCHESTRATOR
 There are two ways to shape a run, and the PLAN decides which you need.
 
 A FIXED PIPELINE, when the plan already fixes the order. Plain edges, with a
-branch only where something can fail. The research skeleton below is one.
+branch only where something can fail. The starting design is one.
 Prefer it when you can: every node is checkpointed, and a person can read the
 graph and see what will happen.
 
@@ -490,9 +374,9 @@ Rules for one:
 - A branch takes at most 8 cases, so ONE orchestrator can dispatch to at most
   seven workers. Past that, stage the graph and give each stage its own
   verifier instead of building a second orchestrator.
-- Its output must carry the REASON as well as the action, and each worker's
-  prompt must render it ({out.orchestrator.next_task}) -- otherwise the
-  worker is dispatched with no idea what it was dispatched for.
+- Give it role "router". Code adds `reason` and `next_task` to what it
+  returns and shows them to every node it sends the run to, so a worker
+  knows what it was dispatched for.
 
 USES FOR A BRANCH THAT ARE NOT "did it work":
 
@@ -507,383 +391,16 @@ USES FOR A BRANCH THAT ARE NOT "did it work":
   results already exist. Counters exist (`bump`) but CANNOT be rendered into
   a prompt, so the filesystem is the only progress a prompt can read.
 - ENOUGH ALREADY. A `redo` loop with no way out spins until the step limit
-  and dies with nothing. check_method's prompts.next below is how a loop
-  ends: a node keeps its own conversation, so the checker remembers what it
-  already rejected -- the only place an attempt count can live.
+  and dies with nothing. Give every checker and router a case that stops for
+  a person: each keeps its own conversation, remembers what it already
+  rejected, and is told to take that way out when a problem repeats.
 """
 
 
 REPAIR_PREFIX = """
-Your previous design was rejected. Fix EVERY problem listed below and return a
-complete corrected design -- not a patch, the whole thing again.
+Your previous design was rejected. Fix EVERY problem listed below and return
+the whole design again -- the whole graph, and one spec per node. The design
+as it stands follows the problems; change only what the problems need.
 
 Problems:
 """.strip()
-
-
-# ---------------------------------------------------------------------------
-# THE RESEARCH SKELETON
-# ---------------------------------------------------------------------------
-# A starting shape for the work this project is actually for: computer-science
-# research. It rides in the PROMPT next to the worked example, for the same
-# reason -- instructions have a measured size cliff and prompts do not.
-#
-# It is a SKELETON, not a mould, and the prose below says so to the model.
-# A template that must be obeyed is worse than no template: it produces a
-# graph shaped like the example instead of like the work. So the designer is
-# told to check it against the plan FIRST, drop what does not apply, and say
-# in `rationale` what it changed.
-#
-# Two things here are load-bearing beyond the shape:
-#
-# 1. `run_exp_*` declares backend "runner" -- a role nobody has configured.
-#    That is the hook for running experiments on a cheaper model: config.py's
-#    backend_for() falls back to the default until `.agent/config.json` names
-#    it, so the skeleton costs nothing and makes the option available.
-#
-# 2. The retry runs code -> run -> CHECK -> back to code, not code -> run ->
-#    back to code. A run node that decides whether its own run was any good is
-#    self-assessment, which validate.py rejects outright at design time. The
-#    check node is read_only with no plan steps of its own, which is precisely
-#    what the missing-verifier warning looks for -- so the skeleton satisfies
-#    both rules by construction rather than by being careful.
-# ---------------------------------------------------------------------------
-
-RESEARCH_GRAPH = {
-    "format_version": 1,
-    "name": "research_skeleton",
-    "description": (
-        "The four stages of a research plan as a graph: a shared dataloader, "
-        "the experiment config, each method and baseline behind its own "
-        "checker, the runs, then analysis and a report."
-    ),
-    "entry": "setup_env",
-    "nodes": [
-        {"name": "setup_env", "kind": "agent"},
-        {"name": "write_dataloader", "kind": "agent"},
-        {"name": "check_data", "kind": "agent"},
-        {"name": "design_experiments", "kind": "agent"},
-        {"name": "write_method", "kind": "agent"},
-        {"name": "check_method", "kind": "agent"},
-        {"name": "write_baseline", "kind": "agent"},
-        {"name": "check_baseline", "kind": "agent"},
-        {"name": "run_method", "kind": "agent"},
-        {"name": "run_baseline", "kind": "agent"},
-        {"name": "analyse", "kind": "agent"},
-        {"name": "report", "kind": "agent"},
-        {"name": "review", "kind": "human"},
-    ],
-    "edges": [
-        {"from": "setup_env", "to": "write_dataloader"},
-        {"from": "write_dataloader", "to": "check_data"},
-        {"from": "design_experiments", "to": "write_method"},
-        {"from": "write_method", "to": "check_method"},
-        {"from": "write_baseline", "to": "check_baseline"},
-        {"from": "run_method", "to": "run_baseline"},
-        {"from": "run_baseline", "to": "analyse"},
-        {"from": "report", "to": "review", "ask": {
-            "purpose": "findings",
-            "resume_to": "report",
-            "question": "{out.report.summary}\n\nAnything to change? "
-                        "/revise <what> or /exit.",
-            "context": "{out.report.findings}",
-        }},
-    ],
-    "branches": [
-        {"from": "check_data", "route_on": "verdict",
-         "cases": [
-             {"when": "ok", "to": "design_experiments"},
-             {"when": "redo", "to": "write_dataloader"},
-             {"when": "blocked", "to": "review", "ask": {
-                 "purpose": "blocked",
-                 "resume_to": "write_dataloader",
-                 "question": "{out.check_data.problem}\n\nNow what? "
-                             "Type guidance, or /exit.",
-                 "context": "{out.check_data.detail}",
-             }},
-         ],
-         "default": "review"},
-        {"from": "check_method", "route_on": "verdict",
-         "cases": [
-             {"when": "ok", "to": "write_baseline"},
-             {"when": "redo", "to": "write_method"},
-             {"when": "blocked", "to": "review", "ask": {
-                 "purpose": "blocked",
-                 "resume_to": "write_method",
-                 "question": "{out.check_method.problem}\n\nNow what? "
-                             "Type guidance, or /exit.",
-                 "context": "{out.check_method.detail}",
-             }},
-         ],
-         "default": "review"},
-        {"from": "check_baseline", "route_on": "verdict",
-         "cases": [
-             {"when": "ok", "to": "run_method"},
-             {"when": "redo", "to": "write_baseline"},
-             {"when": "blocked", "to": "review", "ask": {
-                 "purpose": "blocked",
-                 "resume_to": "write_baseline",
-                 "question": "{out.check_baseline.problem}\n\nNow what? "
-                             "Type guidance, or /exit.",
-                 "context": "{out.check_baseline.detail}",
-             }},
-         ],
-         "default": "review"},
-        {"from": "analyse", "route_on": "verdict",
-         "cases": [
-             {"when": "ok", "to": "report"},
-             {"when": "redo", "to": "run_method"},
-             {"when": "blocked", "to": "review", "ask": {
-                 "purpose": "blocked",
-                 "resume_to": "run_method",
-                 "question": "{out.analyse.problem}\n\nNow what? "
-                             "Type guidance, or /exit.",
-                 "context": "{out.analyse.detail}",
-             }},
-         ],
-         "default": "review"},
-    ],
-}
-
-
-#: node -> (access, backend, what it is for). A table rather than nine more
-#: nodes.json entries: the three spelled out in full below already show what an
-#: entry looks like, and these nodes are the same three shapes with different
-#: subjects. Access and backend are the two fields the skeleton is making a
-#: claim about.
-RESEARCH_ROLES: tuple[tuple[str, str, str, str], ...] = (
-    ("setup_env",    "write",     "coder",   "install and pin what the rest needs"),
-    ("design_experiments", "write", "coder", "the config: datasets, splits, hyperparameters, seeds, ablations"),
-    ("analyse",      "read_only", "checker", "read every result file and decide what they say; branches"),
-    ("report",       "write",     "coder",   "write up what analyse concluded"),
-)
-#: write_dataloader / write_baseline copy write_method; check_data /
-#: check_baseline copy check_method; run_baseline copies run_method. Each is
-#: the same entry with a different subject and different `steps`.
-
-
-#: Three real nodes.json entries plus the human node -- one per SHAPE the
-#: skeleton repeats: a worker, a runner, a verifier.
-#:
-#: These exist because a topology is not a design: the graph says a node called
-#: run_method runs an experiment, and says nothing about what its prompt has to
-#: contain for that to happen. The generic worked example cannot show it
-#: either, because its nodes discuss and orchestrate rather than run anything.
-#:
-#: They are validated: tests/test_bootstrap.py writes them to disk as part of a
-#: real folder and runs validate_folder(strict=True) over it, so every
-#: placeholder here names a field that the node it points at actually declares.
-#: An exemplar with a broken placeholder would teach the designer to write
-#: broken placeholders, and its repair loop would then fight the example it was
-#: given.
-RESEARCH_NODES: dict[str, dict] = {
-    "write_method": {
-        "backend": "coder",
-        "access": "write",
-        "steps": ["1.2"],
-        "instructions": (
-            "You write experiment code. It goes in the repository as normal "
-            "source with its own tests -- not in the artifacts directory, "
-            "which is for results. Write the tests as you go and run them: "
-            "code that has never been executed is not finished.\n\nUse the "
-            "dataloader that already exists; do not write your own loading or "
-            "splitting. A method and its baseline on different splits is not "
-            "a comparison, and nothing downstream can see it happened."
-        ),
-        "output": [
-            {"name": "files", "type": "string", "required": True,
-             "description": "Every path you created or changed, one per line."},
-            {"name": "how_to_run", "type": "string", "required": True,
-             "description": "The exact command that runs it, with its config."},
-            {"name": "summary", "type": "string", "required": True},
-        ],
-        "prompts": {
-            "first": (
-                "{task_brief}\n\nYour step:\n{my_steps}\n\n"
-                "The rest of the plan, for context only:\n{plan_outline}\n\n"
-                "The repository is at {repo_path}. Read what is there first -- "
-                "most of this usually exists. The shared dataloader is at "
-                "{out.write_dataloader.files}; use it. Make the run command "
-                "take an output directory; results go under {artifacts_dir}."
-                "\n\nWrite the code and its tests, run them, and report the "
-                "files and the run command."
-            ),
-            "next": (
-                "Your last attempt was sent back. What was wrong:\n\n"
-                "{out.check_method.problem}\n\n{out.check_method.detail}\n\n"
-                "Fix exactly that. Do not start again from scratch, and do "
-                "not change anything the complaint does not mention."
-            ),
-        },
-        "announce": "writing the method...",
-    },
-    "check_method": {
-        "backend": "checker",
-        "access": "read_only",
-        "steps": [],
-        "instructions": (
-            "You decide whether a piece of work counts. You never fix "
-            "anything: you are read-only, and the point of you is that you "
-            "are not the node that did the work.\n\nRead the code, not the "
-            "report about it, and run its tests. Code that passes its own "
-            "tests and implements the wrong thing is the failure worth "
-            "catching."
-        ),
-        "output": [
-            {"name": "verdict", "type": "enum",
-             "choices": ["ok", "redo", "blocked"], "required": True},
-            {"name": "problem", "type": "string",
-             "description": "One sentence. Empty when the verdict is ok."},
-            {"name": "detail", "type": "string",
-             "description": "What you looked at, and what to change."},
-        ],
-        "prompts": {
-            "first": (
-                "Check this work against what was asked:\n\n{my_steps}\n\n"
-                "It reports these files:\n{out.write_method.files}\n\n"
-                "Run it with: {out.write_method.how_to_run}\n"
-                "Its own summary: {out.write_method.summary}\n\n"
-                "Read the files and run the tests. Return 'ok' if the step's "
-                "own check is satisfied, 'redo' with a specific complaint, or "
-                "'blocked' if retrying cannot fix it -- missing data or "
-                "hardware, a contradiction in the plan."
-            ),
-            "next": (
-                "This came back after your last verdict.\n\n{my_steps}\n\n"
-                "Files:\n{out.write_method.files}\n\n"
-                "You have seen this before. If the problem you named last "
-                "time is STILL there, return 'blocked', not 'redo': a second "
-                "identical complaint means the loop is not converging and a "
-                "person should look. 'redo' only for something new."
-            ),
-        },
-        "announce": "checking the code...",
-    },
-    "run_method": {
-        "backend": "runner",
-        "access": "write",
-        "steps": ["3.1"],
-        "instructions": (
-            "You run experiments and record what happened. You do not fix "
-            "code: if a run fails, report it with enough of the error to act "
-            "on. Never edit the repository; only write results under the "
-            "artifacts directory."
-        ),
-        "output": [
-            {"name": "results_path", "type": "string", "required": True,
-             "description": "Where under the artifacts directory the results went."},
-            {"name": "log_tail", "type": "string", "required": True,
-             "description": "The last ~40 lines, or the whole error if it failed."},
-            {"name": "ran", "type": "enum", "choices": ["finished", "failed"],
-             "required": True},
-            {"name": "summary", "type": "string", "required": True,
-             "description": "The headline numbers, or why there are none."},
-        ],
-        "prompts": {
-            "first": (
-                "Run this experiment:\n{my_steps}\n\n"
-                "The configuration to run:\n"
-                "{out.design_experiments.summary}\n\n"
-                "How to run it:\n{out.write_method.how_to_run}\n\n"
-                "Write every result under {artifacts_dir}, one file per "
-                "configuration and seed, named so a second run ADDS a file "
-                "rather than replacing one, with the full stdout beside it.\n\n"
-                "Do not modify the code. If it will not run, report the error."
-            ),
-            "next": (
-                "Run it again -- {out.analyse.problem}\n\n"
-                "{out.write_method.how_to_run}\n\nSame rules: results under "
-                "{artifacts_dir}, nothing overwritten, no edits."
-            ),
-        },
-        "announce": "running the experiment...",
-    },
-    "review": {
-        "commands": [
-            {"name": "approve", "to": "__end__",
-             "purposes": ["findings"],
-             "summary": "Accept the findings and finish"},
-            {"name": "revise", "to": "report",
-             "purposes": ["findings"],
-             "argument": "[what to change]",
-             "summary": "Rewrite the report",
-             "sets": [{"name": "review_feedback", "value": "{argument}"}]},
-            {"name": "exit", "to": "__end__", "aliases": ["quit", "q"],
-             "summary": "Stop the run (everything finished is saved)"},
-        ],
-    },
-}
-
-
-def research_skeleton() -> str:
-    """The skeleton, as it is sent to the designer."""
-    table = "\n".join(
-        f"  {name:<19} access {access:<9} backend {backend!r:<10} {purpose}"
-        for name, access, backend, purpose in RESEARCH_ROLES
-    )
-    return (
-        "\n\n"
-        "--------------------------------------------------------------------------\n"
-        "THE RESEARCH SKELETON -- start here, then check it fits\n"
-        "--------------------------------------------------------------------------\n"
-        "The plan's four stages as a graph. Your plan has the same four, so the\n"
-        "mapping is nearly mechanical: stage 1 is the write_* nodes, 2 is\n"
-        "design_experiments, 3 is the run_* nodes, 4 is analyse and report.\n"
-        "\n"
-        "  setup_env -> write_dataloader -> check_data --ok--> design_experiments\n"
-        "  design_experiments -> write_method -> check_method --ok--> write_baseline\n"
-        "  write_baseline -> check_baseline --ok--> run_method -> run_baseline\n"
-        "  run_baseline -> analyse --ok--> report -> review\n"
-        "\n"
-        "  every check_*:  redo -> the node that wrote it,  blocked -> review\n"
-        "  analyse:        redo -> run_method (the run, not the code)\n"
-        "\n"
-        "BEFORE using it, check it against the plan and say in `rationale` what\n"
-        "you changed and why. It is a starting point, not a form to fill in:\n"
-        "\n"
-        "- ONE DATALOADER, used by every method and baseline. Different splits\n"
-        "  between a method and its baseline is not a comparison, and nothing\n"
-        "  downstream can tell. Say so in each write_* prompt, as below.\n"
-        "- ONE write/check PAIR PER THING IMPLEMENTED. Two baselines means two\n"
-        "  pairs, chained. Drop write_baseline if the plan compares against a\n"
-        "  published number rather than reproducing one.\n"
-        "- ONE run_* PER THING RUN, all after every check has passed: a run is\n"
-        "  the expensive node, and a bug found inside it costs the whole run.\n"
-        "- Chain them SEQUENTIALLY. One plain outgoing edge per node -- the\n"
-        "  validator refuses two, so there are no arms running side by side.\n"
-        "- Drop setup_env if the environment works. Drop write_dataloader and\n"
-        "  check_data together if there is no data stage -- and then take\n"
-        "  {out.write_dataloader.files} out of the write_* prompts, or they\n"
-        "  name a node that no longer exists and the design is rejected.\n"
-        "- Add nodes the plan needs and this has not: an ablation, a figure.\n"
-        "- A write_* node writes the code AND its tests. Do not add a node whose\n"
-        "  only job is to test code; the provider does that in one turn.\n"
-        "- check_* is the retry judge and must be SEPARATE and read_only. A node\n"
-        "  routing on its own output back to itself is rejected.\n"
-        "- `redo` must carry the complaint: put {out.check_method.problem} in\n"
-        "  write_method's prompts.next, or it repeats the mistake it was never\n"
-        "  told about.\n"
-        "- `steps` is a SUBSTEP id -- \"1.2\", not \"1\": a substep is one piece of\n"
-        "  work, a stage is four. Its `check` is what the check_* node applies,\n"
-        "  and arrives in {my_steps}.\n"
-        "- A substep marked [human gate] needs a human node after the node that\n"
-        "  owns it, with an ask offering /approve and /exit.\n"
-        "\n"
-        "The nodes not spelled out below:\n"
-        "\n"
-        f"{table}\n"
-        "  review              kind \"human\"  the exit, and where blocked goes\n"
-        "\n"
-        "`backend` names a ROLE, not a model. \"runner\" and \"checker\" are kept\n"
-        "separate from \"coder\" so runs can be pointed at a cheaper model in\n"
-        ".agent/config.json without touching the graph. Use these names, and\n"
-        "read_only for anything that only looks.\n"
-        "\n"
-        "graph.json:\n"
-        + json.dumps(RESEARCH_GRAPH, indent=1)
-        + "\n\nnodes.json, for the three SHAPES it repeats -- worker, verifier, "
-        "runner -- plus the human node. write_dataloader and write_baseline "
-        "are write_method with another subject and `steps`; check_data and "
-        "check_baseline are check_method; run_baseline is run_method.\n"
-        + json.dumps(RESEARCH_NODES, indent=1)
-    )

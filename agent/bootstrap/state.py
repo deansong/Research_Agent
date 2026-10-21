@@ -47,10 +47,42 @@ class DesignState(TypedDict, total=False):
     plan_feedback: str
     """What the human asked to change about the plan."""
 
+    valid: dict
+    """The last agent that passed the validator -- at first the starting
+    agent built from the plan (bootstrap/blueprint.py). The designer edits
+    from it, and the validator falls back to it when the attempts run out,
+    so a design never ends worse than this."""
+
+    review_feedback: str
+    """What the supervisor's review of the last run said to change. The
+    designer is shown it, and starts from the last design that passed
+    (`valid_spec`) when the plan has not changed."""
+
+    valid_spec: dict
+    """The design (graph + specs) that `valid` was compiled from."""
+
+    plan_issues: list
+    """What is wrong with the plan itself -- found by code (steps with no
+    check, steps never split) or raised by the designer, which cannot fix
+    the plan because the work nodes are fixed to its steps. Shown at the
+    review stop."""
+
     problems: str
     attempt: int
     written_to: str
     rationale: str
+
+
+class ResearchState(TypedDict, total=False):
+    """The research agent's side of the discussion -- see nodes/researcher.py."""
+
+    questions: list
+    """What the discussor asked it, waiting to be researched."""
+    rounds: int
+    reports: list
+    """One per round: questions, summary, findings, suggestions, file."""
+    fresh: bool
+    """A report the discussor has not read yet."""
 
 
 class HumanState(TypedDict, total=False):
@@ -59,6 +91,9 @@ class HumanState(TypedDict, total=False):
     purpose: str
     return_to: str
     last_answer: str
+    auto_approve: bool
+    """Set by the supervisor in auto mode: plan and design approvals are
+    answered without stopping."""
 
 
 class BootstrapState(TypedDict, total=False):
@@ -69,6 +104,7 @@ class BootstrapState(TypedDict, total=False):
     transcript: Annotated[list[TranscriptEntry], operator.add]
 
     discussion: DiscussionState
+    research: ResearchState
     design: DesignState
     human: HumanState
     providers: dict[str, Any]
@@ -86,6 +122,7 @@ def initial_bootstrap_state(*, repo_path: str, session_dir: str, request: str) -
         "user_request": request,
         "transcript": [{"role": "human", "text": request}],
         "discussion": {"requirements": "", "advice": "keep_discussing", "advice_reason": ""},
+        "research": {"questions": [], "rounds": 0, "reports": [], "fresh": False},
         "design": {"proposal": {}, "task_brief": "", "problems": "", "attempt": 0,
                    "written_to": "", "rationale": "", "plan": {}, "plan_feedback": ""},
         "human": {"question": "", "context": "", "purpose": "discussion",

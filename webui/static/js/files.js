@@ -1,5 +1,6 @@
 /*
-  WHAT:  The Files tab -- what the run WROTE, and what is in it.
+  WHAT:  The Files tab -- the files in this session's own folder: its agent,
+         plan and reports, and the results a run wrote. Nothing outside it.
   WHY:   A run produces a dataloader, a training script, a baseline and a
          report, and until this tab the only way to read any of them was to
          leave the browser and go find them on disk. The inspector could show
@@ -8,13 +9,13 @@
   CONCEPT: A list on the left, one file on the right.
 
   --------------------------------------------------------------------------
-  WHY CODE AND RESULTS ARE GROUPED, NOT MIXED
+  WHY SESSION FILES AND RESULTS ARE GROUPED, NOT MIXED
   --------------------------------------------------------------------------
-  Measured on a real session: 32 changed source files and 1,985 artifacts,
-  the artifacts being one JSON per GPU allocation and per smoke cell. In one
-  time-ordered list the eight files a person wants to read sit a thousand rows
-  down. So the server returns code first and this renders the two groups under
-  their own headings, with the results group collapsed.
+  Measured on a real session: 1,985 artifacts, one JSON per GPU allocation
+  and per smoke cell. In one time-ordered list the dozen files a person wants
+  to read sit a thousand rows down. So the server returns the session's own
+  files first and this renders the two groups under their own headings, with
+  the results group collapsed.
 
   --------------------------------------------------------------------------
   NO SYNTAX HIGHLIGHTING
@@ -64,12 +65,14 @@ export class FilesPanel {
       return;
     }
 
-    const code = this.files.filter((f) => f.root === 'repo');
-    const results = this.files.filter((f) => f.root !== 'repo');
-    // Code open, results shut. The asymmetry is the point: one group is
-    // usually a handful of files somebody means to read, the other is usually
-    // two thousand files somebody means to spot-check.
+    const code = this.files.filter((f) => f.origin === 'code');
+    const own = this.files.filter((f) => f.origin === 'session');
+    const results = this.files.filter((f) => f.origin === 'artifact');
+    // Code and session files open, results shut. The asymmetry is the point:
+    // those are a handful of files somebody means to read, results are
+    // usually two thousand files somebody means to spot-check.
     if (code.length) this.listEl.append(this.group('Code', code, true));
+    if (own.length) this.listEl.append(this.group('This session', own, true));
     if (results.length) this.listEl.append(this.group('Results', results, false));
   }
 
@@ -92,17 +95,11 @@ export class FilesPanel {
       const name = document.createElement('span');
       name.className = 'file-name';
       // The root prefix is what the server needs; the tail is what a person
-      // reads. Both shown, the prefix quietly.
-      name.textContent = entry.path.replace(/^(repo|artifacts)\//, '');
+      // reads.
+      name.textContent = entry.path.replace(/^session\/(workspace\/)?/, '');
       const meta = document.createElement('span');
       meta.className = 'file-meta';
       meta.textContent = `${size(entry.size)} · ${when(entry.modified)}`;
-      if (entry.origin === 'modified') {
-        const tag = document.createElement('span');
-        tag.className = 'file-tag';
-        tag.textContent = 'modified';
-        meta.prepend(tag);
-      }
       row.append(name, meta);
       row.addEventListener('click', () => this.select(entry));
       box.append(row);

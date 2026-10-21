@@ -24,14 +24,52 @@ class StrictModel(BaseModel):
     model_config = ConfigDict(extra="forbid", populate_by_name=True)
 
 
+class DiscussorQuestion(StrictModel):
+    """One thing the discussor needs to know, with the answer it would assume."""
+
+    topic: str
+    """Which part of the checklist: "Claim", "Code", "Experiment design", ..."""
+    question: str
+    suggestion: str
+    """The answer it will go ahead with if the human does not say otherwise."""
+    why: str
+    """What the answer changes -- the work, or the shape of the agent."""
+
+
 class DiscussorOutput(StrictModel):
-    """Unchanged in spirit from the original agent: it advises, it never routes."""
+    """It advises, it never routes. Every open question comes in ONE turn, each
+    with a suggested answer: one question per turn made a discussion of a dozen
+    questions a dozen round trips, most of them answered "yes, that"."""
 
     reply: str
-    question: str = ""
+    questions: list[DiscussorQuestion] = Field(default_factory=list, max_length=15)
+    research: list[str] = Field(default_factory=list, max_length=4)
+    """Questions for the research agent, asked BEFORE the human is: the
+    literature, standard datasets and baselines, typical results and costs.
+    Ignored when research is off for the session."""
     requirements: str = ""
     advice: Literal["keep_discussing", "ready_to_plan"] = "keep_discussing"
     advice_reason: str = ""
+
+
+class ResearchFinding(StrictModel):
+    finding: str
+    source: str
+    """An arXiv id, a dataset or model id, or a URL -- never empty."""
+    bears_on: str
+    """Which part of the experiment it decides: dataset, baseline, metric..."""
+
+
+class ResearchReport(StrictModel):
+    """What the research agent found, for the discussor to ground its
+    suggestions in -- and for the human to read in the session's research/."""
+
+    summary: str
+    findings: list[ResearchFinding] = Field(default_factory=list, max_length=20)
+    suggestions: str = ""
+    """What the discussor should suggest, in light of the findings."""
+    unanswered: str = ""
+    """What it could not find, said plainly."""
 
 
 class SetSpec(StrictModel):
@@ -137,7 +175,10 @@ class PlannerOutput(StrictModel):
 
     summary: str
     """Two or three sentences on the approach, for the human reading it."""
-    steps: list[PlanStep] = Field(min_length=1, max_length=20)
+    steps: list[PlanStep] = Field(min_length=1, max_length=6)
+    """At most six: each top-level step becomes one node of the designed
+    agent (its substeps are turns of that node), so this caps the agent at
+    about a dozen nodes. Real plans of 12-13 flat steps made 30-node agents."""
 
 
 class GraphProposal(StrictModel):
@@ -146,7 +187,7 @@ class GraphProposal(StrictModel):
     name: str
     description: str = ""
     entry: str
-    nodes: list[NodeRef] = Field(min_length=1, max_length=30)
+    nodes: list[NodeRef] = Field(min_length=1, max_length=48)
     edges: list[EdgeSpec] = Field(default_factory=list)
     branches: list[BranchSpec] = Field(default_factory=list, max_length=16)
     """Must match agentfolder.schema.GraphFile, which has the reasoning.
@@ -188,7 +229,7 @@ class NodeProposal(StrictModel):
     thread_key: str = ""
     refresh_on: str = ""
     bump: list[str] = Field(default_factory=list, max_length=4)
-    capture: list[Literal["git_status", "git_diff"]] = Field(default_factory=list)
+    capture: list[Literal["git_status", "git_diff", "turn_changes"]] = Field(default_factory=list)
     record: str = ""
     announce: str = ""
 
@@ -205,7 +246,55 @@ class DesignerOutput(StrictModel):
 
     rationale: str = ""
     graph: GraphProposal
-    nodes: list[NodeProposal] = Field(min_length=1, max_length=30)
+    nodes: list[NodeProposal] = Field(min_length=1, max_length=48)
     """One per name in `graph.nodes`, and the same cap, because a shorter
     list here is exactly the failure this cap once caused: 20 names and one
     entry."""
+
+
+
+class ExtraField(StrictModel):
+    """One more string a node must return, beyond its role's standard ones."""
+
+    name: str
+    description: str = ""
+
+
+class NodeSpec(StrictModel):
+    """One node, as the designer describes it -- a few lines, not a page.
+
+    The prompts, the output fields and the branch field with its exact choices
+    are written by code from this and from the graph (bootstrap/spec.py). That
+    split is MEASURED: asked for ~30 complete node entries, the model sent one
+    or none while saying it had sent them all; asked for ~30 of these, it
+    sent all of them, correctly, first time.
+    """
+
+    name: str
+    role: Literal["worker", "runner", "checker", "router", "human"]
+    steps: list[str] = Field(default_factory=list, max_length=20)
+    """A work node's own leaf step id -- fixed by the plan. Others own none."""
+    tier: Literal["light", "standard"] = "standard"
+    """Which model a work node runs on: "light" maps to the `coder_light` role,
+    a cheaper model, for work that needs no judgement."""
+    reads: list[str] = Field(default_factory=list, max_length=20)
+    """Nodes whose outputs this node is shown -- its inputs and only those.
+    Empty means the nodes that lead straight into it (through a checker or
+    router to the work it judged)."""
+    instructions: str = ""
+    outputs: list[ExtraField] = Field(default_factory=list, max_length=6)
+    commands: list[CommandProposal] = Field(default_factory=list, max_length=12)
+    """Human nodes only: the slash commands it accepts and where each goes."""
+
+
+class DesignerSpec(StrictModel):
+    """What the designer returns: the whole graph, and every node as a spec."""
+
+    task_brief: str
+    rationale: str = ""
+    plan_issues: list[str] = Field(default_factory=list, max_length=20)
+    """Problems with the PLAN the designer cannot fix by design, because the
+    work nodes are fixed to its steps: a step too big for one turn, a check
+    nobody could apply. Shown at the review stop; the fix is /revise."""
+    graph: GraphProposal
+    nodes: list[NodeSpec] = Field(min_length=1, max_length=48)

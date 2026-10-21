@@ -31,7 +31,9 @@ BOOTSTRAP_REGISTRY: tuple[SlashCommand, ...] = tuple(
         scope="graph",
         summary="Have the planner change the plan",
         argument="<what to change>",
-        contexts=("plan_review",),
+        # At design review too: the work nodes are fixed to the plan's steps,
+        # so a step that is the wrong size is fixed in the plan, not the graph.
+        contexts=("plan_review", "design_review"),
     ),
     SlashCommand(
         name="retry",

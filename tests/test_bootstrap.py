@@ -68,10 +68,22 @@ class ScriptedBackend:
             # attempt was counted as a repair.
             if prompt.startswith(REPAIR_PREFIX[:32]):
                 self.repair_prompts.append(prompt)
-            data = output_model.model_validate(self.designs[index])
+            design = self.designs[index]
+            if callable(design):
+                # A function of the design the prompt ends with -- the
+                # starting design, or the one being repaired.
+                # With no starting design (no plan to build one from) it is
+                # handed the fake backend's canned agent instead.
+                marker = '\n\n{\n "graph"'
+                design = design(json.loads(prompt[prompt.rindex(marker) + 2:])
+                                if marker in prompt else copy.deepcopy(_MINIMAL_AGENT))
+            data = output_model.model_validate(
+                {"task_brief": "the brief", "rationale": "", **design})
         else:
             data = output_model.model_validate(
-                {"reply": f"reply-{self.turn}", "question": "q?", "requirements": "reqs"}
+                {"reply": f"reply-{self.turn}", "requirements": "reqs",
+                 "questions": [{"topic": "Code", "question": "q?",
+                                "suggestion": "s", "why": "w"}]}
             )
 
         return StructuredRun(data=data, thread_id=thread_id or f"t{self.turn}",
@@ -95,15 +107,24 @@ _PLAN = {
 }
 
 
-def _broken_design() -> dict:
-    """A design that is schema-valid but a broken graph: END is unreachable."""
-    design = copy.deepcopy(_MINIMAL_AGENT)
-    design["graph"]["name"] = "broken"
-    # Remove the only route to __end__.
-    design["nodes"][1]["commands"] = [
-        {"name": "again", "to": "worker", "summary": "Have another go"}
-    ]
-    return design
+def _accept(shown: dict) -> dict:
+    """The designer's simplest valid answer: the starting design, unchanged
+    but for its name -- the same thing the fake backend answers."""
+    shown["graph"]["name"] = "fake-generated"
+    return shown
+
+
+def _broken_design():
+    """A design that is schema-valid but a broken graph: END is unreachable --
+    every command that would end the run is taken away."""
+    def broken(shown: dict) -> dict:
+        shown = copy.deepcopy(shown)
+        shown["graph"]["name"] = "broken"
+        for node in shown["nodes"]:
+            node["commands"] = [c for c in node.get("commands", [])
+                                if c["to"] != "__end__"]
+        return shown
+    return broken
 
 
 def _run(designs: list[dict], answers: list[str], *, max_attempts: int = 3):
@@ -126,7 +147,7 @@ def _run(designs: list[dict], answers: list[str], *, max_attempts: int = 3):
 
 
 def test_plan_is_the_only_door_to_the_designer():
-    backend, graph, config, _ = _run([_MINIMAL_AGENT], ["more detail", "and more"])
+    backend, graph, config, _ = _run([_accept], ["more detail", "and more"])
     assert backend.design_calls == 0, "the designer ran without /plan"
     assert graph.get_state(config).next == ("human",)
     print("PASS  the designer cannot start on its own; only /plan starts it")
@@ -140,7 +161,7 @@ def test_a_valid_design_stops_for_review_before_it_runs():
     running -- with write access to your repository. The folder is on disk by
     then, which is exactly when looking at it and editing it is free.
     """
-    backend, graph, config, paths = _run([_MINIMAL_AGENT], ["/plan", "/approve"])
+    backend, graph, config, paths = _run([_accept], ["/plan", "/approve"])
     values = graph.get_state(config).values
 
     assert graph.get_state(config).next == ("human",), "should be parked on a question"
@@ -162,7 +183,7 @@ def test_approving_a_design_records_it_durably():
     and skips the gate -- which is the bug this test exists to prevent.
     """
     backend, graph, config, paths = _run(
-        [_MINIMAL_AGENT], ["/plan", "/approve", "/approve"])
+        [_accept], ["/plan", "/approve", "/approve"])
     values = graph.get_state(config).values
 
     assert values["outcome"] == "ready", values.get("outcome")
@@ -173,7 +194,7 @@ def test_approving_a_design_records_it_durably():
 
 def test_a_valid_design_is_written_and_promoted():
     backend, graph, config, paths = _run(
-        [_MINIMAL_AGENT], ["/plan", "/approve", "/approve"])
+        [_accept], ["/plan", "/approve", "/approve"])
     values = graph.get_state(config).values
 
     assert values["outcome"] == "ready", values.get("outcome")
@@ -185,15 +206,20 @@ def test_a_valid_design_is_written_and_promoted():
     assert graph_json["name"] == "fake-generated"
     # The writer converts the designer's LIST of nodes into an object keyed by
     # name -- strict structured output cannot emit an open-ended dict.
-    assert set(nodes_json) == {"worker", "review"}, nodes_json.keys()
+    # One fixed work node per leaf plan step, plus checkers and `review`.
+    from agent.bootstrap.blueprint import work_nodes
+
+    assert {w["name"] for w in work_nodes(_PLAN)} | {"review"} <= set(nodes_json), \
+        nodes_json.keys()
     # And it splits agent fields from human fields by kind.
     assert "commands" in nodes_json["review"] and "backend" not in nodes_json["review"]
-    assert "backend" in nodes_json["worker"] and "commands" not in nodes_json["worker"]
+    work = work_nodes(_PLAN)[0]["name"]
+    assert "backend" in nodes_json[work] and "commands" not in nodes_json[work]
     print("PASS  a valid design is written, split by kind, and promoted to agent/")
 
 
 def test_the_brief_is_handed_over():
-    backend, graph, config, paths = _run([_MINIMAL_AGENT], ["/plan", "/approve"])
+    backend, graph, config, paths = _run([_accept], ["/plan", "/approve"])
     brief = graph.get_state(config).values["design"]["task_brief"]
     assert brief, "no task_brief produced"
     assert paths.brief.exists(), "brief.md not written"
@@ -206,7 +232,7 @@ def test_the_brief_is_handed_over():
 def test_repair_loop_recovers():
     """Two bad designs then a good one: it should retry and succeed."""
     backend, graph, config, paths = _run(
-        [_broken_design(), _broken_design(), _MINIMAL_AGENT],
+        [_broken_design(), _broken_design(), _accept],
         ["/plan", "/approve", "/approve"],
     )
     values = graph.get_state(config).values
@@ -220,10 +246,36 @@ def test_repair_loop_recovers():
     print("PASS  repair loop: 2 bad designs -> real problems fed back -> 3rd succeeded")
 
 
-def test_repair_loop_gives_up_and_asks_the_human():
-    """Always broken: it must stop, not loop, and hand control back."""
+def test_repair_loop_gives_up_on_the_edits_and_offers_the_starting_agent():
+    """Always broken: it must stop, not loop -- and end no worse than it began.
+
+    The designer edits an agent built from the plan that already passed, so
+    when its edits are still rejected at the limit, that agent is what the
+    human is asked to review, with the rejected changes listed.
+    """
     backend, graph, config, paths = _run([_broken_design()], ["/plan", "/approve"],
                                          max_attempts=3)
+    values = graph.get_state(config).values
+
+    assert backend.design_calls == 3, f"expected exactly 3 attempts, got {backend.design_calls}"
+    assert values["human"]["purpose"] == "design_review", values["human"]
+    assert "REJECTED CHANGES" in values["human"]["context"]
+    assert "end_unreachable" in values["human"]["context"], "say what was wrong"
+    assert not values.get("outcome"), "should not claim to be ready"
+    assert graph.get_state(config).next == ("human",), "should be waiting for the human"
+    assert paths.has_agent(), "the starting agent is on disk to review"
+    graph_json = json.loads((paths.agent_dir / "graph.json").read_text())
+    assert graph_json["name"] != "broken", "the broken edit must not be promoted"
+    print("PASS  repair loop gives up on the edits and offers the starting agent")
+
+
+def test_repair_loop_gives_up_and_asks_the_human():
+    """With no starting agent to fall back to, it stops and hands control back."""
+    from unittest.mock import patch
+
+    with patch("agent.bootstrap.nodes.designer._starting_design", return_value=({}, {})):
+        backend, graph, config, paths = _run([_broken_design()], ["/plan", "/approve"],
+                                             max_attempts=3)
     values = graph.get_state(config).values
 
     assert backend.design_calls == 3, f"expected exactly 3 attempts, got {backend.design_calls}"
@@ -235,8 +287,11 @@ def test_repair_loop_gives_up_and_asks_the_human():
 
 
 def test_use_falls_back_to_the_builtin_agent():
-    backend, graph, config, paths = _run([_broken_design()], ["/plan", "/approve", "/use"],
-                                         max_attempts=2)
+    from unittest.mock import patch
+
+    with patch("agent.bootstrap.nodes.designer._starting_design", return_value=({}, {})):
+        backend, graph, config, paths = _run([_broken_design()],
+                                             ["/plan", "/approve", "/use"], max_attempts=2)
     values = graph.get_state(config).values
     assert values["outcome"] == "ready", values.get("outcome")
     assert not paths.has_agent(), "/use should not write a session agent"
@@ -246,7 +301,7 @@ def test_use_falls_back_to_the_builtin_agent():
 
 def test_planning_stops_for_approval_before_designing():
     """/plan reaches the PLANNER, and the designer waits for /approve."""
-    backend, graph, config, paths = _run([_MINIMAL_AGENT], ["/plan"])
+    backend, graph, config, paths = _run([_accept], ["/plan"])
     values = graph.get_state(config).values
 
     assert backend.design_calls == 0, "the designer ran before the plan was approved"
@@ -261,7 +316,7 @@ def test_planning_stops_for_approval_before_designing():
 
 def test_editing_plan_json_by_hand_wins():
     """The gate is pointless if approval ignores your edits."""
-    backend, graph, config, paths = _run([_MINIMAL_AGENT], ["/plan"])
+    backend, graph, config, paths = _run([_accept], ["/plan"])
 
     edited = json.loads(paths.plan.read_text())
     edited["steps"].append({"id": "3", "title": "MY EXTRA STEP", "detail": "added by hand",
@@ -277,7 +332,7 @@ def test_editing_plan_json_by_hand_wins():
 
 
 def test_a_broken_hand_edit_falls_back_rather_than_crashing():
-    backend, graph, config, paths = _run([_MINIMAL_AGENT], ["/plan"])
+    backend, graph, config, paths = _run([_accept], ["/plan"])
     paths.plan.write_text("{ this is not json")
 
     graph.invoke(Command(resume="/approve"), config=config)
@@ -288,7 +343,7 @@ def test_a_broken_hand_edit_falls_back_rather_than_crashing():
 
 def test_revise_sends_the_plan_back():
     backend, graph, config, paths = _run(
-        [_MINIMAL_AGENT], ["/plan", "/revise make it shorter"])
+        [_accept], ["/plan", "/revise make it shorter"])
     values = graph.get_state(config).values
     assert backend.design_calls == 0, "the designer ran during a revision"
     # Back at the gate with a fresh plan, having been told what to change.
@@ -356,114 +411,35 @@ def test_designer_schema_survives_strict_mode():
 
 
 
-#: The output fields a synthesised node has to declare, by the family its name
-#: puts it in. Not decoration: the skeleton's graph.json reads
-#: {out.check_data.problem}, {out.analyse.detail} and {out.report.findings} in
-#: its asks, and validate_folder rejects a placeholder naming a field the node
-#: does not have. So this table is what makes the graph checkable at all.
-_VERDICT = [
-    {"name": "verdict", "type": "enum",
-     "choices": ["ok", "redo", "blocked"], "required": True},
-    {"name": "problem", "type": "string"},
-    {"name": "detail", "type": "string"},
-]
-_FAMILIES: list[tuple[tuple[str, ...], str, str, list]] = [
-    # name prefixes,            access,      backend,   output fields
-    (("check_", "analyse"),     "read_only", "checker", _VERDICT),
-    (("run_",),                 "write",     "runner",  [
-        {"name": "results_path", "type": "string", "required": True},
-        {"name": "log_tail", "type": "string", "required": True},
-        {"name": "ran", "type": "enum", "choices": ["finished", "failed"],
-         "required": True},
-        {"name": "summary", "type": "string", "required": True}]),
-    (("write_",),               "write",     "coder",   [
-        {"name": "files", "type": "string", "required": True},
-        {"name": "how_to_run", "type": "string", "required": True},
-        {"name": "summary", "type": "string", "required": True}]),
-    (("report",),               "write",     "coder",   [
-        {"name": "summary", "type": "string", "required": True},
-        {"name": "findings", "type": "string"}]),
-]
-
-
-def _synthesised(name: str, roles: dict) -> dict:
-    """What a node the skeleton does not spell out must look like.
-
-    The skeleton tells the designer that write_dataloader and write_baseline
-    ARE write_method with another subject, that check_data and check_baseline
-    are check_method, and that run_baseline is run_method. This makes the same
-    reading -- by family, from the name -- rather than by string-replacing
-    "_a." for "_b." in a copy of the JSON, which is what this used to do and
-    which tied the whole harness to a naming convention the skeleton no longer
-    has.
-    """
-    access, backend = roles.get(name, (None, None))
-    fields = None
-    for prefixes, fam_access, fam_backend, fam_fields in _FAMILIES:
-        if name.startswith(prefixes):
-            access = access or fam_access
-            backend = backend or fam_backend
-            fields = fam_fields
-            break
-    return {
-        "backend": backend or "coder",
-        "access": access or "write",
-        # Empty for every synthesised node: a verifier is identified
-        # STRUCTURALLY as read_only + no steps + the source of a branch, so
-        # giving check_data a step would quietly break the no_verifier check
-        # this folder exists to exercise.
-        "steps": [],
-        "instructions": f"You are {name}.",
-        "output": fields or [{"name": "summary", "type": "string", "required": True}],
-        "prompts": {"first": "{my_steps}", "next": "{my_steps}"},
-    }
-
-
 def _research_folder(tmp: pathlib.Path):
-    """Write the research skeleton to disk as a real agent folder.
+    """A real agent folder for a four-stage plan, as the designer starts from.
 
-    The four entries in RESEARCH_NODES are REAL -- exactly as the designer is
-    shown them -- so this checks the exemplars themselves, not a paraphrase.
-    Every {out.x.y} in those prompts has to name a field the node x really
-    declares, and only writing them out and validating catches it. An exemplar
-    with a broken placeholder teaches the designer to write broken
-    placeholders, and its repair loop then fights the example it was given.
-
-    The rest are synthesised by family; see _synthesised.
+    Built by the same code the designer uses (blueprint.starting_design and
+    spec.compile_design) and written by the REAL writer, so the gate tests
+    run against the kind of folder a design actually produces. Its runner
+    owns 3.1 and every path reaches the `review` human node.
     """
-    from agent.agentfolder.schema import graph_document, node_entry
-    from agent.bootstrap.nodes.writer import _entry_for
-    from agent.bootstrap.prompts import (RESEARCH_GRAPH, RESEARCH_NODES,
-                                         RESEARCH_ROLES)
-    from agent.bootstrap.schemas import NodeProposal
+    import types
 
-    roles = {name: (access, backend)
-             for name, access, backend, _ in RESEARCH_ROLES}
+    from agent.bootstrap.blueprint import starting_design
+    from agent.bootstrap.nodes.writer import make_writer
+    from agent.bootstrap.spec import compile_design
 
-    nodes: dict[str, dict] = {}
-    for entry in RESEARCH_GRAPH["nodes"]:
-        name, kind = entry["name"], entry["kind"]
-        source = RESEARCH_NODES.get(name)
-
-        if source is not None:
-            # Through the designer's own strict model and then the REAL
-            # writer, not a hand-rolled equivalent. That is what makes this a
-            # test of the exemplars: they have to be emittable by the designer
-            # (NodeProposal) and convertible to disk (_entry_for), and `sets`
-            # alone differs between those two shapes -- pairs in the proposal,
-            # an object on disk.
-            proposal = NodeProposal.model_validate({"name": name, **source})
-            nodes[name] = _entry_for(kind, proposal.model_dump())
-            continue
-
-        assert kind == "agent", f"{name} is a {kind} node with no entry to write"
-        nodes[name] = node_entry("agent", _synthesised(name, roles))
-
-    folder = tmp / "agent"
-    folder.mkdir(parents=True, exist_ok=True)
-    (folder / "graph.json").write_text(json.dumps(graph_document(RESEARCH_GRAPH)))
-    (folder / "nodes.json").write_text(json.dumps(nodes))
-    return folder
+    plan = {"summary": "four stages", "steps": [
+        {"id": "1", "title": "Code", "substeps": [
+            {"id": "1.1", "title": "Write the dataloader"},
+            {"id": "1.2", "title": "Write the method"}]},
+        {"id": "2", "title": "Experiment design", "substeps": [
+            {"id": "2.1", "title": "Write the config"}]},
+        {"id": "3", "title": "Run", "substeps": [
+            {"id": "3.1", "title": "our method"}]},
+        {"id": "4", "title": "Analysis and report", "substeps": [
+            {"id": "4.1", "title": "Write the report"}]},
+    ]}
+    proposal = compile_design(starting_design(plan), plan)
+    paths = types.SimpleNamespace(staging=str(tmp / "agent"), brief=str(tmp / "brief.md"))
+    make_writer(paths)({"design": {"proposal": proposal}})
+    return tmp / "agent"
 
 
 def test_a_step_carries_its_own_check_and_gate():
@@ -530,7 +506,7 @@ def test_a_gated_step_with_no_human_node_is_rejected():
         folder = load_agent_folder(_research_folder(pathlib.Path(tmp)))
 
         # Stage 3 is gated and NOTHING owns the bare id "3" -- nodes own
-        # substeps. The gate is satisfied through run_method, which owns 3.1
+        # substeps. The gate is satisfied through the runner, which owns 3.1
         # and reaches `review`. Without that reading every gate a person ticks
         # on a stage would reject the design.
         assert _gate_problems(folder, plan) == "", _gate_problems(folder, plan)
@@ -558,17 +534,23 @@ def test_the_discussor_asks_about_the_shape_of_the_work_too():
     the STEPS are -- and the answers become plan steps and then nodes, close
     to one each, so a vague answer here is a vague node two phases later.
     """
+    from agent import skills
     from agent.bootstrap.prompts import DISCUSSOR_INSTRUCTIONS
 
-    text = DISCUSSOR_INSTRUCTIONS.lower()
-    for topic in ("data", "environment", "code", "experiments",
+    # What it is SENT: the persona, and the checklist skill in its prompt.
+    text = (DISCUSSOR_INSTRUCTIONS + "\n" + skills.experiment_design()).lower()
+    for topic in ("data", "environment", "code", "experiment",
                   "checks", "gates"):
         assert topic in text, f"the discussor never asks about {topic}"
 
     # The pedantic one: "a few configurations" is what produces a graph that
     # cannot say when it is finished.
     assert "ablations" in text and "hyperparameters" in text and "seeds" in text
-    assert "one question per turn" in text, "it must not interrogate in bulk"
+    # All at once, each with a suggestion: one question per turn made a dozen
+    # questions a dozen round trips.
+    flat = " ".join(text.split())
+    assert "all in this one turn" in flat and "suggested answer" in flat
+    assert "(assumed)" in text, "an unanswered question keeps its suggestion"
     # The answers have to land somewhere the planner reads.
     assert "requirements" in text, "the planner reads that field, not reasoning"
     print("PASS  the discussor walks data, env, code, experiments, checks, gates")
@@ -603,11 +585,10 @@ def _designer_turn() -> str:
     """
     from agent.bootstrap.prompts import (CONTROL_FLOW, DESIGNER_INSTRUCTIONS,
                                          PROMPT_REFERENCE, RESEARCH_CONTEXT,
-                                         VERIFIER_LOOP, research_skeleton)
+                                         VERIFIER_LOOP)
 
     return " ".join((DESIGNER_INSTRUCTIONS + RESEARCH_CONTEXT + VERIFIER_LOOP
-                     + PROMPT_REFERENCE + CONTROL_FLOW
-                     + research_skeleton()).lower().split())
+                     + PROMPT_REFERENCE + CONTROL_FLOW).lower().split())
 
 
 def test_every_design_phase_prompt_knows_this_is_ml_research():
@@ -630,7 +611,9 @@ def test_every_design_phase_prompt_knows_this_is_ml_research():
     # the last one split "OUT of scope" across two lines.
     flat = lambda text: " ".join(text.lower().split())
 
-    discussor = flat(DISCUSSOR_INSTRUCTIONS)
+    from agent import skills
+
+    discussor = flat(DISCUSSOR_INSTRUCTIONS + " " + skills.experiment_design())
     # The two people leave out, and the two that waste the most time.
     for essential in ("compute", "metric", "baseline", "seeds", "hardware"):
         assert essential in discussor, f"the discussor never asks about {essential}"
@@ -678,7 +661,10 @@ def test_none_of_them_force_a_refactor_into_an_experiment():
                                          DISCUSSOR_INSTRUCTIONS,
                                          PLANNER_INSTRUCTIONS)
 
-    for name, lowered in (("discussor", " ".join(DISCUSSOR_INSTRUCTIONS.lower().split())),
+    from agent import skills
+
+    sent = DISCUSSOR_INSTRUCTIONS + " " + skills.experiment_design()
+    for name, lowered in (("discussor", " ".join(sent.lower().split())),
                           ("planner", " ".join(PLANNER_INSTRUCTIONS.lower().split())),
                           ("designer", _designer_turn())):
         assert "not research" in lowered or "not an experiment" in lowered, \
@@ -787,7 +773,8 @@ def test_the_designer_is_told_the_branch_uses_that_are_not_pass_fail():
 
     # 3. an exit from the redo loop, which lives in the checker's own thread
     assert "spins until the step limit" in text
-    assert "prompts.next" in text, "the attempt count lives in its conversation"
+    assert "remembers what it already rejected" in " ".join(text.split()), \
+        "the attempt count lives in its conversation"
     print("PASS  resource failures, sweep loops and redo exits are all covered")
 
 
@@ -812,29 +799,19 @@ def test_the_claim_about_counters_is_still_true():
 def test_every_field_the_designer_can_emit_is_in_its_prompt():
     """Nothing the designer is allowed to produce may be undiscoverable.
 
-    This replaced a test that asserted particular entries survived in
-    worked_example(), which broke the moment the budget was reallocated --
-    and broke for the wrong reason: the fields it was really checking for had
-    simply moved somewhere better. So it asks the question that actually
-    matters instead. If a field is in NodeProposal, the designer can emit it,
-    and it has to be either DEMONSTRATED in an example or DOCUMENTED in the
-    reference. `record` was already missing when this was written.
+    If a field is in NodeSpec, the designer can emit it, and its instructions
+    have to say what it means. The bulky fields -- prompts, outputs, access --
+    are not the designer's any more; bootstrap/spec.py derives them.
     """
-    from agent.bootstrap.prompts import (CONTROL_FLOW, PROMPT_REFERENCE,
-                                         VERIFIER_LOOP, research_skeleton)
-    from agent.bootstrap.schemas import NodeProposal
+    from agent.bootstrap.prompts import DESIGNER_INSTRUCTIONS
+    from agent.bootstrap.schemas import NodeSpec
 
-    prompt = (VERIFIER_LOOP + PROMPT_REFERENCE + CONTROL_FLOW
-              + research_skeleton())
-
-    missing = [field for field in NodeProposal.model_fields
-               if field != "name" and f'"{field}"' not in prompt]
+    missing = [field for field in NodeSpec.model_fields
+               if field != "name" and f"`{field}`" not in DESIGNER_INSTRUCTIONS]
     assert not missing, (
-        f"the designer can emit {missing} and its prompt never mentions them. "
-        f"Demonstrate them in an example, or add a line to PROMPT_REFERENCE."
-    )
-    print(f"PASS  all {len(NodeProposal.model_fields) - 1} emittable node "
-          f"fields appear in the prompt")
+        f"the designer can emit {missing} and its instructions never say what "
+        f"they mean.")
+    print(f"PASS  all {len(NodeSpec.model_fields) - 1} spec fields are documented")
 
 
 def test_the_prompt_still_shows_the_shapes_that_need_showing():
@@ -845,7 +822,7 @@ def test_the_prompt_still_shows_the_shapes_that_need_showing():
     going back), a human node's `commands`, and a branch with an `ask` on one
     of its cases.
     """
-    from agent.bootstrap.prompts import CONTROL_FLOW, research_skeleton
+    from agent.bootstrap.prompts import CONTROL_FLOW
 
     # The orchestrator shape now lives only in CONTROL_FLOW. The default
     # agent's graph.json used to carry it too, and carrying it twice was what
@@ -854,10 +831,14 @@ def test_the_prompt_still_shows_the_shapes_that_need_showing():
     assert '"to": "orchestrator"' in CONTROL_FLOW, \
         "workers must be shown returning to the orchestrator"
 
-    skeleton = research_skeleton()
-    assert '"commands"' in skeleton, "a human node's commands must be shown"
-    assert '"sets"' in skeleton, "setting a var from a command must be shown"
-    assert '"ask"' in skeleton, "a branch case with an ask must be shown"
+    # The other two are shown in the STARTING DESIGN, which ends every
+    # design prompt -- built from the session's own plan.
+    from agent.bootstrap.blueprint import starting_design
+
+    shown = json.dumps(starting_design(_PLAN))
+    assert '"commands"' in shown, "a human node's commands must be shown"
+    assert '"sets"' in shown, "setting a var from a command must be shown"
+    assert '"ask"' in shown, "a branch case with an ask must be shown"
 
     assert '"when": "finish"' in CONTROL_FLOW, "the orchestrator's exit case"
     print("PASS  orchestrator, commands and a branch ask are all shown as JSON")
@@ -906,7 +887,7 @@ def test_the_designer_is_actually_sent_the_plan():
     because the renderer was never the broken part: the prompt simply did not
     interpolate it.
     """
-    backend, graph, config, _ = _run([_MINIMAL_AGENT], ["/plan", "/approve"])
+    backend, graph, config, _ = _run([_accept], ["/plan", "/approve"])
 
     assert backend.design_prompts, "the designer never ran"
     prompt = backend.design_prompts[0]
@@ -951,108 +932,6 @@ def test_the_gate_check_is_wired_into_the_validator():
         # about the gate and not about the folder.
         assert _check(folder, {"steps": [{"id": "99", "title": "x"}]}) == ""
     print("PASS  the gate check runs from _check, where the validator calls it")
-
-
-def test_the_research_skeleton_is_a_valid_graph():
-    """A skeleton in the prompt that does not validate teaches invalid graphs.
-
-    This is the whole reason the skeleton is a Python structure rather than a
-    block of prose with some JSON in it: prose cannot be run through the
-    validator, so an error in it would surface as the designer's repair loop
-    fighting an example we gave it.
-
-    Checked at `strict=True`, the design-time setting -- which is where
-    `self_assessment` is an error rather than a warning, and therefore where
-    the skeleton's write -> run -> check -> write retry has to prove it is not
-    a node grading itself.
-    """
-    from agent.agentfolder.load import load_agent_folder
-    from agent.agentfolder.validate import validate_folder
-
-    with tempfile.TemporaryDirectory() as tmp:
-        folder = load_agent_folder(_research_folder(pathlib.Path(tmp)))
-        problems = validate_folder(folder, strict=True)
-
-        errors = [p for p in problems if not p.warning]
-        assert not errors, [f"{p.code} at {p.where}: {p.message}" for p in errors]
-
-        codes = {p.code for p in problems}
-        assert "self_assessment" not in codes, "the retry loop grades itself"
-        assert "no_verifier" not in codes, "check_* should count as verifiers"
-        print(f"PASS  the research skeleton validates strictly "
-              f"({len(problems)} warning(s))")
-
-
-def test_the_research_skeleton_compiles_and_can_run():
-    """Valid on paper is not the same as runnable.
-
-    compile() is what catches an unreachable node or a dead end that the
-    static checks miss, and it is cheap here because the backends are mocks --
-    nothing is called, the graph is only built.
-    """
-    from unittest.mock import MagicMock
-
-    from agent.agentfolder.commands import build_registry
-    from agent.agentfolder.load import load_agent_folder
-    from agent.work.compile import backends_needed, compile_agent
-
-    with tempfile.TemporaryDirectory() as tmp:
-        folder = load_agent_folder(_research_folder(pathlib.Path(tmp)))
-        # Every role the folder asks for, so a typo in the skeleton's backend
-        # names shows up as a KeyError here rather than at run time.
-        assert set(backends_needed(folder)) == {"coder", "runner", "checker"}, \
-            sorted(backends_needed(folder))
-        compile_agent(
-            folder,
-            backends={role: MagicMock() for role in backends_needed(folder)},
-            checkpointer=InMemorySaver(),
-            registry=build_registry(folder),
-        )
-        print("PASS  the research skeleton compiles into a runnable graph")
-
-
-def test_the_skeleton_offers_a_cheaper_backend_for_running_experiments():
-    """The point of naming three roles instead of one.
-
-    "runner" and "checker" exist so experiment runs can be pointed at a
-    smaller model from .agent/config.json without editing the graph. If the
-    skeleton put everything on one role that option would not exist, and the
-    only way to get it would be to hand-edit every node.
-    """
-    from agent.bootstrap.prompts import RESEARCH_NODES, research_skeleton
-
-    by_node = {name: entry.get("backend")
-               for name, entry in RESEARCH_NODES.items()}
-    assert by_node["run_method"] == "runner", by_node
-    assert by_node["check_method"] == "checker", by_node
-    assert by_node["write_method"] == "coder", by_node
-    assert by_node["run_method"] != by_node["write_method"], \
-        "running and writing must be separately configurable"
-
-    # And the designer is told what those names are FOR -- an undocumented
-    # role name is one the human never discovers and never configures.
-    text = research_skeleton()
-    assert "config.json" in text and "cheaper model" in text, \
-        "the skeleton must say why the roles are separate"
-    print("PASS  experiment runs are on their own configurable role")
-
-
-def test_the_skeleton_says_it_is_a_starting_point():
-    """A template that must be obeyed is worse than no template.
-
-    It would produce a graph shaped like the example instead of like the
-    work -- three experiment types crammed into two nodes because the example
-    had two. So the skeleton has to say, in the prompt, that it is to be
-    checked and changed.
-    """
-    from agent.bootstrap.prompts import research_skeleton
-
-    text = research_skeleton().lower()
-    assert "check it" in text or "check it fits" in text, text[:200]
-    assert "rationale" in text, "it must be asked to report what it changed"
-    assert "drop" in text, "it must be told it can remove nodes"
-    assert "add nodes" in text, "it must be told it can add nodes"
-    print("PASS  the skeleton presents itself as a starting point")
 
 
 def test_designer_instructions_stay_under_the_measured_size_cliff():
@@ -1116,8 +995,8 @@ def test_the_designer_is_told_not_to_let_a_node_check_itself():
     The 8-case branch limit is why this is per-STAGE rather than one central
     orchestrator: no single node can route back to twenty others.
     """
-    from agent.bootstrap.prompts import (DESIGNER_INSTRUCTIONS,
-                                         VERIFIER_LOOP, research_skeleton)
+    from agent.bootstrap.blueprint import starting_design
+    from agent.bootstrap.prompts import DESIGNER_INSTRUCTIONS, VERIFIER_LOOP
 
     rule = DESIGNER_INSTRUCTIONS.lower()
     assert "no node judges its own success" in rule, "the rule is missing"
@@ -1125,23 +1004,16 @@ def test_the_designer_is_told_not_to_let_a_node_check_itself():
     assert "self-assessment" in rule, "the failure mode must be named"
     assert "8 cases" in rule, "the branch limit is why this is per-stage"
 
-    # The exact shape lives in the per-turn prompt, which has no size cliff.
-    # Asserted across the whole prompt rather than inside worked_example(),
-    # because the loop used to be spelled out twice -- once with invented
-    # names in VERIFIER_LOOP, once with real ones and complete node entries
-    # in the research skeleton. The second is strictly better, so the first
-    # gave up its JSON; what matters is that the shape is shown SOMEWHERE.
-    shape = VERIFIER_LOOP + research_skeleton()
-    # Whitespace-normalised, because the JSON is rendered by json.dumps and
-    # pinning its exact indentation makes this a test of the indent level.
-    flat = " ".join(shape.split())
-    assert "THE VERIFIER LOOP" in shape, "the rationale for the shape is missing"
-    assert '"when": "redo", "to": "write_method"' in flat, \
-        "redo must be shown pointing back at the WORKER, not onwards"
-    assert '"default": "review"' in flat, \
-        "an unhandled verdict must reach a human, not silently end the run"
-    assert '"name": "review", "kind": "human"' in flat, \
-        "and that target must be a human node"
+    # The exact shape is shown in the STARTING DESIGN that ends the prompt.
+    assert "THE VERIFIER LOOP" in VERIFIER_LOOP, "the rationale for the shape is missing"
+    design = starting_design(_PLAN)
+    roles = {n["name"]: n["role"] for n in design["nodes"]}
+    for branch in design["graph"]["branches"]:
+        redo = [c["to"] for c in branch["cases"] if c["when"].startswith("redo")]
+        assert redo and all(roles[t] in ("worker", "runner") for t in redo), \
+            "redo must point back at the WORKER, not onwards"
+        assert roles[branch["default"]] == "human", \
+            "an unhandled verdict must reach a human, not silently end the run"
     print("PASS  the designer is told to use a separate verifier, and shown one")
 
 
@@ -1163,8 +1035,7 @@ def test_the_designer_prompt_and_instructions_are_within_measured_limits():
     """
     from agent.backends.codex import SAFE_INSTRUCTIONS_CHARS
     from agent.bootstrap.prompts import (CONTROL_FLOW, DESIGNER_INSTRUCTIONS,
-                                         PROMPT_REFERENCE, VERIFIER_LOOP,
-                                         research_skeleton)
+                                         PROMPT_REFERENCE, VERIFIER_LOOP)
 
     instructions = len(DESIGNER_INSTRUCTIONS)
     assert instructions < SAFE_INSTRUCTIONS_CHARS, (
@@ -1181,7 +1052,6 @@ def test_the_designer_prompt_and_instructions_are_within_measured_limits():
         "VERIFIER_LOOP": len(VERIFIER_LOOP),
         "PROMPT_REFERENCE": len(PROMPT_REFERENCE),
         "CONTROL_FLOW": len(CONTROL_FLOW),
-        "research_skeleton": len(research_skeleton()),
     }
     prompt = sum(parts.values())
     assert prompt < 20_000, (
@@ -1203,23 +1073,25 @@ def test_the_designer_is_told_to_split_work_across_nodes():
     output documents on one node, which ran past ten minutes and was killed
     with all its work discarded.
 
-    These assertions are deliberately about the SUBSTANCE -- atomicity, and
-    counting artefacts -- because that is the argument that makes splitting
-    obviously right rather than a rule to be balanced against neatness.
+    The cutting now happens in two places, and both are checked: the PLANNER
+    cuts the work into substeps that each end in an artefact, and the
+    DESIGNER may not re-cut it -- code fixes one work node per leaf step, so
+    a merged node is not something a design can even express.
     """
-    from agent.bootstrap.prompts import DESIGNER_INSTRUCTIONS as text
+    from agent.bootstrap.prompts import DESIGNER_INSTRUCTIONS, PLANNER_INSTRUCTIONS
 
-    lowered = text.lower()
-    assert "atomic" in lowered, "the designer must be told a node is all-or-nothing"
-    assert "artefacts" in lowered or "artifacts" in lowered, \
-        "the designer must be told to count what a node produces"
-    # One SUBSTEP, not one top-level step: the plan's top level is the four
-    # stages, so a node owning a bare "1" is a node doing three jobs -- which
-    # is exactly the over-stuffed node this test exists to prevent.
-    assert "one substep per node" in lowered, "no explicit step budget"
+    designer = " ".join(DESIGNER_INSTRUCTIONS.lower().split())
+    assert "one work node per top-level plan step" in designer, "the contract is unstated"
+    assert "one substep per turn" in designer, "a step's substeps are turns, not nodes"
+    assert "cannot rename, merge, split" in designer, "re-cutting must be ruled out"
+
+    planner = " ".join(PLANNER_INSTRUCTIONS.lower().split())
+    assert "each step becomes one node" in planner, "the planner must know it cuts nodes"
+    assert "at most six top-level steps" in planner, "or the agent grows to 30 nodes"
+    assert "ends in a file" in planner, "count artefacts, not topics"
 
     # And the line that pulled the other way must be gone.
-    assert "three good nodes beat eight" not in lowered, \
+    assert "three good nodes beat eight" not in designer + planner, \
         "the contradictory 'smallest graph' advice is back"
     print("PASS  the designer is told to split, with the reason, and not to un-split")
 
@@ -1385,7 +1257,7 @@ def test_a_gated_substep_with_no_human_node_is_rejected():
             {"id": "3.1", "title": "Launch the sweep", "gate": True}]}]}
         assert _gate_problems(folder, owned) == "", "a gated substep an owning node reaches"
 
-        orphan = {"steps": [{"id": "3", "title": "Run", "substeps": [
+        orphan = {"steps": [{"id": "9", "title": "Publish", "substeps": [
             {"id": "9.9", "title": "Publish", "gate": True}]}]}
         problem = _gate_problems(folder, orphan)
         assert "9.9" in problem and "no node lists it" in problem, problem
@@ -1480,3 +1352,22 @@ def test_the_design_phase_nodes_record_what_they_were_sent():
         # And what it returned, which was recorded nowhere before.
         assert turn.summary.get("reply"), turn.summary
     print("PASS  a design-phase node records the prompt it sent and the answer")
+
+
+def test_the_discussor_asks_everything_at_once_with_a_suggestion_each():
+    """One message, every open question numbered, each with the answer it will
+    assume -- so the human answers only what they disagree with."""
+    from agent.bootstrap.nodes.discussor import _ask
+    from agent.bootstrap.schemas import DiscussorQuestion
+
+    text = _ask([
+        DiscussorQuestion(topic="Experiment design", question="Which dataset?",
+                          suggestion="AG News, test split", why="sets the data node"),
+        DiscussorQuestion(topic="Run", question="How many seeds?",
+                          suggestion="3", why="decides how long the run is"),
+    ])
+    assert "1. [Experiment design] Which dataset?" in text
+    assert "   Suggested: AG News, test split" in text
+    assert "2. [Run] How many seeds?" in text and "   Suggested: 3" in text
+    assert "/plan" in text and "suggestion stands" in text
+    assert _ask([]) == ""

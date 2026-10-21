@@ -13,7 +13,7 @@ their generated JSON Schema so the browser builds forms from the truth.
 
 from __future__ import annotations
 
-from typing import Any
+from typing import Any, Literal
 
 from pydantic import BaseModel, ConfigDict, Field
 
@@ -38,6 +38,8 @@ class NewSession(Strict):
     repo: str = "."
     session: str | None = None
     session_dir: str | None = None
+    sessions_root: str | None = None
+    """Same as --sessions-root: the folder session folders are made in."""
     task: str = ""
     pre_build_agent: str | None = None
 
@@ -45,6 +47,20 @@ class NewSession(Strict):
     backend: str | None = None
     model: str | None = None
     backend_role: list[str] = Field(default_factory=list)
+
+    delegate: list[str] | None = None
+    """ROLE=PROVIDER[:MODEL]: where a role's turns go when its own provider is
+    out of credits -- only for roles listed. See agent/backends/delegate.py."""
+    role_options: dict[str, dict[str, bool]] | None = None
+    """Backend options per role, as the Runs on row sets them -- today only
+    {"<role>": {"gpu": true}}: run a Codex role without its sandbox."""
+    research: bool | None = None
+    """Let the discussor ask the research agent before it suggests answers
+    (the New dialog's checkbox). None: the config decides (on by default)."""
+
+    # Same meaning as --supervisor / --max-iterations. None: the config decides.
+    supervisor: Literal["manual", "auto", "off"] | None = None
+    max_iterations: int | None = Field(default=None, ge=1, le=20)
 
     start: bool = True
     """Begin running immediately. False just resolves the folder, which is what
@@ -72,6 +88,10 @@ class SessionDetail(SessionSummary):
     busy: bool = False
     waiting: bool = False
     pending: dict[str, Any] | None = None
+    commands: list[dict[str, Any]] = Field(default_factory=list)
+    """The slash commands valid at the pending question -- the buttons under
+    it. Here as well as on the question event: the page redraws the question
+    from this on every refresh, and without them it hid the buttons."""
     last_seq: int = 0
     transcript: list[dict[str, Any]] = Field(default_factory=list)
     """The conversation so far, from the CHECKPOINT rather than the event bus.
@@ -116,6 +136,15 @@ class ProblemOut(Strict):
     where: str
     message: str
     warning: bool = False
+
+
+class DeleteSession(Strict):
+    """Which session to delete when the server does not have it open."""
+
+    repo: str = "."
+    sessions_root: str | None = None
+    drop_branch: bool = False
+    """Also delete its git branch -- the code it wrote. Kept by default."""
 
 
 class Ok(Strict):

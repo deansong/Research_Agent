@@ -1,31 +1,68 @@
 """
-WHAT:  Designs the agent -- emits a whole folder as structured data.
+WHAT:  Designs the agent: the whole graph, and a short spec per node, starting
+       from a working design that code built from the plan.
 WHY:   This is the node the entire feature exists for.
 CONCEPT: A node whose OUTPUT is another graph. Note it produces data only; the
        writer puts it on disk and the validator checks it. Keeping generation,
        materialisation and checking in three nodes is what makes each one
        simple enough to read.
+
+--------------------------------------------------------------------------
+WHY IT EDITS INSTEAD OF WRITING
+--------------------------------------------------------------------------
+It used to write the whole folder from a blank page in one answer. On this
+repo's own sessions that failed on bookkeeping, every time, with the same
+symptoms: "graph.json lists 30 nodes and nodes.json has 1", edges to nodes it
+never wrote, entries missing required fields -- and each repair rewrote all
+of it and lost something else.
+
+So now:
+  1. code builds a STARTING DESIGN from the approved plan (blueprint.py) and
+     checks that it compiles to a folder that passes the validator;
+  2. the model returns a design in the same format: the whole graph.json --
+     any topology, loops and routers included -- and a few lines per node:
+     role, steps, what it reads, instructions. spec.py writes the prompts,
+     output fields and branch enums from that. Measured: asked for ~30 full
+     node entries a model sends one or none; asked for ~30 specs, all of them;
+  3. a repair shows the design as it stands, which is a few KB;
+  4. if the attempts run out, the validator falls back to the last agent that
+     passed. A design never ends worse than the starting one.
 """
 
 from __future__ import annotations
 
+import json
+import pathlib
+import tempfile
+import types
+
 from agent import activity
-from agent.backends.base import Access, BackendOutputError
-from agent.bootstrap.prompts import (CONTROL_FLOW, DESIGNER_INSTRUCTIONS,
-                                     PROMPT_REFERENCE, REPAIR_PREFIX,
-                                     RESEARCH_CONTEXT, VERIFIER_LOOP,
-                                     research_skeleton)
-from agent.bootstrap.schemas import DesignerOutput
+from agent.backends.base import (Access, BackendBusy, BackendOutputError,
+                                 BackendTimeout)
+from agent.bootstrap import blueprint
+from agent.bootstrap.prompts import DESIGNER_INSTRUCTIONS, REPAIR_PREFIX
+from agent.bootstrap.schemas import DesignerSpec
+from agent.bootstrap.spec import SpecError, compile_design
 from agent.bootstrap.state import BootstrapState, transcript_text
 from agent.statelib import merge_section
 from agent.telemetry import record_usage, usage_to_dict
 
 
-def make_designer(backend):
+def make_designer(backend, instructions: str = DESIGNER_INSTRUCTIONS,
+                  reference: str | None = None,
+                  repair_prefix: str = REPAIR_PREFIX):
+    # All three are parameters so a session can replace them -- see
+    # agent/bootstrap/settings.py, which also owns the default reference.
+    if reference is None:
+        from agent.bootstrap.settings import designer_reference
+
+        reference = designer_reference()
+
     def designer(state: BootstrapState):
         design = dict(state.get("design", {}))
         attempt = int(design.get("attempt", 0))
         problems = design.get("problems", "").strip()
+        plan = design.get("plan") or {}
 
         print(f"\n[designer] designing an agent (attempt {attempt + 1})...")
 
@@ -34,8 +71,30 @@ def make_designer(backend):
         thread_id = role_threads.get("designer")
 
         if problems:
-            prompt = f"{REPAIR_PREFIX}\n{problems}"
+            # Fix the design as it stands -- the rejected attempt. `valid` is
+            # kept unchanged for the validator's fallback.
+            valid = design.get("valid") or {}
+            current = design.get("spec") or {}
+            prompt = (f"{repair_prefix}\n{problems}\n\n"
+                      + _shown("THE DESIGN AS IT STANDS", current))
         else:
+            # A fresh design starts from the CURRENT plan: a starting design
+            # kept from an earlier one may belong to an older plan.
+            current, valid = _starting_design(state, plan)
+            if valid:
+                print(f"[designer] starting design built from the plan: "
+                      f"{len(valid['graph']['nodes'])} nodes, valid")
+            review = str(design.get("review_feedback") or "").strip()
+            if review and design.get("valid_spec"):
+                # A redesign after a supervisor's review: start from the
+                # design that last ran, if it still fits the plan -- the
+                # findings are about THAT agent, not a fresh one.
+                try:
+                    valid = compile_design(design["valid_spec"], plan)
+                    current = design["valid_spec"]
+                    print("[designer] redesigning from the agent that last ran")
+                except SpecError:
+                    pass
             prompt = (
                 # NOT state["user_request"] as well: it is byte-identical to
                 # the transcript's first entry, so sending both shipped the
@@ -46,66 +105,76 @@ def make_designer(backend):
                 f"{state.get('discussion', {}).get('requirements', '(none)')}\n\n"
                 f"Extra guidance given with /plan:\n"
                 f"{state.get('human', {}).get('last_answer', '') or '(none)'}\n\n"
-                # THE PLAN, which was simply not here. The line below still
-                # said "design the agent from the plan above", and on a real
-                # 13-step session 0 of the 13 step titles appeared anywhere in
-                # this prompt -- so the designer invented its own stages and
-                # every `steps: [...]` it wrote named ids it had never read.
+                # THE PLAN, which was once simply not here -- on a real
+                # 13-step session 0 of the 13 step titles appeared in this
+                # prompt, so every `steps: [...]` named ids never read.
                 f"THE APPROVED PLAN. Every step id below must be assigned to "
                 f"exactly one node's `steps`:\n\n{_plan_text(state)}\n\n"
-                # NOT "inspect the repository, then design the agent", which
-                # is what this said and is what a measured run spent its first
-                # minutes doing -- `git show` of a deletion commit, auditing a
-                # tree it does not need to read to lay out a graph. The plan is
-                # the input. DESIGNER_INSTRUCTIONS says so too; an instruction
-                # contradicted by the prompt is not an instruction.
-                f"Design the agent that carries out that plan. Return the "
-                f"task_brief and the complete folder."
+                # NOT "inspect the repository, then design the agent": a
+                # measured run spent its first minutes auditing git history
+                # it does not need to lay out a graph. The plan is the input.
+                + (f"FINDINGS FROM THE REVIEW OF THE LAST RUN -- act on every "
+                   f"one that concerns the agent:\n{review}\n\n" if review else "")
+                + f"Design the agent that carries out that plan, starting from "
+                f"the design at the end of this message."
                 # All of this rides in the PROMPT, not the instructions:
                 # over ~6 KB of developer_instructions a Codex turn never
                 # completes. See agent/bootstrap/prompts.py.
-                + RESEARCH_CONTEXT
-                + VERIFIER_LOOP
-                + PROMPT_REFERENCE
-                + CONTROL_FLOW
-                # Last, deliberately. It is the most specific and most
-                # actionable thing the designer is shown, and the end of a
-                # prompt is where that belongs.
-                + research_skeleton()
+                + reference
+                + "\n\n"
+                # Last: it is what the answer is an edit of.
+                + _shown("THE STARTING DESIGN -- built from the plan; it compiles "
+                         "to an agent that passes every check", current)
             )
+
+        # The design `valid` was compiled from: on a repair, whatever passed
+        # last; on a fresh design, the starting point just chosen.
+        valid_spec = (design.get("valid_spec") if problems else current) or {}
 
         try:
             sent = activity.exchange(thread_id=thread_id,
-                                     instructions=DESIGNER_INSTRUCTIONS,
+                                     instructions=instructions,
                                      prompt=prompt)
             activity.arm_progress(backend, state.get('session_dir', ''), 'designer',
                                   sent=sent)
-            run = backend.run_structured(
-                thread_id=thread_id,
-                repo_path=state["repo_path"],
-                access=Access.READ_ONLY,
-                developer_instructions=DESIGNER_INSTRUCTIONS,
-                prompt=prompt,
-                output_model=DesignerOutput,
-            )
+            try:
+                run = backend.run_structured(
+                    thread_id=thread_id,
+                    repo_path=state["repo_path"],
+                    access=Access.READ_ONLY,
+                    developer_instructions=instructions,
+                    prompt=prompt,
+                    output_model=DesignerSpec,
+                )
+            finally:
+                activity.disarm_progress(backend, state.get("session_dir", ""), "designer")
             # Keep what the provider did, beside the work-phase nodes' records.
             # session_dir is already in BootstrapState, so no plumbing is needed --
             # see agent/activity.py for why this goes to disk and not to state.
-            activity.disarm_progress(backend, state.get("session_dir", ""), "designer")
             activity.write(state.get("session_dir", ""), "designer", run.events, sent=sent,
-                                                        summary=activity.scalars(run.data),
-                           usage=usage_to_dict(run.usage) if run.usage else None)
-        except BackendOutputError as exc:
-            # The model produced something that is not even a valid
-            # DesignerOutput. Same repair path as a structurally bad design:
-            # one counter, three failure sources, one message format.
-            print(f"\n[designer] the model's reply did not fit the schema: {exc}")
+                           summary=activity.scalars(run.data),
+                           usage=usage_to_dict(run.usage) if run.usage else None,
+                           backend=backend, thread_id=run.thread_id,
+                           output=run.data.model_dump(mode="json", by_alias=True))
+            activity.record_visit(state.get("session_dir", ""), "designer", kind="design",
+                                  provider=getattr(backend, "name", ""),
+                                  model=getattr(backend, "model", "") or "",
+                                  thread=run.thread_id)
+        except (BackendOutputError, BackendTimeout, BackendBusy) as exc:
+            # A failed turn is a failed ATTEMPT, not a failed session: same
+            # repair path as a structurally bad design, and when the attempts
+            # run out the validator falls back to `valid`.
+            print(f"\n[designer] the turn failed: {type(exc).__name__}: {exc}")
             return {
                 "design": merge_section(
                     design,
                     proposal={},
+                    spec=current,
+                    valid=valid,
+                    valid_spec=valid_spec,
                     attempt=attempt + 1,
-                    problems=f"Your reply was not valid JSON for the required schema:\n{exc}",
+                    problems=(f"Your reply could not be used "
+                              f"({type(exc).__name__}):\n{exc}"),
                 ),
             }
 
@@ -113,30 +182,99 @@ def make_designer(backend):
         providers["role_threads"] = role_threads
         usage = record_usage(state.get("usage_by_role", {}), "designer", run.usage)
 
-        data = run.data
-        print(f"\n[designer] proposed agent {data.graph.name!r} with "
-              f"{len(data.graph.nodes)} nodes: "
-              f"{', '.join(n.name for n in data.graph.nodes)}")
-        if data.rationale.strip():
-            print(f"[designer] {data.rationale.strip()}")
+        answered = run.data.model_dump(mode="json", by_alias=True)
+        print(f"\n[designer] agent {run.data.graph.name!r}: "
+              f"{len(run.data.graph.nodes)} nodes, {len(run.data.nodes)} specs")
+        if run.data.rationale.strip():
+            print(f"[designer] {run.data.rationale.strip()}")
+        try:
+            proposal = compile_design(run.data, plan)
+        except SpecError as exc:
+            listed = "\n".join(f"- {line}" for line in exc.problems)
+            print(f"[designer] the design does not compile:\n{listed}")
+            return {
+                "providers": providers,
+                "usage_by_role": usage,
+                "design": merge_section(
+                    design, proposal={}, spec=answered, valid=valid,
+                    valid_spec=valid_spec, attempt=attempt + 1,
+                    problems=f"The design does not compile:\n{listed}"),
+            }
 
+        issues = list(dict.fromkeys(blueprint.plan_issues(plan)
+                                    + [i.strip() for i in run.data.plan_issues if i.strip()]))
         return {
             "providers": providers,
             "usage_by_role": usage,
             "design": merge_section(
                 design,
-                # model_dump(), not the object: a Pydantic instance in a
+                plan_issues=issues,
+                spec=answered,
+                valid_spec=valid_spec,
+                # Plain dicts, not the model: a Pydantic instance in a
                 # loosely-typed state field reloads as a plain dict with only a
                 # line on stderr. Store data, re-validate on read.
-                proposal=data.model_dump(mode="json", by_alias=True),
-                task_brief=data.task_brief.strip(),
-                rationale=data.rationale.strip(),
+                proposal=proposal,
+                valid=valid,
+                task_brief=proposal["task_brief"],
+                rationale=proposal["rationale"],
                 attempt=attempt + 1,
                 problems="",
             ),
         }
 
     return designer
+
+
+# ---------------------------------------------------------------------------
+# the starting agent, and applying an edit to it
+# ---------------------------------------------------------------------------
+
+def _starting_design(state, plan: dict) -> tuple[dict, dict]:
+    """(the starting design, the folder it compiles to), or ({}, {}).
+
+    The folder is checked through the REAL writer and validator before it is
+    used, so "valid" is a fact rather than a property blueprint.py promises.
+    ({}, {}) means the model designs from a blank page, as it always used to.
+    """
+    from agent.bootstrap.nodes.validator import _check
+    from agent.bootstrap.nodes.writer import make_writer
+
+    if not plan.get("steps"):
+        return {}, {}
+    try:
+        start = blueprint.starting_design(
+            plan,
+            request=str(state.get("user_request", "")),
+            requirements=str((state.get("discussion") or {}).get("requirements", "")),
+        )
+        proposal = compile_design(start, plan)
+    except (blueprint.BlueprintError, SpecError) as exc:
+        print(f"[designer] could not build a starting design from the plan: {exc}")
+        return {}, {}
+
+    with tempfile.TemporaryDirectory() as tmp:
+        paths = types.SimpleNamespace(staging=f"{tmp}/agent.tmp", brief=f"{tmp}/brief.md")
+        make_writer(paths)({"design": {"proposal": proposal}})
+        problems = _check(pathlib.Path(paths.staging), plan)
+    if problems:
+        print(f"[designer] the starting design did not validate, so starting "
+              f"from a blank page:\n{problems}")
+        return {}, {}
+    return start, proposal
+
+
+def _shown(title: str, design: dict) -> str:
+    """A design as the model answers it: the same shape, so it can be edited."""
+    rule = "-" * 74
+    if not design:
+        return (f"{rule}\n{title}\n{rule}\n(none -- there is no plan to build "
+                f"one from, so lay the whole agent out yourself.)")
+    # No task_brief: the starting one only restates the conversation above,
+    # and the designer writes its own.
+    body = json.dumps({"graph": design["graph"], "nodes": design["nodes"]}, indent=1)
+    return (f"{rule}\n{title}\n{rule}\nReturn the WHOLE design in this shape -- "
+            f"every node in graph.nodes with exactly one spec in `nodes`.\n\n{body}")
 
 
 #: How much of the conversation to send. The plan is bounded -- four stages,

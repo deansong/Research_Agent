@@ -20,6 +20,7 @@ from __future__ import annotations
 # The design phase's own roles. These always exist, whatever agent gets built:
 # they belong to the hand-written bootstrap graph in agent/bootstrap/.
 DISCUSSOR = "discussor"
+RESEARCHER = "researcher"
 PLANNER = "planner"
 DESIGNER = "designer"
 
@@ -35,8 +36,10 @@ EXECUTOR = "executor"
 #: to. Not built into any graph here -- a designed agent declares them -- but
 #: named in Python, which is the line ALL_ROLES draws.
 CODER = "coder"
+CODER_LIGHT = "coder_light"
 RUNNER = "runner"
 CHECKER = "checker"
+SUPERVISOR = "supervisor"
 
-ALL_ROLES: tuple[str, ...] = (DISCUSSOR, PLANNER, DESIGNER, ORCHESTRATOR,
-                              EXECUTOR, CODER, RUNNER, CHECKER)
+ALL_ROLES: tuple[str, ...] = (DISCUSSOR, RESEARCHER, PLANNER, DESIGNER, ORCHESTRATOR,
+                              EXECUTOR, CODER, CODER_LIGHT, RUNNER, CHECKER, SUPERVISOR)

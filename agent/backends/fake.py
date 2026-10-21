@@ -53,6 +53,16 @@ class FakeBackend:
             return self._canned(output_model, _MINIMAL_PLAN, turn,
                                 "a small two-step plan")
         if _looks_like_a_designer(output_model):
+            # What a real designer is shown is a valid starting design built
+            # from the plan; accepting it unchanged is a legitimate answer,
+            # and it is the only canned one that honours the rule that the
+            # work nodes are exactly the plan's steps.
+            shown = _shown_design(prompt)
+            if shown is not None:
+                shown["graph"]["name"] = "fake-generated"
+                return self._canned(output_model, {**shown, "task_brief": _MINIMAL_AGENT[
+                    "task_brief"], "rationale": "[fake] accepted the starting design"},
+                    turn, "the starting design it was shown, unchanged")
             return self._canned(output_model, _MINIMAL_AGENT, turn,
                                 "a minimal but genuinely valid two-node agent")
 
@@ -127,6 +137,19 @@ _MINIMAL_PLAN = {
 }
 
 
+def _shown_design(prompt: str) -> dict | None:
+    """The design at the end of a designer prompt, or None if there is none."""
+    import json
+
+    marker = '\n\n{\n "graph"'
+    if marker not in prompt:
+        return None
+    try:
+        return json.loads(prompt[prompt.rindex(marker) + 2:])
+    except json.JSONDecodeError:
+        return None
+
+
 def _looks_like_a_designer(output_model) -> bool:
     """Detected by field names, not class name -- the class is built at runtime."""
     return {"task_brief", "graph", "nodes"} <= set(output_model.model_fields)
@@ -150,41 +173,27 @@ _MINIMAL_AGENT = {
             {"from": "worker", "to": "review",
              "ask": {"purpose": "review", "resume_to": "worker",
                      "question": "The worker reported: {out.worker.summary}. What next?",
-                     "context": "{out.worker.detail}"}},
+                     "context": "{out.worker.files}"}},
         ],
         "branches": [],
     },
+    # In the designer's answer format: a short spec per node, from which
+    # bootstrap/spec.py writes the prompts and output fields.
     "nodes": [
         {
             "name": "worker",
-            "backend": "worker",
-            "access": "read_only",
+            "role": "worker",
             # Every step the plan has, not just the first. A design that
-            # owns only step 1 leaves the rest assigned to nobody, which is
-            # now a validation error for any step the human marked as
-            # needing their approval -- and the fake agent should be a valid
+            # owns only step 1 leaves the rest assigned to nobody, which is a
+            # validation error -- and the fake agent should be a valid
             # design, since it is what --backend fake exercises everything
             # with. 1 and 2 cover the fake planner's own two steps.
             "steps": ["1", "2"],
-            "instructions": "You are a worker. Do exactly what the brief asks and report back.",
-            "output": [
-                {"name": "summary", "type": "string", "required": True},
-                {"name": "detail", "type": "string"},
-            ],
-            "prompts": {
-                # Shows the context-control shape a real designer should copy:
-                # this node's OWN steps in full, everyone else's as one line.
-                "first": "Your task:\n\n{task_brief}\n\n"
-                         "The steps you are responsible for:\n{my_steps}\n\n"
-                         "The wider plan, for context only:\n{plan_outline}\n\n"
-                         "Do your steps and report what you found.",
-                "next": "The human said:\n\n{last_answer}\n\nContinue.",
-            },
-            "announce": "working...",
-            "record": "{out.worker.summary}",
+            "instructions": "Do exactly what the brief asks and report back.",
         },
         {
             "name": "review",
+            "role": "human",
             "commands": [
                 {"name": "again", "to": "worker", "summary": "Have another go"},
                 {"name": "exit", "to": "__end__", "aliases": ["quit", "q"],
@@ -214,7 +223,11 @@ def _placeholder_fields(output_model, turn: int) -> dict:
         if origin is typing.Literal:
             values[name] = typing.get_args(annotation)[0]
         elif origin in (list, set, tuple):
-            values[name] = [f"[fake {name} 1]", f"[fake {name} 2]"]
+            (item,) = typing.get_args(annotation) or (str,)
+            if isinstance(item, type) and hasattr(item, "model_fields"):
+                values[name] = [_placeholder_fields(item, turn) for _ in range(2)]
+            else:
+                values[name] = [f"[fake {name} 1]", f"[fake {name} 2]"]
         elif annotation is bool:
             values[name] = False
         elif annotation is int:

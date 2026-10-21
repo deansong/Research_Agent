@@ -29,7 +29,7 @@ from agent.agentfolder.schema import HumanNodeConfig
 from agent.work.state import WorkState, render_context
 
 
-def make_human_node(name: str, config: HumanNodeConfig, *, registry):
+def make_human_node(name: str, config: HumanNodeConfig, *, registry, session_dir: str = ""):
     """Build the node function for one `kind: "human"` entry."""
 
     # (label, purpose) -> command, plus (label, "") for the rows valid
@@ -67,12 +67,20 @@ def make_human_node(name: str, config: HumanNodeConfig, *, registry):
         # Parsed with THIS agent's registry, built from its own nodes.json --
         # so /help and what is actually accepted cannot drift apart.
         parsed = command_lib.parse(answer, purpose=purpose, registry=registry)
+        from agent import activity
+
+        def visited(to: str) -> None:
+            # The person's decision is part of the run's history as much as
+            # a model's: which gate they approved, what they sent back where.
+            activity.record_visit(session_dir, name, kind="human", purpose=purpose,
+                                  answer=answer[:500], route=to)
 
         if parsed.kind == "rejected":
             # Route back to ourselves. Measured: re-entering a node that calls
             # interrupt() produces a FRESH interrupt rather than replaying the
             # old resume value, which is what makes "ask again" work.
             print(f"\n{parsed.error}")
+            visited(name)
             return {"route": {name: name}}
 
         if parsed.kind == "command":
@@ -81,10 +89,12 @@ def make_human_node(name: str, config: HumanNodeConfig, *, registry):
                 # A terminal-scope command reached the graph. Should not happen
                 # via our REPL, but a different driver might do it.
                 return {"route": {name: name}}
+            visited(command.to)
             return _apply_command(name, command, parsed.text, state)
 
         # ---- step 3: a plain answer goes back to whoever asked ------------
         target = pending.get("resume_to") or name
+        visited(target)
         return {
             "route": {name: target},
             "last_answer": parsed.text,

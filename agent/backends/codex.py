@@ -15,7 +15,8 @@ from openai_codex import Codex, Sandbox
 
 from agent.backends._progress import (_LiveText, flood_message, headline,
                                       poll_seconds, record,
-                                      runaway_message, silent_message)
+                                      runaway_message, silent_message,
+                                      wait_or_cancel, LIVE_FLUSH_SECONDS)
 from agent.backends._schema import strict_json_schema
 from agent.backends.base import (
     BackendCancelled,
@@ -23,6 +24,7 @@ from agent.backends.base import (
     BackendBusy,
     BackendError,
     BackendOutOfCredits,
+    BackendOutputError,
     BackendTimeout,
     OutputT,
     StructuredRun,
@@ -32,7 +34,9 @@ from agent.backends.base import (
 # Out-of-credits and overload both arrive as a plain RuntimeError carrying the
 # provider's message -- the SDK's own is_retryable_error() only recognises
 # ServerBusyError, which these are not. So we read the message.
-_OUT_OF_CREDITS = ("out of credits", "insufficient_quota", "billing", "add credits")
+from agent.backends import quota
+
+_OUT_OF_CREDITS = quota.QUOTA_MARKERS
 _BUSY = ("server busy", "overloaded", "rate limit", "429", "try again later")
 
 
@@ -44,6 +48,14 @@ def classify(exc: BaseException) -> BaseException:
     matters, because one of them is fixed by waiting thirty seconds.
     """
     from openai_codex import is_retryable_error
+
+    # Ours already, or not an error at all (ctrl-C, SystemExit): pass through.
+    # Sniffing these was a real bug. A BackendTimeout's message quotes the
+    # last thing the turn printed, so a training log line containing "429" or
+    # "billing" turned a timeout into four busy retries -- or twenty minutes
+    # of waiting for credits nobody had run out of.
+    if isinstance(exc, BackendError) or not isinstance(exc, Exception):
+        return exc
 
     if is_retryable_error(exc):
         return BackendBusy(str(exc))
@@ -108,9 +120,11 @@ class CodexBackend:
         timeout: float = 300.0,
         max_seconds: float = 7200.0,
         max_output_tokens: int = 60000,
-        credit_wait_attempts: int = 20,
-        credit_wait_seconds: float = 60.0,
+        credit_wait_hours: float = quota.DEFAULT_HOURS,
+        credit_wait_seconds: float = quota.FIRST_WAIT,
+        credit_wait_attempts: int | None = None,
         busy_attempts: int = 4,
+        gpu: bool = False,
     ):
         self.client = client
         self.model = model
@@ -132,6 +146,20 @@ class CodexBackend:
         look -- there was nothing to look at.
         """
 
+        self.gpu = bool(gpu)
+        """Run WRITE turns without Codex's sandbox, so their commands can use
+        the GPUs. Measured: the workspace-write sandbox mounts a /dev with no
+        /dev/nvidia*, so nvidia-smi and torch.cuda fail inside it on a machine
+        with seven GPUs -- and a run's preflight then reported "no GPU" as a
+        blocker. No setting passes devices through, so this is the only way;
+        the price is that staying inside the session's workspace rests on the
+        instructions, as it already does on antigravity. Read-only turns keep
+        their sandbox either way."""
+
+        self.pause = None
+        """An optional threading.Event meaning "stop at the next safe point".
+        Read only while waiting to retry -- see wait_or_cancel."""
+
         self.cancel = None
         """An optional threading.Event meaning "stop, I have changed my mind".
 
@@ -145,12 +173,18 @@ class CodexBackend:
         during a ten-minute executor turn would appear to do nothing at all --
         which is not a stop button, it is a suggestion.
         """
-        self.credit_wait_attempts = int(credit_wait_attempts)
-        """How many times to wait for credits to appear before giving up.
-        20 x 60s is twenty minutes, which is enough time to notice, top up and
-        have the run carry on by itself. Ctrl-C during a wait stops it."""
+        self.credit_wait_hours = float(credit_wait_hours)
+        """How long, in all, to keep waiting for credits or a usage limit to
+        reset before giving up. A day, by default: a usage limit resets in
+        hours, and twenty minutes -- the old limit -- killed every run left
+        overnight. See agent/backends/quota.py."""
 
         self.credit_wait_seconds = float(credit_wait_seconds)
+        """The first wait; each later one doubles, up to 30 minutes, unless
+        the provider names the time the limit resets."""
+        self.credit_wait_attempts = (None if credit_wait_attempts is None
+                                     else int(credit_wait_attempts))
+        """An optional cap on the number of checks as well."""
         self.busy_attempts = int(busy_attempts)
         self.timeout = float(timeout)
         """Seconds of SILENCE before a turn is abandoned -- not total runtime.
@@ -219,11 +253,31 @@ class CodexBackend:
         )
 
         if not result.final_response:
-            raise BackendError("Codex returned no final response.")
+            # An OUTPUT error, not a generic one, so the planner and designer
+            # repair loops catch it -- the same type the CLI backends raise
+            # for the same situation.
+            raise BackendOutputError(
+                "Codex finished the turn but returned no final response.")
 
         # model_validate_json is the second half of the guarantee: even with a
         # schema, we never hand unvalidated data to a node.
-        data = output_model.model_validate_json(result.final_response)
+        #
+        # Wrapped, because a raw pydantic ValidationError is not a
+        # BackendOutputError: planner.py and designer.py catch only the
+        # latter, so a reply that missed the schema used to crash the whole
+        # session instead of being fed back as a repair turn -- on the one
+        # provider that is the default for all three design roles.
+        from pydantic import ValidationError
+
+        try:
+            data = output_model.model_validate_json(result.final_response)
+        except ValidationError as exc:
+            from agent.backends._progress import _clip
+
+            raise BackendOutputError(
+                f"Codex replied with something that does not match the "
+                f"schema.\n\n{exc}\n\nWhat it sent:\n"
+                f"{_clip(result.final_response)}") from None
 
         return StructuredRun(
             data=data,
@@ -251,7 +305,9 @@ class CodexBackend:
         Everything else is raised straight away: retrying a malformed request
         just spends the same money twice.
         """
-        credit_waits = 0
+        credits = quota.CreditWait(first=self.credit_wait_seconds,
+                                   hours=self.credit_wait_hours,
+                                   attempts=self.credit_wait_attempts)
         busy_tries = 0
 
         while True:
@@ -261,17 +317,24 @@ class CodexBackend:
                 error = classify(exc)
 
                 if isinstance(error, BackendOutOfCredits):
-                    credit_waits += 1
-                    if credit_waits > self.credit_wait_attempts:
+                    try:
+                        seconds, why = credits.next(str(error))
+                    except StopIteration:
                         raise BackendOutOfCredits(
-                            f"Still out of credits after "
-                            f"{self.credit_wait_attempts} checks. Stopping.\n"
-                            f"Your progress is saved -- rerun with the same "
-                            f"--session to carry on from here."
+                            f"Still out of credits or over the usage limit after "
+                            f"waiting {credits.describe_budget()}. Stopping.\n"
+                            f"Your progress is saved -- Start the session again "
+                            f"(or rerun with the same --session) to carry on."
                         ) from None
-                    self._wait("Out of credits", credit_waits,
-                               self.credit_wait_attempts, self.credit_wait_seconds,
-                               "Add credits and this will continue on its own.")
+                    print(f"\n    Out of credits or over the usage limit. "
+                          f"Waiting {seconds / 60:.0f} min ({why}, at "
+                          f"{quota.until(seconds)}); check {credits.tries}, "
+                          f"giving up after {credits.describe_budget()}.\n"
+                          f"    It said: {str(error)[:300]}\n"
+                          f"    Add credits and this will continue on its own. "
+                          f"Pause or Stop to stop waiting -- your progress is "
+                          f"saved.", flush=True)
+                    wait_or_cancel(seconds, self.cancel, self.pause)
                     continue
 
                 if isinstance(error, BackendBusy):
@@ -286,18 +349,20 @@ class CodexBackend:
                 raise error from None
 
     def _wait(self, reason: str, attempt: int, limit: int, seconds: float, advice: str):
-        """Sleep in short slices so ctrl-C stays responsive during a long wait."""
+        """Sleep in short slices so ctrl-C -- and the web UI's Stop -- stay
+        responsive during a long wait.
+
+        Stop used to be ignored here: `cancel` was only read inside a turn,
+        so pressing it during a credit wait did nothing for up to twenty
+        minutes.
+        """
         print(f"\n    {reason}. Waiting {seconds:.0f}s, then retrying "
               f"({attempt}/{limit}).", flush=True)
         if advice:
             print(f"    {advice}", flush=True)
         print("    Ctrl-C to stop -- your progress is saved.", flush=True)
 
-        remaining = seconds
-        while remaining > 0:
-            slice_ = min(5.0, remaining)
-            time.sleep(slice_)
-            remaining -= slice_
+        wait_or_cancel(seconds, self.cancel, self.pause)
 
     def _run_turn(self, thread, prompt: str, output_schema: dict):
         """One turn, with a deadline and live progress.
@@ -318,7 +383,10 @@ class CodexBackend:
         the provider has genuinely gone quiet -- otherwise it just interleaves
         noise with the real output.
         """
-        handle = thread.turn(prompt, output_schema=output_schema)
+        # Started ON the worker, not here. turn() is an RPC to the app-server
+        # like any other, and a call that never returned used to hang this
+        # method outside every clock below -- no idle timeout, no Stop.
+        handle_box: list = []
         outcome: dict[str, object] = {}
         started_at = time.monotonic()
 
@@ -390,19 +458,48 @@ class CodexBackend:
             last_line[0] = time.monotonic()
 
         def drain() -> None:
-            stream = handle.stream()
+            stream = None
             try:
+                handle = thread.turn(prompt, output_schema=output_schema)
+                handle_box.append(handle)
+                last_event[0] = time.monotonic()
+                stream = handle.stream()
                 outcome["result"] = _collect(_observe(stream, report), handle.id)
             except BaseException as exc:  # noqa: BLE001 - re-raised on the caller's thread
                 outcome["error"] = exc
             finally:
-                stream.close()
+                if stream is not None:
+                    try:
+                        stream.close()
+                    except Exception:  # noqa: BLE001 - the turn's outcome is already decided
+                        pass
 
         worker = threading.Thread(target=drain, daemon=True, name="codex-turn")
         worker.start()
 
         started = time.monotonic()
         poll = self._poll_seconds()
+        try:
+            self._watch(worker, poll, started, handle_box, last_event, last_line,
+                        last_flush, events, streamed, live, recorded, kinds,
+                        last_seen)
+        except (BackendCancelled, BackendTimeout):
+            raise           # _watch abandoned the turn before raising these
+        except BaseException:
+            # Ctrl-C, most often: the turn must not keep running on the
+            # app-server with nobody reading it.
+            self._abandon(handle_box, worker)
+            raise
+
+        if "error" in outcome:
+            raise outcome["error"]  # type: ignore[misc]
+        if "result" not in outcome:
+            raise BackendError("The Codex turn ended without a result or an error.")
+        return outcome["result"], recorded
+
+    def _watch(self, worker, poll, started, handle_box, last_event, last_line,
+               last_flush, events, streamed, live, recorded, kinds, last_seen):
+        """The supervising loop of _run_turn: clocks, Stop, and heartbeats."""
         while worker.is_alive():
             worker.join(timeout=poll)
             now = time.monotonic()
@@ -415,7 +512,7 @@ class CodexBackend:
             # Checked FIRST: if you have asked to stop, no other verdict about
             # this turn is interesting.
             if self.cancel is not None and self.cancel.is_set():
-                self._abandon(handle, worker)
+                self._abandon(handle_box, worker)
                 raise BackendCancelled(
                     f"Stopped by request after {elapsed:.0f}s "
                     f"({events[0]} events). Everything the graph had already "
@@ -423,17 +520,17 @@ class CodexBackend:
                 )
 
             if idle >= self.timeout:
-                self._abandon(handle, worker)
+                self._abandon(handle_box, worker)
                 raise BackendTimeout(self._silent_message(
                     idle, elapsed, events[0], streamed[0], live,
                     last_seen[0]))
 
             if elapsed >= self.max_seconds:
-                self._abandon(handle, worker)
+                self._abandon(handle_box, worker)
                 raise BackendTimeout(self._runaway_message(elapsed, events[0]))
 
             if streamed[0] >= self.max_output_tokens:
-                self._abandon(handle, worker)
+                self._abandon(handle_box, worker)
                 raise BackendTimeout(self._flood_message(streamed[0], elapsed))
 
             # Only speak up if the provider itself has said nothing for a while,
@@ -442,7 +539,7 @@ class CodexBackend:
             # Flushed more often than the heartbeat prints: the point is that
             # the detail is THERE when somebody expands the line, and they
             # will expand it at a moment of their choosing rather than ours.
-            if self.on_progress is not None and now - last_flush[0] >= 5.0:
+            if self.on_progress is not None and now - last_flush[0] >= LIVE_FLUSH_SECONDS:
                 last_flush[0] = now
                 try:
                     self.on_progress({
@@ -467,17 +564,27 @@ class CodexBackend:
                       flush=True)
                 last_line[0] = now
 
-        if "error" in outcome:
-            raise outcome["error"]  # type: ignore[misc]
-        return outcome["result"], recorded
-
 
     def _poll_seconds(self) -> float:
         return poll_seconds(self.timeout, self.max_seconds, self.cancel)
 
     def _abandon(self, handle, worker) -> None:
-        """Stop a turn we have given up on, and wait for its thread to notice."""
-        handle.interrupt()
+        """Stop a turn we have given up on, and wait for its thread to notice.
+
+        `handle` is the TurnHandle, or the list the worker puts it in -- empty
+        when turn() itself never returned, in which case there is nothing to
+        interrupt and the daemon worker is simply left behind. interrupt() is
+        an RPC and can fail on a connection that is already broken; that must
+        not replace the timeout or cancellation being reported.
+        """
+        if isinstance(handle, list):
+            handle = handle[0] if handle else None
+        if handle is None:
+            return          # nothing to interrupt, so nothing to wait for
+        try:
+            handle.interrupt()
+        except Exception as exc:  # noqa: BLE001
+            print(f"    ! could not interrupt the Codex turn: {exc}", flush=True)
         worker.join(timeout=30.0)
 
     # ---- diagnostics ----------------------------------------------------
@@ -508,9 +615,12 @@ class CodexBackend:
                 f"See SAFE_INSTRUCTIONS_CHARS in agent/backends/codex.py."
             )
 
+        sandbox = _SANDBOX[access]
+        if self.gpu and access is Access.WRITE:
+            sandbox = Sandbox.full_access          # see `gpu` in __init__
         common: dict[str, object] = {
             "cwd": repo_path,
-            "sandbox": _SANDBOX[access],
+            "sandbox": sandbox,
             # BUG FIX: developer_instructions used to be passed only when
             # STARTING a thread, so editing agent/prompts.py had no effect on
             # any session that already existed -- a genuinely confusing thing
@@ -520,11 +630,55 @@ class CodexBackend:
         }
         if self.model:
             common["model"] = self.model
+        roots = getattr(self, "writable_roots", None) or []
+        if roots and access is Access.WRITE:
+            # Codex's own setting: folders a workspace-write turn may write
+            # besides its working directory -- the session's results folder.
+            common["config"] = {"sandbox_workspace_write": {"writable_roots": roots}}
 
         if thread_id:
-            return self.client.thread_resume(thread_id, **common), False
+            return self._bounded(lambda: self.client.thread_resume(thread_id, **common),
+                                 "resuming the Codex thread"), False
 
-        return self.client.thread_start(**common), True
+        return self._bounded(lambda: self.client.thread_start(**common),
+                             "starting a Codex thread"), True
+
+    def _bounded(self, call, what: str):
+        """Run one app-server RPC under the same idle limit and Stop as a turn.
+
+        These are usually instant, which is exactly why nothing guarded them:
+        an app-server that has wedged answers nothing, and a hang HERE sat
+        outside every clock in _run_turn -- no timeout, no heartbeat, and a
+        Stop button that did nothing.
+        """
+        box: dict = {}
+
+        def run():
+            try:
+                box["value"] = call()
+            except BaseException as exc:  # noqa: BLE001 - re-raised below
+                box["error"] = exc
+
+        worker = threading.Thread(target=run, daemon=True, name="codex-rpc")
+        worker.start()
+        started = time.monotonic()
+        poll = self._poll_seconds()
+        while worker.is_alive():
+            worker.join(timeout=poll)
+            if not worker.is_alive():
+                break
+            waited = time.monotonic() - started
+            if self.cancel is not None and self.cancel.is_set():
+                raise BackendCancelled(f"Stopped by request while {what}.")
+            if waited >= self.timeout:
+                raise BackendTimeout(
+                    f"Codex did not answer for {waited:.0f}s while {what}. "
+                    f"The turn never started, so nothing was spent. The "
+                    f"app-server is usually what is stuck: rerun, and if it "
+                    f"repeats, `codex` in a terminal will say why.")
+        if "error" in box:
+            raise box["error"]
+        return box["value"]
 
 
 def _observe(stream, report):

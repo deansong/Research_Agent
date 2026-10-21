@@ -41,6 +41,8 @@ DEFAULT_LIMIT = 20
 #: than the next number, because it is not a turn yet -- it becomes one when
 #: it finishes, and until then there must be exactly one of it.
 IN_FLIGHT = "current.json"
+#: How many of a running turn's events its in-flight record keeps.
+IN_FLIGHT_EVENTS = 300
 
 
 @dataclass(frozen=True)
@@ -54,6 +56,17 @@ class Turn:
     events: list[dict]
     usage: dict | None = None
     summary: dict | None = None
+    provider: str = ""
+    model: str = ""
+    """Which provider and model ran this turn -- the only way to check that a
+    node meant for a cheap model actually ran on one."""
+    thread_id: str = ""
+    """The provider conversation this turn continued. Every earlier turn with
+    the same id was in the model's context; together they are everything it
+    had been told."""
+    output: dict | None = None
+    """The whole structured answer, lists included -- `summary` keeps only
+    the scalar fields."""
     sent: dict | None = None
     """What this node was ASKED, on this turn: {template, prompt, instructions}.
 
@@ -113,13 +126,23 @@ class Turn:
             "events": self.events,
             "usage": self.usage,
             "summary": self.summary,
+            "provider": self.provider,
+            "model": self.model,
+            "thread_id": self.thread_id,
+            "output": self.output,
         }
 
 
-#: How much of a prompt to keep per turn. The designer's runs to 20,000
-#: characters and a retry loop keeps several, so this is bounded -- but
-#: generously, because the whole point is to read what was actually sent.
-MAX_SENT = 24000
+#: How much of a prompt to keep per turn. Bounded, but well above the largest
+#: real prompt (the designer's, ~50,000 characters): the whole point is to read
+#: exactly what the model was sent, and a clipped record cannot answer that.
+MAX_SENT = 200_000
+
+#: One line per node visit, in run order, at <session>/activity/timeline.jsonl.
+#: Inside activity/ rather than beside it on purpose: the Files tab dates the
+#: start of a run by the session folder's mtime, and creating a new file there
+#: mid-run moved that date past files the run had already written.
+TIMELINE = "timeline.jsonl"
 
 
 def exchange(*, thread_id, instructions: str, prompt: str) -> dict:
@@ -169,7 +192,8 @@ def directory(session_dir: str | Path, node: str) -> Path:
 
 def write(session_dir: str | Path, node: str, events: list[dict], *,
           usage: dict | None = None, summary: dict | None = None,
-          sent: dict | None = None) -> Path | None:
+          sent: dict | None = None, backend=None, thread_id: str = "",
+          output: dict | None = None) -> Path | None:
     """Append one turn's record. Returns the file, or None if there was nothing.
 
     Never raises. A node's real work must not fail because we could not write
@@ -197,12 +221,50 @@ def write(session_dir: str | Path, node: str, events: list[dict], *,
             "started": _now(),
             "usage": usage,
             "summary": summary,
+            "provider": str(getattr(backend, "name", "") or ""),
+            "model": str(getattr(backend, "model", "") or ""),
+            "thread_id": str(thread_id or ""),
+            "output": output,
             "sent": _clip_sent(sent),
             "events": events,
-        }, indent=1) + "\n")
+        }, indent=1, default=str) + "\n")
         return path
     except Exception:  # noqa: BLE001 -- see the docstring
         return None
+
+
+def record_visit(session_dir: str | Path, node: str, **fields) -> None:
+    """Append one line to <session>/activity/timeline.jsonl: a node was visited.
+
+    The graph's own state keeps only each node's LATEST route, so the order
+    of visits -- which loop ran how many times, what a checker sent back and
+    where -- could only be pieced together from timestamps. This is that
+    order, written as it happens. Same never-raises contract as write().
+    """
+    if not str(session_dir).strip():
+        return
+    try:
+        line = json.dumps({"at": _now(), "node": node, **fields}, default=str)
+        folder = Path(session_dir) / "activity"
+        folder.mkdir(parents=True, exist_ok=True)
+        with (folder / TIMELINE).open("a", encoding="utf-8") as handle:
+            handle.write(line + "\n")
+    except Exception:  # noqa: BLE001
+        return
+
+
+def timeline(session_dir: str | Path) -> list[dict]:
+    """Every recorded visit, oldest first."""
+    path = Path(session_dir) / "activity" / TIMELINE
+    if not path.exists():
+        return []
+    out = []
+    for line in path.read_text(encoding="utf-8").splitlines():
+        try:
+            out.append(json.loads(line))
+        except json.JSONDecodeError:
+            continue                    # a line being written right now
+    return out
 
 
 def write_in_flight(session_dir: str | Path, node: str, events: list[dict],
@@ -229,13 +291,17 @@ def write_in_flight(session_dir: str | Path, node: str, events: list[dict],
         folder = directory(session_dir, node)
         folder.mkdir(parents=True, exist_ok=True)
         path = folder / IN_FLIGHT
+        # The newest events only: this is rewritten every second while the
+        # turn runs, a busy turn holds thousands, and the full list is in the
+        # record written when it ends.
         path.write_text(json.dumps({
             "node": node,
             "index": _next_index(folder),
             "started": _now(),
-            "events": events,
+            "events": events[-IN_FLIGHT_EVENTS:],
+            "events_total": len(events),
             **extra,
-        }, indent=1) + "\n")
+        }) + "\n")
         return path
     except Exception:  # noqa: BLE001 -- see the docstring
         return None
@@ -280,6 +346,10 @@ def turns(session_dir: str | Path, node: str, *,
             events=list(raw.get("events") or []),
             usage=raw.get("usage"),
             summary=raw.get("summary"),
+            provider=str(raw.get("provider") or ""),
+            model=str(raw.get("model") or ""),
+            thread_id=str(raw.get("thread_id") or ""),
+            output=raw.get("output"),
             sent=raw.get("sent"),
             partial=path.name == IN_FLIGHT,
             progress={k: raw[k] for k in

@@ -99,6 +99,7 @@ class SessionRunner:
 
         self.phase = "idle"        # idle | designing | running | finished
         self.pending: Pending | None = None
+        self.pending_commands: list[dict] = []
         self.folder_path = None
         self.last_values: dict[str, Any] = {}
         self.error: str = ""
@@ -119,6 +120,9 @@ class SessionRunner:
         # a node is atomic, so there is no half-finished result to keep.
         self._pause = threading.Event()
         self._cancel = threading.Event()
+        # Set by shutdown(): the run is ending because the SERVER is stopping,
+        # so its running mark stays and the next server start resumes it.
+        self._server_exit = False
 
         # The runtime owns the checkpointer, so it must outlive every request.
         # ExitStack normally closes on leaving a `with`; here we drive the
@@ -137,8 +141,13 @@ class SessionRunner:
         """Parked on a question, with a worker alive to receive the answer."""
         return self.busy and self.pending is not None
 
-    def shutdown(self) -> None:
-        """Close the checkpointer and the provider client."""
+    def shutdown(self, *, server_exit: bool = False) -> None:
+        """Close the checkpointer and the provider client.
+
+        With `server_exit` -- the server itself is stopping -- a run cut short
+        here is resumed when the server starts again; see
+        storage.mark_running. Closing one session is not that."""
+        self._server_exit = server_exit
         self.bus.close()
         if self._worker is not None and self._worker.is_alive():
             # Same two signals as stop(): unblock a worker parked on a question,
@@ -165,6 +174,7 @@ class SessionRunner:
         self._pause.clear()
         self._cancel.clear()
         self._drain_answers()
+        storage.mark_running(self.paths)
         self._worker = threading.Thread(
             target=self._run,
             args=(task_brief, pre_build_agent),
@@ -259,6 +269,8 @@ class SessionRunner:
                 with self._lock:
                     self.pending = None
                 self.phase = "finished"
+                if not self._server_exit:
+                    storage.unmark_running(self.paths)
                 self.bus.emit("done", error=self.error)
 
     def _phases(self, task_brief: str, pre_build_agent: str | None) -> None:
@@ -278,8 +290,8 @@ class SessionRunner:
             # Armed after bootstrap_session, because that is what builds the
             # design phase's backends. Stop has to work during a designer turn
             # too -- those are the long ones.
-            runtime.arm_cancel(self._cancel)
-            values = self._pump(session)
+            runtime.arm_cancel(self._cancel, self._pause)
+            values = self._pump(session, rerun_finished=True)
             if values is _STOP:
                 return
             if values.get("outcome") != "ready":
@@ -303,30 +315,60 @@ class SessionRunner:
         if loaded.blocking:
             raise RuntimeError("That agent cannot run until its problems are fixed.")
 
+        from agent import supervisor
         from agent.runtime import needed_for
 
-        backends = runtime.backends(needed_for(loaded.folder))
-        runtime.arm_cancel(self._cancel)
-        self._set_phase("running", agent=loaded.folder.graph.name)
-        self._work_loop(loaded.folder, backends, task_brief)
+        iteration = supervisor.next_iteration(self.paths.session)
+        while True:
+            backends = runtime.backends(needed_for(loaded.folder))
+            runtime.arm_cancel(self._cancel, self._pause)
+            self._set_phase("running", agent=loaded.folder.graph.name)
+            values = self._work_loop(loaded.folder, backends, task_brief, iteration)
+            if values is _STOP or runtime.cfg.supervisor == "off":
+                return
 
-    def _work_loop(self, folder, backends, task_brief: str) -> None:
-        """Run the agent, once per task -- the /new cycle from cli.py."""
+            # ---- the supervisor: review the run, and maybe go round again --
+            self._set_phase("supervising", iteration=iteration)
+            decided = self._pump(runtime.supervisor_session(
+                iteration=iteration, values=values, task_brief=task_brief,
+                agent_dir=loaded.path))
+            if decided is _STOP or decided.get("decision") not in ("replan", "redesign"):
+                return
+
+            self._set_phase("designing")
+            designed = self._pump(runtime.reenter_design(
+                decision=decided["decision"], feedback=decided.get("feedback", ""),
+                auto=runtime.cfg.supervisor == "auto",
+                request=_saved_request(self.paths) or task_brief))
+            if designed is _STOP or designed.get("outcome") != "ready":
+                return
+            task_brief = runtime.save_brief(designed) or task_brief
+            loaded = runtime.load_folder(runtime.resolve_folder(None) or folder_path)
+            if loaded.folder is None or loaded.blocking:
+                raise RuntimeError(f"The redesigned agent cannot run: "
+                                   f"{loaded.error or loaded.blocking}")
+            self.folder_path = loaded.path
+            iteration += 1
+
+    def _work_loop(self, folder, backends, task_brief: str, iteration: int = 1):
+        """Run the agent, once per task -- the /new cycle from cli.py.
+
+        Returns the last run's final values, or _STOP if it was paused."""
         threads: dict[str, str] = {}
         run_index = 1
 
         while True:
             session = self.runtime.work_session(
                 folder, backends=backends, task_brief=task_brief,
-                run_index=run_index, threads=threads,
+                run_index=run_index, threads=threads, iteration=iteration,
             )
             values = self._pump(session)
             if values is _STOP:
-                return
+                return _STOP
             if values.get("usage"):
                 self.bus.emit("usage", by_node=values["usage"])
             if values.get("outcome") != "new_task" or not values.get("next_request"):
-                return
+                return values
 
             threads = dict(values.get("threads", {}))
             task_brief = values["next_request"]
@@ -334,7 +376,7 @@ class SessionRunner:
             run_index += 1
             self.bus.emit("status", phase="running", detail=f"New task: {task_brief}")
 
-    def _pump(self, session) -> dict | Any:
+    def _pump(self, session, *, rerun_finished: bool = False) -> dict | Any:
         """Run one graph to completion, asking the browser at every interrupt.
 
         Structurally identical to terminal.drive() -- see this module's header.
@@ -347,20 +389,31 @@ class SessionRunner:
                       thread_id=config["configurable"]["thread_id"])
 
         snapshot = graph.get_state(config)
+        if snapshot.values and not snapshot.next and not rerun_finished:
+            # FINISHED already -- its result, not a second run. Measured: a
+            # session resumed after a restart, its agent run done and the
+            # supervisor's decision still pending, started the whole agent
+            # again from step 1 instead of asking that question. Only the
+            # design phase re-runs when finished (see _phases): it ends without
+            # an agent only on /exit, and Start then means "talk again".
+            values = snapshot.values
+            self.last_values = values
+            self._emit_state(session, values)
+            return values
         if snapshot.values and snapshot.next:
             payload = session.resume_payload(snapshot.values)
             if payload is not None:
                 answer = self._ask(payload, session)
                 if answer is _STOP:
                     return _STOP
-                result = graph.invoke(Command(resume=answer), config=config)
+                result = self._advance(graph, Command(resume=answer), config)
             else:
-                result = graph.invoke(None, config=config)
+                result = self._advance(graph, None, config)
         else:
-            result = graph.invoke(session.initial_state, config=config)
+            result = self._advance(graph, session.initial_state, config)
 
         while True:
-            if self._pause.is_set():
+            if result is _STOP or self._pause.is_set():
                 # Between nodes, and everything up to here is checkpointed.
                 # Returning _STOP unwinds without setting an outcome, so the
                 # graph stays exactly where it is and Start resumes it.
@@ -373,20 +426,43 @@ class SessionRunner:
             answer = self._ask(payload, session)
             if answer is _STOP:
                 return _STOP
-            result = graph.invoke(Command(resume=answer), config=config)
+            result = self._advance(graph, Command(resume=answer), config)
 
         values = graph.get_state(config).values or {}
         self.last_values = values
         self._emit_state(session, values)
         return values
 
+    def _advance(self, graph, value, config):
+        """Run the graph until it asks something, ends, or Pause is pressed.
+
+        Streamed node by node rather than invoke()d, and that is the whole
+        fix for Pause: invoke() returns only at the next question or the end,
+        so the pause flag -- checked after it returned -- was never read
+        between nodes, and Pause during a run took effect at the end of it.
+        Every chunk here is one finished node, already checkpointed, so
+        stopping after it loses nothing and Start carries on from the next.
+
+        Returns the interrupt chunk, {} when the graph ended, or _STOP.
+        """
+        for chunk in graph.stream(value, config=config, stream_mode="updates",
+                                  durability="sync"):
+            if "__interrupt__" in chunk:
+                return chunk
+            if self._pause.is_set():
+                return _STOP
+        return {}
+
     def _ask(self, payload: dict, session):
         """Publish a question and block this thread until an answer arrives."""
         pending = Pending.from_payload(payload)
+        commands = _offered_commands(session, pending.purpose)
         with self._lock:
             self.pending = pending
-        self.bus.emit("question", **pending.as_dict(),
-                      commands=_offered_commands(session, pending.purpose))
+            # Kept with the question, so a page that opens -- or refreshes --
+            # while it waits shows the same buttons the live event carried.
+            self.pending_commands = commands
+        self.bus.emit("question", **pending.as_dict(), commands=commands)
         return self._answers.get()
 
     # ---- helpers ---------------------------------------------------------
@@ -437,3 +513,10 @@ def _offered_commands(session, purpose: str) -> list[dict]:
         for command in commands.available(purpose or None, session.registry)
         if command.scope != "terminal"
     ]
+
+
+def _saved_request(paths) -> str:
+    try:
+        return paths.request.read_text().strip()
+    except OSError:
+        return ""

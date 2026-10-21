@@ -68,8 +68,36 @@ def infrastructure_rules(artifacts_dir: str, session_dir: str = "") -> str:
         "project is genuinely the task -- source code, its tests, its docs. If "
         "you are unsure which of rule 2 and rule 3 applies, prefer rule 2: an "
         "unwanted file under the run directory is harmless, an unwanted file in "
-        "someone's repository is not."
+        "someone's repository is not.\n"
+        "4. Never revert, restore, reset, stash or delete a change you did not "
+        "make in this run -- `git checkout`/`git restore`/`git show HEAD:... >` "
+        "included. Other people and other sessions work in this repository at "
+        "the same time; an unrelated modified file is their work in progress, "
+        "not yours to clean up. If one is in your way, leave it alone and say "
+        "so in your answer."
     )
+
+
+#: Told to every turn whose commands run in Codex's sandbox. Measured: it
+#: hides the GPUs (no /dev/nvidia*), and a preflight run there reported "no
+#: GPU" as a blocker on a machine with seven of them.
+SANDBOX_GPU_NOTE = (
+    "\n\nGPU NOTE: commands in this turn run inside Codex's sandbox, which hides "
+    "this machine's GPUs -- nvidia-smi and torch.cuda fail here even though the "
+    "GPUs exist. Never conclude or report that the machine has no GPU or driver. "
+    "Leave GPU checks and GPU work to a step that runs outside the sandbox, and "
+    "say that you did.")
+
+
+def sandbox_note(backend, access: str) -> str:
+    """The GPU note, for a turn that runs in Codex's sandbox: any Codex turn,
+    unless its role has `gpu` on and the turn may write (see
+    agent/backends/codex.py)."""
+    if getattr(backend, "name", "") != "codex":
+        return ""
+    if getattr(backend, "gpu", False) and access == "write":
+        return ""
+    return SANDBOX_GPU_NOTE
 
 
 def backends_needed(folder: AgentFolder) -> dict[str, Access]:
@@ -96,6 +124,7 @@ def compile_agent(
     registry,
     artifacts_dir: str = "",
     session_dir: str = "",
+    isolation: str = "",
 ):
     """Build and compile the graph described by `folder`.
 
@@ -112,13 +141,18 @@ def compile_agent(
         config = folder.nodes[ref.name]
 
         if isinstance(config, HumanNodeConfig):
-            builder.add_node(ref.name, make_human_node(ref.name, config, registry=registry))
+            builder.add_node(ref.name, make_human_node(ref.name, config, registry=registry,
+                                                       session_dir=session_dir))
             continue
 
         assert isinstance(config, AgentNodeConfig)
         instructions = config.instructions
         if config.access == "write":
             instructions += infrastructure_rules(artifacts_dir, session_dir)
+        # Every node, readers included: reading another session's files is
+        # how one task's work turns up in another's.
+        instructions += isolation
+        instructions += sandbox_note(backends.get(config.backend), config.access)
 
         builder.add_node(
             ref.name,

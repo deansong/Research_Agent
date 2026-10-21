@@ -29,8 +29,8 @@ terminal-shaped, and only the third is obvious:
 WHAT DID *NOT* MOVE
 --------------------------------------------------------------------------
 Deciding WHICH task, WHICH session and WHEN to redesign is policy, and it
-differs between the two front ends: the CLI derives a session from --task and
-refuses when the task changed; the web UI has a session picker. So
+differs between the two front ends: the CLI starts a new session per task and
+refuses when a named one's task changed; the web UI has a session picker. So
 `_resolve_session` stays in cli.py, and the runtime is handed a `SessionPaths`
 that someone else already resolved.
 
@@ -42,7 +42,7 @@ from __future__ import annotations
 
 import contextlib
 import json
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from pathlib import Path
 from typing import Any, Iterator
 
@@ -53,6 +53,7 @@ from agent.agentfolder.load import AgentFolder, AgentFolderError, load_agent_fol
 from agent.agentfolder.validate import Problem, validate_folder
 from agent.backends import build_backends
 from agent.backends.base import Access, BackendError
+from agent.backends.delegate import DelegatingBackend
 from agent.bootstrap.graph import build_bootstrap_graph
 from agent.bootstrap.session import bootstrap_session
 from agent.config import AgentConfig, backend_for
@@ -69,6 +70,11 @@ BOOTSTRAP_ACCESS: dict[str, Access] = {
     "planner": Access.READ_ONLY,
     "designer": Access.READ_ONLY,
 }
+
+#: The research agent, when research is on. WRITE because antigravity, its
+#: default provider, has no read-only level, and its paper lookups are
+#: commands it runs. See agent/bootstrap/nodes/researcher.py.
+RESEARCH_ACCESS: dict[str, Access] = {"researcher": Access.WRITE}
 
 
 @dataclass(frozen=True)
@@ -124,7 +130,7 @@ class Runtime:
 
     # ---- backends --------------------------------------------------------
 
-    def codex_client(self, needed):
+    def codex_client(self, needed, cfg: AgentConfig | None = None):
         """Open the Codex client on first use, and only if something needs it.
 
         Lazy for two reasons. The work graph's roles are not known until phase 1
@@ -132,7 +138,8 @@ class Runtime:
         uses Codex. And being lazy is what lets `--backend fake` run with no
         login and no network at all.
         """
-        if not any(backend_for(self.cfg, role).provider == "codex" for role in needed):
+        cfg = cfg or self.cfg
+        if not any(backend_for(cfg, role).provider == "codex" for role in needed):
             return self._codex
         if self._codex is None:
             from agent.backends.codex import open_client
@@ -140,7 +147,7 @@ class Runtime:
             self._codex = self._stack.enter_context(open_client())
         return self._codex
 
-    def backends(self, needed) -> dict[str, Any]:
+    def backends(self, needed, cfg: AgentConfig | None = None) -> dict[str, Any]:
         """Build one backend per role. Raises BackendError, which is a real
         error condition rather than a presentation choice, so it stays an
         exception.
@@ -150,11 +157,33 @@ class Runtime:
         caches identically-configured roles onto one instance, so the same
         object legitimately appears under several role names.
         """
-        built = build_backends(self.cfg, needed, codex_client=self.codex_client(needed))
+        cfg = cfg or self.cfg
+        built = build_backends(cfg, needed, codex_client=self.codex_client(needed, cfg))
+        built = dict(built)
+        for role, spec in (cfg.delegation or {}).items():
+            if role not in needed:
+                continue
+            # Its OWN primary instance: build_backends shares one instance
+            # between roles with the same settings, and a delegating role's
+            # primary is told not to wait for credits -- which must not reach
+            # a role that does not delegate.
+            primary = build_backends(cfg, {role: needed[role]},
+                                     codex_client=self.codex_client(needed, cfg))[role]
+            stand_in = replace(cfg, roles={**cfg.roles, role: spec})
+            delegate = build_backends(stand_in, {role: needed[role]},
+                                      codex_client=self.codex_client({role: needed[role]},
+                                                                     stand_in))[role]
+            built[role] = DelegatingBackend(primary, delegate, role)
+        # A session with its own workspace runs turns THERE, and a sandbox
+        # that allows writing only in the working directory would then refuse
+        # the run's results folder, which sits beside it. So name it.
+        writable = [str(self.paths.artifacts)] if self.paths.own_workspace else []
+        for backend in built.values():
+            backend.writable_roots = writable
         self._built.update(built)
         return built
 
-    def arm_cancel(self, event) -> None:
+    def arm_cancel(self, event, pause=None) -> None:
         """Give every backend a way to be told to stop mid-turn.
 
         Only the provider can stop a turn that is already running, so the
@@ -168,6 +197,8 @@ class Runtime:
             # attribute nothing reads -- harmless, and better than each caller
             # having to know which providers support it.
             backend.cancel = event
+            # Pause, too, but only for retry waits: see wait_or_cancel.
+            backend.pause = pause
 
     # ---- phase 1: designing an agent -------------------------------------
 
@@ -175,21 +206,38 @@ class Runtime:
         """A GraphSession for the hand-written design graph.
 
         The thread id uses paths.session.name rather than cfg.session: the
-        latter is None whenever the name was derived from the task or came from
+        latter is None for every new session and whenever the folder came from
         --session-dir, which would make every such run share the literal thread
         id "None:bootstrap".
         """
+        # This session's own changes to the design agent, if it has any --
+        # read at every start, so an edit made while paused applies on resume.
+        from agent.bootstrap import settings
+
+        overrides = settings.load(self.paths.session)
+        cfg = settings.effective_config(self.cfg, overrides)
+        backends = dict(self.backends(BOOTSTRAP_ACCESS, cfg))
+        if cfg.research:
+            # A help, not a requirement: a research agent that cannot start
+            # (agy missing or signed out) must not stop the discussion.
+            try:
+                backends.update(self.backends(RESEARCH_ACCESS, cfg))
+            except BackendError as exc:
+                print(f"Note: research is on, but the research agent cannot start, "
+                      f"so the discussor goes without it:\n  {str(exc).splitlines()[0]}")
         graph = build_bootstrap_graph(
-            self.backends(BOOTSTRAP_ACCESS),
+            backends,
             self.paths,
             self.checkpointer,
-            max_attempts=self.cfg.max_design_attempts,
+            max_attempts=cfg.max_design_attempts,
+            prompts=settings.effective_prompts(overrides),
+            research=cfg.research,
         )
         return bootstrap_session(
             graph=graph,
             thread_id=f"{self.paths.session.name}:bootstrap",
             recursion_limit=self.cfg.recursion_limit,
-            repo_path=str(self.paths.repo),
+            repo_path=str(self.paths.workspace),
             session_dir=str(self.paths.session),
             request=request,
         )
@@ -292,6 +340,7 @@ class Runtime:
         task_brief: str,
         run_index: int = 1,
         threads: dict[str, str] | None = None,
+        iteration: int = 1,
     ) -> GraphSession:
         """A GraphSession for one task against one agent.
 
@@ -310,12 +359,16 @@ class Runtime:
             registry=build_registry(folder),
             artifacts_dir=str(self.paths.artifacts),
             session_dir=str(self.paths.session),
+            isolation=storage.isolation_rules(self.paths),
         )
 
         # Every phase and every task gets its OWN thread id. Measured: two
         # graphs sharing a thread id do not raise -- their channels silently
         # merge, and one schema's keys turn up in the other's state.
         suffix = f":{run_index}" if run_index > 1 else ""
+        # A supervisor's later iteration is a new agent: a new thread too.
+        if iteration > 1:
+            suffix = f":i{iteration}" + suffix
 
         return work_session(
             folder=folder,
@@ -323,7 +376,7 @@ class Runtime:
             thread_id=f"{self.paths.session.name}:work{suffix}",
             recursion_limit=self.cfg.work_recursion_limit,
             initial_state=initial_work_state(
-                repo_path=str(self.paths.repo),
+                repo_path=str(self.paths.workspace),
                 task_brief=task_brief,
                 agent_dir=str(folder.path),
                 artifacts_dir=str(self.paths.artifacts),
@@ -342,6 +395,55 @@ class Runtime:
         """
         self.paths.request.write_text(task_brief)
         self.paths.brief.write_text(task_brief)
+
+    # ---- the supervisor --------------------------------------------------
+
+    def supervisor_session(self, *, iteration: int, values: dict,
+                           task_brief: str, agent_dir: Path) -> GraphSession:
+        """A GraphSession that reviews the run that just ended and decides
+        what happens next. See agent/supervisor.py."""
+        from agent import supervisor
+
+        backend = self.backends({supervisor.ROLE: Access.READ_ONLY})[supervisor.ROLE]
+        report = supervisor.run_report(
+            session_dir=self.paths.session, artifacts_dir=self.paths.artifacts,
+            plan=self.load_plan(), brief=task_brief, values=values, iteration=iteration)
+        return supervisor.supervisor_session(
+            graph=supervisor.build_supervisor_graph(backend, self.checkpointer),
+            thread_id=f"{self.paths.session.name}:supervisor:{iteration}",
+            initial_state={
+                "repo_path": str(self.paths.workspace), "session_dir": str(self.paths.session),
+                "agent_dir": str(agent_dir), "iteration": iteration,
+                "max_iterations": self.cfg.max_iterations, "mode": self.cfg.supervisor,
+                "report": report,
+            },
+        )
+
+    def reenter_design(self, *, decision: str, feedback: str, auto: bool,
+                       request: str) -> GraphSession:
+        """The design phase again, from the planner (replan) or the designer
+        (redesign), carrying the supervisor's feedback.
+
+        The design graph's thread ended at "ready". update_state(as_node=
+        "human") writes the next step into it as if the person had just typed
+        the command, so the graph carries on from there -- same thread, same
+        conversation history, same checkpoint. With `auto`, the plan and
+        design approvals are answered for you (bootstrap/nodes/human.py).
+        """
+        session = self.bootstrap_session(request)
+        graph, config = session.graph, session.config
+        values = graph.get_state(config).values or {}
+        design = dict(values.get("design") or {})
+        human = dict(values.get("human") or {})
+        design.update(problems="", attempt=0, review_feedback=feedback)
+        if decision == "replan":
+            design["plan_feedback"] = feedback
+        human.update(question="", context="", purpose="",
+                     return_to="planner" if decision == "replan" else "designer",
+                     auto_approve=auto)
+        graph.update_state(config, {"design": design, "human": human, "outcome": ""},
+                           as_node="human")
+        return session
 
     # ---- the plan --------------------------------------------------------
 

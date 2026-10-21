@@ -41,6 +41,9 @@ class _Server:
             backend_role = None
             config = None
             session = None
+        # One run, no review: these tests are about other things. The
+        # supervisor has its own, in tests/test_supervisor.py.
+        supervisor = "off"
 
         server._RUNNERS.clear()
         self.port = _free_port()

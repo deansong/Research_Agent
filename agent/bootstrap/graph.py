@@ -11,8 +11,11 @@ THE GRAPH
 
     START
       |
-      v
-  discussor ------> human <---------------------+
+      v           (research questions, if research is on)
+  researcher <--> discussor
+                      |
+                      v
+                    human <---------------------+
   (what do you        |                         |
    want, and what     |  you type...            |
    shape of agent)    |                         |
@@ -38,14 +41,16 @@ THE GRAPH
       END     designer      human --------------+
                             (/retry /discuss /use /exit)
 
-The one rule to notice, same as the original agent: `discussor` has a single
-plain edge to `human`. No model output can start the design. Only /plan can.
+The one rule to notice, same as the original agent: the discussor's only
+exits are the human and the researcher, which returns to it. No model output
+can start the design. Only /plan can.
 """
 
 from __future__ import annotations
 
 from langgraph.graph import END, START, StateGraph
 
+from agent.bootstrap.nodes.researcher import make_researcher
 from agent.bootstrap.nodes import (
     make_human,
     make_designer,
@@ -54,23 +59,60 @@ from agent.bootstrap.nodes import (
     make_validator,
     make_writer,
 )
+from agent import storage
+from agent.bootstrap.prompts import (DESIGNER_INSTRUCTIONS, DISCUSSOR_INSTRUCTIONS,
+                                   PLANNER_INSTRUCTIONS, RESEARCHER_INSTRUCTIONS)
 from agent.bootstrap.state import BootstrapState
 
 
-def build_bootstrap_graph(backends, paths, checkpointer, *, max_attempts: int):
+def build_bootstrap_graph(backends, paths, checkpointer, *, max_attempts: int,
+                          prompts: dict | None = None, research: bool = False):
+    """`prompts` is node -> field -> text, from settings.effective_prompts;
+    None means prompts.py's defaults throughout."""
+    prompts = prompts or {}
     builder = StateGraph(BootstrapState)
 
-    builder.add_node("discussor", make_discussor(backends["discussor"]))
+    # Every model role is told to keep out of other sessions' folders --
+    # appended here, so an edited persona cannot drop it.
+    fence = storage.isolation_rules(paths) if paths is not None else ""
+
+    def own(node: str, default: str) -> dict:
+        from agent.work.compile import sandbox_note
+
+        kw = dict(prompts.get(node, {}))
+        # The design roles read the repository -- and an earlier discussor on
+        # Codex told the planner "no GPU is visible", which it was not, there.
+        kw["instructions"] = (kw.get("instructions", default) + fence
+                              + sandbox_note(backends.get(node), "read_only"))
+        return kw
+
+    # Research needs its backend; without one (switched off, so not built)
+    # the discussor is simply never offered it.
+    research = research and "researcher" in backends
+    builder.add_node("discussor", make_discussor(
+        backends["discussor"], research=research,
+        **own("discussor", DISCUSSOR_INSTRUCTIONS)))
+    if research:
+        builder.add_node("researcher", make_researcher(
+            backends["researcher"], paths, **own("researcher", RESEARCHER_INSTRUCTIONS)))
     builder.add_node("human", make_human(paths))
-    builder.add_node("planner", make_planner(backends["planner"], paths))
-    builder.add_node("designer", make_designer(backends["designer"]))
+    builder.add_node("planner", make_planner(
+        backends["planner"], paths, **own("planner", PLANNER_INSTRUCTIONS)))
+    builder.add_node("designer", make_designer(
+        backends["designer"], **own("designer", DESIGNER_INSTRUCTIONS)))
     builder.add_node("writer", make_writer(paths))
     builder.add_node("validator", make_validator(paths, max_attempts=max_attempts))
 
     builder.add_edge(START, "discussor")
 
-    # THE gate: the discussor's only exit is the human.
-    builder.add_edge("discussor", "human")
+    # THE gate: the discussor's only exits are the human and the researcher,
+    # which comes straight back.
+    if research:
+        builder.add_conditional_edges("discussor", _route_after_discussor,
+                                      {"researcher": "researcher", "human": "human"})
+        builder.add_edge("researcher", "discussor")
+    else:
+        builder.add_edge("discussor", "human")
 
     builder.add_conditional_edges(
         "human",
@@ -96,6 +138,12 @@ def build_bootstrap_graph(backends, paths, checkpointer, *, max_attempts: int):
     )
 
     return builder.compile(checkpointer=checkpointer)
+
+
+def _route_after_discussor(state: BootstrapState) -> str:
+    """To the researcher when the discussor left it questions -- it only does
+    when research is on and it has not just read a report."""
+    return "researcher" if (state.get("research") or {}).get("questions") else "human"
 
 
 def _route_after_human(state: BootstrapState) -> str:

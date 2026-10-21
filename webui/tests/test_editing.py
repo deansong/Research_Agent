@@ -39,6 +39,9 @@ def _client(tmp: pathlib.Path) -> TestClient:
         backend_role = None
         config = None
         session = None
+        # One run, no review: these tests are about other things. The
+        # supervisor has its own, in tests/test_supervisor.py.
+        supervisor = "off"
 
     return TestClient(server.create_app(tmp, Args()))
 
@@ -55,6 +58,41 @@ def _wait(client, sid: str) -> dict:
     raise AssertionError("no question in time")
 
 
+#: The agent the editing tests edit: one worker, one human node -- in the
+#: canonical on-disk form the editor itself writes.
+_TWO_NODE_GRAPH = {
+    "format_version": 1,
+    "name": "fake-generated",
+    "description": "A minimal agent for the editing tests.",
+    "entry": "worker",
+    "nodes": [{"name": "worker", "kind": "agent"}, {"name": "review", "kind": "human"}],
+    "edges": [{"from": "worker", "to": "review",
+               "ask": {"purpose": "review", "resume_to": "worker",
+                       "question": "The worker reported: {out.worker.summary}. What next?",
+                       "context": "{out.worker.detail}"}}],
+}
+_TWO_NODE_NODES = {
+    "worker": {
+        "backend": "worker",
+        "access": "read_only",
+        "steps": ["1", "2"],
+        "instructions": "You are a worker. Do exactly what the brief asks and report back.",
+        "output": [{"name": "summary", "type": "string", "required": True},
+                   {"name": "detail", "type": "string"}],
+        "prompts": {"first": "Your task:\n\n{task_brief}\n\nThe steps you are "
+                             "responsible for:\n{my_steps}\n\nThe wider plan, for "
+                             "context only:\n{plan_outline}\n\nDo your steps and "
+                             "report what you found.",
+                    "next": "The human said:\n\n{last_answer}\n\nContinue."},
+        "record": "{out.worker.summary}",
+        "announce": "working...",
+    },
+    "review": {"commands": [
+        {"name": "again", "to": "worker", "summary": "Have another go"},
+        {"name": "exit", "to": "__end__", "aliases": ["quit", "q"], "summary": "Finish"}]},
+}
+
+
 def _session_with_an_agent(client, repo: pathlib.Path) -> str:
     """Drive the design phase far enough that an agent exists on disk."""
     sid = client.post("/api/sessions", json={
@@ -66,7 +104,14 @@ def _session_with_an_agent(client, repo: pathlib.Path) -> str:
     client.post(f"/api/sessions/{sid}/answer", json={"text": "/approve"})
     # A second /approve: the plan, then the designed agent. The design review
     # gate is deliberate -- see test_bootstrap.
-    _wait(client, sid)
+    detail = _wait(client, sid)
+    # These tests are about EDITING an agent, so they edit a small, fixed one
+    # rather than whatever the designer currently produces -- written at the
+    # review stop, which is exactly when a person would edit by hand, and
+    # which /approve re-reads from disk.
+    agent_dir = pathlib.Path(detail["folder"]) / "agent"
+    (agent_dir / "graph.json").write_text(json.dumps(_TWO_NODE_GRAPH, indent=2) + "\n")
+    (agent_dir / "nodes.json").write_text(json.dumps(_TWO_NODE_NODES, indent=2) + "\n")
     client.post(f"/api/sessions/{sid}/answer", json={"text": "/approve"})
     _wait(client, sid)
     client.post(f"/api/sessions/{sid}/answer", json={"text": "/exit"})

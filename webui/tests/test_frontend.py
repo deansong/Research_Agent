@@ -151,7 +151,14 @@ def test_the_expander_shows_the_turns_events():
       return {
         open: !chat.beatDetail.hidden,
         expander: chat.beatButton.textContent,
-        rendered: chat.beatDetail._children.map(function (c) { return c.textContent }),
+        rendered: (function walk(node, out) {
+          for (var i = 0; i < (node._children || []).length; i++) {
+            var child = node._children[i];
+            if (child.textContent) out.push(child.textContent);
+            walk(child, out);
+          }
+          return out;
+        })(chat.beatDetail, []),
       };
     """)
 
@@ -162,8 +169,9 @@ def test_the_expander_shows_the_turns_events():
     assert "pytest -q" in rendered and "exit 1" in rendered
     assert "reading the repository" in rendered
     assert "docs/study.md" in rendered
-    # The live tail, and the figure that explains a quiet expander.
-    assert '{"task_brief": "Compare hotel' in rendered, rendered
+    # The live tail -- its prose, not the JSON it is wrapped in -- and the
+    # figure that explains a quiet expander.
+    assert "Compare hotel" in rendered and '{"task_brief"' not in rendered, rendered
     assert "writing 16.6k" in rendered, rendered
     print("PASS  the expander renders the turn's actual commands and reasoning")
 
@@ -239,8 +247,8 @@ def test_the_final_answer_is_shown_rather_than_labelled_away():
       (function walk(node) {
         for (var i = 0; i < (node._children || []).length; i++) {
           var child = node._children[i];
-          if (child.className === 'event-output') found.push(child.textContent);
-          if (child.className === 'event-label') found.push(child.textContent);
+          if (child.className === 'tx-text') found.push('text: ' + child.textContent);
+          if (child.className === 'tx-out') found.push('raw: ' + child.textContent);
           walk(child);
         }
       })(host);
@@ -248,12 +256,11 @@ def test_the_final_answer_is_shown_rather_than_labelled_away():
     """)
 
     joined = "\n".join(result)
-    # The label still says it is THE answer, and now says how big.
-    assert "the final answer" in joined, joined[:200]
-    assert "chars" in joined, "say the size, so an unexpanded row is legible"
-    # And the body is there, pretty-printed rather than a one-line blob.
-    assert "task_brief" in joined and "Compare skill associations" in joined, joined[:300]
-    assert '"graph"' in joined, "the whole document, not the first key"
+    # The row reads as prose: what it says, not its braces.
+    assert "text: Compare skill associations" in joined, joined[:300]
+    # And the whole document is one click away, as sent.
+    raw = [r for r in result if r.startswith("raw: ")]
+    assert raw and '"graph"' in raw[0] and "task_brief" in raw[0], joined[:300]
     print("PASS  a node's final answer is readable in the activity panel")
 
 
@@ -633,11 +640,11 @@ def test_a_reopened_session_shows_the_conversation_it_already_had():
     print("PASS  a reopened session replays its conversation, and says where it ends")
 
 
-def test_the_files_tab_puts_code_above_results():
-    """MEASURED on a real session: 32 changed source files against 1,985
-    artifacts. Mixed into one list, the training script somebody opened this
-    tab to read is a thousand rows down -- so the groups are separate, code
-    first, and the results group starts collapsed.
+def test_the_files_tab_puts_the_session_s_files_above_results():
+    """MEASURED on a real session: 1,985 artifacts. Mixed into one list, the
+    plan or report somebody opened this tab to read is a thousand rows down --
+    so the groups are separate, the session's own files first, and the
+    results group starts collapsed.
     """
     try:
         import quickjs  # noqa: F401
@@ -652,11 +659,11 @@ def test_the_files_tab_puts_code_above_results():
         { onRead: function () { return Promise.resolve({}); } });
 
       panel.render({ files: [
-        { path: 'repo/classifier_experiment/train.py', root: 'repo',
-          size: 14922, modified: 1, origin: 'new', readable: true },
-        { path: 'repo/agent/config.py', root: 'repo',
-          size: 22187, modified: 2, origin: 'modified', readable: true },
-        { path: 'artifacts/smoke/a.json', root: 'artifacts',
+        { path: 'session/plan.json', root: 'session',
+          size: 14922, modified: 1, origin: 'session', readable: true },
+        { path: 'session/agent/graph.json', root: 'session',
+          size: 22187, modified: 2, origin: 'session', readable: true },
+        { path: 'session/artifacts/smoke/a.json', root: 'session',
           size: 20, modified: 3, origin: 'artifact', readable: true },
       ]});
 
@@ -667,11 +674,11 @@ def test_the_files_tab_puts_code_above_results():
       };
     """)
 
-    assert result["headings"] == ["Code (2)", "Results (1)"], result
-    # Code open, results shut: one group is a handful of files to read, the
-    # other is two thousand to spot-check.
+    assert result["headings"] == ["This session (2)", "Results (1)"], result
+    # Session files open, results shut: one group is a handful of files to
+    # read, the other is two thousand to spot-check.
     assert result["open"] == [True, False], result
-    print("PASS  the Files tab puts code above results")
+    print("PASS  the Files tab puts the session's files above results")
 
 
 def test_a_file_that_cannot_be_shown_says_why_rather_than_showing_blank():
@@ -699,9 +706,9 @@ def test_a_file_that_cannot_be_shown_says_why_rather_than_showing_blank():
         return out.join(' ');
       }
 
-      panel.show({ path: 'repo/huge.log', size: 9, skipped: '9 bytes is over the limit' });
+      panel.show({ path: 'session/artifacts/huge.log', size: 9, skipped: '9 bytes is over the limit' });
       var skipped = text();
-      panel.show({ path: 'repo/train.py', size: 5, text: 'x = 1' });
+      panel.show({ path: 'session/artifacts/train.py', size: 5, text: 'x = 1' });
       var shown = text();
       return { skipped: skipped, shown: shown };
     """)
@@ -711,3 +718,338 @@ def test_a_file_that_cannot_be_shown_says_why_rather_than_showing_blank():
     # And the reason must not linger once a readable file is opened.
     assert "over the limit" not in result["shown"], result
     print("PASS  a file that cannot be shown says why")
+
+
+def test_the_iterations_and_timeline_tabs_render_what_the_supervisor_recorded():
+    """The two history views: an iteration card with its verdict, decision and
+    findings; and a timeline row per visit, the supervisor's marked."""
+    try:
+        import quickjs  # noqa: F401
+    except ImportError:  # pragma: no cover
+        pytest.skip("quickjs not installed")
+    from jsdom_harness import exercise
+
+    result = exercise("""
+      var its = new __ns.IterationsPanel(document.getElementById('tab-iterations'));
+      its.render({mode: 'manual', max_iterations: 3, iterations: [{
+        n: 1, agent: 'a', nodes: 9, steps: 4, visits: 12, report: 'ITERATION 1',
+        review: {verdict: 'improve_agent', decision: 'redesign', summary: 'stopped early',
+                 findings: ['only 2 of 12 cells'], design_feedback: 'fix the runner'}}]});
+      var tl = new __ns.TimelinePanel(document.getElementById('tab-timeline'));
+      tl.render({visits: [
+        {at: '2026-10-18T10:00:00', node: 's1_code', kind: 'agent', provider: 'codex',
+         model: 'm', route: 'check_1', seconds: 3, output_tokens: 10},
+        {at: '2026-10-18T10:01:00', node: 'supervisor', kind: 'supervisor',
+         iteration: 1, verdict: 'improve_agent'}]});
+
+      function text(n) {
+        return (n.textContent || '') + (n._children || []).map(text).join(' ');
+      }
+      var itText = text(document.getElementById('tab-iterations'));
+      var rows = document.getElementById('tab-timeline')._children[0]._children[0]._children;
+      return {itText: itText, rows: rows.length, last: rows[rows.length - 1].className,
+              lastText: text(rows[rows.length - 1])};
+    """)
+
+    assert "Iteration 1" in result["itText"]
+    for expected in ("improve_agent", "redesign", "only 2 of 12 cells", "fix the runner"):
+        assert expected in result["itText"], expected
+    assert result["rows"] == 3, "a header and one row per visit"
+    assert result["last"] == "tl-supervisor" and "iteration 1" in result["lastText"]
+
+
+def test_the_model_picker_offers_each_providers_models_per_role():
+    """One row per role, preset to what config resolves, with that provider's
+    listed models in the dropdown -- and nothing sent until a row is changed.
+
+    A configured model the provider did not list stays selectable: a missing
+    option would silently swap the role onto whatever came first.
+    """
+    try:
+        import quickjs  # noqa: F401
+    except ImportError:  # pragma: no cover
+        pytest.skip("quickjs not installed")
+    from jsdom_harness import exercise
+
+    result = exercise("""
+      fetch = function (url) {
+        var body = url.indexOf('/api/models') === 0
+          ? { providers: [
+              { provider: 'codex', source: 'x', error: '', models: [
+                { id: 'gpt-5.6-sol', label: 'Sol', default: true },
+                { id: 'gpt-5.6-terra', label: 'Terra', default: false } ] },
+              { provider: 'claude_code', source: 'x', error: '', models: [
+                { id: 'opus', label: 'Opus', default: false } ] } ] }
+          : { roles: {
+              designer: { provider: 'claude_code', model: 'opus', configured: true },
+              coder: { provider: 'codex', model: 'gpt-5.6-mystery', configured: true } } };
+        return Promise.resolve({ ok: true, status: 200,
+                                 json: function () { return Promise.resolve(body) } });
+      };
+      __ns.loadModelPicker('.');
+    """, then="""
+      var rows = document.getElementById('new-models-rows')._children;
+      function cells(tr) {
+        var provider = tr._children[1]._children[0];
+        var model = tr._children[2]._children[0];
+        return {
+          role: tr._children[0].textContent,
+          providers: provider._children.map(function (o) { return o.value }),
+          models: model._children.map(function (o) { return o.value }),
+          selected: model._children.filter(function (o) { return o.selected })
+                                   .map(function (o) { return o.value }),
+        };
+      }
+      return { rows: rows.map(cells), overrides: __ns.modelOverrides(),
+               status: document.getElementById('new-models-status').textContent };
+    """)
+
+    designer, coder = result["rows"]
+    assert designer["role"] == "designer"
+    assert designer["providers"] == ["claude_code", "codex"], designer
+    assert designer["models"] == ["opus"] and designer["selected"] == ["opus"], designer
+
+    assert coder["models"][0] == "gpt-5.6-mystery", "the configured model vanished"
+    assert coder["selected"] == ["gpt-5.6-mystery"], coder
+    assert {"gpt-5.6-sol", "gpt-5.6-terra"} <= set(coder["models"]), coder
+
+    assert result["overrides"] == [], "an untouched picker must send nothing"
+    assert "Could not" not in result["status"], result["status"]
+    print("PASS  the model picker lists each provider's models per role")
+
+
+def test_a_running_turn_streams_live_from_its_first_second():
+    """The provider's stream is parsed by every backend and kept in the turn's
+    in-flight record; the page used to show it only in a heartbeat line every
+    thirty seconds. Now the working row polls the record and shows what the
+    model is writing and running as it happens -- no heartbeat needed."""
+    try:
+        import quickjs  # noqa: F401
+    except ImportError:  # pragma: no cover
+        pytest.skip("quickjs not installed")
+    from jsdom_harness import exercise
+
+    result = exercise("""
+      var payload = { running: true, turn: {
+        node: 'designer', index: 2, provider: 'codex', model: 'gpt-5.6-sol',
+        counts: { command: 1 },
+        progress: { elapsed: 4.2, streamed: 1800, live: {
+          reasoning: 'checking the plan has six steps',
+          message: '{"task_brief": "Compare LoRA with a linear probe' } },
+        events: [{ kind: 'command', phase: 'completed', command: 'rg --files',
+                   exit_code: 0 }] } };
+      var chat = new __ns.Chat({ onSend() {}, onDetail() { return payload } });
+      function text(node, out) {
+        out = out || [];
+        if (node.textContent) out.push(node.textContent);
+        (node._children || []).forEach(function (c) { text(c, out); });
+        return out;
+      }
+      var seen = {};
+      chat.setLive(true);                    // polls once at once, then on a timer
+      chat.pollLive().then(function () {     // (a second poll of the same turn)
+        seen.during = { summary: chat.beatText.textContent,
+                        stream: text(chat.beatStream).join(' | '),
+                        rows: chat.log._children.length, polling: __timers.set };
+        payload = { running: false, turn: null };
+        return chat.pollLive();
+      }).then(function () {
+        chat.setLive(false);
+        seen.ended = chat.beat === null;
+        seen.stopped = __timers.cleared;
+      });
+      return seen;
+    """, then="""
+      return __state;
+    """)
+
+    during = result["during"]
+    assert during["polling"] == 1, "it polls while the session runs"
+    assert during["rows"] == 1, "one row, before any heartbeat line arrived"
+    assert during["summary"].startswith("designer (codex/gpt-5.6-sol) — working 4s"), during
+    assert "writing 1.8k" in during["summary"]
+    assert "writing ▸ Compare LoRA" in during["stream"], during  # its prose, not its JSON
+    assert "checking the plan" in during["stream"] and "rg --files" in during["stream"]
+    assert result["ended"] is True, "the row ends when the turn does"
+    assert result["stopped"] == 1, "and polling stops with the session"
+
+
+def test_configure_offers_the_provider_and_model_a_role_runs_on():
+    """Once a session had an agent there was nowhere to change a node's model.
+    The Configure tab now has a Runs on picker for the node's role."""
+    try:
+        import quickjs  # noqa: F401
+    except ImportError:  # pragma: no cover
+        pytest.skip("quickjs not installed")
+    from jsdom_harness import exercise
+
+    result = exercise("""
+      var sent = [];
+      var inspector = new __ns.Inspector({
+        onSave() {}, onSelectSteps() {},
+        getBackends() { return { checker: { provider: 'codex', model: 'gpt-5.6-terra',
+                                            nodes: ['check_1', 'check_2'] } }; },
+        onSetRole(role, body) { sent.push([role, body]);
+                                return Promise.resolve({ detail: 'checker now runs on x' }); },
+        models() { return Promise.resolve({ providers: [
+          { provider: 'codex', models: [{ id: 'gpt-5.6-sol', default: true },
+                                        { id: 'gpt-5.6-terra' }] }] }); },
+      });
+      inspector.setSchema({ providers: ['antigravity', 'api', 'claude_code', 'codex', 'fake'] });
+      inspector.show('check_1', 'agent', { backend: 'checker', access: 'read_only' });
+      return { inspector: inspector, sent: sent };
+    """, then="""
+      function walk(node, out) {
+        (node._children || []).forEach(function (c) { out.push(c); walk(c, out); });
+        return out;
+      }
+      var all = walk(__state.inspector.configure, []);
+      var row = all.filter(function (n) { return n.className === 'runs-on-row'; })[0];
+      var provider = row._children[0], model = row._children[1];
+      var text = all.map(function (n) { return n.textContent || ''; }).join(' | ');
+      return {
+        providers: provider._children.map(function (o) { return o.value; }),
+        provider: provider.value, models: model._children.map(function (o) { return o.value; }),
+        model: model.value, shared: text.indexOf('check_1, check_2') !== -1,
+      };
+    """)
+    assert "api" not in result["providers"] and "antigravity" in result["providers"]
+    assert result["provider"] == "codex"
+    assert result["models"] == ["", "gpt-5.6-sol", "gpt-5.6-terra"], result
+    assert result["model"] == "gpt-5.6-terra", "the role's current model"
+    assert result["shared"], "says which nodes share the role"
+
+
+def test_runs_on_offers_the_gpu_switch_for_codex_only():
+    try:
+        import quickjs  # noqa: F401
+    except ImportError:  # pragma: no cover
+        pytest.skip("quickjs not installed")
+    from jsdom_harness import exercise
+
+    result = exercise("""
+      var sent = [];
+      var inspector = new __ns.Inspector({
+        onSave() {}, onSelectSteps() {},
+        getBackends() { return { coder: { provider: 'codex', model: '', gpu: true, nodes: ['s3'] } }; },
+        onSetRole(role, body) { sent.push(body); return Promise.resolve({ detail: 'ok' }); },
+        models() { return Promise.resolve({ providers: [] }); },
+      });
+      inspector.setSchema({ providers: ['antigravity', 'codex'] });
+      inspector.show('s3', 'agent', { backend: 'coder', access: 'write' });
+      function walk(node, out) {
+        (node._children || []).forEach(function (c) { out.push(c); walk(c, out); });
+        return out;
+      }
+      var all = walk(inspector.configure, []);
+      var label = all.filter(function (n) { return n.className === 'runs-on-gpu'; })[0];
+      var box = label._children[0];
+      var row = all.filter(function (n) { return n.className === 'runs-on-row'; })[0];
+      var codexShown = !label.hidden, checked = box.checked;
+      row._children[2]._listeners.click[0]();          // Use for this role
+      row._children[0].value = 'antigravity';
+      row._children[0]._listeners.change[0]();
+      return { codexShown: codexShown, checked: checked, agyHidden: label.hidden, sent: sent };
+    """)
+    assert result["codexShown"] and result["checked"], result
+    assert result["sent"][0]["gpu"] is True and result["sent"][0]["provider"] == "codex"
+    assert result["agyHidden"] is True, "no sandbox to switch off on antigravity"
+
+
+def test_delegation_is_off_until_ticked_and_then_sends_the_chosen_model():
+    try:
+        import quickjs  # noqa: F401
+    except ImportError:  # pragma: no cover
+        pytest.skip("quickjs not installed")
+    from jsdom_harness import exercise
+
+    result = exercise("""
+      var sent = [];
+      var inspector = new __ns.Inspector({
+        onSave() {}, onSelectSteps() {},
+        getBackends() { return { coder: { provider: 'codex', model: '', nodes: ['s4'] } }; },
+        onSetRole(role, body) { sent.push(body); return Promise.resolve({ detail: 'ok' }); },
+        models() { return Promise.resolve({ providers: [] }); },
+      });
+      inspector.setSchema({ providers: ['antigravity', 'claude_code', 'codex'] });
+      inspector.show('s4', 'agent', { backend: 'coder', access: 'write' });
+      function walk(node, out) {
+        (node._children || []).forEach(function (c) { out.push(c); walk(c, out); });
+        return out;
+      }
+      var all = walk(inspector.configure, []);
+      var label = all.filter(function (n) { return n.className === 'runs-on-delegate'; })[0];
+      var tick = label._children[0];
+      var rows = all.filter(function (n) { return n.className === 'runs-on-row'; });
+      var use = rows[0]._children[2], dProvider = rows[1]._children[0];
+      var before = { checked: tick.checked, disabled: dProvider.disabled };
+      use._listeners.click[0]();                       // unticked: no delegate
+      tick.checked = true; tick._listeners.change[0]();
+      dProvider.value = 'antigravity';
+      use._listeners.click[0]();                       // ticked: sends it
+      return { before: before, enabled: !dProvider.disabled, sent: sent };
+    """)
+    assert result["before"] == {"checked": False, "disabled": True}, "off by default"
+    assert result["sent"][0]["delegate"] is None
+    assert result["enabled"]
+    assert result["sent"][1]["delegate"]["provider"] == "antigravity"
+
+
+def test_the_stream_reads_like_a_transcript_not_a_list_of_notices():
+    """Measured on a real Codex turn: 26 of 47 events were token-usage,
+    moderation and diff notices, each drawn as a row, and the messages were
+    raw JSON -- you could not tell which step had gone wrong. Now: only what
+    the model did, a command's start and end as ONE row with the end of its
+    output, and a message's prose."""
+    try:
+        import quickjs  # noqa: F401
+    except ImportError:  # pragma: no cover
+        pytest.skip("quickjs not installed")
+    from jsdom_harness import exercise
+
+    result = exercise("""
+      var events = [
+        { kind: 'thread_token_usage_updated', at: 1 },
+        { kind: 'turn_moderation_metadata', at: 1 },
+        { kind: 'command', phase: 'started', at: 2, command: 'python train.py' },
+        { kind: 'turn_diff_updated', at: 3 },
+        { kind: 'command', phase: 'completed', at: 9, command: 'python train.py',
+          exit_code: 2, output: 'a\\nb\\nc\\nd\\ne\\nCUDA error: no device' },
+        { kind: 'command', phase: 'started', at: 10, command: 'nvidia-smi' },
+        { kind: 'message', phase: 'completed', at: 11,
+          text: '{"summary": "The GPU is not visible", "status": "blocked"}' },
+      ];
+      var host = document.createElement('div');
+      var n = __ns.renderTranscript(host, events, { full: true });
+      var rows = host._children.map(function (row) {
+        var bits = [row.className];
+        (function walk(node) {
+          for (var i = 0; i < (node._children || []).length; i++) {
+            var c = node._children[i];
+            if (c.className === 'tx-text' || c.className.indexOf('tx-out') === 0)
+              bits.push(c.className + '=' + c.textContent);
+            walk(c);
+          }
+        })(row);
+        return bits;
+      });
+      return { n: n, rows: rows };
+    """)
+
+    rows = result["rows"]
+    assert result["n"] == 3, rows  # train.py, nvidia-smi, the message
+    train, smi, said = rows
+    assert "tx-text=$ python train.py" in train
+    out = next(b for b in train if b.startswith("tx-out tx-fail="))
+    assert "CUDA error: no device" in out and "exit 2" in out and "more lines" in out
+    assert "tx-running" in smi[0] and "tx-out=running…" in smi, smi
+    assert "tx-text=[blocked] The GPU is not visible" in said, said
+
+    shown = exercise("""
+      return [__ns.shellCommand('/bin/bash -lc "sed -n \\"1,20p\\" a.py && rg x"'),
+              __ns.shellCommand("bash -lc 'ls -la'"),
+              __ns.shellCommand('pytest -q'),
+              __ns.shortPath('/home/u/sessions/s-1/workspace/pkg/cli.py')];
+    """)
+    assert shown == ['sed -n "1,20p" a.py && rg x', "ls -la", "pytest -q", "pkg/cli.py"], shown
+    print("PASS  bookkeeping hidden, a command is one row, a message is prose")

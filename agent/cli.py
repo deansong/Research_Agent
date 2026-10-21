@@ -39,6 +39,10 @@ def main() -> None:
         _show_logins(getattr(args, "provider", None))
         return
 
+    if args.command == "models":
+        _show_models(getattr(args, "provider", None))
+        return
+
     repo_path = _validated_repo(args.repo)
 
     if args.command == "web":
@@ -56,7 +60,7 @@ def main() -> None:
         return
 
     if args.command == "sessions":
-        rows = storage.list_sessions(repo_path)
+        rows = storage.list_sessions(repo_path, _sessions_root(args, repo_path))
         if not rows:
             print("No sessions yet.")
             return
@@ -69,7 +73,8 @@ def main() -> None:
 
     if args.command == "promote":
         paths = storage.session_paths(
-            repo_path, args.session or DEFAULT_SESSION, session_dir=args.session_dir
+            repo_path, args.session or DEFAULT_SESSION, session_dir=args.session_dir,
+            root=_sessions_root(args, repo_path),
         )
         target = storage.promote(paths, args.name, overwrite=args.force)
         print(f"Promoted this session's agent to {target}")
@@ -106,6 +111,12 @@ def main() -> None:
         if folder_path is None:
             if args.explain:
                 print(describe(cfg, paths))
+                from agent.bootstrap import settings as bootstrap_settings
+
+                try:
+                    print("\n" + bootstrap_settings.render_text(cfg, paths.session))
+                except bootstrap_settings.SettingsError as exc:
+                    raise SystemExit(f"\n{exc.message}")
                 _report_logins({backend_for(cfg, role).provider
                                 for role in ("discussor", "planner", "designer")})
                 print("\nNo agent has been designed for this session yet.")
@@ -145,7 +156,7 @@ def main() -> None:
             raise SystemExit(f"\n{exc}")
 
         try:
-            _run_work_phase(runtime, folder, cfg, paths, backends, task_brief)
+            _supervised(runtime, folder, cfg, paths, backends, task_brief)
         except BackendError as exc:
             # A provider problem, not a bug. The graph checkpoints after every
             # completed node, so whatever finished before this is still there --
@@ -170,12 +181,16 @@ def _bootstrap(runtime, cfg, paths, request) -> bool:
         print("No task supplied.")
         return False
 
+    from agent.bootstrap.settings import SettingsError
+
     try:
         session = runtime.bootstrap_session(request)
     except BackendError as exc:
         raise SystemExit(f"\n{exc}")
+    except SettingsError as exc:
+        raise SystemExit(f"\n{exc.message}")
 
-    values = drive(session, cfg)
+    values = drive(session, cfg, rerun_finished=True)   # the design phase
 
     if values.get("outcome") != "ready":
         print("\nStopped before an agent was ready.")
@@ -197,13 +212,13 @@ def _resolve_session(args, cfg, repo_path):
                        hand-written brief.txt, which IS the task.
       --session NAME   you named it, so you mean "carry on with that one".
                        The task may come from its saved request.
-      neither          the task names the session, so the same task resumes
-                       and a different task starts somewhere clean.
+      neither          a NEW session, with a new id, every time -- however
+                       alike two tasks are, they never share a folder.
 
     Note the asymmetry, which is not an oversight: the first two know the
     folder BEFORE they know the task, so they can read a file out of it. The
-    third derives the folder FROM the task, so there is nowhere to look yet --
-    which is exactly why preparing a brief.txt requires naming the folder.
+    third makes the folder only once it has the task -- which is exactly why
+    preparing a brief.txt requires naming the folder.
     """
     supplied = args.task.strip() if args.task else (
         Path(args.task_file).expanduser().read_text().strip() if args.task_file else ""
@@ -212,7 +227,8 @@ def _resolve_session(args, cfg, repo_path):
 
     if session_dir or cfg.session:
         paths = storage.session_paths(
-            repo_path, cfg.session or "unnamed", session_dir=session_dir
+            repo_path, cfg.session or "unnamed", session_dir=session_dir,
+            root=cfg.sessions_root,
         )
         # Precedence, most explicit first. brief.txt outranks request.txt
         # because YOU wrote brief.txt and WE wrote request.txt: if the two
@@ -228,10 +244,17 @@ def _resolve_session(args, cfg, repo_path):
     else:
         task = supplied or _prompt_for_task()
         if not task:
-            return storage.session_paths(repo_path, "unnamed"), ""
-        paths = storage.session_paths(repo_path, storage.session_name_for(task))
-        print(f"session  {paths.session.name}  (derived from the task; "
-              f"reuse it with --session {paths.session.name})")
+            return storage.session_paths(repo_path, "unnamed", root=cfg.sessions_root), ""
+        root = storage.sessions_root(repo_path, cfg.sessions_root)
+        paths = storage.session_paths(repo_path, storage.new_session_id(task, root),
+                                      root=root)
+        print(f"session  {paths.session.name}  (new; resume it with "
+              f"--session {paths.session.name})")
+
+    # Its own worktree, if it has not started yet -- see agent/storage.py.
+    note = storage.create_workspace(paths)
+    if note:
+        print(note)
 
     if task:
         # request.txt is what YOU asked for and is what identifies the session.
@@ -284,7 +307,7 @@ def _warn_if_task_changed(paths, task: str) -> None:
     """Refuse to silently run one task's agent against a different task.
 
     Only reachable when YOU named the folder -- --session or --session-dir --
-    since a name derived from the task cannot collide across different tasks.
+    since otherwise every task gets a new session of its own.
     Worth an explicit stop: the agent in a session was designed FOR its brief,
     and pointing it at unrelated work produces confident, plausible, wrong
     output. Editing brief.txt after an agent exists lands here too, which is
@@ -302,8 +325,7 @@ def _warn_if_task_changed(paths, task: str) -> None:
     start_fresh = (
         "  - use an empty folder: --session-dir <new path>;\n"
         if paths.external else
-        f"  - drop --session, and a new session will be derived from this task;\n"
-        f"  - pass --session {storage.session_name_for(task)} to start one explicitly;\n"
+        f"  - drop --session, and this task gets a new session of its own;\n"
     )
 
     raise SystemExit(
@@ -320,7 +342,47 @@ def _warn_if_task_changed(paths, task: str) -> None:
     )
 
 
-def _run_work_phase(runtime, folder, cfg, paths, backends, task_brief) -> None:
+def _supervised(runtime, folder, cfg, paths, backends, task_brief) -> None:
+    """Run the agent; then, unless --supervisor off, review the run and go
+    round again -- re-plan or redesign, run the new agent -- until the
+    supervisor (auto) or you (manual) decide to finish. See agent/supervisor.py.
+    """
+    from agent import supervisor
+
+    iteration = supervisor.next_iteration(paths.session)
+    while True:
+        values, parked = _run_work_phase(runtime, folder, cfg, paths, backends,
+                                         task_brief, iteration)
+        if parked or cfg.supervisor == "off":
+            return
+
+        decided = drive(runtime.supervisor_session(
+            iteration=iteration, values=values, task_brief=task_brief,
+            agent_dir=folder.path), cfg)
+        if decided.get("decision") not in ("replan", "redesign"):
+            print(f"\nFinished after {iteration} iteration(s). Each one is kept "
+                  f"under {paths.session / supervisor.ITERATIONS}.")
+            return
+
+        request = paths.request.read_text().strip() if paths.request.exists() else task_brief
+        designed = drive(runtime.reenter_design(
+            decision=decided["decision"], feedback=decided.get("feedback", ""),
+            auto=cfg.supervisor == "auto", request=request), cfg)
+        if designed.get("outcome") != "ready":
+            print("\nStopped before the next agent was ready.")
+            return
+        task_brief = runtime.save_brief(designed) or task_brief
+        loaded = runtime.load_folder(runtime.resolve_folder(None) or folder.path)
+        if loaded.folder is None or loaded.blocking:
+            raise SystemExit(f"\nThe redesigned agent cannot run: "
+                             f"{loaded.error or format_problems(loaded.blocking)}")
+        folder = loaded.folder
+        backends = runtime.backends(needed_for(folder))
+        iteration += 1
+        print(f"\n===== iteration {iteration}: {folder.graph.name} =====")
+
+
+def _run_work_phase(runtime, folder, cfg, paths, backends, task_brief, iteration=1):
     """Run the generated agent, once per task.
 
     The loop exists because /new-style commands end the run with
@@ -331,7 +393,7 @@ def _run_work_phase(runtime, folder, cfg, paths, backends, task_brief) -> None:
     """
     if not task_brief:
         print("No task supplied.")
-        return
+        return {}, True
 
     _, plan_warning = runtime.load_plan_reporting()
     if plan_warning:
@@ -347,6 +409,7 @@ def _run_work_phase(runtime, folder, cfg, paths, backends, task_brief) -> None:
             task_brief=task_brief,
             run_index=run_index,
             threads=threads,
+            iteration=iteration,
         )
 
         try:
@@ -363,8 +426,11 @@ def _run_work_phase(runtime, folder, cfg, paths, backends, task_brief) -> None:
 
         _report(values)
 
-        if values.get("outcome") != "new_task" or not values.get("next_request"):
-            break
+        # Parked on a question (ctrl-D) rather than finished: nothing to
+        # review yet.
+        parked = bool(session.graph.get_state(session.config).next)
+        if parked or values.get("outcome") != "new_task" or not values.get("next_request"):
+            return values, parked
 
         # Carry conversations forward so the next task is cheap.
         threads = dict(values.get("threads", {}))
@@ -492,6 +558,24 @@ def _show_logins(provider: str | None = None) -> None:
           "the ones\nthat do not need a full-screen terminal.\n")
 
 
+def _show_models(provider: str | None = None) -> None:
+    """`python main.py models` -- what each provider will accept as `model`."""
+    from agent.backends.models import list_all, list_models
+
+    lists = [list_models(provider)] if provider else list_all()
+    for listed in lists:
+        print(f"\n{listed.provider}" + (f"  ({listed.source})" if listed.source else ""))
+        if listed.error:
+            print(f"  !! {listed.error}")
+        for model in listed.models:
+            mark = "  (default)" if model.default else ""
+            label = f"  {model.label}" if model.label and model.label != model.id else ""
+            print(f"  {model.id:<28}{label}{mark}")
+    print("\nUse one with --model, --backend-role ROLE=PROVIDER:MODEL, the "
+          "Models section of the\nweb UI's New session dialog, or the Design "
+          "agent tab.\n")
+
+
 def _parse_args():
     parser = argparse.ArgumentParser(
         description="Interactive LangGraph coding agent",
@@ -513,6 +597,11 @@ def _parse_args():
     login.add_argument("provider", nargs="?",
                        help="Check just this provider, instead of all of them")
 
+    models = subparsers.add_parser(
+        "models", help="List the models each provider offers")
+    models.add_argument("provider", nargs="?",
+                        help="List just this provider, instead of all of them")
+
     run = subparsers.add_parser("run", help="Run the coding agent")
     run.add_argument("repo", help="Path to the repository")
     run.add_argument(
@@ -521,7 +610,7 @@ def _parse_args():
         # indistinguishable from something the user typed, so a non-None
         # default would silently outrank the config file.
         default=None,
-        help="Resume a named session (default: one derived from the task)",
+        help="Resume a session by its id (default: start a new one)",
     )
     run.add_argument(
         "--session-dir", metavar="PATH",
@@ -529,6 +618,10 @@ def _parse_args():
              "<repo>/.agent/sessions/<name>. If it holds a brief.txt, that is "
              "read as the task.",
     )
+    run.add_argument(
+        "--sessions-root", metavar="PATH",
+        help="Folder to make session folders in (default <repo>/.agent/sessions). "
+             "Outside the repository keeps sessions out of the models' view.")
     run.add_argument("--pre-build-agent", metavar="NAME|PATH",
                      help="Skip designing an agent; run this one")
     run.add_argument("--task", help="The task, instead of being prompted")
@@ -539,6 +632,16 @@ def _parse_args():
     run.add_argument("--model", help="Model for every role")
     run.add_argument("--backend-role", action="append", metavar="ROLE=PROVIDER[:MODEL]",
                      help="Override one role, e.g. executor=codex:gpt-5.6-sol. Repeatable.")
+    run.add_argument("--supervisor", choices=("manual", "auto", "off"),
+                     help="After each run: manual (review, then you decide), auto "
+                          "(act on the review), or off")
+    run.add_argument("--max-iterations", type=int,
+                     help="Most design-and-run iterations the supervisor may take")
+    run.add_argument("--no-research", action="store_true",
+                     help="Do not let the discussor ask the research agent first")
+    run.add_argument("--delegate", action="append", metavar="ROLE=PROVIDER[:MODEL]",
+                     help="When ROLE's provider is out of credits, run its turns here "
+                          "instead of waiting. Repeatable; off unless given.")
     run.add_argument("--explain", action="store_true",
                      help="Print the resolved config and the agent, then exit")
 
@@ -548,14 +651,36 @@ def _parse_args():
     web.add_argument("--port", type=int, default=8420)
     # The same backend flags `run` takes, so `web . --backend fake` means what
     # you would expect. They become the defaults for every session the UI opens.
+    web.add_argument(
+        "--sessions-root", metavar="PATH",
+        help="Folder to make session folders in (default <repo>/.agent/sessions). "
+             "Outside the repository keeps sessions out of the models' view.")
     web.add_argument("--config", help="Path to a config JSON file")
     web.add_argument("--backend", help="Provider for every role, e.g. codex, fake")
     web.add_argument("--model", help="Model for every role")
     web.add_argument("--backend-role", action="append", metavar="ROLE=PROVIDER[:MODEL]",
                      help="Override one role. Repeatable.")
+    web.add_argument("--supervisor", choices=("manual", "auto", "off"),
+                     help="After each run: manual (review, then you decide), auto "
+                          "(act on the review), or off")
+    web.add_argument("--max-iterations", type=int,
+                     help="Most design-and-run iterations the supervisor may take")
+    web.add_argument("--no-research", action="store_true",
+                     help="Do not let the discussor ask the research agent first")
+    web.add_argument("--delegate", action="append", metavar="ROLE=PROVIDER[:MODEL]",
+                     help="When ROLE's provider is out of credits, run its turns here "
+                          "instead of waiting. Repeatable; off unless given.")
+    web.add_argument("--no-resume", action="store_true",
+                     help="Do not restart the sessions that were running when the "
+                          "server last stopped, and forget them (Open and Start "
+                          "one to carry on)")
 
     sessions = subparsers.add_parser("sessions", help="List this repo's sessions")
     sessions.add_argument("repo", help="Path to the repository")
+    sessions.add_argument(
+        "--sessions-root", metavar="PATH",
+        help="Folder to make session folders in (default <repo>/.agent/sessions). "
+             "Outside the repository keeps sessions out of the models' view.")
 
     promote = subparsers.add_parser("promote", help="Keep this session's agent for reuse")
     promote.add_argument("repo", help="Path to the repository")
@@ -564,8 +689,20 @@ def _parse_args():
     promote.add_argument("--session-dir", default=None, metavar="PATH",
                          help="Promote from a session folder outside .agent/sessions/")
     promote.add_argument("--force", action="store_true", help="Replace an existing agent")
+    promote.add_argument(
+        "--sessions-root", metavar="PATH",
+        help="Folder to make session folders in (default <repo>/.agent/sessions). "
+             "Outside the repository keeps sessions out of the models' view.")
 
     return parser.parse_args()
+
+
+def _sessions_root(args, repo_path: Path):
+    """The sessions root for the commands that run before load_config: the
+    flag, else whatever the config files and environment say."""
+    if getattr(args, "sessions_root", None):
+        return args.sessions_root
+    return load_config(repo_path=repo_path, cli=None).sessions_root
 
 
 def _validated_repo(value: str) -> Path:

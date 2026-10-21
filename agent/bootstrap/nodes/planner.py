@@ -27,7 +27,7 @@ from agent.statelib import merge_section
 from agent.telemetry import record_usage, usage_to_dict
 
 
-def make_planner(backend, paths):
+def make_planner(backend, paths, instructions: str = PLANNER_INSTRUCTIONS):
     def planner(state: BootstrapState):
         design = dict(state.get("design", {}))
         revision = design.get("plan_feedback", "").strip()
@@ -55,7 +55,7 @@ def make_planner(backend, paths):
 
         try:
             sent = activity.exchange(thread_id=thread_id,
-                                     instructions=PLANNER_INSTRUCTIONS,
+                                     instructions=instructions,
                                      prompt=prompt)
             activity.arm_progress(backend, state.get('session_dir', ''), 'planner',
                                   sent=sent)
@@ -63,7 +63,7 @@ def make_planner(backend, paths):
                 thread_id=thread_id,
                 repo_path=state["repo_path"],
                 access=Access.READ_ONLY,
-                developer_instructions=PLANNER_INSTRUCTIONS,
+                developer_instructions=instructions,
                 prompt=prompt,
                 output_model=PlannerOutput,
             )
@@ -72,8 +72,14 @@ def make_planner(backend, paths):
             # see agent/activity.py for why this goes to disk and not to state.
             activity.disarm_progress(backend, state.get("session_dir", ""), "planner")
             activity.write(state.get("session_dir", ""), "planner", run.events, sent=sent,
-                                                       summary=activity.scalars(run.data),
-                           usage=usage_to_dict(run.usage) if run.usage else None)
+                           summary=activity.scalars(run.data),
+                           usage=usage_to_dict(run.usage) if run.usage else None,
+                           backend=backend, thread_id=run.thread_id,
+                           output=run.data.model_dump(mode="json", by_alias=True))
+            activity.record_visit(state.get("session_dir", ""), "planner", kind="design",
+                                  provider=getattr(backend, "name", ""),
+                                  model=getattr(backend, "model", "") or "",
+                                  thread=run.thread_id)
         except BackendOutputError as exc:
             print(f"\n[planner] the model's reply did not fit the schema: {exc}")
             return {

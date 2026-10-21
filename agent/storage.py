@@ -24,6 +24,43 @@ LAYOUT
         agents/<name>/          promoted, committed, reusable
 
 --------------------------------------------------------------------------
+ONE FOLDER PER SESSION, AND WHERE THEY ALL GO
+--------------------------------------------------------------------------
+Every new session gets a NEW id -- a few words of the task, the time, and a
+random suffix -- so two sessions never share a folder, a checkpoint or an
+agent, however alike their tasks are. (An id used to be a hash of the task, so
+the same words reopened an old session and its files.) A session is resumed
+only by naming it: --session ID, or opening it in the web UI.
+
+The sessions root is the folder those session folders are made in:
+<repo>/.agent/sessions by default, or `sessions_root` in config.json,
+AGENT_SESSIONS_ROOT, --sessions-root, or the web UI's New session dialog.
+Outside the repository is the better place for it: then a model working in
+the repository cannot come across other sessions at all.
+
+--------------------------------------------------------------------------
+EACH SESSION WORKS IN ITS OWN COPY OF THE PROJECT
+--------------------------------------------------------------------------
+In a git repository, a new session gets a git worktree at <session>/workspace,
+on its own branch `agent/<session id>`, made from the project as it is now:
+the current commit plus your uncommitted changes to tracked files. Every model
+turn runs there. So a run cannot touch your checkout, and two sessions cannot
+touch each other's files -- measured, the reason this exists: a running
+session's coder "restored" five files someone was editing in the shared
+checkout, and its checker had flagged them because they changed during its
+turn.
+
+Files git does not track (data sets, model caches) are not copied; the models
+are told the original checkout's path, to read them from there and never
+write there. A session started before this, or a directory that is not a git
+repository, keeps working in the repository itself. To keep a session's work:
+commit in its workspace and merge the branch, e.g.
+    git -C <session>/workspace add -A && git -C <session>/workspace commit -m ...
+    git merge agent/<session id>
+Deleting a session folder leaves git a stale worktree entry; `git worktree
+prune` clears it.
+
+--------------------------------------------------------------------------
 A SESSION FOLDER SOMEWHERE ELSE
 --------------------------------------------------------------------------
 `--session-dir /path/to/anywhere` uses that directory AS the session folder,
@@ -68,6 +105,7 @@ ambiguous on resume.
 
 from __future__ import annotations
 
+import json
 import shutil
 from dataclasses import dataclass
 from pathlib import Path
@@ -76,6 +114,10 @@ DOT_AGENT = ".agent"
 
 #: Optional, hand-written: the initial idea, read instead of prompting for it.
 INPUT_BRIEF = "brief.txt"
+
+#: The session's own worktree, and the record of how it was made.
+WORKSPACE = "workspace"
+WORKSPACE_RECORD = "workspace.json"
 LEGACY_ROOT = Path.home() / ".codex-langgraph-agent"
 
 GITIGNORE_LINES = (
@@ -101,11 +143,25 @@ class SessionPaths:
     approved: Path
     meta: Path
     agents_dir: Path
+    sessions_root: Path
+    """Where this session's siblings live -- see isolation_rules()."""
     external: bool = False
-    """True when --session-dir put this session outside <repo>/.agent/sessions/.
+    """True when this session's folder is outside <repo>/.agent/ -- because of
+    --session-dir or a sessions root somewhere else.
     Two things care: the gitignore we write does not cover it, and the working
     rules handed to write-access nodes must name it explicitly so the agent
     does not treat its own checkpoint as fair game."""
+
+    @property
+    def workspace(self) -> Path:
+        """Where this session's models work: its own worktree when it has one
+        (see create_workspace), else the repository itself."""
+        own = self.session / WORKSPACE
+        return own if (self.session / WORKSPACE_RECORD).exists() else self.repo
+
+    @property
+    def own_workspace(self) -> bool:
+        return self.workspace != self.repo
 
     def has_agent(self) -> bool:
         """True once a validated agent has been written for this session."""
@@ -129,15 +185,27 @@ class SessionPaths:
         self.approved.unlink(missing_ok=True)
 
 
+def sessions_root(repo: Path, configured: str | Path | None = None) -> Path:
+    """The folder session folders are made in: `configured` (relative to the
+    repository when relative), else <repo>/.agent/sessions."""
+    repo = Path(repo).resolve()
+    if not configured:
+        return repo / DOT_AGENT / "sessions"
+    root = Path(configured).expanduser()
+    return (root if root.is_absolute() else repo / root).resolve()
+
+
 def session_paths(
     repo: Path,
     session: str,
     *,
     session_dir: Path | str | None = None,
+    root: Path | str | None = None,
 ) -> SessionPaths:
     """Compute (and create) every path for one session.
 
-    `session` names a folder under <repo>/.agent/sessions/. `session_dir`
+    `session` names a folder under the sessions root (`root`, see
+    sessions_root()). `session_dir`
     overrides that with a directory of your choosing, anywhere -- the contents
     are identical either way, so everything downstream reads the same fields
     and does not care which route was taken.
@@ -148,8 +216,8 @@ def session_paths(
     repo = Path(repo).resolve()
     dot_agent = repo / DOT_AGENT
 
-    external = session_dir is not None
-    if external:
+    siblings = sessions_root(repo, root)
+    if session_dir is not None:
         root = Path(session_dir).expanduser().resolve()
         # An unhelpful failure mode to guard: a typo'd --session-dir would
         # otherwise happily mkdir -p a whole new tree and start an empty
@@ -165,7 +233,8 @@ def session_paths(
         if root.exists() and not root.is_dir():
             raise SystemExit(f"--session-dir {root} exists but is not a directory.")
     else:
-        root = dot_agent / "sessions" / _safe(session)
+        root = siblings / _safe(session)
+    external = dot_agent not in root.parents
 
     paths = SessionPaths(
         repo=repo,
@@ -192,6 +261,7 @@ def session_paths(
         # session: they are reusable across sessions, which is the point of
         # promoting one, and an external folder is usually one experiment.
         agents_dir=dot_agent / "agents",
+        sessions_root=root.parent if session_dir is not None else siblings,
         external=external,
     )
 
@@ -224,41 +294,224 @@ def _warn_if_committable(paths: SessionPaths) -> None:
     )
 
 
-def session_name_for(task: str) -> str:
-    """A stable, readable session name derived from the task itself.
+def new_session_id(task: str, root: Path | None = None) -> str:
+    """A fresh id for a new session: a few words of the task, the time, and a
+    random suffix -- e.g. `compare-hotel-staff-skill-20261018-1405-a3f9`.
 
-    Why derive it rather than default to "main": a session owns ONE task. It
-    holds the conversation that shaped the agent, the agent designed from that
-    conversation, and the brief that agent runs against. Pointing a second,
-    unrelated task at the same session silently reuses an agent built for the
-    first one -- which is exactly the bug this replaces.
-
-    Deriving from the task gives both properties at once: the same task resumes
-    where it left off, and a different task gets its own session without
-    anyone having to remember --session.
-
-    The hash suffix matters. Two tasks can easily share their first few words
-    ("add tests for the parser" / "add tests for the lexer"), and colliding
-    those would resurrect the very bug we are fixing.
+    Never derived from the task alone. That was the old rule, so the same
+    words reopened the old session, its agent and the files it left, which is
+    the interference this replaces. Readable words so a folder listing still
+    says what each one is; the time so they sort; the suffix so two started
+    in the same minute differ.
     """
-    import hashlib
     import re
+    import secrets
+    import time
 
     words = re.findall(r"[a-z0-9]+", task.lower())[:5]
     slug = "-".join(words)[:40].strip("-") or "task"
-    digest = hashlib.sha256(task.strip().encode()).hexdigest()[:6]
-    return f"{slug}-{digest}"
+    stamp = time.strftime("%Y%m%d-%H%M")
+    while True:
+        name = f"{slug}-{stamp}-{secrets.token_hex(2)}"
+        if root is None or not (Path(root) / name).exists():
+            return name
 
 
-def list_sessions(repo: Path) -> list[tuple[str, str, bool]]:
-    """(name, first line of brief, has an agent) for every session in a repo."""
-    root = Path(repo).resolve() / DOT_AGENT / "sessions"
+def create_workspace(paths: SessionPaths) -> str:
+    """Give a NEW session its own git worktree; return a line saying what was
+    done ("" when nothing was). See "EACH SESSION WORKS IN ITS OWN COPY".
+
+    Only for a session that has not started: one that already ran in the
+    repository keeps doing so, because its work so far is there. Not a git
+    repository, or git refuses: the session works in the repository, and the
+    line says so.
+    """
+    if (paths.session / WORKSPACE_RECORD).exists():
+        return ""
+    if paths.checkpoint.exists():
+        return ""
+    import subprocess
+    import time
+
+    def git(*argv: str) -> subprocess.CompletedProcess:
+        return subprocess.run(["git", "-C", str(paths.repo), *argv],
+                              capture_output=True, text=True, timeout=120)
+
+    try:
+        head = git("rev-parse", "HEAD")
+        if head.returncode != 0:
+            return (f"Note: {paths.repo} is not a git repository with a commit, so "
+                    f"this session works in it directly, shared with any other.")
+        # The project as it is NOW: a commit of the uncommitted changes to
+        # tracked files, made without touching the checkout (empty when there
+        # are none).
+        stash = git("stash", "create").stdout.strip()
+        base = stash or head.stdout.strip()
+        branch = f"agent/{paths.session.name}"
+        made = git("worktree", "add", "-b", branch, str(paths.session / WORKSPACE), base)
+        if made.returncode != 0:
+            return (f"Note: could not make a worktree for this session "
+                    f"({made.stderr.strip()[:300]}); it works in the repository.")
+    except (OSError, subprocess.SubprocessError) as exc:
+        return f"Note: could not make a worktree ({exc}); this session works in the repository."
+
+    (paths.session / WORKSPACE_RECORD).write_text(json.dumps({
+        "branch": branch, "base": base, "head": head.stdout.strip(),
+        "uncommitted_included": bool(stash),
+        "created": time.strftime("%Y-%m-%dT%H:%M:%S"),
+    }, indent=2) + "\n")
+    return (f"Workspace: {paths.session / WORKSPACE} (branch {branch}"
+            f"{', with your uncommitted changes' if stash else ''}).")
+
+
+def workspace_record(paths: SessionPaths) -> dict:
+    try:
+        return json.loads((paths.session / WORKSPACE_RECORD).read_text())
+    except (OSError, ValueError):
+        return {}
+
+
+class DeleteRefused(Exception):
+    """Not deleted, and why -- the folder is not a session's, or is the project."""
+
+
+def delete_session(paths: SessionPaths, *, drop_branch: bool = False) -> list[str]:
+    """Delete a session: its folder (conversation, agent, results -- for good),
+    its worktree, its resume mark, and with `drop_branch` its branch too.
+    Returns what was done, one line each.
+
+    Refuses anything that does not look like a session folder, or that holds
+    the project: `--session-dir` can point a session anywhere, and an
+    rmtree aimed by an HTTP request must not be able to reach the repository.
+    """
+    folder = paths.session.resolve()
+    repo = paths.repo.resolve()
+    if repo.is_relative_to(folder) or folder in (Path(folder.anchor), Path.home().resolve()):
+        raise DeleteRefused(f"{folder} contains the project or is a top-level folder; "
+                            f"not deleting it.")
+    if not any((folder / name).exists() for name in
+               ("request.txt", "checkpoint.sqlite", INPUT_BRIEF, WORKSPACE_RECORD)):
+        raise DeleteRefused(f"{folder} does not look like a session folder; not deleting it.")
+
+    import subprocess
+
+    def git(*argv: str) -> subprocess.CompletedProcess:
+        return subprocess.run(["git", "-C", str(repo), *argv],
+                              capture_output=True, text=True, timeout=120)
+
+    done = [f"Deleted {folder}."]
+    record = workspace_record(paths)
+    branch = record.get("branch", "")
+    if record:
+        # Before the folder goes: git refuses to delete a branch a worktree
+        # still has checked out, and removing it properly leaves no record.
+        git("worktree", "remove", "--force", str(folder / WORKSPACE))
+    shutil.rmtree(folder, ignore_errors=True)
+    if folder.exists():
+        raise DeleteRefused(f"Could not delete everything in {folder}.")
+    if record:
+        git("worktree", "prune")
+        if drop_branch:
+            gone = git("branch", "-D", branch)
+            done.append(f"Deleted branch {branch}." if gone.returncode == 0 else
+                        f"Could not delete branch {branch}: {gone.stderr.strip()[:200]}")
+        else:
+            done.append(f"Its code is kept on branch {branch} "
+                        f"(git branch -D {branch} to remove it).")
+    unmark_running(paths)
+    return done
+
+
+def isolation_rules(paths: SessionPaths) -> str:
+    """What every model is told about the other sessions -- appended to the
+    design roles' and every generated node's instructions.
+
+    Measured: a new session's discussor and planner, working in the
+    repository, opened earlier sessions' folders under .agent/sessions/ and
+    planned around what they found there ("reuse the existing preregistration")
+    -- work from a different task, as if it were this one's. Short on purpose:
+    it rides in developer instructions, where size has a cost.
+    """
+    text = (
+        "\n\nSESSION ISOLATION: this session's own folder is "
+        f"{paths.session}. Other sessions' folders (under {paths.sessions_root}) "
+        "belong to other tasks: never open, use or cite anything in them, and do "
+        "not treat their files as this task's earlier work."
+    )
+    if paths.own_workspace:
+        text += (
+            f" You work in {paths.workspace}, this session's own copy of the "
+            f"project. The original checkout, {paths.repo}, is shared with "
+            f"other people: never change anything there; read from it only "
+            f"files git does not track (data, models) that are missing here."
+        )
+    return text
+
+
+# ---- what survives a server restart ---------------------------------------
+#
+# A session that was RUNNING when the web server stopped -- killed, crashed,
+# restarted to pick up new code -- carries on when it starts again. The mark is
+# a small file per session under <repo>/.agent/running/, pointing at the session
+# folder wherever its sessions root is. Written when a run starts; removed when
+# it ends for any reason except the server stopping under it.
+
+def _running_dir(repo: Path) -> Path:
+    return Path(repo).resolve() / DOT_AGENT / "running"
+
+
+def mark_running(paths: SessionPaths) -> None:
+    folder = _running_dir(paths.repo)
+    folder.mkdir(parents=True, exist_ok=True)
+    (folder / f"{paths.session.name}.json").write_text(
+        json.dumps({"session_dir": str(paths.session)}) + "\n")
+
+
+def unmark_running(paths: SessionPaths) -> None:
+    (_running_dir(paths.repo) / f"{paths.session.name}.json").unlink(missing_ok=True)
+
+
+def marked_running(repo: Path) -> list[Path]:
+    """The session folders that were running when the server last stopped."""
+    folder = _running_dir(repo)
+    out = []
+    for mark in sorted(folder.glob("*.json")) if folder.is_dir() else []:
+        try:
+            out.append(Path(json.loads(mark.read_text())["session_dir"]))
+        except (ValueError, KeyError, OSError):
+            mark.unlink(missing_ok=True)
+    return out
+
+
+#: The choices a session was started with -- models, supervisor, a pre-built
+#: agent -- so reopening it, or resuming it after a restart, runs it the same
+#: way. They used to live only in the request that created it.
+OPTIONS_FILE = "options.json"
+
+
+def save_options(paths: SessionPaths, options: dict) -> None:
+    (paths.session / OPTIONS_FILE).write_text(json.dumps(options, indent=2) + "\n")
+
+
+def load_options(paths: SessionPaths) -> dict:
+    try:
+        value = json.loads((paths.session / OPTIONS_FILE).read_text())
+    except (OSError, ValueError):
+        return {}
+    return value if isinstance(value, dict) else {}
+
+
+def list_sessions(repo: Path, root: Path | str | None = None) -> list[tuple[str, str, bool]]:
+    """(name, first line of brief, has an agent) for every session under the
+    sessions root, newest first."""
+    root = sessions_root(repo, root)
     if not root.exists():
         return []
 
     out = []
-    for entry in sorted(root.iterdir()):
-        if not entry.is_dir():
+    for entry in sorted(root.iterdir(), key=lambda e: e.stat().st_mtime, reverse=True):
+        if not entry.is_dir() or not (entry / "request.txt").exists() and not (
+                entry / INPUT_BRIEF).exists() and not (entry / "checkpoint.sqlite").exists():
             continue
         # The REQUEST identifies the session. Fall back to a hand-written
         # brief.txt for a folder prepared but never yet run, then to brief.md
@@ -400,12 +653,18 @@ def _ensure_gitignore(dot_agent: Path) -> None:
     path.write_text("\n".join(GITIGNORE_LINES) + "\n")
 
 
+_NOTICED: set[Path] = set()
+
+
 def _notice_legacy(repo: Path) -> None:
     """Tell the human where their pre-folder sessions went. Nothing is migrated:
     the schema changed completely, and a half-read checkpoint is the worst
     thing to debug."""
-    if not LEGACY_ROOT.exists():
+    if not LEGACY_ROOT.exists() or repo in _NOTICED:
         return
+    # Once per repository per process: session_paths runs for every session
+    # opened, and a server resuming two sessions printed it twice.
+    _NOTICED.add(repo)
     import hashlib
 
     digest = hashlib.sha256(str(repo).encode()).hexdigest()[:16]

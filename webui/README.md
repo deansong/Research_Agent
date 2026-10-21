@@ -171,7 +171,7 @@ one only depends on what came before.
 ┌──────────────────────────────────────────────────────────────────────┐
 │  agent designer   <session> [phase] agent: name  [Logins] [New] [Open] │
 ├───────────────┬──────────────────────────────┬───────────────────────┤
-│ Conversation  │ Graph │ Plan │ Wiring │ JSON │ Run │ Configure │ ... │
+│ Conversation  │ Design agent │ Graph │ Plan │… │ Run │ Configure │ ... │
 │               │                              │                       │
 │  transcript   │        the agent, drawn      │   the selected node   │
 │  node output  │        click to select       │   its parameters      │
@@ -185,12 +185,27 @@ one only depends on what came before.
 Drag either divider to resize. The app switches tabs for you: clicking a node
 jumps to Configure, and a save that broke something jumps to Problems.
 
+**Design agent** is the agent that designs yours — the fixed graph in
+`agent/bootstrap/graph.py` — drawn, with a card per node. For each of the three
+model nodes (discussor, planner, designer) it shows the provider, the model,
+the backend's timeouts and limits (read from the backend's own constructor),
+and every prompt it sends with where it is sent and its size; the per-turn
+prompts are built from state, so they are described rather than editable. The
+New-session dialog's **Review the design agent before it starts** box (on by
+default) creates the session without starting it and opens this tab, whose
+**Start conversation** button begins the run.
+
+Edits are saved to `<session>/bootstrap.json` as a diff against the defaults,
+checked when you save (agy is refused here, because it cannot run read_only),
+and locked while the session runs: the design graph is built at Start, so
+pause, edit, and Start again.
+
 **Pause and Stop** are in the topbar, and they are two different things
 because there are two honest answers:
 
 | | |
 | --- | --- |
-| **Pause** | Stops after the current node finishes. Loses nothing — the graph checkpoints there anyway — so **Start** carries on from the same question. Can take as long as the node in flight. |
+| **Pause** | Stops after the current node finishes. Loses nothing — the graph checkpoints there anyway — so **Start** carries on from the next node. Can take as long as the node in flight, except while it is waiting out a usage limit or a busy provider: then it stops at once, and Start runs that node again. |
 | **Stop** | Interrupts the provider mid-turn. Immediate, at the cost of that one node's work: a node is atomic, so there is no half-finished result to keep. Everything earlier is still checkpointed. |
 
 Both are disabled unless a run is actually in flight. Stop reaches all the way
@@ -267,9 +282,107 @@ chat with no way to tell which part is happening now.
 
 ---
 
+## Changing which model a node runs on
+
+A designed node names a **role** (`coder`, `checker`, ...), and the role decides
+the provider and model. To change it, click the node, then in **Configure ▸
+Runs on** pick the provider and a model from that provider's own list, and
+press **Use for this role**. Every node with that role moves with it (the hint
+says which); to move one node alone, give it a new role name in **Backend
+(role)** first and save the node.
+
+The choice is saved with the session (`options.json`, as the New dialog's
+Models section saves its choices) and refused at once if the provider cannot do
+the role's job — antigravity cannot run a read-only role. It is used when the
+run starts, so a change at the design review applies to the run you are about
+to approve; for a run already going, press Pause, then Start.
+
+### Delegating when a provider runs out of credits
+
+Off unless you turn it on, per role. Under **Runs on**, tick **If its provider
+runs out of credits, delegate to** and pick the delegate's provider and model —
+say antigravity with `claude-opus-5-5-high` — then **Use for this role**.
+
+When that role's provider reports it is out of credits, the turn is not waited
+on: it runs again on the delegate as a **new conversation with the node's
+first prompt** (the delegate has seen none of the old one), and the role stays
+on the delegate for the rest of that run. The conversation says so, and the
+turn's record is marked `delegated`. Unticked, the role waits for credits as
+before (up to a day). The delegate must be able to do the role's job:
+antigravity cannot stand in for a read-only checker — use claude_code there.
+
+### Giving a role the GPUs
+
+Codex runs every command a node executes inside its own sandbox, and that
+sandbox has **no GPU devices**: `nvidia-smi` and `torch.cuda` fail inside it on
+a machine full of GPUs. So a Codex node that has to use the GPU — a training
+run, a hardware preflight — needs the **GPU** box under **Runs on** (shown when
+the provider is codex). Its write turns then run without Codex's sandbox and
+see the GPUs; its read-only turns keep the sandbox. The price: for that role,
+staying inside the session's workspace rests on the instructions, as it already
+does on antigravity (which has no sandbox, and sees the GPUs).
+
+Every turn still inside the sandbox is told so, so it does not report "no GPU"
+as a blocker. **Which** GPUs a run gets is still `CUDA_VISIBLE_DEVICES` in the
+environment the server was started with: `CUDA_VISIBLE_DEVICES=0,1 python
+main.py web ...` to give runs those two.
+
+## Watching a turn live
+
+Every backend reads its provider's stream as it arrives — Codex's
+notifications, and the `stream-json` lines `claude` and `agy` print — and keeps
+the tail of what the model is writing and reasoning, and the commands and file
+edits it makes, in the turn's in-flight record (`activity/<node>/current.json`,
+rewritten every second). While a session runs, the page polls that record every
+1.5 seconds, so a **working row** appears as soon as a turn starts and shows it
+as it happens:
+
+```
+s1_code (codex/gpt-5.6-sol) — working 34s · 3 command · 1 message
+  ● I'm inspecting the existing 1.1–1.7 interfaces first, then I'll
+    implement only substep 1.8.
+  ⏺ $ git status --short && sed -n '1,260p' hotel_skill_study/config.py
+    │ … 117 more lines
+    │     raise RecordError("durable record verification failed")
+  ⏺ $ python -m pytest -q tests/hotel_skill_study
+    │ FAILED test_cli.py::test_resume - KeyError: 'cell_id'
+    │ exit 1
+  ⏺ edited hotel_skill_study/cli.py
+  writing ▸ Compare LoRA with a linear probe on IMDB ...
+```
+
+It reads like a coding assistant's terminal (`static/js/transcript.js`):
+
+| marker | what |
+| --- | --- |
+| `●` | what the model said — its prose; a JSON message shows its verdict and first prose field (`[retry] pytest fails on the loader`), the JSON itself under **as sent** |
+| `✻` | its reasoning summary |
+| `⏺ $` | a command — as typed, not wrapped in `/bin/bash -lc "..."` — with the last four lines of its output underneath, in red with `exit N` when it failed; **whole output** for the rest |
+| `⏺` | a tool call (agy, Claude Code), a file edit (path relative to the workspace), a web search |
+| `✗` | an error |
+
+A command's start and end are **one** row: `running…` (its marker blinking)
+until it ends. Codex's bookkeeping — token-usage, moderation, diff and
+approval-review notices, and the prompt echoed back — is not drawn. Counted
+across a real session it was more than half of all events (535 token-usage
+and 535 moderation notices against 663 commands), each drawn as its own line,
+so the stream was mostly "thread token usage updated" and you could not tell
+which step went wrong. The terminal and chat log lines drop the same kinds.
+
+The working row keeps the newest twelve steps plus the live tails;
+**show detail** shows up to 120 with whole outputs. When the turn ends the row
+folds to its one-line summary, and the whole turn is in the node inspector's
+Activity tab, drawn the same way.
+
+It lags the provider by a second or two, by design: polling a small file is
+cheap, and pushing every token down the event stream would evict the
+conversation from its ring buffer (one turn held 14,885 events in seventeen
+minutes).
+
 ## The "still working" line
 
-A long turn prints one of these every thirty seconds:
+A long turn also prints one of these every thirty seconds, to the terminal and
+the log:
 
 ```
     ... working: 1016s · 412 command · 98 reasoning · quiet 0s
@@ -316,8 +429,8 @@ and a model's answer is not. And the *final structured answer* was rendered as
 `(final answer)` and nothing else — skipped as a duplicate of the normal
 return path, which is true for the designer, whose answer becomes `graph.json`
 two tabs away, and false for every other node, whose answer becomes state you
-cannot read anywhere. It is now shown, pretty-printed, with its size in the
-label.
+cannot read anywhere. It is now shown: its prose as the row, the whole
+document under **as sent**.
 
 `show detail` on that row expands it into the turn's real events: each command
 with its exit code, each file touched, the model's own reasoning. That is
@@ -340,9 +453,9 @@ It is **the project the agent works on**, and it decides three things:
 
 | | |
 | --- | --- |
-| where `.agent/` goes | sessions, `config.json`, and promoted agents all live under `<repo>/.agent/` |
-| what the nodes are pointed at | it becomes `repo_path`, so `{repo_path}` and every "inspect the repository" instruction mean this directory |
-| what a write node may change | a write-access node edits files here — everything it *produces* goes to the session's `artifacts/` instead |
+| where `.agent/` goes | `config.json` and promoted agents live under `<repo>/.agent/`, and sessions too unless you choose another sessions folder |
+| what the session's workspace is a copy of | in a git repository each new session works in its own worktree of this project (`<session>/workspace`, branch `agent/<id>`); `{repo_path}` and every "inspect the repository" instruction mean that copy |
+| what a write node may change | its workspace — never this checkout; everything it *produces* goes to the session's `artifacts/` |
 
 The field is prefilled with the absolute path the server was started for, so
 what is on screen is the real answer. A **relative** path is taken from that
@@ -351,10 +464,125 @@ same repo, not from the server's working directory — `python main.py web
 absolute path or `~/...` is honoured as typed, so one server can serve several
 projects.
 
-**It does not have to be a git repository**, despite the name. It is just the
-directory the agent is allowed to look at and change; a plain folder works.
+**It does not have to be a git repository**, despite the name. A plain folder
+works — but then there is no worktree to give each session, so sessions work
+in the folder itself and can see each other's changes.
 It also does not have to be *this* project — pointing it at the codebase you
 actually want worked on is the normal case.
+
+---
+
+## The sessions folder
+
+Every **New** session gets a new folder with a unique id — a few words of the
+task, the time and a random suffix, e.g. `survey-hotel-jobs-20261018-1405-a3f9`
+— so nothing from an earlier session is ever reopened. The **Sessions folder**
+decides where those folders are made. By default it is
+`<repo>/.agent/sessions/`.
+
+**To choose it from the browser:** open **New**, and type the path into
+**Sessions folder** (it is prefilled with what the server resolved). `~` works;
+a relative path is taken from the repository. The browser remembers your
+choice for the next New, and **Open** lists the sessions in that same folder —
+change the field and press Open to look in another. Clear it to go back to the
+default.
+
+**To set it for the server, so every browser gets it:**
+
+```bash
+python main.py web . --sessions-root ~/agent-sessions
+# or
+AGENT_SESSIONS_ROOT=~/agent-sessions python main.py web .
+```
+
+**To set it permanently for a repository**, in `<repo>/.agent/config.json`:
+
+```json
+{ "sessions_root": "~/agent-sessions" }
+```
+
+Precedence, later wins: config file → `AGENT_SESSIONS_ROOT` → `--sessions-root`
+→ the dialog field.
+
+**Changing it does not stop older sessions.** A session that was running when
+the server last stopped is resumed wherever its folder is, so after switching
+to a new sessions folder the old running ones come back too. **Open** lists
+them alongside the new folder's sessions, and clicking one reattaches it.
+**Pause** one you do not want, and it will not be resumed again — or start the
+server once with `--no-resume`, which skips them and forgets them. (With the
+server stopped, deleting `<repo>/.agent/running/<session id>.json` does the
+same for one session; its folder is untouched.)
+
+**Outside the repository is the better place.** Then a model working in the
+project cannot come across another session's folder at all. (Every model is
+also told which folder is its own and to leave the others alone.)
+
+**Exact session folder** is the other field: use it for one session whose
+folder you have prepared — say, with a hand-written `brief.txt` in it — and
+that folder is used as it is, wherever it is.
+
+**Deleting a session:** in **Open**, press **Delete…** under it, then
+**Delete for good**. A running session is stopped first; then its folder (the
+conversation, the agent, every result under `artifacts/`), its worktree and
+its resume mark are removed. Its branch `agent/<id>` keeps the code it wrote
+unless you tick *Also delete its git branch*. Anything that does not look like
+a session folder, or that contains the project, is refused.
+
+A session remembers the options it was started with (`options.json`: models,
+supervisor mode, pre-built agent), so opening it again or resuming it after a
+server restart runs it the same way.
+
+---
+
+## Leaving a run alone
+
+A run lives in the server, not the browser: close the tab and it carries on;
+open the page again and **Open** the session to watch. Keep the server itself
+alive with `screen`, `tmux` or `nohup`. If it stops anyway — a crash, a restart
+to pick up new code — every session that was running carries on when
+`python main.py web` starts again, from the last finished node (start the
+server with `--no-resume` to skip that). A session that was waiting for your
+answer asks the same question again.
+
+Out of credits or over a usage limit, a run waits instead of failing: until
+the time the provider names, or 1, 2, 4, 8, 16 minutes and then every 30
+minutes, for up to 24 hours (`credit_wait_hours` in a role's `options`).
+
+---
+
+## The Files tab
+
+Shows this session's folder and nothing else:
+
+| group | what |
+| --- | --- |
+| **Code** | the files the session changed in its workspace since it was made |
+| **This session** | its plan, brief, designed agent, the supervisor's reports |
+| **Results** | everything under `artifacts/` (collapsed: often thousands) |
+
+Not listed and not readable: the rest of the repository (this tool's own
+`agent/` and `webui/` included), other sessions, and the unchanged part of the
+workspace, which is just a copy of the project. A path that climbs out —
+`session/../../...`, or a symlink pointing outside — is refused with a 403.
+That matters more than it looks: with `--host 0.0.0.0`, whatever this tab can
+read, anyone who can reach the port can read.
+
+---
+
+## The research agent
+
+The New session dialog's **Let the discussor ask the research agent first**
+box (ticked by default) lets the discussor send the **researcher** a few
+questions before it asks you: the standard datasets, baselines and their
+numbers, the usual settings, what a run costs. You see it in the conversation —
+the discussor's "Looking these up first", then the researcher's findings with
+their sources — and then the discussor's questions, with suggestions that cite
+them. Each round is also saved to `research/round-N.md` in the Files tab, and
+the researcher is a card on the **Design agent** tab, where its model, its
+instructions and its skills (the tools it may run) can be changed.
+
+It runs on antigravity by default and takes a few minutes a round. If it
+cannot start or fails, the discussor carries on without it and says so.
 
 ---
 
@@ -363,18 +591,23 @@ actually want worked on is the normal case.
 **It is the opening line of a conversation, not a specification.** The
 discussor's first prompt is:
 
-> The human wants this done: *&lt;your task&gt;*. Begin discovery. Ask exactly one
-> high-value question about either the work itself or the shape of agent that
-> should do it. The human ends the discussion by typing `/plan`; you only advise.
+> The human wants this done: *&lt;your task&gt;*. Begin discovery. Inspect the
+> repository, then ask EVERY question you still need, all in this one turn, each
+> with your suggested answer. … The human ends the discussion by typing `/plan`;
+> you only advise.
 
-So one sentence is enough. You then discuss — it asks a question, you answer,
-repeat — and **you** decide when to stop by typing `/plan`. The LLM never makes
+So one sentence is enough. The discussor reads the repository, then asks
+everything it still needs **in one message**, numbered, each with the answer it
+will assume and why it matters. Answer only the ones you disagree with ("2: 5
+seeds, not 3") — every other suggestion stands, and goes to the planner marked
+*(assumed)*. It asks follow-ups only when an answer opens something new, and
+**you** decide when to stop by typing `/plan`. The LLM never makes
 that call; that is enforced by the graph's topology, not by asking it nicely.
 
-It is required for a second reason: `session_name_for()` derives the session's
-folder name from it, so an empty task means there is nowhere to put the session.
-The name is slug + hash, so two tasks that start with the same words still get
-separate sessions.
+Its first few words also go into the new session's id (`new_session_id()`:
+words, time, random suffix). Every New session is a new folder, even for a task
+you typed before, so nothing from an earlier session is reopened. The *Sessions
+folder* field says where those folders go; Open lists the sessions in it.
 
 ---
 
@@ -488,7 +721,7 @@ signature, and about when to do it properly instead.
 
 | method | path | |
 | --- | --- | --- |
-| `GET` | `/api/sessions` | list what is on disk |
+| `GET` | `/api/sessions` | list what is on disk, newest first; `?root=` another sessions folder |
 | `POST` | `/api/sessions` | resolve or create one, and start it |
 | `GET` | `/api/sessions/{id}` | phase, pending question, problems |
 | `POST` | `/api/sessions/{id}/start` | run a session that is idle |
@@ -496,16 +729,24 @@ signature, and about when to do it properly instead.
 | `POST` | `/api/sessions/{id}/pause` | stop after the current node; resumable |
 | `POST` | `/api/sessions/{id}/stop` | stop now, abandoning the turn in flight |
 | `DELETE` | `/api/sessions/{id}` | close the runner; the folder is untouched |
+| `POST` | `/api/sessions/{id}/delete` | delete it for good: `{"repo", "sessions_root", "drop_branch"}` |
 | `GET` | `/api/sessions/{id}/events` | **SSE**; honours `Last-Event-ID` and `?after_seq=` |
+| `GET`/`PUT`/`DELETE` | `/api/sessions/{id}/bootstrap` | the design agent: its models and prompts; `DELETE` resets |
 | `GET`/`PUT` | `/api/sessions/{id}/plan` | `plan.json` |
 | `GET`/`PUT` | `/api/sessions/{id}/agent` | `graph.json` + `nodes.json`, plus a drawable view |
 | `POST` | `/api/sessions/{id}/agent/validate` | check an edit without writing it |
+| `PUT` | `/api/sessions/{id}/roles/{role}` | `{"provider", "model", "gpu", "delegate": {"provider", "model"} or null}` for a role, this session |
 | `GET` | `/api/sessions/{id}/nodes/{name}/context` | the prompt that node will really get |
 | `GET` | `/api/sessions/{id}/nodes/{name}/activity` | every provider event for that node's turns |
 | `GET` | `/api/sessions/{id}/activity` | the turn running *right now*, whichever node it is |
+| `GET` | `/api/sessions/{id}/timeline` | every node visit, in order |
+| `GET` | `/api/sessions/{id}/iterations` | the supervisor's reviews, one per run |
+| `GET` | `/api/sessions/{id}/files` | the session folder's files: code, session, results |
+| `GET` | `/api/sessions/{id}/files/content?path=` | one of them; nothing outside the folder |
+| `GET` | `/api/models` | each provider's models; `?refresh=true` to ask again |
 | `GET` | `/api/schema` | node kinds, field types, access levels, providers |
 | `GET` | `/api/config` | the resolved backend for each role |
-| `GET` | `/api/defaults` | the repo this server was started for, and its flags |
+| `GET` | `/api/defaults` | the repo this server was started for, its sessions folder, and its flags |
 
 Errors use one shape, the same one validation uses:
 

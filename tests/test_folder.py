@@ -173,11 +173,11 @@ def test_a_graph_has_room_for_a_verifier_per_stage():
     from agent.agentfolder.schema import GraphFile
     from agent.bootstrap.schemas import DesignerOutput, GraphProposal
 
-    for model, field, wanted in ((GraphFile, "nodes", 30),
+    for model, field, wanted in ((GraphFile, "nodes", 48),
                                  (GraphFile, "branches", 16),
-                                 (GraphProposal, "nodes", 30),
+                                 (GraphProposal, "nodes", 48),
                                  (GraphProposal, "branches", 16),
-                                 (DesignerOutput, "nodes", 30)):
+                                 (DesignerOutput, "nodes", 48)):
         caps = [getattr(m, "max_length", None)
                 for m in model.model_fields[field].metadata]
         assert wanted in caps, f"{model.__name__}.{field} caps at {caps}, want {wanted}"

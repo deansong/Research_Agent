@@ -32,7 +32,7 @@ END_TARGET = "__end__"
 
 # Output field names the `capture` mechanism writes. A node may not declare
 # them itself or the model's value would be overwritten without warning.
-RESERVED_OUTPUT_FIELDS = frozenset({"git_status", "git_diff"})
+RESERVED_OUTPUT_FIELDS = frozenset({"git_status", "git_diff", "turn_changes"})
 
 
 class FolderModel(BaseModel):
@@ -106,8 +106,11 @@ class GraphFile(FolderModel):
     name: str = Field(min_length=1, max_length=64)
     description: str = ""
     entry: str = Field(pattern=NODE_NAME)
-    nodes: list[NodeRef] = Field(min_length=1, max_length=30)
-    """30, raised from 20 -- see BranchSpec below for the arithmetic that
+    nodes: list[NodeRef] = Field(min_length=1, max_length=48)
+    """48: the planner's largest plan -- four stages of eight substeps -- is
+    32 work nodes, which with no step ever merged need eight checkers and a
+    review node. 40 before that, when a real design wanted 34; 30 was raised
+    from 20 -- see BranchSpec below for the arithmetic that
     made 20 too small once every stage grew a verifier."""
     edges: list[EdgeSpec] = Field(default_factory=list)
     branches: list[BranchSpec] = Field(default_factory=list, max_length=16)
@@ -213,7 +216,11 @@ class AgentNodeConfig(FolderModel):
     bump: list[str] = Field(default_factory=list, max_length=4)
     """Counters to increment after this node runs."""
 
-    capture: list[Literal["git_status", "git_diff"]] = Field(default_factory=list)
+    capture: list[Literal["git_status", "git_diff", "turn_changes"]] = Field(
+        default_factory=list)
+    """git_status / git_diff: the repository as it stands after the turn.
+    turn_changes: only the files THIS turn changed -- what a checker needs to
+    see whether a worker stayed inside its step."""
     record: str = ""
     announce: str = ""
 
