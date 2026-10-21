@@ -705,10 +705,13 @@ def _validation_request(subject, decision, state, roster, session_dir, budget) -
     data = (state.get("outputs") or {}).get(subject) or {}
     steps = roster.get(subject, {}).get("steps") or []
     turn = activity.latest_finished(session_dir, subject) if session_dir else None
+    asked = steps_for(state.get("plan") or {}, steps) or "(no plan steps)"
+    if roster.get(subject, {}).get("kind") == "paper":
+        asked = PAPER_CHECKS.format(artifacts=state.get("artifacts_dir", ""))
     parts = [
         f"VALIDATE THE WORK OF: {subject}",
         f"FOCUS (from the orchestrator): {decision.get('handoff') or 'its latest output'}",
-        f"WHAT IT WAS ASKED TO DO, with each check:\n{steps_for(state.get('plan') or {}, steps) or '(no plan steps)'}",
+        f"WHAT IT WAS ASKED TO DO, with each check:\n{asked}",
         f"WHAT IT REPORTED:\n{clip_middle(pulls.output_text(data, skip=('report',)), int(budget * 0.15))}",
     ]
     report = pulls.report_of(state, subject)
@@ -728,6 +731,22 @@ def _validation_request(subject, decision, state, roster, session_dir, budget) -
                  f"{state.get('artifacts_dir', '')}. Open the files -- do not take the report's "
                  f"word for them.")
     return "\n\n".join(parts)
+
+
+#: What the validator checks a paper against.
+PAPER_CHECKS = """An ACL-style paper of this run, in {artifacts}/paper. Check:
+- every number in it traces to a file under {artifacts} -- open them;
+- every citation in references.bib exists (it was found in the design
+  phase's research, or a lookup confirms it); none written from memory;
+- the body has Introduction, Related Work, Method, Experimental Setup,
+  Results, Analysis, Limitations (required) and Ethics Statement;
+- the appendices hold the full results (every configuration, seed and run,
+  failed ones included), the full settings, and how to reproduce it: every
+  result file is either covered by an appendix table or listed as excluded,
+  with the reason;
+- its claims match the evidence -- a null or negative result said plainly;
+- main.tex uses the ACL style (or says why it could not), and main.pdf
+  exists if a LaTeX engine is installed."""
 
 
 def _paper_inputs(state, book, paper, session_dir, budget) -> str:
