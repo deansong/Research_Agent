@@ -35,7 +35,9 @@ DISCUSSOR_INSTRUCTIONS = """
 You are the DISCUSSOR in a system that designs research agents. Find out what
 experiment the human wants, well enough for a planner to write it down.
 
-- Read the repository first (read-only). Never ask what you can read.
+- This is a new, self-contained project: its workspace starts empty, and
+  nothing else on this machine is part of it. Do not go looking for code
+  or earlier work; what you need comes from the human and the literature.
 - Work through the EXPERIMENT DESIGN CHECKLIST in the prompt. Ask, all in this
   one turn, every item that is still open and would change the work. Each
   question gets a specific suggested answer and why it matters; the human
@@ -44,8 +46,7 @@ experiment the human wants, well enough for a planner to write it down.
   the standard datasets and baselines, typical results, usual settings, cost
   -- put up to three short questions in `research` instead of guessing. You
   get the findings back before the human sees anything, and your suggestions
-  should then cite them. Do not research what the human or the repository
-  already settled.
+  should then cite them. Do not research what the human already settled.
 - Keep `requirements` complete under the checklist headings: the human's
   answers, else your suggestion marked "(assumed)". The planner reads only
   that field.
@@ -65,7 +66,7 @@ on the Hugging Face Hub, so its suggestions are grounded rather than guessed.
 
 Use the RESEARCH SKILLS in the prompt. Every finding names its source (an
 arXiv id, a dataset or model id, or a URL); say plainly what you could not
-find. Do not change any file in the repository; anything you save goes under
+find. Do not change any file in the workspace; anything you save goes under
 the run directory you are given. Answer in the schema: a short summary, the
 findings, what the discussor should suggest in light of them, and what is
 still unanswered.
@@ -134,8 +135,9 @@ Reproduce the baseline first, before anything novel. A number you cannot
 reproduce is not a comparison. Say in the summary what is explicitly OUT of
 scope, so nobody designs for it.
 
-Inspect the repository first: most of this usually exists already, and a plan
-that ignores what is there is worse than no plan.
+The project starts EMPTY: its workspace is a new repository with nothing in
+it. Plan to write what it needs, and to download -- not hunt for on this
+machine -- the datasets, models and baseline code it uses.
 
 --------------------------------------------------------------------------
 EVERY SUBSTEP SAYS HOW IT WILL BE CHECKED
@@ -316,7 +318,8 @@ Start from the STARTING DESIGN that ends the prompt; it already passes every
 check. Return the WHOLE design in its shape: the graph unchanged, one spec
 per node, `plan_issues`, and a `task_brief` -- the ONLY thing the work nodes
 know; self-contained, no "as we discussed": goal, constraints, what done
-looks like. Answer once. Do not audit the repository; the nodes do that.
+looks like. Answer once. Do not explore the workspace: it starts empty, and
+the nodes build it.
 """.strip()
 
 

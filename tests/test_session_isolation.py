@@ -128,7 +128,7 @@ def test_over_http_each_session_is_new_and_every_model_is_told(tmp_path):
         assert work, nodes
         for node in nodes:
             sent = activity.latest(session, node).sent
-            assert "SESSION ISOLATION" in sent["instructions"], node
+            assert "THIS SESSION IS SELF-CONTAINED" in sent["instructions"], node
             assert str(session) in sent["instructions"], node
 
 

@@ -63,7 +63,7 @@ def make_discussor(backend, instructions: str = DISCUSSOR_INSTRUCTIONS,
         elif thread_id is None:
             prompt = (
                 f"The human wants this done:\n\n{state['user_request']}\n\n"
-                f"Begin discovery. Inspect the repository, then ask EVERY question you "
+                f"Begin discovery: ask EVERY question you "
                 f"still need, all in this one turn, each with your suggested answer. "
                 f"Fill `requirements` with their answers so far and your suggestions "
                 f"marked (assumed). The human ends the discussion by typing /plan; "

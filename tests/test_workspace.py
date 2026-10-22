@@ -1,9 +1,11 @@
 """
-WHAT:  Each new session works in its own git worktree, not the shared checkout.
-WHY:   Measured: a running session's coder "restored" five files somebody was
-       editing in the checkout it shared with them -- its checker had flagged
-       them because they changed during its turn. Rules in a prompt reduce
-       that; a separate copy of the project removes it.
+WHAT:  Each new session is its own project: an empty git repository in its
+       own folder. Nothing is copied in from the repository the server runs
+       from, and nothing is written back to it.
+WHY:   Sessions used to work in -- and then in a worktree of -- the agent's
+       own repository: every model saw the agent's source and whatever
+       earlier experiments had left there, and runs wrote their output into
+       it. Each session is now fully independent.
 
 Run with:   python -m pytest tests/test_workspace.py -q
 """
@@ -52,70 +54,79 @@ def repo(tmp_path):
     return repo
 
 
-def test_a_new_session_gets_its_own_worktree_of_the_project_as_it_is(repo):
+def test_a_new_session_is_an_empty_project_of_its_own(repo):
     paths = storage.session_paths(repo, "s1")
     note = storage.create_workspace(paths)
 
     workspace = paths.session / "workspace"
-    assert "branch agent/s1" in note and "uncommitted" in note, note
+    assert "new, empty project" in note, note
     assert paths.workspace == workspace and paths.own_workspace
-    # The project as it is now -- your uncommitted edit included...
-    assert (workspace / "tool.py").read_text() == "committed\nmy uncommitted edit\n"
-    # ...but not untracked data, which the models are told to read from the checkout.
-    assert not (workspace / "data").exists()
-    assert str(repo) in storage.isolation_rules(paths)
-    assert "agent/s1" in _git(repo, "branch", "--list", "agent/s1")
+    # Nothing of the repository is copied in -- tracked, edited or untracked.
+    assert sorted(p.name for p in workspace.iterdir()) == [".git"]
+    assert _git(workspace, "log", "--format=%s").startswith("Start of session s1")
+    # ...and nothing is made in the repository: no branch, no worktree.
+    assert _git(repo, "branch", "--list", "agent/*") == ""
+    assert _git(repo, "worktree", "list").count("\n") == 1
+    rules = storage.isolation_rules(paths)
+    assert "SELF-CONTAINED" in rules and "started empty" in rules
+    assert f"never read, use or write the agent's own code at {repo}" in rules
 
-    # Work in it never reaches your checkout, nor yours it.
-    (workspace / "tool.py").write_text("the agent's version\n")
-    (workspace / "new.py").write_text("x = 1\n")
-    assert (repo / "tool.py").read_text() == "committed\nmy uncommitted edit\n"
-    assert not (repo / "new.py").exists()
-    assert _git(repo, "stash", "list") == "", "the stash list is not touched"
-
-    # Two sessions, two copies.
+    # Two sessions, two projects.
+    (workspace / "train.py").write_text("x = 1\n")
     other = storage.session_paths(repo, "s2")
     storage.create_workspace(other)
-    assert not (other.workspace / "new.py").exists()
+    assert not (other.workspace / "train.py").exists()
+    assert not (repo / "train.py").exists()
 
 
-def test_a_session_that_already_ran_or_a_plain_directory_works_in_place(repo, tmp_path):
-    started = storage.session_paths(repo, "old")
-    started.checkpoint.write_text("")              # it ran before worktrees existed
-    assert storage.create_workspace(started) == ""
-    assert started.workspace == repo and not started.own_workspace
-
+def test_it_needs_no_git_repository_to_run_from(tmp_path):
     plain = tmp_path / "not-git"
     plain.mkdir()
     paths = storage.session_paths(plain, "s")
-    assert "not a git repository" in storage.create_workspace(paths)
-    assert paths.workspace == plain
-    assert "own copy of the project" not in storage.isolation_rules(paths)
+    assert "new, empty project" in storage.create_workspace(paths)
+    assert paths.workspace == paths.session / "workspace"
 
 
-def test_the_files_tab_shows_what_the_session_changed_and_nothing_else(repo):
+def test_a_session_that_already_ran_keeps_what_it_had(repo):
+    started = storage.session_paths(repo, "old")
+    started.checkpoint.write_text("")              # it ran before workspaces existed
+    assert storage.create_workspace(started) == ""
+    assert started.workspace == repo and not started.own_workspace
+
+
+def test_an_older_session_with_a_worktree_keeps_it(repo):
+    """Sessions made with a worktree of the repository go on as they were."""
+    paths = storage.session_paths(repo, "legacy")
+    _git(repo, "worktree", "add", "-q", "-b", "agent/legacy",
+         str(paths.session / "workspace"), "HEAD")
+    (paths.session / "workspace.json").write_text(json.dumps(
+        {"branch": "agent/legacy", "base": _git(repo, "rev-parse", "HEAD").strip()}))
+    assert storage.create_workspace(paths) == ""
+    assert (paths.workspace / "tool.py").exists()
+    assert "own copy of the project" in storage.isolation_rules(paths)
+
+
+def test_the_files_tab_shows_everything_the_session_wrote(repo):
     from webui import files
 
     paths = storage.session_paths(repo, "s1")
     storage.create_workspace(paths)
-    (paths.workspace / "tool.py").write_text("changed by the run\n")
     (paths.workspace / "train.py").write_text("import torch\n")
+    (paths.workspace / "src").mkdir()
+    (paths.workspace / "src" / "data.py").write_text("rows = []\n")
 
     rows = {row["path"]: row for row in files.listing(paths.session)}
     code = {p for p, row in rows.items() if row["origin"] == "code"}
-    assert code == {"session/workspace/tool.py", "session/workspace/train.py"}, rows
+    assert code == {"session/workspace/train.py", "session/workspace/src/data.py"}, rows
     assert files.read(paths.session, "session/workspace/train.py")["text"] == "import torch\n"
 
-    # The rest of the worktree is the project -- not this session's to show.
+    # Committed by the run: still its work.
     _git(paths.workspace, "add", "-A")
     _git(paths.workspace, "commit", "-qm", "run", "--no-gpg-sign")
-    (paths.workspace / "untouched.py").write_text("")
-    _git(paths.workspace, "add", "untouched.py")
-    _git(paths.workspace, "commit", "-qm", "u", "--no-gpg-sign")
-    with pytest.raises(PermissionError):
-        files.read(paths.session, "session/workspace/.gitignore")
     assert "session/workspace/train.py" in {
-        r["path"] for r in files.listing(paths.session)}, "committed on its branch: still its work"
+        r["path"] for r in files.listing(paths.session)}
+    with pytest.raises(PermissionError):
+        files.read(paths.session, "session/workspace/.git/HEAD")
 
 
 def test_model_turns_run_in_the_workspace_and_may_write_the_results_folder(repo):
@@ -167,14 +178,18 @@ def test_claude_code_is_given_the_results_folder_too():
     assert flags[-2:] == ["--add-dir", "/s/artifacts"], flags
 
 
-def test_a_new_web_session_gets_a_workspace_and_says_so(repo):
+def test_a_new_web_session_is_its_own_project(repo):
     from tests.test_supervisor import _client, _until
 
     client = _client(repo, "off")
+    root = repo.parent / "sessions"
     sid = client.post("/api/sessions", json={
-        "repo": str(repo), "task": "survey it", "backend": "fake"}).json()["id"]
+        "repo": str(repo), "task": "survey it", "backend": "fake",
+        "sessions_root": str(root)}).json()["id"]
     _until(client, sid, purpose="discussion")
-    session = repo / ".agent" / "sessions" / sid
+    session = root / sid
     record = json.loads((session / "workspace.json").read_text())
-    assert record["branch"] == f"agent/{sid}" and record["uncommitted_included"]
-    assert (session / "workspace" / "tool.py").exists()
+    assert record["kind"] == "new_project" and "branch" not in record
+    assert not (session / "workspace" / "tool.py").exists()
+    assert _git(repo, "status", "--short", "--ignored") == " M tool.py\n!! data/\n", \
+        "the repository is exactly as it was: nothing added, not even ignored"

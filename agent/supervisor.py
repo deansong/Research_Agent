@@ -302,7 +302,7 @@ def _make_review(backend):
     def review(state: SupervisorState) -> dict:
         print(f"\n[supervisor] reviewing iteration {state.get('iteration', 1)}...")
         session_dir = state.get("session_dir", "")
-        prompt = (f"{state.get('report', '')}\n\nThe repository is at "
+        prompt = (f"{state.get('report', '')}\n\nThe workspace is "
                   f"{state.get('repo_path', '')}. Review the run and decide.")
         sent = activity.exchange(thread_id=None, instructions=SUPERVISOR_INSTRUCTIONS,
                                  prompt=prompt)

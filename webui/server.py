@@ -1163,8 +1163,7 @@ def forget_interrupted(repo: Path) -> list[str]:
     """Drop every resume mark without resuming anything (--no-resume)."""
     names = []
     for session_dir in storage.marked_running(repo):
-        (Path(repo).resolve() / storage.DOT_AGENT / "running"
-         / f"{session_dir.name}.json").unlink(missing_ok=True)
+        storage.forget_running(session_dir.name)
         names.append(session_dir.name)
     return names
 

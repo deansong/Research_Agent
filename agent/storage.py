@@ -39,27 +39,17 @@ Outside the repository is the better place for it: then a model working in
 the repository cannot come across other sessions at all.
 
 --------------------------------------------------------------------------
-EACH SESSION WORKS IN ITS OWN COPY OF THE PROJECT
+EACH SESSION IS ITS OWN PROJECT
 --------------------------------------------------------------------------
-In a git repository, a new session gets a git worktree at <session>/workspace,
-on its own branch `agent/<session id>`, made from the project as it is now:
-the current commit plus your uncommitted changes to tracked files. Every model
-turn runs there. So a run cannot touch your checkout, and two sessions cannot
-touch each other's files -- measured, the reason this exists: a running
-session's coder "restored" five files someone was editing in the shared
-checkout, and its checker had flagged them because they changed during its
-turn.
+A new session gets <session>/workspace: a NEW, EMPTY git repository of its
+own. Every model turn runs there; the code the run writes is that project.
+Nothing is copied in from the repository the server runs from -- that is the
+agent's own code, and copying it put the agent's source, and whatever earlier
+experiments had left beside it, in front of every model. A session reads and
+writes only its own folder: its workspace, its artifacts, its plan and agent.
 
-Files git does not track (data sets, model caches) are not copied; the models
-are told the original checkout's path, to read them from there and never
-write there. A session started before this, or a directory that is not a git
-repository, keeps working in the repository itself. To keep a session's work:
-commit in its workspace and merge the branch, e.g.
-    git -C <session>/workspace add -A && git -C <session>/workspace commit -m ...
-    git merge agent/<session id>
-Deleting a session folder leaves git a stale worktree entry; `git worktree
-prune` clears it.
-
+Sessions made before this, with a git worktree of the repository (their
+workspace.json names a `branch`), keep working as they were.
 --------------------------------------------------------------------------
 A SESSION FOLDER SOMEWHERE ELSE
 --------------------------------------------------------------------------
@@ -185,12 +175,22 @@ class SessionPaths:
         self.approved.unlink(missing_ok=True)
 
 
+#: Where session folders go when nobody says: OUTSIDE the repository, so a
+#: run never adds anything to it. AGENT_SESSIONS_ROOT, `sessions_root` in
+#: config.json, --sessions-root or the New session dialog choose another.
+#: None means <repo>/.agent/sessions, as it used to be -- the test suite
+#: uses that, so a test's sessions stay inside its temporary repository.
+DEFAULT_SESSIONS_ROOT: Path | None = Path.home() / "research_agent_sessions"
+
+
 def sessions_root(repo: Path, configured: str | Path | None = None) -> Path:
     """The folder session folders are made in: `configured` (relative to the
-    repository when relative), else <repo>/.agent/sessions."""
+    repository when relative), else DEFAULT_SESSIONS_ROOT."""
     repo = Path(repo).resolve()
     if not configured:
-        return repo / DOT_AGENT / "sessions"
+        if DEFAULT_SESSIONS_ROOT is None:
+            return repo / DOT_AGENT / "sessions"
+        return Path(DEFAULT_SESSIONS_ROOT).expanduser().resolve()
     root = Path(configured).expanduser()
     return (root if root.is_absolute() else repo / root).resolve()
 
@@ -267,8 +267,10 @@ def session_paths(
 
     root.mkdir(parents=True, exist_ok=True)
     paths.artifacts.mkdir(parents=True, exist_ok=True)
-    paths.agents_dir.mkdir(parents=True, exist_ok=True)
-    _ensure_gitignore(dot_agent)
+    if not external:
+        # Only a session that lives in <repo>/.agent/ needs it gitignored.
+        # A session anywhere else adds nothing to the repository at all.
+        _ensure_gitignore(dot_agent)
     if external:
         _warn_if_committable(paths)
     _notice_legacy(repo)
@@ -318,13 +320,13 @@ def new_session_id(task: str, root: Path | None = None) -> str:
 
 
 def create_workspace(paths: SessionPaths) -> str:
-    """Give a NEW session its own git worktree; return a line saying what was
-    done ("" when nothing was). See "EACH SESSION WORKS IN ITS OWN COPY".
+    """Give a NEW session its own, empty project: <session>/workspace, a git
+    repository with one empty commit to compare against. Returns a line
+    saying what was done ("" when nothing was). See "EACH SESSION IS ITS OWN
+    PROJECT".
 
-    Only for a session that has not started: one that already ran in the
-    repository keeps doing so, because its work so far is there. Not a git
-    repository, or git refuses: the session works in the repository, and the
-    line says so.
+    Only for a session that has not started: one that already ran keeps the
+    workspace it had.
     """
     if (paths.session / WORKSPACE_RECORD).exists():
         return ""
@@ -333,35 +335,33 @@ def create_workspace(paths: SessionPaths) -> str:
     import subprocess
     import time
 
+    workspace = paths.session / WORKSPACE
+
     def git(*argv: str) -> subprocess.CompletedProcess:
-        return subprocess.run(["git", "-C", str(paths.repo), *argv],
-                              capture_output=True, text=True, timeout=120)
+        return subprocess.run(["git", "-C", str(workspace), *argv],
+                              capture_output=True, text=True, timeout=60)
 
+    workspace.mkdir(parents=True, exist_ok=True)
     try:
-        head = git("rev-parse", "HEAD")
-        if head.returncode != 0:
-            return (f"Note: {paths.repo} is not a git repository with a commit, so "
-                    f"this session works in it directly, shared with any other.")
-        # The project as it is NOW: a commit of the uncommitted changes to
-        # tracked files, made without touching the checkout (empty when there
-        # are none).
-        stash = git("stash", "create").stdout.strip()
-        base = stash or head.stdout.strip()
-        branch = f"agent/{paths.session.name}"
-        made = git("worktree", "add", "-b", branch, str(paths.session / WORKSPACE), base)
-        if made.returncode != 0:
-            return (f"Note: could not make a worktree for this session "
-                    f"({made.stderr.strip()[:300]}); it works in the repository.")
+        made = git("init", "-q")
+        # An empty first commit: what "the files this session changed" is
+        # measured against, and somewhere for the run to commit on top of.
+        committed = git("-c", "user.name=research-agent", "-c",
+                        "user.email=research-agent@localhost", "commit", "-q",
+                        "--allow-empty", "-m", f"Start of session {paths.session.name}")
+        base = git("rev-parse", "HEAD").stdout.strip()
+        if made.returncode != 0 or committed.returncode != 0 or not base:
+            raise OSError((made.stderr or committed.stderr).strip()[:300])
     except (OSError, subprocess.SubprocessError) as exc:
-        return f"Note: could not make a worktree ({exc}); this session works in the repository."
-
+        base = ""
+        note = f" (git could not set it up: {exc}; it is a plain folder)"
+    else:
+        note = ""
     (paths.session / WORKSPACE_RECORD).write_text(json.dumps({
-        "branch": branch, "base": base, "head": head.stdout.strip(),
-        "uncommitted_included": bool(stash),
+        "kind": "new_project", "base": base,
         "created": time.strftime("%Y-%m-%dT%H:%M:%S"),
     }, indent=2) + "\n")
-    return (f"Workspace: {paths.session / WORKSPACE} (branch {branch}"
-            f"{', with your uncommitted changes' if stash else ''}).")
+    return f"Workspace: {workspace} -- a new, empty project of its own{note}."
 
 
 def workspace_record(paths: SessionPaths) -> dict:
@@ -402,6 +402,10 @@ def delete_session(paths: SessionPaths, *, drop_branch: bool = False) -> list[st
     done = [f"Deleted {folder}."]
     record = workspace_record(paths)
     branch = record.get("branch", "")
+    # Only an older session's workspace is a worktree of the repository;
+    # a new one is its own repository and goes with the folder.
+    if not branch:
+        record = {}
     if record:
         # Before the folder goes: git refuses to delete a branch a worktree
         # still has checked out, and removing it properly leaves no record.
@@ -423,28 +427,36 @@ def delete_session(paths: SessionPaths, *, drop_branch: bool = False) -> list[st
 
 
 def isolation_rules(paths: SessionPaths) -> str:
-    """What every model is told about the other sessions -- appended to the
+    """What every model is told about where it may work -- appended to the
     design roles' and every generated node's instructions.
 
-    Measured: a new session's discussor and planner, working in the
-    repository, opened earlier sessions' folders under .agent/sessions/ and
-    planned around what they found there ("reuse the existing preregistration")
-    -- work from a different task, as if it were this one's. Short on purpose:
-    it rides in developer instructions, where size has a cost.
+    Measured: a session's discussor and planner opened earlier sessions'
+    folders and planned around what they found there ("reuse the existing
+    preregistration") -- another task's work, as if it were this one's. And
+    sessions that worked in the agent's own repository found its code and
+    old experiments' leftovers, and treated them as the project. Short on
+    purpose: it rides in developer instructions, where size has a cost.
     """
     text = (
-        "\n\nSESSION ISOLATION: this session's own folder is "
-        f"{paths.session}. Other sessions' folders (under {paths.sessions_root}) "
-        "belong to other tasks: never open, use or cite anything in them, and do "
-        "not treat their files as this task's earlier work."
+        f"\n\nTHIS SESSION IS SELF-CONTAINED. Its folder is {paths.session}; "
+        f"work only inside it. "
     )
-    if paths.own_workspace:
+    if paths.own_workspace and not workspace_record(paths).get("branch"):
         text += (
-            f" You work in {paths.workspace}, this session's own copy of the "
-            f"project. The original checkout, {paths.repo}, is shared with "
-            f"other people: never change anything there; read from it only "
-            f"files git does not track (data, models) that are missing here."
-        )
+            f"The project is {paths.workspace}: a new git repository of this "
+            f"session's own, which started empty -- write the code there. "
+            f"Nothing outside the session folder is part of this task: never "
+            f"read, use or write the agent's own code at {paths.repo}, or "
+            f"other sessions' folders under {paths.sessions_root}. Outside it "
+            f"you may only use installed tools, install packages, and download "
+            f"data, models and papers into this session.")
+    else:
+        text += (
+            f"Other sessions' folders (under {paths.sessions_root}) belong to "
+            f"other tasks: never open, use or cite anything in them.")
+        if paths.own_workspace:
+            text += (f" You work in {paths.workspace}, this session's own copy of "
+                     f"the project; never change anything in {paths.repo}.")
     return text
 
 
@@ -452,32 +464,76 @@ def isolation_rules(paths: SessionPaths) -> str:
 #
 # A session that was RUNNING when the web server stopped -- killed, crashed,
 # restarted to pick up new code -- carries on when it starts again. The mark is
-# a small file per session under <repo>/.agent/running/, pointing at the session
-# folder wherever its sessions root is. Written when a run starts; removed when
-# it ends for any reason except the server stopping under it.
+# a small file per session, pointing at the session folder wherever its
+# sessions root is. Written when a run starts; removed when it ends for any
+# reason except the server stopping under it.
+#
+# The marks live in the user's state folder, not in the repository: nothing
+# a run does adds files to the repository. AGENT_STATE_DIR moves it (the
+# tests point it at a temporary folder).
+
+def state_dir() -> Path:
+    import os
+
+    return Path(os.environ.get("AGENT_STATE_DIR")
+                or Path.home() / ".codex-langgraph-agent").expanduser()
+
 
 def _running_dir(repo: Path) -> Path:
-    return Path(repo).resolve() / DOT_AGENT / "running"
+    return state_dir() / "running"
 
 
 def mark_running(paths: SessionPaths) -> None:
     folder = _running_dir(paths.repo)
     folder.mkdir(parents=True, exist_ok=True)
     (folder / f"{paths.session.name}.json").write_text(
-        json.dumps({"session_dir": str(paths.session)}) + "\n")
+        json.dumps({"session_dir": str(paths.session),
+                    "repo": str(Path(paths.repo).resolve())}) + "\n")
 
 
 def unmark_running(paths: SessionPaths) -> None:
-    (_running_dir(paths.repo) / f"{paths.session.name}.json").unlink(missing_ok=True)
+    forget_running(paths.session.name)
+
+
+def forget_running(session_name: str) -> None:
+    (state_dir() / "running" / f"{session_name}.json").unlink(missing_ok=True)
+
+
+def _adopt_legacy_marks(repo: Path) -> None:
+    """Marks used to be written to <repo>/.agent/running/. Move any there to
+    the state folder, so a session that was running under the old layout
+    still resumes -- and the repository is left without them."""
+    legacy = Path(repo).resolve() / DOT_AGENT / "running"
+    if not legacy.is_dir():
+        return
+    folder = _running_dir(repo)
+    for mark in legacy.glob("*.json"):
+        try:
+            record = json.loads(mark.read_text())
+            record.setdefault("repo", str(Path(repo).resolve()))
+            folder.mkdir(parents=True, exist_ok=True)
+            (folder / mark.name).write_text(json.dumps(record) + "\n")
+            mark.unlink()
+        except (OSError, ValueError):
+            continue
+    try:
+        legacy.rmdir()
+    except OSError:
+        pass
 
 
 def marked_running(repo: Path) -> list[Path]:
-    """The session folders that were running when the server last stopped."""
+    """The session folders that were running when the server for `repo` last
+    stopped."""
+    _adopt_legacy_marks(repo)
     folder = _running_dir(repo)
+    repo = str(Path(repo).resolve())
     out = []
     for mark in sorted(folder.glob("*.json")) if folder.is_dir() else []:
         try:
-            out.append(Path(json.loads(mark.read_text())["session_dir"]))
+            record = json.loads(mark.read_text())
+            if record.get("repo", repo) == repo:
+                out.append(Path(record["session_dir"]))
         except (ValueError, KeyError, OSError):
             mark.unlink(missing_ok=True)
     return out

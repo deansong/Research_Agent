@@ -167,7 +167,7 @@ TURN_PROMPTS = {
         "when research is on for the session and the discussor asks."),
     "planner": (
         "Your request, the whole conversation, and the requirements the "
-        "discussor settled on, then: inspect the repository and plan it as the "
+        "discussor settled on, then: plan it as the "
         "four stages. A /revise turn sends only what you asked to change."),
     "designer": (
         "The conversation (newest 12,000 characters), the discussor's "

@@ -205,8 +205,10 @@
 <dialog id="dialog-new">
   <form method="dialog" id="form-new">
     <h2>New session</h2>
-    <label>
-      Repository <span class="muted">&mdash; the project the agent works on</span>
+    <!-- Every session is its own project, started empty: there is no
+         repository to choose. The field stays, hidden, holding the folder the
+         server runs from, which is where its config is read. -->
+    <label hidden>
       <input name="repo" id="new-repo" value="." spellcheck="false">
     </label>
     <label class="required">
@@ -224,14 +226,14 @@
         you say, and the agent will ask you questions from there. Its first
         words go into the new session's id.</span>
       <textarea name="task" id="new-task" rows="4"
-                placeholder="e.g. Add tests for the parser"></textarea>
+                placeholder="e.g. Does LoRA match full fine-tuning on IMDB with a 7B model?"></textarea>
     </label>
     <label>
       Sessions folder <span class="muted">&mdash; every session gets its own new
-        folder in here, with a unique id. Outside the repository keeps one
-        session's files out of another's sight.</span>
+        folder in here, with a unique id: its own project, results and paper,
+        independent of every other session.</span>
       <input name="sessions_root" id="new-sessions-root" spellcheck="false"
-             placeholder="<repo>/.agent/sessions">
+             placeholder="~/research_agent_sessions">
     </label>
     <label>
       Exact session folder <span class="muted">(optional &mdash; use this folder

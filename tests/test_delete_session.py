@@ -1,6 +1,7 @@
 """
-WHAT:  Deleting a session from the web UI: its folder, worktree and resume
-       mark go; its branch only when asked; nothing that is not a session.
+WHAT:  Deleting a session from the web UI: its folder and resume mark go
+       (an older session's worktree too, its branch only when asked);
+       nothing that is not a session.
 WHY:   An rmtree aimed by an HTTP request. The refusals are the point.
 
 Run with:   python -m pytest tests/test_delete_session.py -q
@@ -26,7 +27,7 @@ def _branches(repo):
     return _git(repo, "branch", "--list", "agent/*")
 
 
-def test_delete_removes_folder_worktree_and_mark_and_keeps_the_branch(repo):  # noqa: F811
+def test_delete_removes_the_folder_and_its_mark(repo):  # noqa: F811
     paths = storage.session_paths(repo, "s1")
     storage.create_workspace(paths)
     paths.request.write_text("t")
@@ -35,13 +36,31 @@ def test_delete_removes_folder_worktree_and_mark_and_keeps_the_branch(repo):  # 
     done = storage.delete_session(paths)
     assert not paths.session.exists()
     assert storage.marked_running(repo) == []
+    assert done == [f"Deleted {paths.session.resolve()}."], done
+    assert _branches(repo) == ""
+
+
+def _legacy(repo, name):
+    """A session from before: a worktree of the repository on its own branch."""
+    import json
+
+    paths = storage.session_paths(repo, name)
+    _git(repo, "worktree", "add", "-q", "-b", f"agent/{name}",
+         str(paths.session / "workspace"), "HEAD")
+    (paths.session / "workspace.json").write_text(json.dumps({"branch": f"agent/{name}"}))
+    return paths
+
+
+def test_an_older_sessions_worktree_goes_and_its_branch_is_kept(repo):  # noqa: F811
+    paths = _legacy(repo, "s1")
+    done = storage.delete_session(paths)
+    assert not paths.session.exists()
     assert "agent/s1" in _branches(repo) and "kept on branch agent/s1" in " ".join(done)
     assert "s1" not in _git(repo, "worktree", "list"), "no stale worktree record"
 
 
-def test_delete_can_take_the_branch_too(repo):  # noqa: F811
-    paths = storage.session_paths(repo, "s2")
-    storage.create_workspace(paths)
+def test_delete_can_take_an_older_sessions_branch_too(repo):  # noqa: F811
+    paths = _legacy(repo, "s2")
     storage.delete_session(paths, drop_branch=True)
     assert "agent/s2" not in _branches(repo)
 

@@ -238,3 +238,20 @@ def test_a_finished_run_awaiting_the_supervisor_is_not_run_again_on_restart():
             "no node ran again"
         _answer(client, sid, "/finish")
         _until(client, sid, done=True)
+
+
+def test_marks_live_outside_the_repository_and_old_ones_are_adopted(tmp_path):
+    """Nothing a run does adds files to the repository -- the resume marks
+    included. A mark left there by the old layout still resumes its session."""
+    import json
+
+    paths = storage.session_paths(tmp_path, "s1")
+    storage.mark_running(paths)
+    assert not (tmp_path / ".agent" / "running").exists()
+    assert storage.marked_running(tmp_path) == [paths.session]
+
+    legacy = tmp_path / ".agent" / "running"
+    legacy.mkdir(parents=True)
+    (legacy / "old.json").write_text(json.dumps({"session_dir": str(tmp_path / "old")}))
+    assert tmp_path / "old" in storage.marked_running(tmp_path)
+    assert not legacy.exists(), "moved out, and the folder removed"

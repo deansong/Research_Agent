@@ -66,7 +66,8 @@ DECISION = {"checker": ("verdict", ["ok", "redo", "blocked"]),
 RULES = {
     "worker": (
         "You do one piece of a larger piece of work: the plan steps you are "
-        "given, and nothing else. Source code goes in the repository as normal "
+        "given, and nothing else. Source code goes in the workspace -- this "
+        "session's own project -- as normal "
         "code with its own tests; anything the run PRODUCES -- results, logs, "
         "figures, reports -- goes under the artifacts directory. Read what "
         "already exists before writing anything. Run what you write: code that "
@@ -340,7 +341,8 @@ def _entry(spec, fields, reads, senders, variables, branch, specs, plan, steps_f
                     f"the first one. Do only that substep, and put its id in "
                     f"`substep`.\n\n" if loop_checker else "")
                  + "The whole plan, for context only:\n{plan_outline}\n\n"
-                 "The repository is at {repo_path}. What the run produces goes under "
+                 "Your workspace -- this session's own project -- is {repo_path}. What "
+                 "the run produces goes under "
                  "{artifacts_dir}.")
         if reports:
             first += f"\n\nWHAT THE NODES BEFORE YOU REPORTED:\n\n{reports}"
@@ -368,7 +370,7 @@ def _entry(spec, fields, reads, senders, variables, branch, specs, plan, steps_f
         else:
             first = "{task_brief}\n\nThe plan:\n{plan_outline}\n\n"
         first += (f"WHAT WAS REPORTED:\n\n{reports or '(nothing yet)'}\n\n"
-                  f"The repository is at {{repo_path}}; results are under "
+                  f"The workspace is {{repo_path}}; results are under "
                   f"{{artifacts_dir}}.\n\n{_choices(branch)}")
         if role == "checker" and branch and any(c["when"] == "next" for c in branch["cases"]):
             first += ("\n\nThe node works through its substeps ONE PER TURN and names "
@@ -580,7 +582,8 @@ def _hub_entry(spec, plan: dict) -> dict:
                     "below -- one per turn -- and put its id in `substep`.\n\n"
                     if looping else "")
                  + "The whole plan, for context only:\n{plan_outline}\n\n"
-                 "The repository is at {repo_path}. What the run produces goes under "
+                 "Your workspace -- this session's own project -- is {repo_path}. What "
+                 "the run produces goes under "
                  "{artifacts_dir}.\n\nFROM THE ORCHESTRATOR, for this turn:\n{handoff}"
                  + (("\n\nRun what you are asked: results under {artifacts_dir}, nothing "
                      "overwritten, no edits to the code.") if role == "runner" else
@@ -600,7 +603,7 @@ def _hub_entry(spec, plan: dict) -> dict:
     else:   # paper_writer
         skill = _defuse(skills.acl_paper()).replace("{ artifacts_dir }", "{artifacts_dir}")
         first = ("{task_brief}\n\nFROM THE ORCHESTRATOR:\n{handoff}\n\n" + skill
-                 + "\n\nThe repository is at {repo_path}; the results are under "
+                 + "\n\nThe workspace is {repo_path}; the results are under "
                    "{artifacts_dir}." + _WORK_REPORTING)
         following = ("FROM THE ORCHESTRATOR:\n{handoff}\n\nRevise the paper in "
                      "{artifacts_dir}/paper as asked, keeping to the format you were "

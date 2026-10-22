@@ -77,8 +77,8 @@ Both front ends drive the same sessions, so you can start one in the browser
 and resume it with `run --session <name>`. See [`webui/README.md`](webui/README.md).
 
 **Where its sessions go.** Every New session gets a new folder with a unique
-id, inside the sessions folder: `<repo>/.agent/sessions/` unless you choose
-another. Choose it once, any of these ways:
+id, inside the sessions folder: `~/research_agent_sessions/` unless you
+choose another -- never inside the repository. Choose it once, any of these ways:
 
 ```bash
 python main.py web . --sessions-root ~/agent-sessions     # this server
@@ -189,36 +189,27 @@ however alike their tasks. Every model, in the design phase and in the agent it
 designs, is also told which folder is its own and to leave the other sessions
 alone.
 
-**Where session folders go.** `<repo>/.agent/sessions/` unless you set a
+**Where session folders go.** `~/research_agent_sessions/` unless you set a
 sessions root: `"sessions_root": "~/agent-sessions"` in `config.json`,
 `AGENT_SESSIONS_ROOT`, `--sessions-root PATH`, or the *Sessions folder* field in
-the web UI's New session dialog (remembered in that browser). A relative path is
-relative to the repository. Outside the repository is the better place: a
-model working in the repository then has no way to stumble on another session.
+the web UI's New session dialog (remembered in that browser). Nothing a session
+does is written to the repository the server runs from -- not its folder, not
+its results, not the mark that resumes it after a restart (that is in
+`~/.codex-langgraph-agent/running/`).
 
-**Each session works in its own copy of the project.** In a git repository a
-new session gets a git worktree at `<session>/workspace`, on its own branch
-`agent/<session id>`, made from the project as it is now — the current commit
-plus your uncommitted changes to tracked files. Every model turn runs there, so
-a run cannot change your checkout and two sessions cannot change each other's
-files. The run's results still go to `<session>/artifacts/`, which the sandbox
-is told it may write. Files git does not track (data, model caches) are not
-copied; the models are told to read them from your checkout and never write
-there. The Files tab's *Code* group is what the session changed in its
-workspace.
+**Each session is its own project, fully independent.** A new session gets
+`<session>/workspace`: a new git repository that starts **empty**. Every model
+turn runs there, and the code the run writes is that project. Nothing is copied
+in from the repository the server runs from -- that is the agent's own code --
+and the models are told that nothing outside the session folder is part of the
+task: not the agent's code, not other sessions. They may still use installed
+tools, install packages, and download data, models and papers into the session.
+The run's results go to `<session>/artifacts/`. The Files tab's *Code* group is
+everything in the workspace.
 
-To keep a session's code, commit it in the workspace and merge the branch:
-
-```bash
-git -C .agent/sessions/<id>/workspace add -A
-git -C .agent/sessions/<id>/workspace commit -m "what the agent did"
-git merge agent/<id>
-```
-
-A session started before this, or a directory that is not a git repository,
-works in the repository itself. After deleting a session folder, `git worktree
-prune` clears git's record of its worktree. antigravity's write mode has no
-sandbox, so for it the separate copy is enforced only by the instructions.
+Sessions made before this, whose workspace is a git worktree of the repository
+(branch `agent/<id>`), keep working as they were. antigravity's write mode has
+no sandbox, so for it the boundary is enforced only by the instructions.
 
 **Managing sessions.**
 
@@ -229,15 +220,13 @@ python main.py run . --session <name>        # resume one
 
 **Deleting one:** in the web UI, **Open** → **Delete…** under the session →
 **Delete for good**. It stops the session if it is running, then removes its
-folder, its worktree and its resume mark. Its branch `agent/<id>` — the code
-it wrote — is kept unless you tick *Also delete its git branch*. By hand, the
-same thing:
+folder -- its project, results and paper with it -- and its resume mark. (An
+older session's worktree goes too; its branch `agent/<id>` is kept unless you
+tick *Also delete its git branch*.) By hand:
 
 ```bash
-git worktree remove --force <sessions folder>/<id>/workspace   # if it has one
 rm -rf <sessions folder>/<id>
-rm -f .agent/running/<id>.json
-git branch -D agent/<id>                                       # only to drop its code
+rm -f ~/.codex-langgraph-agent/running/<id>.json
 ```
 
 Sessions are safe to delete — they hold conversation history and run output,
@@ -246,7 +235,7 @@ git**, so deleting a session deletes its outputs permanently. Check the size
 before a mass delete: a run that downloaded models can be gigabytes.
 
 ```bash
-du -sh .agent/sessions/*
+du -sh ~/research_agent_sessions/*
 ```
 
 ### Putting the session folder somewhere else
@@ -669,8 +658,8 @@ the sessions that were running when the server last stopped).
         brief.txt           optional; YOUR initial idea, written by hand
         request.txt         what you asked for
         options.json        the models / supervisor / agent it was started with
-        workspace/          ITS OWN git worktree of the project, branch agent/<id>
-        workspace.json      the commit it was made from
+        workspace/          ITS OWN project: a git repository that started empty
+        workspace.json      when it was made, and its first commit
         plan.json           four stages, work in substeps — EDIT ME first
         brief.md            the designer's rewrite of it, for the agent
         bootstrap.json      your changes to the design agent, if any
@@ -685,17 +674,16 @@ the sessions that were running when the server last stopped).
     agents/<name>/          promoted, committed, reusable
 ```
 
-**Project changes** (source, its tests, its docs) go in the session's
-**workspace** — its own copy of the project — and reach your checkout only when
-you merge its branch. **Run output** (generated data, caches, reports, plots,
-logs) goes in the session's `artifacts/`.
+**Code** (source, its tests) goes in the session's **workspace** — its own
+project. **Run output** (data, caches, reports, plots, logs, the paper) goes in
+the session's `artifacts/`. Neither is ever written to the repository.
 
 **Rules every model gets**, appended by the loader so a generated agent can't
 opt out:
 
-- *every model turn*: this session's folder and workspace are its own; other
-  sessions' folders belong to other tasks — never open or reuse them; never
-  change the original checkout, only read untracked data from it.
+- *every model turn*: the session is self-contained — work only inside its
+  folder; its workspace started empty; never read, use or write the agent's
+  own code or other sessions' folders.
 - *every write-access node*: keep out of `.agent/`; put what the run produces
   in `artifacts/`; change project files only where that is the task; and
   **never revert, restore, reset, stash or delete a change it did not make** —

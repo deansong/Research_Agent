@@ -103,7 +103,7 @@ def test_an_edited_prompt_is_what_the_discussor_is_actually_sent(tmp_path):
     sent = json.loads(record.read_text())["sent"]
     # The edit, then the isolation rule every design role gets after it.
     assert sent["instructions"].startswith(marker)
-    assert "SESSION ISOLATION" in sent["instructions"][len(marker):]
+    assert "THIS SESSION IS SELF-CONTAINED" in sent["instructions"][len(marker):]
 
 
 def test_editing_is_refused_while_running_and_allowed_once_paused(tmp_path):

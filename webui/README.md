@@ -447,28 +447,13 @@ there was nothing on disk to look at.
 
 ---
 
-## The Repository field
+## There is no Repository field
 
-It is **the project the agent works on**, and it decides three things:
-
-| | |
-| --- | --- |
-| where `.agent/` goes | `config.json` and promoted agents live under `<repo>/.agent/`, and sessions too unless you choose another sessions folder |
-| what the session's workspace is a copy of | in a git repository each new session works in its own worktree of this project (`<session>/workspace`, branch `agent/<id>`); `{repo_path}` and every "inspect the repository" instruction mean that copy |
-| what a write node may change | its workspace — never this checkout; everything it *produces* goes to the session's `artifacts/` |
-
-The field is prefilled with the absolute path the server was started for, so
-what is on screen is the real answer. A **relative** path is taken from that
-same repo, not from the server's working directory — `python main.py web
-../projectA` names the project, and the field must not quietly disagree. An
-absolute path or `~/...` is honoured as typed, so one server can serve several
-projects.
-
-**It does not have to be a git repository**, despite the name. A plain folder
-works — but then there is no worktree to give each session, so sessions work
-in the folder itself and can see each other's changes.
-It also does not have to be *this* project — pointing it at the codebase you
-actually want worked on is the normal case.
+Every session is **its own project**: its workspace is a new git repository
+that starts empty, in its own folder, and nothing outside that folder is part
+of its task. The models are told so, and are never shown the agent's own code
+or another session's files. The repository the server was started for is used
+only for its `.agent/config.json`; nothing is ever written to it.
 
 ---
 
@@ -478,11 +463,10 @@ Every **New** session gets a new folder with a unique id — a few words of the
 task, the time and a random suffix, e.g. `survey-hotel-jobs-20261018-1405-a3f9`
 — so nothing from an earlier session is ever reopened. The **Sessions folder**
 decides where those folders are made. By default it is
-`<repo>/.agent/sessions/`.
+`~/research_agent_sessions/` -- never inside the repository.
 
 **To choose it from the browser:** open **New**, and type the path into
-**Sessions folder** (it is prefilled with what the server resolved). `~` works;
-a relative path is taken from the repository. The browser remembers your
+**Sessions folder** (it is prefilled with what the server resolved). `~` works. The browser remembers your
 choice for the next New, and **Open** lists the sessions in that same folder —
 change the field and press Open to look in another. Clear it to go back to the
 default.
@@ -523,9 +507,10 @@ that folder is used as it is, wherever it is.
 
 **Deleting a session:** in **Open**, press **Delete…** under it, then
 **Delete for good**. A running session is stopped first; then its folder (the
-conversation, the agent, every result under `artifacts/`), its worktree and
-its resume mark are removed. Its branch `agent/<id>` keeps the code it wrote
-unless you tick *Also delete its git branch*. Anything that does not look like
+conversation, the agent, its project, every result under `artifacts/`) and
+its resume mark are removed. (An older session with a worktree of the
+repository: that goes too, and its branch `agent/<id>` is kept unless you tick
+*Also delete its git branch*.) Anything that does not look like
 a session folder, or that contains the project, is refused.
 
 A session remembers the options it was started with (`options.json`: models,

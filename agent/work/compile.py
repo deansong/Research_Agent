@@ -40,47 +40,28 @@ def infrastructure_rules(artifacts_dir: str, session_dir: str = "") -> str:
     --session-dir can put the checkpoint anywhere, including somewhere the
     agent has write access and no reason to suspect is off limits.
 
-    The second rule was added after a run scattered its output across someone's
-    repository root: it invented top-level `artifacts/`, `configs/` and `docs/`
-    directories, plus a model cache, in a project that had none of them. The
-    distinction it was missing is the one below -- changing the project is the
-    job, but what a run PRODUCES belongs to the run.
+    Each session is its own project (agent/storage.py): code in its
+    workspace, a git repository that started empty, and everything a run
+    PRODUCES in its artifacts -- the distinction a run once missed when it
+    scattered data, caches and reports across someone's repository root.
+    Nothing goes outside the session folder.
     """
-    # Name the session folder as well as .agent/ whenever it is somewhere else.
-    # Listing it unconditionally would be worse than useless: for an ordinary
-    # session it restates rule 1 with a longer path, and a rule that looks like
-    # filler is a rule that gets skimmed.
-    also = ""
-    if session_dir and ".agent" not in Path(session_dir).parts:
-        also = (
-            f" The same applies to this session's own folder:\n     "
-            f"{session_dir}\n   -- everything in it except the run directory "
-            f"in rule 2 is infrastructure."
-        )
-
+    where = f"this session's folder, {session_dir}" if session_dir else "this session's folder"
     return (
         "\n\nWORKING RULES (these override anything above):\n"
-        "1. The `.agent/` directory at the repository root is agent "
-        "infrastructure -- it holds this session's checkpoint database and the "
-        "agent definition you are running inside. Never read, modify, move or "
-        "delete anything under `.agent/`, except the run directory named in "
-        f"rule 2. Never include `.agent/` in a cleanup task.{also}\n"
-        f"2. Put everything this run PRODUCES in:\n     {artifacts_dir}\n"
-        "   That means generated data, downloaded caches, intermediate files, "
+        f"1. Everything you do stays in {where}. Its checkpoint, plan, agent "
+        "and activity records are infrastructure: never read, modify, move or "
+        "delete them. Never write anywhere outside the session folder.\n"
+        "2. The CODE you write goes in your working directory: this session's "
+        "own project, a git repository that started empty. Commit to it as you "
+        "like.\n"
+        f"3. Everything the run PRODUCES goes in:\n     {artifacts_dir}\n"
+        "   Generated data, downloaded datasets and models, caches, results, "
         "reports, plots, logs and scratch work. Create subdirectories there as "
-        "you like. Do NOT invent new top-level directories in the repository "
-        "for them.\n"
-        "3. Change files in the repository itself only where changing the "
-        "project is genuinely the task -- source code, its tests, its docs. If "
-        "you are unsure which of rule 2 and rule 3 applies, prefer rule 2: an "
-        "unwanted file under the run directory is harmless, an unwanted file in "
-        "someone's repository is not.\n"
-        "4. Never revert, restore, reset, stash or delete a change you did not "
-        "make in this run -- `git checkout`/`git restore`/`git show HEAD:... >` "
-        "included. Other people and other sessions work in this repository at "
-        "the same time; an unrelated modified file is their work in progress, "
-        "not yours to clean up. If one is in your way, leave it alone and say "
-        "so in your answer."
+        "you like.\n"
+        "4. Never revert, reset or delete work this run did not make -- "
+        "another node of this agent made it. If something is in your way, "
+        "leave it and say so in your answer."
     )
 
 

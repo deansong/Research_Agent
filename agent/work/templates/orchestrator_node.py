@@ -728,7 +728,7 @@ def _validation_request(subject, decision, state, roster, session_dir, budget) -
     pulled = pulls.resolve(session_dir, state, decision.get("include"), int(budget * 0.2))
     if pulled:
         parts.append(f"MORE CONTEXT:\n{pulled}")
-    parts.append(f"The repository is at {state.get('repo_path', '')}; results are under "
+    parts.append(f"The workspace is {state.get('repo_path', '')}; results are under "
                  f"{state.get('artifacts_dir', '')}. Open the files -- do not take the report's "
                  f"word for them.")
     return "\n\n".join(parts)
