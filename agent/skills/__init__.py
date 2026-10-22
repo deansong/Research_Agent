@@ -61,17 +61,40 @@ def _parse(path: Path) -> Skill | None:
         text = path.read_text(encoding="utf-8")
     except OSError:
         return None
-    meta: dict[str, str] = {}
     body = text
+    meta: dict[str, str] = {}
     found = _FRONT.match(text)
     if found:
         body = found.group(2)
-        for line in found.group(1).splitlines():
-            key, sep, value = line.partition(":")
-            if sep:
-                meta[key.strip().lower()] = value.strip().strip('"').strip("'")
+        meta = _front_matter(found.group(1))
     return Skill(name=path.parent.name, description=meta.get("description", ""),
                  folder=path.parent, body=body.strip())
+
+
+def _front_matter(text: str) -> dict[str, str]:
+    """The top-level `key: value` pairs of a SKILL.md's YAML front matter --
+    enough of YAML for what skills use: plain or quoted values, and block
+    values (`description: >` or `|`, then indented lines), which several
+    published skills use for a long description."""
+    meta: dict[str, str] = {}
+    lines = text.splitlines()
+    i = 0
+    while i < len(lines):
+        line = lines[i]
+        i += 1
+        if not line.strip() or line[0].isspace() or ":" not in line:
+            continue
+        key, _, value = line.partition(":")
+        value = value.strip()
+        if value[:1] in (">", "|"):
+            block = []
+            while i < len(lines) and (not lines[i].strip() or lines[i][0].isspace()):
+                block.append(lines[i].strip())
+                i += 1
+            joiner = "\n" if value.startswith("|") else " "
+            value = joiner.join(b for b in block if b).strip()
+        meta[key.strip().lower()] = value.strip('"').strip("'")
+    return meta
 
 
 def discover() -> list[Skill]:

@@ -213,3 +213,11 @@ def test_the_skills_api_lists_them(folder, tmp_path):
     assert body["dir"] == str(folder)
     assert [s["name"] for s in body["skills"]] == ["alpha", "beta"]
     assert body["suggestions"]["roles"]["worker"]["skills"] == ["beta"]
+
+
+def test_a_long_description_in_yaml_block_form_is_read(folder):
+    (folder / "gamma").mkdir()
+    (folder / "gamma" / "SKILL.md").write_text(
+        "---\nname: gamma\ndescription: >\n  Spans two\n  lines.\nlicense: MIT\n---\nG\n")
+    gamma = skills.get("gamma")
+    assert gamma.description == "Spans two lines." and gamma.body == "G"
