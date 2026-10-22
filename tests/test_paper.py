@@ -37,7 +37,7 @@ def test_the_paper_node_is_told_the_acl_format_and_the_appendices():
     assert entry["backend"] == "paper_writer" and entry["access"] == "write"
     # The format is a skill -- acl-paper, suggested for the paper writer by
     # skills/suggestions.json -- added to its first prompt when it runs.
-    assert entry["skills"] == {"mode": "selected", "skills": ["acl-paper"]}
+    assert entry["skills"] == {"mode": "selected", "skills": ["acl-paper", "academic-plotting"]}
     prompt = render(entry["prompts"]["first"], {"artifacts_dir": "/runs/a",
                                                  "handoff": "write it"})
     prompt += skills.block(entry["skills"], artifacts_dir="/runs/a")

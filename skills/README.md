@@ -3,6 +3,22 @@
 Reusable know-how any node can be given -- the design agent's own nodes and
 every node of a designed agent, on Codex, Claude Code or antigravity alike.
 
+## What is here
+
+| skills | for |
+| --- | --- |
+| `experiment-design`, `hypothesis-generation`, `statistical-power` | settling what an experiment must show, and how big it must be |
+| `research` | papers, citations, datasets and models, with sources |
+| `transformers`, `peft`, `bitsandbytes`, `accelerate`, `ml-training-recipes`, `scikit-learn`, `sentence-transformers` | training and fine-tuning: classifiers, LoRA/QLoRA, quantisation, multi-GPU, baselines, embeddings |
+| `hf-cli`, `huggingface-datasets`, `hf-mem` | getting models and datasets from the Hub, and whether they fit the GPU |
+| `vllm`, `transformer-lens` | batch inference; looking inside a model's representations |
+| `lm-evaluation-harness`, `tensorboard` | benchmarks; tracking runs |
+| `statistical-analysis`, `scientific-critical-thinking`, `peer-review` | testing results properly; judging claims and the paper |
+| `acl-paper`, `ml-paper-writing`, `academic-plotting` | the paper (ACL style files bundled in `ml-paper-writing/templates/acl/`), and its figures |
+
+Where the third-party ones came from, at which commit and under which licence:
+`THIRD_PARTY.md`.
+
 ## Adding one
 
 Make a folder here with a `SKILL.md` -- the same format Claude Code and

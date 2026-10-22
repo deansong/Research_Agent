@@ -13,9 +13,13 @@ FORMAT. LaTeX in the official ACL style, in {artifacts_dir}/paper:
                   fetch both from
                   https://raw.githubusercontent.com/acl-org/acl-style-files/master/latex/acl.sty
                   https://raw.githubusercontent.com/acl-org/acl-style-files/master/latex/acl_natbib.bst
-                  If that fails (no network), use \documentclass[11pt,twocolumn]{article}
-                  instead, and say so in a comment at the top of main.tex and
-                  in your report.
+                  If that fails (no network), copy them from the bundled
+                  ACL template, {skills_dir}/ml-paper-writing/templates/acl/
+                  (acl.sty, acl_natbib.bst; acl_latex.tex is a worked example),
+                  and say in your report which copy you used. Only if neither
+                  is available, use \documentclass[11pt,twocolumn]{article}
+                  and say so in a comment at the top of main.tex and in your
+                  report.
   references.bib  ONLY papers you confirmed exist: the research rounds listed
                   below, or a lookup with {python} {skills_dir}/research/research_tools.py paper <arxiv id> / cites.
                   Never write a citation from memory.

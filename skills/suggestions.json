@@ -8,18 +8,60 @@
     "nodes, by role -- the designer starts from these and may suggest others."
   ],
   "bootstrap": {
-    "discussor": {"mode": "selected", "skills": ["experiment-design"]},
-    "researcher": {"mode": "selected", "skills": ["research"]},
-    "planner": {"mode": "auto", "skills": []},
-    "designer": {"mode": "none", "skills": []}
+    "discussor": {
+      "mode": "selected",
+      "skills": [
+        "experiment-design",
+        "statistical-power",
+        "hypothesis-generation"
+      ]
+    },
+    "researcher": {
+      "mode": "selected",
+      "skills": [
+        "research"
+      ]
+    },
+    "planner": {
+      "mode": "auto",
+      "skills": []
+    },
+    "designer": {
+      "mode": "none",
+      "skills": []
+    }
   },
   "roles": {
-    "orchestrator": {"mode": "auto", "skills": []},
-    "worker": {"mode": "auto", "skills": []},
-    "runner": {"mode": "auto", "skills": []},
-    "validator": {"mode": "auto", "skills": []},
-    "paper_writer": {"mode": "selected", "skills": ["acl-paper"]},
-    "checker": {"mode": "auto", "skills": []},
-    "router": {"mode": "none", "skills": []}
+    "orchestrator": {
+      "mode": "auto",
+      "skills": []
+    },
+    "worker": {
+      "mode": "auto",
+      "skills": []
+    },
+    "runner": {
+      "mode": "auto",
+      "skills": []
+    },
+    "validator": {
+      "mode": "auto",
+      "skills": []
+    },
+    "paper_writer": {
+      "mode": "selected",
+      "skills": [
+        "acl-paper",
+        "academic-plotting"
+      ]
+    },
+    "checker": {
+      "mode": "auto",
+      "skills": []
+    },
+    "router": {
+      "mode": "none",
+      "skills": []
+    }
   }
 }

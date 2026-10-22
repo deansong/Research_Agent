@@ -78,9 +78,23 @@ def test_defaults_come_from_suggestions_and_a_broken_file_means_none(folder):
 
 def test_the_repository_ships_its_skills_and_defaults(monkeypatch):
     monkeypatch.delenv("AGENT_SKILLS_DIR", raising=False)
-    assert {"experiment-design", "research", "acl-paper"} <= set(skills.names())
-    assert skills.suggested("bootstrap", "discussor")["skills"] == ["experiment-design"]
-    assert skills.suggested("roles", "paper_writer")["skills"] == ["acl-paper"]
+    shipped = set(skills.names())
+    assert {"experiment-design", "research", "acl-paper"} <= shipped
+    assert len(shipped) >= 24
+    for skill in skills.discover():
+        assert skill.description, f"{skill.name} has no description to discover it by"
+    # Every skill a default names exists.
+    for section in ("bootstrap", "roles"):
+        for key, chosen in skills.suggestions()[section].items():
+            assert not skills.missing(chosen), (section, key, skills.missing(chosen))
+    assert skills.suggested("bootstrap", "discussor")["skills"] == [
+        "experiment-design", "statistical-power", "hypothesis-generation"]
+    assert skills.suggested("roles", "paper_writer")["skills"] == ["acl-paper", "academic-plotting"]
+    # The paper's offline fallback is really there.
+    assert (skills.skills_dir() / "ml-paper-writing" / "templates" / "acl" / "acl.sty").is_file()
+    third = (skills.skills_dir() / "THIRD_PARTY.md").read_text()
+    for skill in shipped - {"experiment-design", "research", "acl-paper"}:
+        assert f"| `{skill}` |" in third, f"{skill}: source not recorded"
 
 
 # ---- the design agent's nodes ---------------------------------------------------
