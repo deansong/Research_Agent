@@ -447,6 +447,25 @@ there was nothing on disk to look at.
 
 ---
 
+## Skills, per node
+
+Every node has a **Skills** dropdown -- in **Configure** for a designed
+agent's nodes, in the **Design agent** tab for the discussor, researcher,
+planner and designer:
+
+- **No skills**;
+- **Auto-discover** -- the node is shown each skill in the repository's
+  `skills/` folder (name, description, path) and reads the ones it needs;
+- **Selected skills** -- tick the ones it gets, in full.
+
+The lists come from `skills/` itself (GET `/api/skills`), so a folder you add
+there is offered at once. Defaults are in `skills/suggestions.json`; the
+designer starts each designed node from them and may suggest others, and
+**Context** shows a node's first prompt with its skills added, as it will be
+sent.
+
+---
+
 ## There is no Repository field
 
 Every session is **its own project**: its workspace is a new git repository
@@ -764,6 +783,7 @@ signature, and about when to do it properly instead.
 | `GET` | `/api/sessions/{id}/timeline` | every node visit, in order |
 | `GET` | `/api/sessions/{id}/iterations` | each run's review (orchestrator or supervisor), one per run |
 | `GET` | `/api/sessions/{id}/orchestrator` | the orchestrator's memory: step book, notes, decisions, context fill |
+| `GET` | `/api/skills` | the shared skills (`skills/`) and the default choices |
 | `GET` | `/api/sessions/{id}/files` | the session folder's files: code, session, results |
 | `GET` | `/api/sessions/{id}/files/content?path=` | one of them; nothing outside the folder |
 | `GET` | `/api/models` | each provider's models; `?refresh=true` to ask again |

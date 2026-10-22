@@ -458,7 +458,19 @@ def hub_review_commands() -> list[dict]:
 
 def _spec(name: str, role: str, *, steps=()) -> dict:
     return {"name": name, "role": role, "steps": list(steps), "tier": "standard",
-            "reads": [], "instructions": "", "outputs": [], "commands": []}
+            "reads": [], "instructions": "", "outputs": [], "commands": [],
+            **suggested_skills(role)}
+
+
+def suggested_skills(role: str) -> dict:
+    """A node's starting skills, by role, from skills/suggestions.json --
+    in the spec's own fields, which the designer may change."""
+    from agent import skills
+
+    if role == "human":
+        return {"skill_mode": "none", "skills": []}
+    chosen = skills.suggested("roles", role)
+    return {"skill_mode": chosen["mode"], "skills": chosen["skills"]}
 
 
 def expand(blueprint: Blueprint, plan: dict) -> dict:
@@ -518,7 +530,8 @@ def expand(blueprint: Blueprint, plan: dict) -> dict:
 
     specs = [{"name": n.name, "role": n.shape, "steps": list(n.steps),
               "tier": "standard", "reads": list(n.checks),
-              "instructions": n.instructions, "outputs": [], "commands": []}
+              "instructions": n.instructions, "outputs": [], "commands": [],
+              **suggested_skills(n.shape)}
              for n in nodes]
     specs.append({"name": REVIEW, "role": "human", "steps": [], "tier": "standard",
                   "reads": [], "instructions": "", "outputs": [],

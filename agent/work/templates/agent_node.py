@@ -101,6 +101,8 @@ def make_agent_node(
             config.prompts.next or config.prompts.first
         )
         prompt = render(template, context)
+        if use_first:
+            prompt += _skills_text(config, state)
 
         # What this turn ASKS, kept so it can be read back. A prompt is a
         # template rendered against the state of the moment; re-rendering it
@@ -145,7 +147,7 @@ def make_agent_node(
                 # the old one. See agent/backends/delegate.py.
                 thread_id, use_first = None, True
                 provider = getattr(backend, "name", "") or ""
-                prompt = render(config.prompts.first, context)
+                prompt = render(config.prompts.first, context) + _skills_text(config, state)
                 sent = {"template": "first", "prompt": prompt,
                         "instructions": config.instructions, "delegated": True}
                 arm_progress(backend, session_dir, name, sent=sent)
@@ -238,6 +240,17 @@ def make_agent_node(
         return update
 
     return agent_node
+
+
+def _skills_text(config, state) -> str:
+    """The node's skills (agent/skills), for the first prompt of a
+    conversation -- read from the skills folder now, so an edited skill
+    applies without redesigning the agent."""
+    from agent import skills
+
+    text = skills.block(config.skills, artifacts_dir=state.get("artifacts_dir", ""),
+                        workspace=state.get("repo_path", ""))
+    return f"\n\n{text}" if text else ""
 
 
 #: A hub node's final report is saved here, under the run's artifacts.

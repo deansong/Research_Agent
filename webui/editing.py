@@ -322,6 +322,12 @@ def _step_titles(plan: dict, ids: list[str]) -> list[str]:
     return titles
 
 
+def _skills_text(config, state) -> str:
+    from agent.work.templates.agent_node import _skills_text as text
+
+    return text(config, state)
+
+
 def node_context(folder, name: str, *, state: dict, artifacts_dir: str = "",
                  session_dir: str = "") -> dict:
     """The prompt a node will really receive, rendered against current state.
@@ -379,8 +385,10 @@ def node_context(folder, name: str, *, state: dict, artifacts_dir: str = "",
         "instructions": config.instructions,
         "appended_instructions": appended,
         "prompts": {
+            # With its skills, as they are added when it runs.
             "first": {"template": config.prompts.first,
-                      "rendered": render(config.prompts.first, context)},
+                      "rendered": render(config.prompts.first, context)
+                      + _skills_text(config, state)},
             "next": {"template": config.prompts.next,
                      "rendered": render(config.prompts.next or config.prompts.first,
                                         context)},

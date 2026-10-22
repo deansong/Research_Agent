@@ -84,6 +84,7 @@ const inspector = new Inspector({
     return result;
   },
   models: (refresh) => api.models(refresh),
+  skills: () => state.skills || [],
 });
 
 const auth = new AuthPanel({
@@ -206,6 +207,12 @@ async function startConversation() {
 
 async function loadAgent() {
   if (!state.session) return;
+  try {
+    // The skills folder, fresh: a skill added since is offered at once.
+    state.skills = (await api.skills()).skills || [];
+  } catch {
+    state.skills = state.skills || [];
+  }
   try {
     state.agent = await api.getAgent(state.session.id);
   } catch (error) {

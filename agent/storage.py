@@ -426,6 +426,12 @@ def delete_session(paths: SessionPaths, *, drop_branch: bool = False) -> list[st
     return done
 
 
+def _skills_dir() -> Path:
+    from agent import skills
+
+    return skills.skills_dir()
+
+
 def isolation_rules(paths: SessionPaths) -> str:
     """What every model is told about where it may work -- appended to the
     design roles' and every generated node's instructions.
@@ -448,8 +454,9 @@ def isolation_rules(paths: SessionPaths) -> str:
             f"Nothing outside the session folder is part of this task: never "
             f"read, use or write the agent's own code at {paths.repo}, or "
             f"other sessions' folders under {paths.sessions_root}. Outside it "
-            f"you may only use installed tools, install packages, and download "
-            f"data, models and papers into this session.")
+            f"you may only read the shared skills in {_skills_dir()} (never "
+            f"change them), use installed tools, install packages, and "
+            f"download data, models and papers into this session.")
     else:
         text += (
             f"Other sessions' folders (under {paths.sessions_root}) belong to "

@@ -67,9 +67,17 @@ from agent.bootstrap.state import BootstrapState
 
 def build_bootstrap_graph(backends, paths, checkpointer, *, max_attempts: int,
                           prompts: dict | None = None, research: bool = False,
-                          topology: str = "hub"):
+                          topology: str = "hub", skills: dict | None = None):
     """`prompts` is node -> field -> text, from settings.effective_prompts;
-    None means prompts.py's defaults throughout."""
+    None means prompts.py's defaults throughout. `skills` is node -> the text
+    its skills choice renders to (settings.effective_skills, agent/skills);
+    None means each node's default from skills/suggestions.json."""
+    if skills is None:
+        from agent import skills as skill_lib
+        from agent.bootstrap import settings as _settings
+
+        skills = {node: skill_lib.block(_settings.default_skills(node))
+                  for node in _settings.MODEL_NODES}
     prompts = prompts or {}
     builder = StateGraph(BootstrapState)
 
@@ -85,6 +93,7 @@ def build_bootstrap_graph(backends, paths, checkpointer, *, max_attempts: int,
         # Codex told the planner "no GPU is visible", which it was not, there.
         kw["instructions"] = (kw.get("instructions", default) + fence
                               + sandbox_note(backends.get(node), "read_only"))
+        kw["skills"] = skills.get(node, "")
         return kw
 
     # Research needs its backend; without one (switched off, so not built)

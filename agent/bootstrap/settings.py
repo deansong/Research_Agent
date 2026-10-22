@@ -93,8 +93,6 @@ def designer_instructions(topology: str = "hub") -> str:
 #: A function, because designer_reference() renders JSON and there is no
 #: reason to pay for that at import time.
 def prompt_fields() -> dict[str, dict[str, tuple[str, str, str]]]:
-    from agent import skills
-
     return {
         "discussor": {
             "instructions": (
@@ -102,12 +100,6 @@ def prompt_fields() -> dict[str, dict[str, tuple[str, str, str]]]:
                 "Standing persona, sent as the developer/system prompt on "
                 "EVERY turn.",
                 P.DISCUSSOR_INSTRUCTIONS),
-            "checklist": (
-                "Experiment design checklist (skill)",
-                "Sent in the first turn's prompt: what the discussor works "
-                "through, asking only what is still open. From "
-                "agent/skills/experiment_design.md.",
-                skills.experiment_design()),
         },
         "researcher": {
             "instructions": (
@@ -115,12 +107,6 @@ def prompt_fields() -> dict[str, dict[str, tuple[str, str, str]]]:
                 "Standing persona, sent as the developer/system prompt on "
                 "EVERY research turn.",
                 P.RESEARCHER_INSTRUCTIONS),
-            "skills": (
-                "Research skills",
-                "Sent in every research prompt: the paper and Hugging Face "
-                "lookups it can run, and how to research. {tools} is replaced "
-                "with the command. From agent/skills/research.md.",
-                skills.research_template()),
         },
         "planner": {
             "instructions": (
@@ -213,6 +199,15 @@ class _NodeFile(BaseModel):
     model: str | None = None
     options: dict[str, Any] = Field(default_factory=dict)
     prompts: dict[str, str] = Field(default_factory=dict)
+    skills: dict[str, Any] | None = None
+    """{mode: none|auto|selected, skills: [names]} -- see agent/skills.
+    None: skills/suggestions.json's default for this node."""
+
+
+#: Prompt fields that became skills (the discussor's checklist, the
+#: researcher's tools). An old bootstrap.json may still carry them; they are
+#: dropped rather than refusing the session -- edit the skill instead.
+_RETIRED_PROMPTS = {"discussor": {"checklist"}, "researcher": {"skills"}}
 
 
 class _SettingsFile(BaseModel):
@@ -261,6 +256,8 @@ def _check_names(parsed: _SettingsFile) -> None:
             raise SettingsError(f"nodes.{node}",
                                 f"{node!r} is not a model node of the design "
                                 f"agent. Those are: {', '.join(MODEL_NODES)}.")
+        for name in _RETIRED_PROMPTS.get(node, set()) & set(entry.prompts):
+            entry.prompts.pop(name)
         for name in entry.prompts:
             if name not in fields[node]:
                 raise SettingsError(f"nodes.{node}.prompts.{name}",
@@ -307,6 +304,8 @@ def _dump_node(entry: _NodeFile) -> dict:
         out["options"] = entry.options
     if entry.prompts:
         out["prompts"] = entry.prompts
+    if entry.skills is not None:
+        out["skills"] = entry.skills
     return out
 
 
@@ -317,6 +316,24 @@ def reset(session_dir: Path | str) -> None:
 # ---------------------------------------------------------------------------
 # applying them
 # ---------------------------------------------------------------------------
+
+def default_skills(node: str) -> dict:
+    """A design-agent node's skills when the session has not chosen."""
+    from agent import skills
+
+    return skills.suggested("bootstrap", node)
+
+
+def effective_skills(parsed: _SettingsFile) -> dict[str, dict]:
+    """node -> {mode, skills}: the session's choice, else the default."""
+    from agent import skills
+
+    out = {}
+    for node in MODEL_NODES:
+        chosen = parsed.nodes.get(node, _NodeFile()).skills
+        out[node] = skills.choice(chosen) if chosen is not None else default_skills(node)
+    return out
+
 
 def effective_prompts(parsed: _SettingsFile) -> dict[str, dict[str, str]]:
     """node -> field -> the text that will actually be sent."""
@@ -495,7 +512,7 @@ def save(session_dir: Path | str, cfg, submitted: dict) -> tuple[_SettingsFile, 
                                 f"{', '.join(MODEL_NODES)} call a model.")
         if not isinstance(entry, dict):
             raise SettingsError(f"nodes.{node}", "Expected an object.")
-        extra = set(entry) - {"provider", "model", "options", "prompts"}
+        extra = set(entry) - {"provider", "model", "options", "prompts", "skills"}
         if extra:
             raise SettingsError(f"nodes.{node}.{sorted(extra)[0]}",
                                 f"Unknown field {sorted(extra)[0]!r}.")
@@ -555,6 +572,13 @@ def save(session_dir: Path | str, cfg, submitted: dict) -> tuple[_SettingsFile, 
         if prompts_out:
             stored["prompts"] = prompts_out
 
+        if "skills" in entry:
+            chosen = _checked_skills(f"nodes.{node}.skills", entry["skills"])
+            if chosen != default_skills(node):
+                stored["skills"] = chosen
+        elif current.nodes.get(node, _NodeFile()).skills is not None:
+            stored["skills"] = current.nodes[node].skills
+
         if stored:
             nodes[node] = _NodeFile.model_validate(stored)
         else:
@@ -576,6 +600,24 @@ def save(session_dir: Path | str, cfg, submitted: dict) -> tuple[_SettingsFile, 
     parsed = _SettingsFile(nodes=nodes, max_design_attempts=attempts)
     _write(session_dir, parsed)
     return parsed, warnings_for(cfg, parsed)
+
+
+def _checked_skills(where: str, value) -> dict:
+    """A submitted skills choice, or SettingsError naming what is wrong."""
+    from agent import skills
+
+    if not isinstance(value, dict):
+        raise SettingsError(where, "Expected {mode, skills}.")
+    if value.get("mode") not in skills.MODES:
+        raise SettingsError(f"{where}.mode",
+                            f"mode must be one of {', '.join(skills.MODES)}.")
+    chosen = skills.choice(value)
+    unknown = skills.missing(chosen)
+    if unknown:
+        raise SettingsError(f"{where}.skills",
+                            f"No skill called {unknown[0]!r}. Skills are folders in "
+                            f"{skills.skills_dir()}: {', '.join(skills.names()) or 'none'}.")
+    return chosen
 
 
 def warnings_for(cfg, parsed: _SettingsFile) -> list[str]:
@@ -656,6 +698,9 @@ def describe(cfg, session_dir: Path | str) -> dict:
                     "chars": len(texts[node][name]),
                 } for name, (label, where, default_text) in fields[node].items()],
                 "turn_prompt": TURN_PROMPTS[node],
+                "skills": {**effective_skills(parsed)[node],
+                           "default": default_skills(node),
+                           "modified": chosen.skills is not None},
             })
         elif node == "human":
             info.update({"kind": "human", "commands": [
@@ -685,8 +730,15 @@ def describe(cfg, session_dir: Path | str) -> dict:
         "providers": sorted(p for p in PROVIDERS if p != "api"),
         "suggested_models": suggested,
         "view": graph_view(effective),
+        "available_skills": _available_skills(),
         "warnings": warnings_for(cfg, parsed),
     }
+
+
+def _available_skills() -> list[dict]:
+    from agent import skills
+
+    return [s.as_dict() for s in skills.discover()]
 
 
 #: For a provider no default role names -- so switching to it in the editor

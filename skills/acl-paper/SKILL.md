@@ -1,6 +1,11 @@
+---
+name: acl-paper
+description: Write an ACL-style paper from a run's step reports and result files: official ACL LaTeX style, verified citations only, generated tables and figures, unlimited appendices with the full results, settings and reproduction steps.
+---
+
 WRITING THE PAPER -- an ACL-style paper from this run, and only this run.
 
-FORMAT. LaTeX in the official ACL style, in {paper_dir}:
+FORMAT. LaTeX in the official ACL style, in {artifacts_dir}/paper:
   main.tex        \documentclass[11pt]{article} \usepackage[final]{acl}
                   (use [review] only if the person asked for an anonymous
                   submission). \input each appendix file after the references.
@@ -12,7 +17,7 @@ FORMAT. LaTeX in the official ACL style, in {paper_dir}:
                   instead, and say so in a comment at the top of main.tex and
                   in your report.
   references.bib  ONLY papers you confirmed exist: the research rounds listed
-                  below, or a lookup with {tools} paper <arxiv id> / cites.
+                  below, or a lookup with {python} {skills_dir}/research/research_tools.py paper <arxiv id> / cites.
                   Never write a citation from memory.
   figures/        made from the result files (matplotlib, if installed);
                   the script that makes them saved beside them.

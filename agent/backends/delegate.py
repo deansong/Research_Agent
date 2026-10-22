@@ -20,7 +20,7 @@ from agent.backends.base import BackendError, BackendOutOfCredits
 
 #: Set on BOTH backends, so whichever is active has them: Stop and Pause,
 #: the live-progress callback, the extra writable folders.
-_SHARED = ("cancel", "pause", "on_progress", "writable_roots")
+_SHARED = ("cancel", "pause", "on_progress", "writable_roots", "readable_roots")
 
 
 class Delegated(BackendError):

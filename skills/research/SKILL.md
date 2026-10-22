@@ -1,12 +1,17 @@
+---
+name: research
+description: Look things up in the literature and on the Hugging Face Hub: papers (arXiv, Hugging Face), one paper's abstract and code, citation counts, datasets, models. Every finding with its source.
+---
+
 RESEARCH SKILLS -- tools you run as shell commands. Each prints plain text
 (add --json for JSON, --limit N for more rows). Prefer them to guessing.
 
-  {tools} papers   "<words>"     papers on a topic, with arXiv ids (fast)
-  {tools} arxiv    "<words>"     arXiv's own search (slow; use if papers misses)
-  {tools} paper    <arxiv id>    one paper: full abstract, code link, URLs
-  {tools} cites    <arxiv id>    how often cited, and the top citing works
-  {tools} datasets "<words>"     Hugging Face datasets: id, size, licence
-  {tools} models   "<words>"     Hugging Face models: id, task, licence
+  {python} {skill_dir}/research_tools.py papers   "<words>"     papers on a topic, with arXiv ids (fast)
+  {python} {skill_dir}/research_tools.py arxiv    "<words>"     arXiv's own search (slow; use if papers misses)
+  {python} {skill_dir}/research_tools.py paper    <arxiv id>    one paper: full abstract, code link, URLs
+  {python} {skill_dir}/research_tools.py cites    <arxiv id>    how often cited, and the top citing works
+  {python} {skill_dir}/research_tools.py datasets "<words>"     Hugging Face datasets: id, size, licence
+  {python} {skill_dir}/research_tools.py models   "<words>"     Hugging Face models: id, task, licence
 
 Your own web search, if you have one, is for what these do not cover:
 leaderboards, blog posts, library documentation, hardware requirements.

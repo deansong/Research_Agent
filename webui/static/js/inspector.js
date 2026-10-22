@@ -31,6 +31,7 @@
   schemas drifted a whole version apart.
 */
 
+import { skillPicker } from './skills.js';
 import { renderTranscript } from './transcript.js';
 
 const el = (id) => document.getElementById(id);
@@ -41,8 +42,9 @@ export class Inspector {
    * screen; `onSetRole(role, {provider, model})` saves a role's backend for
    * the session; `models(refresh)` -> GET /api/models.
    */
-  constructor({ onSave, onSelectSteps, getBackends, onSetRole, models }) {
+  constructor({ onSave, onSelectSteps, getBackends, onSetRole, models, skills }) {
     this.onSave = onSave;
+    this.skills = skills || (() => []);
     this.onSelectSteps = onSelectSteps;
     this.getBackends = getBackends;
     this.onSetRole = onSetRole;
@@ -98,6 +100,8 @@ export class Inspector {
 
     if (this.kind === 'human') {
       form.append(this.humanFields());
+    } else if (this.kind === 'orchestrator') {
+      form.append(this.orchestratorFields());
     } else {
       form.append(this.agentFields());
     }
@@ -131,6 +135,7 @@ export class Inspector {
       this.area('instructions', 'Instructions', this.node.instructions || '', 8,
                 'The developer/system message. A write-access node also gets '
                 + 'the working rules appended at compile time -- see Context.'),
+      this.skillsField(),
     );
 
     const prompts = this.node.prompts || {};
@@ -151,6 +156,40 @@ export class Inspector {
     );
 
     box.append(this.outputFields());
+    return box;
+  }
+
+  /** Which shared skills (the repository's skills/ folder) the node gets. */
+  skillsField() {
+    return this.field('Skills',
+      'Added to the first prompt of each of its conversations, read from '
+      + 'skills/ at that moment -- so an edited skill applies without a redesign.',
+      skillPicker(this.node.skills, this.skills(), (chosen) => {
+        this.node.skills = chosen;
+        this.markDirty();
+      }));
+  }
+
+  /** The hub of a hub agent: its prompts are built by code each turn. */
+  orchestratorFields() {
+    const box = document.createElement('div');
+    const number = (key, label, fallback, hint) => this.text(
+      key, label, String(this.node[key] ?? fallback), hint,
+      (value) => { this.set(key, value === '' ? undefined : Number(value)); });
+    box.append(
+      this.text('backend', 'Backend (role)', this.node.backend || 'orchestrator',
+                'Runs where the discussor ran unless this role is set under Runs on.'),
+      this.runsOn(),
+      this.area('instructions', 'Instructions for this experiment',
+                this.node.instructions || '', 6,
+                'Added to its standing rules, which are written by code.'),
+      this.skillsField(),
+      number('max_turns', 'Most decisions per run', 80, 'Then it asks you.'),
+      number('max_visits', 'Most times one node is sent work', 8, 'Then it asks you.'),
+      number('max_failures', 'Most failed validations in a row', 3, 'Then it asks you.'),
+      number('roll_percent', 'Fresh conversation at % of its context', 70,
+             'Briefed from its memory.'),
+    );
     return box;
   }
 
@@ -275,6 +314,15 @@ export class Inspector {
       box.innerHTML = '<p class="muted">A human node has no prompt. Its '
         + 'commands decide where a run goes next.</p>';
       box.append(pre(JSON.stringify(context.commands, null, 2)));
+      this.context.replaceChildren(box);
+      return;
+    }
+    if (context.kind === 'orchestrator') {
+      box.append(section('Its prompt',
+        'Built by code each turn from its step book and memory -- see the '
+        + 'Orchestrator tab. This is what its last turn was sent.',
+        pre(context.last_prompt || '(it has not run yet)')));
+      box.append(section('Settings', '', pre(JSON.stringify(context.settings, null, 2))));
       this.context.replaceChildren(box);
       return;
     }

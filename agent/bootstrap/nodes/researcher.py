@@ -35,12 +35,10 @@ REPORTS = "research"
 
 def make_researcher(backend, paths, instructions: str = RESEARCHER_INSTRUCTIONS,
                     skills: str = ""):
-    """`skills` is the tool reference (agent/skills/research.md, with the
-    command filled in); `instructions` the persona. Both editable per session
-    -- see agent/bootstrap/settings.py."""
-    from agent import skills as skill_files
-
-    skills = skill_files.fill(skills or skill_files.research_template())
+    """`skills` is the text its skills choice renders to (agent/skills; by
+    default the research skill: the paper and Hugging Face lookups it runs);
+    `instructions` the persona. Both chosen per session -- see
+    agent/bootstrap/settings.py."""
 
     def researcher(state: BootstrapState):
         research = dict(state.get("research") or {})
@@ -59,7 +57,7 @@ def make_researcher(backend, paths, instructions: str = RESEARCHER_INSTRUCTIONS,
             f"RESEARCH QUESTIONS (round {number}):\n"
             + "\n".join(f"{i}. {q}" for i, q in enumerate(questions, 1))
             + f"\n\nSave anything you download under {out_dir}; change nothing "
-              f"else.\n\n{skills}"
+              f"else." + (f"\n\n{skills}" if skills else "")
         )
 
         sent = activity.exchange(thread_id=thread_id, instructions=instructions,

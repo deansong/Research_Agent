@@ -1,3 +1,8 @@
+---
+name: experiment-design
+description: The checklist of what an experiment plan needs settled -- claim, code, design, run, analysis, checks, gates -- with a suggested answer for each open item. For discussing and planning an experiment.
+---
+
 EXPERIMENT DESIGN CHECKLIST -- what a plan needs settled. Ask only what is
 still open and would change the work; suggest a specific answer for each.
 

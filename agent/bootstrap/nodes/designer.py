@@ -51,7 +51,7 @@ from agent.telemetry import record_usage, usage_to_dict
 def make_designer(backend, instructions: str = DESIGNER_INSTRUCTIONS,
                   reference: str | None = None,
                   repair_prefix: str = REPAIR_PREFIX,
-                  topology: str = "hub"):
+                  topology: str = "hub", skills: str = ""):
     # All three are parameters so a session can replace them -- see
     # agent/bootstrap/settings.py, which also owns the default reference.
     # `topology` is which starting design it edits: "hub" or "pipeline".
@@ -129,6 +129,8 @@ def make_designer(backend, instructions: str = DESIGNER_INSTRUCTIONS,
                 # over ~6 KB of developer_instructions a Codex turn never
                 # completes. See agent/bootstrap/prompts.py.
                 + reference
+                + _skills_catalog()
+                + (f"\n\n{skills}" if skills else "")
                 + "\n\n"
                 # Last: it is what the answer is an edit of.
                 + _shown("THE STARTING DESIGN -- built from the plan; it compiles "
@@ -271,6 +273,23 @@ def _starting_design(state, plan: dict, topology: str = "hub") -> tuple[dict, di
               f"from a blank page:\n{problems}")
         return {}, {}
     return start, proposal
+
+
+def _skills_catalog() -> str:
+    """The skills a designed node can be given, for the designer to suggest
+    per node. Each node's starting choice is skills/suggestions.json's."""
+    from agent import skills
+
+    available = skills.discover()
+    if not available:
+        return ""
+    lines = "\n".join(f"  - {s.name}: {s.description}" for s in available)
+    return ("\n\n" + "-" * 74 + "\nSKILLS THE NODES CAN BE GIVEN\n" + "-" * 74 + "\n"
+            "Shared instructions and tools in skills/. Per node, `skill_mode` is "
+            "none, auto (the node is shown this list and reads what it needs) or "
+            "selected (the skills named in `skills`, given in full). The starting "
+            "design has the defaults; change a node's choice where a skill fits "
+            "its job, or does not.\n" + lines)
 
 
 def _shown(title: str, design: dict) -> str:

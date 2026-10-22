@@ -136,14 +136,16 @@ class ClaudeCodeBackend(CliBackend):
         is to stop the process blocking on a permission question nobody is
         there to answer.
         """
+        # Folders outside the working directory it may use: the session's
+        # results folder (written by a write turn) and the shared skills
+        # (read by any turn -- a read-only discussor or validator included).
+        roots = [*(getattr(self, "writable_roots", None) or []),
+                 *(getattr(self, "readable_roots", None) or [])]
+        extra = [flag for root in dict.fromkeys(roots) for flag in ("--add-dir", root)]
         if access in (Access.NONE, Access.READ_ONLY):
             return ["--allowed-tools", _READ_ONLY_TOOLS,
                     "--disallowed-tools", _WRITING_TOOLS,
-                    "--permission-mode", "acceptEdits"]
-        # Folders it may edit besides its working directory: the session's
-        # results folder, when the session works in its own workspace.
-        extra = [flag for root in getattr(self, "writable_roots", None) or []
-                 for flag in ("--add-dir", root)]
+                    "--permission-mode", "acceptEdits", *extra]
         if access is Access.WRITE:
             return ["--permission-mode", "acceptEdits", *extra]
         return ["--permission-mode", "bypassPermissions", *extra]

@@ -38,6 +38,7 @@ MODULES: list[tuple[str, list[str]]] = [
     ("history.js", ["IterationsPanel", "OrchestratorPanel", "TimelinePanel"]),
     ("models.js", ["loadModelPicker", "modelOverrides", "resetModelPicker",
                    "wireModelPicker"]),
+    ("skills.js", ["SKILL_MODES", "skillPicker"]),
     ("graph.js", ["GraphPanel"]),
     ("bootstrap.js", ["BootstrapPanel"]),
     ("plan.js", ["PlanPanel", "ownersByStep"]),

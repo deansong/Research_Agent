@@ -22,7 +22,15 @@ sys.path.insert(0, str(pathlib.Path(__file__).resolve().parents[1]))
 import pytest  # noqa: E402
 
 from agent import activity  # noqa: E402
-from agent.skills import research_tools as tools  # noqa: E402
+import importlib.util  # noqa: E402
+
+from agent import skills as skill_lib  # noqa: E402
+
+# The research skill's script lives in its skill folder, not in a package.
+_SPEC = importlib.util.spec_from_file_location(
+    "research_tools", skill_lib.skills_dir() / "research" / "research_tools.py")
+tools = importlib.util.module_from_spec(_SPEC)
+_SPEC.loader.exec_module(tools)
 
 
 def _session(client, repo, **extra):
@@ -142,7 +150,7 @@ def test_the_skills_name_the_tools_by_absolute_path():
     from agent import skills
 
     text = skills.research()
-    assert str(tools.__file__) in text and "{tools}" not in text
+    assert str(tools.__file__) in text and "{python}" not in text and "{skill_dir}" not in text
     assert "papers" in text and "datasets" in text
     with pytest.raises(SystemExit):
         tools.main(["nope", "x"])

@@ -299,6 +299,16 @@ def validate_folder(
                                         f"{backend.max_access.value}."))
 
     # ---- warnings --------------------------------------------------------
+    from agent import skills as skill_lib
+
+    for name, config in folder.nodes.items():
+        gone = skill_lib.missing(getattr(config, "skills", None))
+        if gone:
+            problems.append(Problem("skill_missing", f"node {name!r}",
+                                    f"its skills include {', '.join(gone)}, which "
+                                    f"{'is' if len(gone) == 1 else 'are'} not in "
+                                    f"{skill_lib.skills_dir()}; it runs without them.",
+                                    warning=True))
     has_exit = any(
         command.to == END_TARGET
         for cfg in folder.nodes.values()

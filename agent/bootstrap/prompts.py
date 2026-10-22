@@ -226,6 +226,9 @@ A SPEC PER NODE
                 that lead straight into it.
 `instructions`  a few sentences of what is special about it.
 `outputs`       extra string fields beyond its role's standard ones.
+`skill_mode`    which shared skills (listed in the prompt) it gets: none;
+                auto -- it reads what it needs; selected -- `skills`, in full.
+`skills`        for selected: the skill names.
 
 --------------------------------------------------------------------------
 HOW CONTROL FLOWS
@@ -310,6 +313,10 @@ WHAT YOU DESIGN -- a spec per node
 `tier`          "light" for a work node a cheaper model can do -- copying,
                 formatting, a file written to an exact spec; else "standard".
 `outputs`       extra string fields a node must return beyond its own.
+`skill_mode`, `skills`   which shared skills (listed in the prompt) it gets:
+                none; auto -- it reads what it needs; selected -- the named
+                `skills`, in full. Suggest the ones that fit its job.
+`steps`, `reads`, `commands`   fixed by code: return them as given.
 
 --------------------------------------------------------------------------
 YOUR ANSWER

@@ -185,8 +185,13 @@ class Runtime:
         # that allows writing only in the working directory would then refuse
         # the run's results folder, which sits beside it. So name it.
         writable = [str(self.paths.artifacts)] if self.paths.own_workspace else []
+        # The shared skills: every provider may read them (agent/skills).
+        from agent import skills
+
+        readable = [str(skills.skills_dir())] if skills.skills_dir().is_dir() else []
         for backend in built.values():
             backend.writable_roots = writable
+            backend.readable_roots = readable
         self._built.update(built)
         return built
 
@@ -258,6 +263,8 @@ class Runtime:
             except BackendError as exc:
                 print(f"Note: research is on, but the research agent cannot start, "
                       f"so the discussor goes without it:\n  {str(exc).splitlines()[0]}")
+        from agent import skills
+
         graph = build_bootstrap_graph(
             backends,
             self.paths,
@@ -266,6 +273,10 @@ class Runtime:
             prompts=settings.effective_prompts(overrides),
             research=cfg.research,
             topology=cfg.design_topology,
+            # Rendered at every start, so a skill edited while paused applies.
+            skills={node: skills.block(chosen, artifacts_dir=str(self.paths.artifacts),
+                                       workspace=str(self.paths.workspace))
+                    for node, chosen in settings.effective_skills(overrides).items()},
         )
         return bootstrap_session(
             graph=graph,

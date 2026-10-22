@@ -20,15 +20,13 @@ from agent.telemetry import record_usage, usage_to_dict
 
 
 def make_discussor(backend, instructions: str = DISCUSSOR_INSTRUCTIONS,
-                   checklist: str = "", research: bool = False):
-    """`instructions` (the persona) and `checklist` (the experiment-design
-    skill, agent/skills/experiment_design.md) are parameters so a session can
-    replace them -- see agent/bootstrap/settings.py. `research`: whether it
-    may ask the research agent before it asks you."""
-    from agent import skills
+                   skills: str = "", research: bool = False):
+    """`instructions` (the persona) is a parameter so a session can replace
+    it -- see agent/bootstrap/settings.py. `skills` is the text its skills
+    choice renders to (agent/skills; by default the experiment-design
+    checklist), sent in its first turn. `research`: whether it may ask the
+    research agent before it asks you."""
     from agent.bootstrap.nodes.researcher import MAX_ROUNDS, report_text
-
-    checklist = checklist or skills.experiment_design()
 
     def discussor(state: BootstrapState):
         print("\n[discussor] thinking about what you need...")
@@ -67,7 +65,7 @@ def make_discussor(backend, instructions: str = DISCUSSOR_INSTRUCTIONS,
                 f"still need, all in this one turn, each with your suggested answer. "
                 f"Fill `requirements` with their answers so far and your suggestions "
                 f"marked (assumed). The human ends the discussion by typing /plan; "
-                f"you only advise.\n\n{checklist}"
+                f"you only advise." + (f"\n\n{skills}" if skills else "")
                 + availability
             )
         else:

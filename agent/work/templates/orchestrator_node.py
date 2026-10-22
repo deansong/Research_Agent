@@ -463,6 +463,12 @@ def _kickoff(state, memory, roster, book, config, name, *, continued: bool, budg
         recent = [e for e in state.get("ledger") or []][-HISTORY:]
         if recent:
             parts.append("RECENT EVENTS:\n" + "\n".join(f"  {e.get('digest', '')}" for e in recent))
+    from agent import skills
+
+    chosen = skills.block(config.skills, artifacts_dir=state.get("artifacts_dir", ""),
+                          workspace=state.get("repo_path", ""))
+    if chosen:
+        parts.append(chosen)
     return clip_middle("\n\n".join(parts), int(budget * 0.7))
 
 

@@ -144,6 +144,7 @@ def compile_design(design: DesignerSpec | dict, plan: dict) -> dict:
                 problems.append(f"node {name!r}: output {extra.name!r} is not a usable "
                                 f"field name (lowercase, digits, underscores).")
     problems += _plan_contract(specs, plan)
+    problems += _skill_problems(specs)
     if problems:
         raise SpecError(problems)
 
@@ -413,6 +414,7 @@ def _entry(spec, fields, reads, senders, variables, branch, specs, plan, steps_f
         "announce": (f"working on step {', '.join(spec.steps)}..." if spec.steps
                      else f"{name}..."),
         "commands": [],
+        "skills": _skill_choice(spec),
     }
 
 
@@ -532,6 +534,7 @@ def _compile_hub(design: DesignerSpec, plan: dict) -> dict:
                 problems.append(f"node {name!r}: output {extra.name!r} is not a usable "
                                 f"field name (lowercase, digits, underscores).")
     problems += _plan_contract(specs, plan)
+    problems += _skill_problems(specs)
     if problems:
         raise SpecError(problems)
 
@@ -547,7 +550,8 @@ def _compile_hub(design: DesignerSpec, plan: dict) -> dict:
 
     entries = [{"name": orchestrator, "backend": "orchestrator",
                 "instructions": _defuse(specs[orchestrator].instructions.strip()),
-                "validator": validator, "paper": paper, "review": review}]
+                "validator": validator, "paper": paper, "review": review,
+                "skills": _skill_choice(specs[orchestrator])}]
     for name in work + [validator, paper]:
         entries.append(_hub_entry(specs[name], plan))
     entries.append({"name": review, "commands": blueprint.hub_review_commands()})
@@ -572,8 +576,6 @@ def _hub_fields(spec, looping: bool) -> list[dict]:
 
 
 def _hub_entry(spec, plan: dict) -> dict:
-    from agent import skills
-
     role = spec.role
     looping = role in WORK_ROLES and _has_substeps(spec, plan)
     if role in WORK_ROLES:
@@ -600,11 +602,11 @@ def _hub_entry(spec, plan: dict) -> dict:
         following = ("{handoff}\n\nYou may have judged this node before. Say whether "
                      "the specific problem you found is gone, and look for anything the "
                      "fix broke.")
-    else:   # paper_writer
-        skill = _defuse(skills.acl_paper()).replace("{ artifacts_dir }", "{artifacts_dir}")
-        first = ("{task_brief}\n\nFROM THE ORCHESTRATOR:\n{handoff}\n\n" + skill
-                 + "\n\nThe workspace is {repo_path}; the results are under "
-                   "{artifacts_dir}." + _WORK_REPORTING)
+    else:   # paper_writer -- its format is a skill (acl-paper, by default)
+        first = ("{task_brief}\n\nFROM THE ORCHESTRATOR:\n{handoff}\n\nWrite the paper "
+                 "in {artifacts_dir}/paper, following your skills below."
+                 "\n\nThe workspace is {repo_path}; the results are under "
+                 "{artifacts_dir}." + _WORK_REPORTING)
         following = ("FROM THE ORCHESTRATOR:\n{handoff}\n\nRevise the paper in "
                      "{artifacts_dir}/paper as asked, keeping to the format you were "
                      "given." + _WORK_REPORTING)
@@ -624,4 +626,28 @@ def _hub_entry(spec, plan: dict) -> dict:
         "announce": (f"working on step {', '.join(spec.steps)}..." if spec.steps
                      else f"{spec.name}..."),
         "commands": [],
+        "skills": _skill_choice(spec),
     }
+
+
+def _skill_choice(spec) -> dict:
+    """A spec's skills as nodes.json has them: {mode, skills}."""
+    mode = spec.skill_mode
+    return {"mode": mode, "skills": list(spec.skills) if mode == "selected" else []}
+
+
+def _skill_problems(specs: dict) -> list[str]:
+    """Skills a spec names that do not exist -- a model's typo, or a skill
+    since removed -- named, with what there is."""
+    from agent import skills
+
+    known = set(skills.names())
+    out = []
+    for name, spec in specs.items():
+        if spec.skill_mode != "selected":
+            continue
+        for skill in spec.skills:
+            if skill not in known:
+                out.append(f"node {name!r} names the skill {skill!r}, which does not "
+                           f"exist. Skills: {', '.join(sorted(known)) or 'none'}.")
+    return out

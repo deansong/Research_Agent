@@ -183,6 +183,16 @@ class CommandSpec(FolderModel):
     """Optional run outcome to record, e.g. "new_task"."""
 
 
+class SkillChoice(FolderModel):
+    """Which shared skills (<repo>/skills, agent/skills) a node gets.
+
+    none -- none; auto -- it is shown every skill's name and description and
+    reads the ones it needs; selected -- the skills named here, in full."""
+
+    mode: Literal["none", "auto", "selected"] = "none"
+    skills: list[str] = Field(default_factory=list, max_length=20)
+
+
 class AgentNodeConfig(FolderModel):
     """Config for a kind: "agent" node -- one structured model turn."""
 
@@ -225,6 +235,9 @@ class AgentNodeConfig(FolderModel):
     see whether a worker stayed inside its step."""
     record: str = ""
     announce: str = ""
+    skills: SkillChoice | None = None
+    """Added to its first prompt of a conversation. None: no skills -- what
+    every agent designed before skills had."""
 
 
 class HumanNodeConfig(FolderModel):
@@ -286,6 +299,8 @@ class OrchestratorNodeConfig(FolderModel):
     """Tokens. 0: the provider's own figure, else backends/models.py's."""
 
     announce: str = ""
+    skills: SkillChoice | None = None
+    """Added to the briefing it gets with each new conversation."""
 
 
 NodeConfig = AgentNodeConfig | HumanNodeConfig | OrchestratorNodeConfig
@@ -301,7 +316,7 @@ NodeConfig = AgentNodeConfig | HumanNodeConfig | OrchestratorNodeConfig
 #: agent about what actually changed.
 AGENT_KEYS: tuple[str, ...] = (
     "backend", "access", "steps", "instructions", "output", "prompts",
-    "thread_key", "refresh_on", "bump", "capture", "record", "announce",
+    "thread_key", "refresh_on", "bump", "capture", "record", "announce", "skills",
 )
 
 
@@ -361,6 +376,7 @@ def node_entry(kind: str | None, values: dict) -> dict:
 ORCHESTRATOR_KEYS: tuple[str, ...] = (
     "backend", "instructions", "validator", "paper", "review", "max_turns",
     "max_visits", "max_failures", "roll_percent", "context_window", "announce",
+    "skills",
 )
 
 

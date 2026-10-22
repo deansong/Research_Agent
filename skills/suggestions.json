@@ -1,0 +1,25 @@
+{
+  "_comment": [
+    "Which skills each node gets unless you choose otherwise, per node, in the UI.",
+    "mode: none -- no skills; auto -- the node is shown every skill's name and",
+    "description and reads the ones it needs; selected -- the listed skills are",
+    "given to it in full. Skill names are folder names under skills/.",
+    "`bootstrap` is the design agent's own nodes; `roles` is a designed agent's",
+    "nodes, by role -- the designer starts from these and may suggest others."
+  ],
+  "bootstrap": {
+    "discussor": {"mode": "selected", "skills": ["experiment-design"]},
+    "researcher": {"mode": "selected", "skills": ["research"]},
+    "planner": {"mode": "auto", "skills": []},
+    "designer": {"mode": "none", "skills": []}
+  },
+  "roles": {
+    "orchestrator": {"mode": "auto", "skills": []},
+    "worker": {"mode": "auto", "skills": []},
+    "runner": {"mode": "auto", "skills": []},
+    "validator": {"mode": "auto", "skills": []},
+    "paper_writer": {"mode": "selected", "skills": ["acl-paper"]},
+    "checker": {"mode": "auto", "skills": []},
+    "router": {"mode": "none", "skills": []}
+  }
+}

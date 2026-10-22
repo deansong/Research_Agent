@@ -27,7 +27,10 @@ from agent.statelib import merge_section
 from agent.telemetry import record_usage, usage_to_dict
 
 
-def make_planner(backend, paths, instructions: str = PLANNER_INSTRUCTIONS):
+def make_planner(backend, paths, instructions: str = PLANNER_INSTRUCTIONS,
+                 skills: str = ""):
+    """`skills`: the text its skills choice renders to, sent with a first
+    plan (agent/skills)."""
     def planner(state: BootstrapState):
         design = dict(state.get("design", {}))
         revision = design.get("plan_feedback", "").strip()
@@ -51,6 +54,7 @@ def make_planner(backend, paths, instructions: str = PLANNER_INSTRUCTIONS):
                 f"{state.get('discussion', {}).get('requirements', '(none)')}\n\n"
                 f"Plan it as the four stages, "
                 f"with the work in substeps."
+                + (f"\n\n{skills}" if skills else "")
             )
 
         try:

@@ -1821,3 +1821,20 @@ dialog label.check-row input {
   color: var(--text-faint);
   margin: 2px 0;
 }
+
+/* ---------- skills: the per-node choice (js/skills.js) ---------- */
+.skill-picker { display: flex; flex-direction: column; gap: 4px; }
+.skill-mode { max-width: 220px; }
+.skill-hint { font-size: 11px; }
+.skill-list { display: flex; flex-direction: column; gap: 3px; margin-top: 2px; }
+.skill-row {
+  display: grid;
+  grid-template-columns: auto auto 1fr;
+  gap: 6px;
+  align-items: baseline;
+  font-size: 12px;
+  cursor: pointer;
+}
+.skill-name { font-family: var(--mono); color: var(--accent); }
+.skill-desc { font-size: 11px; overflow-wrap: anywhere; }
+.skill-missing { font-size: 11px; color: var(--warn); }

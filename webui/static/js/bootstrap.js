@@ -16,6 +16,7 @@
 */
 
 import { GraphPanel } from './graph.js';
+import { skillPicker } from './skills.js';
 
 const el = (tag, attrs = {}, ...children) => {
   const node = document.createElement(tag);
@@ -210,7 +211,7 @@ export class BootstrapPanel {
     card.append(el('p', { class: 'bs-summary', text: node.summary }));
 
     if (node.kind === 'agent') {
-      card.append(this.backendForm(node), this.promptForms(node),
+      card.append(this.backendForm(node), this.skillsForm(node), this.promptForms(node),
         el('div', { class: 'field' },
           el('span', { class: 'field-label', text: 'Per-turn prompt (built from state, not editable)' }),
           el('p', { class: 'bs-turn', text: node.turn_prompt })));
@@ -220,6 +221,16 @@ export class BootstrapPanel {
       card.append(this.attemptsForm());
     }
     return card;
+  }
+
+  skillsForm(node) {
+    const draft = this.draft.nodes[node.name];
+    return el('div', { class: 'field' },
+      el('span', { class: 'field-label', text: 'Skills' }),
+      skillPicker(draft.skills, this.view.available_skills || [], (chosen) => {
+        draft.skills = chosen;
+        this.touch();
+      }, { disabled: !this.view.editable }));
   }
 
   backendForm(node) {
@@ -409,7 +420,7 @@ export class BootstrapPanel {
     const node = this.view.nodes[name];
     if (node.kind === 'agent') {
       return node.backend.modified || node.options.some((o) => o.modified)
-        || node.prompts.some((p) => p.modified);
+        || node.prompts.some((p) => p.modified) || Boolean(node.skills?.modified);
     }
     if (name === 'validator') {
       return this.view.max_design_attempts.value !== this.view.max_design_attempts.default;
@@ -432,6 +443,7 @@ export class BootstrapPanel {
         model: draft.model,
         options: draft.options,
         prompts: draft.prompts,
+        skills: draft.skills,
       };
     }
     return { nodes, max_design_attempts: this.draft.max_design_attempts };
@@ -491,6 +503,7 @@ function draftFrom(view) {
       model: node.backend.model || '',
       options,
       prompts,
+      skills: { mode: node.skills?.mode || 'none', skills: [...(node.skills?.skills || [])] },
     };
   }
   return { nodes, max_design_attempts: view.max_design_attempts.value };

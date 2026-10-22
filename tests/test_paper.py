@@ -31,17 +31,22 @@ def _paper_entry():
 
 
 def test_the_paper_node_is_told_the_acl_format_and_the_appendices():
+    from agent import skills
+
     entry = _paper_entry()
     assert entry["backend"] == "paper_writer" and entry["access"] == "write"
+    # The format is a skill -- acl-paper, suggested for the paper writer by
+    # skills/suggestions.json -- added to its first prompt when it runs.
+    assert entry["skills"] == {"mode": "selected", "skills": ["acl-paper"]}
     prompt = render(entry["prompts"]["first"], {"artifacts_dir": "/runs/a",
                                                  "handoff": "write it"})
+    prompt += skills.block(entry["skills"], artifacts_dir="/runs/a")
     for must in ("acl-style-files", "references.bib", "Limitations", "Ethics Statement",
                  "no page limit", "Full results", "Experimental settings",
                  "Reproducibility", "Run record", "failed or were dropped",
                  "/runs/a/paper", "Overleaf", "tectonic", "never write a citation from memory"):
         assert must.lower() in prompt.lower(), must
-    assert "\\usepackage[final]{ acl }" in prompt, \
-        "LaTeX braces are kept from being read as placeholders"
+    assert "\\usepackage[final]{acl}" in prompt, "skill text is not run through the renderer"
     fields = {f["name"] for f in entry["output"]}
     assert {"status", "report", "paper_dir", "pdf_path", "title", "abstract"} <= fields
 

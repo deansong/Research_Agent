@@ -99,6 +99,7 @@ export const api = {
   timeline:      (id)   => request('GET', `/api/sessions/${encodeURIComponent(id)}/timeline`),
   iterations:    (id)   => request('GET', `/api/sessions/${encodeURIComponent(id)}/iterations`),
   orchestrator:  (id)   => request('GET', `/api/sessions/${encodeURIComponent(id)}/orchestrator`),
+  skills:        ()     => request('GET', '/api/skills'),
   nodeActivity:  (id, name) =>
     request('GET', `/api/sessions/${encodeURIComponent(id)}/nodes/${encodeURIComponent(name)}/activity`),
   // The turn running right now, whichever node it belongs to -- what the

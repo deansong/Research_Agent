@@ -214,6 +214,9 @@ def test_classes_the_js_creates_are_styled():
         # The transcript rows (transcript.js) both of them are made of.
         "tx", "tx-head", "tx-mark", "tx-text", "tx-at", "tx-out", "tx-fail",
         "tx-running", "tx-more", "tx-hidden",
+        # The skills picker (skills.js), in Configure and the Design agent tab.
+        "skill-picker", "skill-mode", "skill-hint", "skill-list", "skill-row",
+        "skill-name", "skill-desc", "skill-missing",
     ]:
         assert re.search(rf"\.{re.escape(name)}\b", css), f"no CSS rule for .{name}"
     print("PASS  every class the heartbeat expander creates has a rule")

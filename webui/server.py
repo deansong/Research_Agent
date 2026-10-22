@@ -660,6 +660,17 @@ def _register(app: FastAPI) -> None:
 
         return {"visits": activity.timeline(_runner(session_id).paths.session)}
 
+    @app.get("/api/skills")
+    def get_skills():
+        """The shared skills (<repo>/skills) and the default choices
+        (skills/suggestions.json). Read fresh: adding a skill is adding a
+        folder."""
+        from agent import skills
+
+        return {"dir": str(skills.skills_dir()),
+                "skills": [s.as_dict() for s in skills.discover()],
+                "suggestions": skills.suggestions()}
+
     @app.get("/api/sessions/{session_id}/orchestrator")
     def get_orchestrator(session_id: str):
         """What a hub agent's orchestrator knows: its memory -- the step

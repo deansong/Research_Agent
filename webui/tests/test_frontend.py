@@ -1087,3 +1087,82 @@ def test_the_orchestrator_tab_shows_its_step_book_and_decisions():
                      "validate s2_run", "compare A and B", "reports/s1_code.md"):
         assert expected in shown, expected
     assert "pipeline" in result["pipeline"]
+
+
+def test_a_nodes_skills_are_chosen_from_a_dropdown():
+    """No skills, auto-discover, or selected -- and for selected, a tick per
+    skill in the folder. In Configure, the choice is saved on the node."""
+    try:
+        import quickjs  # noqa: F401
+    except ImportError:  # pragma: no cover
+        pytest.skip("quickjs not installed")
+    from jsdom_harness import exercise
+
+    result = exercise("""
+      var inspector = new __ns.Inspector({
+        onSave() {}, onSelectSteps() {}, getBackends() { return {}; },
+        skills() { return [{ name: 'acl-paper', description: 'Write the paper.' },
+                           { name: 'research', description: 'Look things up.' }]; },
+      });
+      inspector.show('paper', 'agent', { backend: 'paper_writer', access: 'write',
+                                         skills: { mode: 'auto', skills: [] } });
+      function walk(node, out) {
+        (node._children || []).forEach(function (c) { out.push(c); walk(c, out); });
+        return out;
+      }
+      var all = walk(inspector.configure, []);
+      var mode = all.filter(function (n) { return n.className === 'skill-mode'; })[0];
+      var options = mode._children.map(function (o) { return o.value; });
+      var before = mode.value;
+      mode.value = 'selected'; mode._listeners.change[0]();
+      all = walk(inspector.configure, []);
+      var ticks = all.filter(function (n) { return n.type === 'checkbox'
+        && n._listeners.change && n !== undefined; });
+      var rows = all.filter(function (n) { return n.className === 'skill-row'; });
+      var tick = rows[0]._children[0];
+      tick.checked = true; tick._listeners.change[0]();
+      return { options: options, before: before, rows: rows.length,
+               chosen: inspector.node.skills, dirty: inspector.dirty };
+    """)
+    assert result["options"] == ["none", "auto", "selected"]
+    assert result["before"] == "auto"
+    assert result["rows"] == 2, "one tick per skill in the folder"
+    assert result["chosen"] == {"mode": "selected", "skills": ["acl-paper"]}
+    assert result["dirty"] is True
+
+
+def test_the_design_agent_tab_offers_skills_per_node_and_sends_them():
+    try:
+        import quickjs  # noqa: F401
+    except ImportError:  # pragma: no cover
+        pytest.skip("quickjs not installed")
+    from jsdom_harness import exercise
+
+    result = exercise("""
+      var host = document.createElement('div');
+      var panel = new __ns.BootstrapPanel(host, { load() {}, save() {}, reset() {},
+                                                  start() {}, models() {}, onError() {} });
+      var node = { name: 'discussor', kind: 'agent', summary: 's', access: 'read_only',
+                   backend: { provider: 'fake', model: '', modified: false },
+                   default_backend: { provider: 'fake', model: '' }, options: [],
+                   prompts: [], turn_prompt: 't',
+                   skills: { mode: 'selected', skills: ['experiment-design'],
+                             modified: false } };
+      panel.render({ path: '/s/bootstrap.json', exists: false, editable: true,
+                     nodes: { discussor: node }, order: ['discussor'],
+                     max_design_attempts: { value: 3, default: 3, limit: 9 },
+                     providers: ['fake'], suggested_models: {}, warnings: [],
+                     view: { nodes: [], edges: [] },
+                     available_skills: [{ name: 'experiment-design', description: 'd' },
+                                        { name: 'research', description: 'r' }] });
+      function walk(n, out) {
+        (n._children || []).forEach(function (c) { out.push(c); walk(c, out); });
+        return out;
+      }
+      var mode = walk(host, []).filter(function (n) { return n.className === 'skill-mode'; })[0];
+      var shown = mode.value;
+      mode.value = 'none'; mode._listeners.change[0]();
+      return { shown: shown, body: panel.body().nodes.discussor.skills };
+    """)
+    assert result["shown"] == "selected"
+    assert result["body"] == {"mode": "none", "skills": []}

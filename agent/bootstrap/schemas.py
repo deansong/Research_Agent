@@ -195,6 +195,11 @@ class GraphProposal(StrictModel):
     cannot express but a human could hand-write."""
 
 
+class SkillProposal(StrictModel):
+    mode: Literal["none", "auto", "selected"] = "none"
+    skills: list[str] = Field(default_factory=list, max_length=20)
+
+
 class NodeProposal(StrictModel):
     """One entry of nodes.json, plus the name it belongs to.
 
@@ -240,6 +245,9 @@ class NodeProposal(StrictModel):
     validator: str = ""
     paper: str = ""
     review: str = ""
+
+    skills: SkillProposal | None = None
+    """Which shared skills the node gets (agent/skills)."""
 
 
 class DesignerOutput(StrictModel):
@@ -293,6 +301,11 @@ class NodeSpec(StrictModel):
     outputs: list[ExtraField] = Field(default_factory=list, max_length=6)
     commands: list[CommandProposal] = Field(default_factory=list, max_length=12)
     """Human nodes only: the slash commands it accepts and where each goes."""
+    skill_mode: Literal["none", "auto", "selected"] = "none"
+    """Which shared skills the node gets: none; auto (it reads what it needs
+    from the list); selected (`skills`, in full). See agent/skills."""
+    skills: list[str] = Field(default_factory=list, max_length=8)
+    """For skill_mode selected: the skill names (folders in skills/)."""
 
 
 class DesignerSpec(StrictModel):

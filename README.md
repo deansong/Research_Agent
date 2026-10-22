@@ -19,7 +19,7 @@ PHASE 2  run the agent that was just designed
   start · resume · reuse an agent · edit an agent · configure backends
 - [Command reference](#command-reference) · [CLI reference](#cli-reference)
 - [Where everything lives](#where-everything-lives)
-- [How it works](#how-it-works) · [Four things that will bite you](#four-things-that-will-bite-you)
+- [How it works](#how-it-works) · [**Skills**](#skills) · [Four things that will bite you](#four-things-that-will-bite-you)
 - [Troubleshooting](#troubleshooting)
 
 ---
@@ -724,21 +724,49 @@ answer you give, three per session. Each round is saved to
 - **Runs on antigravity** (`gemini-4-argon-medium`) by default, for its built-in
   web search; change the `researcher` role like any other. If it cannot start
   (agy not installed or signed out), the discussion goes on without it.
-- **Its skills** are in `agent/skills/`: `research_tools.py`, one script with
+- **Its skill** is `skills/research/`: `research_tools.py`, one script with
   `papers` (Hugging Face paper search: fast, gives arXiv ids), `arxiv`
   (arXiv's own search: slow and rate-limited, so the fallback), `paper` (an
   abstract, code link and URLs), `cites` (OpenAlex citation counts, only when
   its record's title matches — LoRA's does not), `datasets` and `models` (the
-  Hub); and `research.md`, how to use them. Try one:
-  `python agent/skills/research_tools.py papers "lora linear probe"`.
+  Hub); and `SKILL.md`, how to use them. Try one:
+  `python skills/research/research_tools.py papers "lora linear probe"`.
 - **Cost:** a round is a few minutes — 7 in a measured run, with 9 web
   searches and 7 lookups. A faster model for the `researcher` role
   (`gemini-3.8-flash-medium`) shortens it.
 
-**The discussor** is now a short persona plus a skill:
-`agent/skills/experiment_design.md`, the checklist it works through (claim,
-code, design, run, analysis, checks, gates). Edit either in the Design agent
-tab, or the file for every session.
+**The discussor** is a short persona plus a skill:
+`skills/experiment-design/`, the checklist it works through (claim, code,
+design, run, analysis, checks, gates). Edit the persona in the Design agent
+tab, and the skill in its folder -- see **Skills** below.
+
+### Skills
+
+`skills/` at the top of the repository holds shared know-how, one folder per
+skill with a `SKILL.md` -- the format Claude Code and antigravity use, read as
+plain files by every provider (Claude Code is given the folder with
+`--add-dir`; it is the one thing outside a session's own folder the models are
+pointed at, read-only). It ships with `experiment-design`, `research` and
+`acl-paper`; adding one is adding a folder -- see `skills/README.md`.
+
+Every node -- the design agent's discussor, researcher, planner and designer,
+and every node of a designed agent, the orchestrator included -- has a
+**skills** setting, a dropdown in the UI (the **Design agent** tab for the
+first, **Configure** for the second):
+
+| choice | what the node is sent |
+| --- | --- |
+| No skills | nothing |
+| Auto-discover | every skill's name, description and `SKILL.md` path; it reads the ones its task needs |
+| Selected skills | the ones you tick, in full |
+
+Skills are added to the first prompt of each conversation, read from the
+folder at that moment -- so editing a skill applies without redesigning the
+agent. The defaults are `skills/suggestions.json`: per design-agent node, and
+per role in a designed agent (orchestrator, worker, runner, validator,
+paper_writer, ...). The designer is shown every skill and starts each node
+from those defaults; it can suggest others for a node, and you can change any
+of them at the design review.
 
 `writer` and `validator` call **no model**. The designer already produced the
 folder as data, so `writer` is `json.dump` — which makes "no `exec`, no
@@ -826,7 +854,8 @@ just ran the experiment.
 
 #### The paper
 
-`agent/skills/acl_paper.md`, editable: LaTeX in the official ACL style
+The `acl-paper` skill (`skills/acl-paper/SKILL.md`), selected for the paper
+node by default: LaTeX in the official ACL style
 (`acl.sty` and `acl_natbib.bst` fetched from `acl-org/acl-style-files`; a
 plain two-column article, said so, when offline), `references.bib` with only
 papers confirmed by the research agent or a lookup, tables and figures

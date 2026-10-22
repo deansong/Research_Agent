@@ -94,7 +94,7 @@ DEFAULT_ROLE_BACKENDS: dict[str, tuple[str, str]] = {
     #"designer": ("claude_code", "opus"),
     # The research agent the discussor asks before it suggests answers: on
     # antigravity for its built-in web search, and for running the paper
-    # lookups in agent/skills/research_tools.py.
+    # lookups in skills/research/research_tools.py.
     "researcher": ("antigravity", "gemini-4-argon-medium"),
     "discussor": ("codex", "gpt-5.6-sol"),
     "planner": ("codex", "gpt-5.6-sol"),
