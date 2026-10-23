@@ -268,6 +268,76 @@ def test_changing_model_access_or_instructions_carries_the_session_on(spy):
         RB.list_sessions("antigravity")[0].access is Access.NONE
 
 
+def test_effort_is_set_kept_with_the_session_and_sent(monkeypatch):
+    made = []
+
+    def backend(provider, model, options, quiet=True):
+        made.append(dict(options))
+        return Spy()
+
+    monkeypatch.setattr(sessions, "_backend", backend)
+    reader = RB(provider="fake", effort="high")
+    assert repr(reader) == "RB(provider='fake', model=None, effort='high', session=None)"
+    reader.send("one")
+    reader.set_effort("low")
+    reader.send("two")
+    assert [m.get("effort") for m in made] == ["high", "low"]
+    assert RB(session=reader.session_id).effort == "low", "saved with the session"
+    assert "(low effort)" in str(reader.session)
+    reader.set_effort(None)
+    reader.send("three")
+    assert "effort" not in made[-1], "None: the model's default"
+
+    # Chosen before the provider: kept, and checked once there is one.
+    assert RB(effort="xhigh").set_provider("claude_code").effort == "xhigh"
+    with pytest.raises(RB.BackendUnavailable, match="claude_code has no effort level 'ultra'"):
+        RB(effort="ultra").set_provider("claude_code")
+    # Another provider has other levels, so a set effort does not follow.
+    assert RB(provider="claude_code", effort="max").set_provider("fake").effort is None
+
+
+def test_effort_levels_are_the_models_where_the_provider_says(monkeypatch):
+    from research_backend import catalog
+
+    listed = catalog.ModelList("codex", (
+        catalog.ModelInfo("big", default=True, efforts=("low", "medium", "high", "ultra"),
+                          default_effort="medium"),
+        catalog.ModelInfo("small", efforts=("low", "medium", "high"))))
+    monkeypatch.setattr(catalog, "list_models", lambda provider, refresh=False: listed)
+
+    assert RB.list_efforts("codex") == ["low", "medium", "high", "ultra"], "the default model's"
+    assert RB.list_efforts("codex", "small") == ["low", "medium", "high"]
+    assert RB.list_efforts("claude_code") == ["low", "medium", "high", "xhigh", "max"]
+    assert RB.list_efforts("antigravity") == ["low", "medium", "high", "xhigh", "max"]
+    assert "big  (default)  effort: low, medium, high, ultra (default medium)" in str(listed)
+
+    with pytest.raises(RB.BackendUnavailable, match="codex small has no effort level 'ultra'"):
+        RB(provider="codex", model="small", effort="ultra")
+    reader = RB(provider="codex", model="big", effort="ultra")
+    with pytest.raises(RB.BackendUnavailable, match="small has no effort level 'ultra'"):
+        reader.set_model("small")
+    assert reader.model == "big", "refused before anything changed"
+    assert reader.list_efforts() == ["low", "medium", "high", "ultra"]
+
+
+def test_each_cli_is_given_the_effort(monkeypatch):
+    from research_backend.backends import antigravity, claude_code
+
+    monkeypatch.setattr("shutil.which", lambda name: f"/bin/{name}")
+    claude = claude_code.ClaudeCodeBackend(effort="max")
+    argv = claude.argv(prompt="x", instructions="", access=Access.WRITE,
+                       schema_path=__file__, session=[])
+    assert argv[argv.index("--effort") + 1] == "max"
+    agy = antigravity.AntigravityBackend(effort="low")
+    argv = agy.argv(prompt="x", instructions="", access=Access.NONE,
+                    schema_path=__file__, session=[])
+    assert argv[argv.index("--effort") + 1] == "low"
+    assert "--effort" not in claude_code.ClaudeCodeBackend().argv(
+        prompt="x", instructions="", access=Access.WRITE, schema_path=__file__, session=[])
+    with pytest.raises(RB.BackendUnavailable, match="has no effort level 'ultra'"):
+        claude_code.ClaudeCodeBackend(effort="ultra")
+
+
 def test_context_says_how_full_the_window_is(spy):
     reader = RB(provider="fake")
     assert "no session yet" in str(reader.context())

@@ -144,8 +144,14 @@ class AntigravityBackend(CliBackend):
     #: and names the role instead.
     unsupported_access = frozenset({Access.READ_ONLY})
 
+    #: `agy --effort`, from `agy --help` (1.1.x).
+    efforts: tuple[str, ...] = ("low", "medium", "high", "xhigh", "max")
+    effort: str | None = None
+
     def __init__(self, *, effort: str | None = None, **options):
-        self.effort = effort
+        from research_backend.base import checked_effort
+
+        self.effort = checked_effort("antigravity", effort, self.efforts)
         self._warned_dangerous = False
         super().__init__(**options)
 

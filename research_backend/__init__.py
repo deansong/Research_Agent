@@ -5,13 +5,15 @@ research_backend -- talk to Codex, Claude Code and Antigravity the same way.
 
     RB.list_providers()                 # ['antigravity', 'claude_code', 'codex', 'fake']
     RB.list_models("codex")             # the models codex accepts
+    RB.list_efforts("codex")            # its reasoning-effort levels
     RB.usage("codex")                   # its limits, and when they reset
     RB.usage()                          # every provider's
     RB.list_sessions()                  # every session so far
 
-    reader = RB(provider="codex", model="gpt-5.6-sol")    # or RB(), then:
+    reader = RB(provider="codex", model="gpt-5.6-sol", effort="high")   # or RB(), then:
     reader.set_provider("codex")
     reader.list_models()
+    reader.set_effort("medium")
     reader.new_session("lit-review")
     reader.session_id                   # 'lit-review'
     reader.send("Which datasets exist for hotel review classification?")
@@ -65,7 +67,7 @@ __all__ = [
     # RB(...) makes one of these
     "ResearchBackend",
     # every provider at once
-    "list_providers", "list_models", "usage", "status", "list_sessions",
+    "list_providers", "list_models", "list_efforts", "usage", "status", "list_sessions",
     # what those and its methods return
     "Reply", "Context", "Session", "Model", "ModelList", "Quota", "Window",
     "AuthStatus", "Usage", "Access",
@@ -103,6 +105,16 @@ def list_models(provider: str | None = None, *, refresh: bool = False):
     if provider is not None:
         return one(provider, refresh=refresh)
     return Listing(list_all(_real(), refresh=refresh))
+
+
+def list_efforts(provider: str, model: str | None = None) -> list[str]:
+    """The reasoning-effort levels a model has, least first (the provider's
+    default model when None). Codex says per model; for the others it is what
+    their CLI's --effort takes."""
+    from research_backend.backends import load
+    from research_backend.catalog import model_efforts
+
+    return list(model_efforts(provider, model) or getattr(load(provider), "efforts", ()))
 
 
 def usage(provider: str | None = None):

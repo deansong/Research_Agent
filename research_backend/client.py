@@ -35,6 +35,7 @@ class ResearchBackend:
     """A provider, a model and the current session. See the module docstring."""
 
     def __init__(self, provider: str | None = None, model: str | None = None, *,
+                 effort: str | None = None,
                  session: str | None = None, access: str | None = None,
                  instructions: str = "", workdir: str | os.PathLike | None = None,
                  home: str | os.PathLike | None = None, **options):
@@ -42,6 +43,9 @@ class ResearchBackend:
         provider      "codex", "claude_code", "antigravity" or "fake"; or set it
                       later with set_provider()
         model         a model id from list_models(); None = the provider's default
+        effort        how hard the model thinks, e.g. "low", "medium", "high";
+                      list_efforts() says which levels the provider has.
+                      None = the model's default
         session       continue this session (its provider and model come with it)
         access        "none", "read_only", "write" or "full"; default read_only
                       (none on antigravity, which cannot do read_only)
@@ -53,6 +57,7 @@ class ResearchBackend:
         """
         self._provider: str | None = None
         self._model = model
+        self._effort = effort
         self._access = access
         self._instructions = instructions
         self._workdir = workdir
@@ -80,6 +85,10 @@ class ResearchBackend:
         return self._session.model if self._session else self._model
 
     @property
+    def effort(self) -> str | None:
+        return self._session.effort if self._session else self._effort
+
+    @property
     def session_id(self) -> str | None:
         """The current session's id -- what you continue it by. None until a
         session is started or opened."""
@@ -91,7 +100,8 @@ class ResearchBackend:
         return self._session
 
     def __repr__(self) -> str:
-        return (f"RB(provider={self.provider!r}, model={self.model!r}, "
+        effort = f", effort={self.effort!r}" if self.effort else ""
+        return (f"RB(provider={self.provider!r}, model={self.model!r}{effort}, "
                 f"session={self.session_id!r})")
 
     # ---- choosing -------------------------------------------------------------
@@ -107,17 +117,46 @@ class ResearchBackend:
             conversation._check_access(provider, cls, conversation._access(self._access, cls))
         if self._session and self._session.provider != provider:
             self._session = None
+        if self._provider is not None and self._provider != provider:
+            self._effort = None   # the levels differ from provider to provider
+        else:
+            self._effort = conversation._effort(provider, cls, self._effort, model)
         self._provider = provider
         self._model = model
         return self
 
     def set_model(self, model: str | None) -> "ResearchBackend":
         """Use another model from the next message on -- in the current session
-        too, which carries on with the new model."""
+        too, which carries on with the new model. An effort level the new model
+        does not have is refused here, not at the next send."""
+        if self.effort and self._provider:
+            from research_backend.backends import load
+
+            conversation._effort(self._provider, load(self._provider), self.effort, model)
         self._model = model
         if self._session:
             self._session.update(model=model)
         return self
+
+    def set_effort(self, effort: str | None) -> "ResearchBackend":
+        """How hard the model thinks, from the next message on -- in the
+        current session too. None goes back to the model's default."""
+        from research_backend.backends import load
+
+        provider = self._need(None)
+        self._effort = conversation._effort(provider, load(provider), effort, self.model)
+        if self._session:
+            self._session.update(effort=self._effort)
+        return self
+
+    def list_efforts(self, provider: str | None = None, model: str | None = None) -> list[str]:
+        """The effort levels a model has, least first -- the current provider
+        and model unless you name them."""
+        from research_backend import list_efforts
+
+        if provider is None:
+            provider, model = self._need(None), model or self.model
+        return list_efforts(provider, model)
 
     def set_access(self, access: str) -> "ResearchBackend":
         """"none", "read_only", "write" or "full", from the next message on."""
@@ -170,7 +209,7 @@ class ResearchBackend:
         """Start a new conversation and make it the current one. Returns its id;
         without a name, one is made up from the provider and the time."""
         self._session = conversation.new_session(
-            self._need(None), model=self._model, name=name,
+            self._need(None), model=self._model, effort=self._effort, name=name,
             workdir=workdir if workdir is not None else self._workdir,
             access=self._access, instructions=self._instructions, home=self._home,
             **self._options)
@@ -182,6 +221,7 @@ class ResearchBackend:
         self._session = conversation.open_session(session_id, home=self._home)
         self._provider = self._session.provider
         self._model = self._session.model
+        self._effort = self._session.effort
         return self._session.id
 
     def list_sessions(self, provider: str | None = None):

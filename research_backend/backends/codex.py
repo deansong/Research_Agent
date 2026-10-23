@@ -18,7 +18,7 @@ from research_backend.backends._progress import (_LiveText, flood_message, headl
                                       runaway_message, silent_message,
                                       wait_or_cancel, LIVE_FLUSH_SECONDS)
 from research_backend.backends._schema import strict_json_schema
-from research_backend.base import say
+from research_backend.base import checked_effort, say
 from research_backend.base import (
     BackendCancelled,
     Access,
@@ -114,10 +114,17 @@ class CodexBackend:
     #: the whole mapping. See the note on CliBackend.roles.
     roles: tuple[str, ...] = ()
 
+    #: Reasoning effort, per turn: every level the app-server knows. Which
+    #: ones a model takes is per model -- catalog.model_efforts() asks.
+    efforts: tuple[str, ...] = ("none", "minimal", "low", "medium", "high", "xhigh",
+                                "max", "ultra")
+    effort: str | None = None
+
     def __init__(
         self,
         client: Codex,
         model: str | None = None,
+        effort: str | None = None,
         timeout: float = 300.0,
         max_seconds: float = 7200.0,
         max_output_tokens: int = 60000,
@@ -129,6 +136,8 @@ class CodexBackend:
     ):
         self.client = client
         self.model = model
+        self.effort = checked_effort("codex", effort, self.efforts)
+        """How hard the model thinks; None = the model's default."""
 
         self.on_progress = None
         """Optional callback, invoked while a long turn is still running.
@@ -461,7 +470,8 @@ class CodexBackend:
         def drain() -> None:
             stream = None
             try:
-                handle = thread.turn(prompt, output_schema=output_schema)
+                handle = thread.turn(prompt, output_schema=output_schema,
+                                     **({"effort": self.effort} if self.effort else {}))
                 handle_box.append(handle)
                 last_event[0] = time.monotonic()
                 stream = handle.stream()

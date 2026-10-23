@@ -23,9 +23,13 @@ class FakeBackend:
     supports_repo_access = False
     # Claims FULL so it can stand in for any role. It never touches a file.
     max_access = Access.FULL
+    #: Every level any provider has, so a fake can stand in for any of them.
+    efforts: tuple[str, ...] = ("none", "minimal", "low", "medium", "high", "xhigh", "max",
+                                "ultra")
 
-    def __init__(self, *, model: str | None = None, **options):
+    def __init__(self, *, model: str | None = None, effort: str | None = None, **options):
         self.model = model
+        self.effort = effort
         self.counter = itertools.count(1)
         #: Turns so far, per conversation -- so a continued conversation
         #: visibly continues.

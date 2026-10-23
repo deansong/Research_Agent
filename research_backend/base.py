@@ -163,6 +163,18 @@ class BackendTimeout(BackendError):
     """
 
 
+def checked_effort(provider: str, effort: str | None, allowed: tuple[str, ...]) -> str | None:
+    """`effort` if `provider` has that reasoning-effort level, else a clear
+    refusal naming the ones it has. None means the provider's default."""
+    if effort is None:
+        return None
+    effort = str(effort).lower()
+    if effort not in allowed:
+        raise BackendUnavailable(f"{provider} has no effort level {effort!r}; "
+                                 f"it has {', '.join(allowed)}.")
+    return effort
+
+
 def say(backend, *args, **kwargs) -> None:
     """print(), unless the backend was told to keep quiet.
 

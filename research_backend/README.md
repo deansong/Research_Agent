@@ -8,13 +8,15 @@ continue by id, from any script, at any time.
 import research_backend as RB
 
 RB.list_providers()          # ['antigravity', 'claude_code', 'codex', 'fake']
-RB.list_models("codex")      # the models codex accepts
+RB.list_models("codex")      # the models codex accepts, and each one's effort levels
+RB.list_efforts("codex")     # ['low', 'medium', 'high', 'xhigh', 'max', 'ultra']
 RB.usage()                   # every provider's limits, and when they reset
 RB.status()                  # who is logged in, and how to log in if not
 RB.list_sessions()           # every session so far
 
-reader = RB(provider="codex", model="gpt-5.6-sol")    # or RB(), then set_provider
+reader = RB(provider="codex", model="gpt-5.6-sol", effort="high")   # or RB(), then set_provider
 reader.list_models()
+reader.set_effort("xhigh")   # from the next message on
 reader.new_session("lit-review")
 reader.session_id            # 'lit-review'
 reader.send("Which datasets exist for hotel review classification?")
@@ -53,12 +55,13 @@ codex: ...
 provider, a model and the current session. Make one for each conversation you
 want open at once.
 
-`RB(provider=None, model=None, *, session=None, access=None, instructions="", workdir=None, home=None, **options)`
+`RB(provider=None, model=None, *, effort=None, session=None, access=None, instructions="", workdir=None, home=None, **options)`
 
 | argument | meaning | default |
 | --- | --- | --- |
 | `provider` | `"codex"`, `"claude_code"`, `"antigravity"` or `"fake"` | none yet: `set_provider()` later |
 | `model` | an id from `list_models()` | the provider's default |
+| `effort` | how hard the model thinks: a level from `list_efforts()` | the model's default |
 | `session` | continue this session; its provider and model come with it | none yet |
 | `access` | `"none"`, `"read_only"`, `"write"` or `"full"` | `read_only` (`none` on antigravity, which cannot do read-only) |
 | `instructions` | standing instructions, sent with every message | none |
@@ -77,7 +80,8 @@ away rather than at the first message.
 | `.usage(provider=None)` | its limits: `.windows` (each with `used_percent`, `resets_at`), `.plan`, `.credits` |
 | `.status(provider=None)` | whether it is installed and logged in |
 | `.set_provider(name, model=None)` | talk to another provider; the current session is put aside, since a session belongs to one provider |
-| `.set_model(model)`, `.set_access(level)`, `.set_instructions(text)` | from the next message on; the current session carries on with them |
+| `.set_model(model)`, `.set_effort(level)`, `.set_access(level)`, `.set_instructions(text)` | from the next message on; the current session carries on with them |
+| `.list_efforts(provider=None, model=None)` | the effort levels a model has (the current one unless named) |
 | `.new_session(name=None, workdir=None)` | start a conversation and make it current; returns its id, made up if you give no name |
 | `.open_session(id)` | continue an earlier session; its provider and model become current |
 | `.list_sessions(provider=None)` | every session, or one provider's, most recently used first |
@@ -89,6 +93,23 @@ away rather than at the first message.
 
 The `set_...` methods return the object, so they chain:
 `RB().set_provider("codex").set_model("gpt-5.6-sol")`.
+
+## Thinking effort
+
+`effort` sets how hard the model reasons before it answers. The levels are
+the provider's own, so they differ:
+
+| provider | levels | where they come from |
+| --- | --- | --- |
+| codex | per model, e.g. `gpt-5.6-sol`: low, medium, high, xhigh, max, ultra (default medium) | the app-server's model list, so `RB.list_models("codex")` shows each model's |
+| claude_code | low, medium, high, xhigh, max | `claude --effort` |
+| antigravity | low, medium, high, xhigh, max | `agy --effort` |
+
+A level the model does not have is refused when you set it, naming the ones
+it has. Leaving it out, or `set_effort(None)`, uses the model's default. It is
+kept with the session, so `RB(session=...)` continues at the same effort. A
+set effort does not follow `set_provider()` to another provider, because the
+levels differ.
 
 ## Replies
 

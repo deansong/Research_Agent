@@ -91,8 +91,16 @@ class ClaudeCodeBackend(CliBackend):
     supports_repo_access = True
     max_access = Access.FULL
 
+    #: `claude --effort`, measured from `claude --help` (2.1.x).
+    efforts: tuple[str, ...] = ("low", "medium", "high", "xhigh", "max")
+    effort: str | None = None
+
     def __init__(self, *, max_turns: int | None = None,
-                 max_budget_usd: float | None = None, **options):
+                 max_budget_usd: float | None = None, effort: str | None = None,
+                 **options):
+        from research_backend.base import checked_effort
+
+        self.effort = checked_effort("claude_code", effort, self.efforts)
         self.max_turns = max_turns
         self.max_budget_usd = max_budget_usd
         super().__init__(**options)
@@ -135,6 +143,8 @@ class ClaudeCodeBackend(CliBackend):
             argv += ["--append-system-prompt", instructions]
         if self.model:
             argv += ["--model", self.model]
+        if self.effort:
+            argv += ["--effort", self.effort]
         if self.max_turns:
             argv += ["--max-turns", str(self.max_turns)]
         if self.max_budget_usd:

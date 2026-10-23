@@ -97,6 +97,11 @@ class Session:
         return self._record["workdir"]
 
     @property
+    def effort(self) -> str | None:
+        """How hard the model thinks; None = the model's default."""
+        return self._record.get("effort")
+
+    @property
     def access(self) -> Access:
         return Access(self._record["access"])
 
@@ -129,7 +134,8 @@ class Session:
 
     def __str__(self) -> str:
         turns = self._record.get("turns", [])
-        lines = [f"{self.id}: {self.provider}/{self.model or 'default model'}, "
+        effort = f" ({self.effort} effort)" if self.effort else ""
+        lines = [f"{self.id}: {self.provider}/{self.model or 'default model'}{effort}, "
                  f"{self.access.value} access in {self.workdir}",
                  f"  {len(turns)} turn(s); started {_short(self._record['created_at'])}, "
                  f"last {_short(self._record['updated_at'])}"]
@@ -169,7 +175,8 @@ class Session:
         """
         with _lock(self):
             self._reload()
-            backend = _backend(self.provider, self.model, self.options, quiet=not progress)
+            options = {**self.options, **({"effort": self.effort} if self.effort else {})}
+            backend = _backend(self.provider, self.model, options, quiet=not progress)
             output_model = schema or Text
             turn = len(self._record.get("turns", [])) + 1
             started = time.monotonic()
@@ -199,15 +206,21 @@ class Session:
             return Reply(session=self.id, turn=turn, text=text, data=data,
                          tokens=run.usage, seconds=seconds, events=list(run.events))
 
-    def update(self, *, model: str | None | object = ..., access: str | Access | None = None,
+    def update(self, *, model: str | None | object = ..., effort: str | None | object = ...,
+               access: str | Access | None = None,
                instructions: str | None = None) -> "Session":
-        """Change the model, access or instructions from the next turn on. The
-        conversation continues: the providers accept another model or other
-        instructions on a conversation they already have."""
+        """Change the model, effort, access or instructions from the next turn
+        on. The conversation continues: the providers accept another model or
+        other instructions on a conversation they already have."""
         with _lock(self):
             self._reload()
             if model is not ...:
                 self._record["model"] = model
+            if effort is not ...:
+                from research_backend.backends import load
+
+                self._record["effort"] = _effort(self.provider, load(self.provider), effort,
+                                                 self.model)
             if access is not None:
                 from research_backend.backends import load
 
@@ -264,7 +277,8 @@ class Session:
 # ---- making and finding sessions --------------------------------------------------
 
 
-def new_session(provider: str, *, model: str | None = None, name: str | None = None,
+def new_session(provider: str, *, model: str | None = None, effort: str | None = None,
+                name: str | None = None,
                 workdir: str | os.PathLike | None = None,
                 access: str | Access | None = None, instructions: str = "",
                 home: str | os.PathLike | None = None, **options) -> Session:
@@ -272,6 +286,8 @@ def new_session(provider: str, *, model: str | None = None, name: str | None = N
 
     provider      "codex", "claude_code", "antigravity" or "fake"
     model         a model id from models(provider); None = the provider's default
+    effort        how hard the model thinks: a level from its backend's `efforts`;
+                  None = the model's default
     name          the session's id; made up from the provider and time if None
     workdir       the folder the model works in; a new empty one if None
     access        "none", "read_only", "write" or "full"; default read_only
@@ -285,6 +301,7 @@ def new_session(provider: str, *, model: str | None = None, name: str | None = N
     cls = load(provider)
     access = _access(access, cls)
     _check_access(provider, cls, access)
+    effort = _effort(provider, cls, effort, model)
 
     session_id = name or f"{provider}-{datetime.now():%Y%m%d-%H%M%S}-{secrets.token_hex(2)}"
     _check_id(session_id)
@@ -301,7 +318,7 @@ def new_session(provider: str, *, model: str | None = None, name: str | None = N
             raise FileNotFoundError(f"workdir {work} is not a folder.")
 
     now = _now()
-    record = {"id": session_id, "provider": provider, "model": model,
+    record = {"id": session_id, "provider": provider, "model": model, "effort": effort,
               "workdir": str(work), "access": access.value, "instructions": instructions,
               "options": options, "thread_id": None, "created_at": now, "updated_at": now,
               "turns": []}
@@ -376,6 +393,19 @@ def _access(access, cls) -> Access:
         return Access.NONE if Access.READ_ONLY in getattr(
             cls, "unsupported_access", frozenset()) else Access.READ_ONLY
     return access if isinstance(access, Access) else Access(str(access).lower())
+
+
+def _effort(provider: str, cls, effort: str | None, model: str | None = None) -> str | None:
+    """Checked against the model's own levels where the provider lists them
+    (codex), else against everything the provider's CLI takes."""
+    from research_backend.base import checked_effort
+    from research_backend.catalog import model_efforts
+
+    if effort is None:
+        return None
+    allowed = model_efforts(provider, model) or getattr(cls, "efforts", ())
+    who = f"{provider} {model}" if model else provider
+    return checked_effort(who, effort, allowed)
 
 
 def _check_access(provider: str, cls, access: Access) -> None:

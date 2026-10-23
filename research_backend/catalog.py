@@ -43,10 +43,19 @@ class ModelInfo:
     label: str = ""
     default: bool = False
     """The provider's own default, when it says which one that is."""
+    efforts: tuple[str, ...] = ()
+    """The reasoning-effort levels this model has, when the provider says
+    (codex does); () when it does not."""
+    default_effort: str = ""
 
     def __str__(self) -> str:
         label = f"  {self.label}" if self.label and self.label != self.id else ""
-        return f"{self.id}{label}{'  (default)' if self.default else ''}"
+        text = f"{self.id}{label}{'  (default)' if self.default else ''}"
+        if self.efforts:
+            text += f"  effort: {', '.join(self.efforts)}"
+            if self.default_effort:
+                text += f" (default {self.default_effort})"
+        return text
 
 
 @dataclass(frozen=True)
@@ -83,7 +92,10 @@ class ModelList:
     def to_dict(self) -> dict:
         return {
             "provider": self.provider,
-            "models": [vars(m) for m in self.models],
+            # Effort fields only where the provider gave them.
+            "models": [{k: v for k, v in vars(m).items()
+                        if v or k not in ("efforts", "default_effort")}
+                       for m in self.models],
             "source": self.source,
             "error": self.error,
         }
@@ -94,16 +106,20 @@ class ModelList:
 
 def _codex() -> ModelList:
     try:
-        from openai_codex import Codex
+        import openai_codex  # noqa: F401 -- only to say clearly when it is missing
     except ImportError:
         return ModelList("codex", error="The openai-codex package is not installed.")
     if not shutil.which("codex"):
         return ModelList("codex", error="`codex` is not on PATH.")
 
-    with Codex() as client:
-        listed = client.models().data
+    from research_backend.backends import codex_client
+
+    listed = codex_client().models().data
     models = tuple(
-        ModelInfo(id=m.id, label=m.display_name or m.id, default=bool(m.is_default))
+        ModelInfo(id=m.id, label=m.display_name or m.id, default=bool(m.is_default),
+                  efforts=tuple(_word(e.reasoning_effort)
+                                for e in (m.supported_reasoning_efforts or [])),
+                  default_effort=_word(m.default_reasoning_effort))
         for m in listed if not m.hidden
     )
     return ModelList("codex", models, source="codex app-server (model/list)")
@@ -130,6 +146,11 @@ def _antigravity(executable: str = "agy") -> ModelList:
         if model_id.strip():
             models.append(ModelInfo(id=model_id.strip(), label=label.strip()))
     return ModelList("antigravity", tuple(models), source=f"`{executable} models`")
+
+
+def _word(value) -> str:
+    """An enum's value, or the string itself."""
+    return str(getattr(value, "value", value) or "")
 
 
 #: The `claude` CLI cannot list its models; `claude --help` documents aliases
@@ -195,6 +216,21 @@ def list_models(provider: str, *, refresh: bool = False) -> ModelList:
         with _cache_lock:
             _cache[provider] = (now, result)
     return result
+
+
+#: Providers whose model list says which effort levels each model has.
+EFFORTS_PER_MODEL = frozenset({"codex"})
+
+
+def model_efforts(provider: str, model: str | None) -> tuple[str, ...]:
+    """The effort levels `model` has (the default model when None), when the
+    provider says; () when it does not, or cannot be asked."""
+    if provider not in EFFORTS_PER_MODEL:
+        return ()
+    for info in list_models(provider):
+        if info.id == model or (model is None and info.default):
+            return info.efforts
+    return ()
 
 
 def list_all(providers=None, *, refresh: bool = False) -> list[ModelList]:
