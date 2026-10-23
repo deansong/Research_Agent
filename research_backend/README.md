@@ -4,13 +4,31 @@ Talk to Codex, Claude Code and Antigravity the same way: which models they
 offer, how much of their usage limits is left, and conversations you can
 continue by id, from any script, at any time.
 
-```python
-import research_backend as rb
+Each provider is a `Provider` object, set up once. Each conversation is a
+`Session` it opens. Use as many of both as you like, side by side, in threads
+if you want them at the same time.
 
-rb.providers()              # ['antigravity', 'claude_code', 'codex', 'fake']
-print(rb.models("codex"))   # the models codex will accept
-print(rb.usage())           # every provider's limits, and when they reset
-print(rb.status())          # who is logged in, and how to log in if not
+```python
+from research_backend import Provider
+
+codex  = Provider("codex", model="gpt-5.6-sol")
+claude = Provider("claude_code", model="opus", access="write")
+agy    = Provider("antigravity")
+
+print(codex.models())     # the models codex accepts
+print(codex.usage())      # its limits, and when they reset
+print(claude.status())    # logged in? how to log in if not
+
+reader = codex.new_session("lit-review")
+writer = claude.new_session("draft", instructions="You write LaTeX.")
+quick  = codex.new_session("scratch", model="gpt-5.6-luna")   # another codex session
+
+print(reader.send("Which datasets exist for hotel review classification?"))
+print(writer.send("Draft a related-work paragraph."))
+
+# later, from any script:
+codex.session("lit-review").send("Which of those are free to use?")
+print(codex.sessions())   # codex's sessions
 ```
 
 ```
@@ -21,35 +39,54 @@ codex (team plan)
   [codex app-server (account/rateLimits/read), as of Fri 23 Oct 09:30]
 ```
 
-## Sessions
-
-A session is one conversation with one model. It is saved after every turn, so
-you can continue it by its id from another script, days later.
+For every provider at once:
 
 ```python
-s = rb.new_session("codex", model="gpt-5.6-sol", name="lit-review",
-                   instructions="You are a careful research assistant.")
-print(s.send("Which datasets exist for hotel review classification?"))
+import research_backend as rb
 
-# later, anywhere:
-print(rb.send("lit-review", "Which of those are free to use?"))
-print(rb.session("lit-review").history())
-print(rb.sessions())        # every session, most recently used first
+rb.providers()            # ['antigravity', 'claude_code', 'codex', 'fake']
+print(rb.usage())         # every provider's limits
+print(rb.status())        # every provider's login
+print(rb.sessions())      # every session, whichever provider
+rb.session("lit-review")  # one, by id
 ```
 
-`new_session` takes:
+## Provider
+
+`Provider(name, model=None, access=None, instructions="", home=None, **options)`
 
 | argument | meaning | default |
 | --- | --- | --- |
-| `provider` | `"codex"`, `"claude_code"`, `"antigravity"` or `"fake"` | required |
-| `model` | an id from `rb.models(provider)` | the provider's default |
-| `name` | the session's id | provider + time, e.g. `codex-20261023-093047-1f2e` |
-| `workdir` | the folder the model works in | a new empty folder in the session's |
+| `name` | `"codex"`, `"claude_code"`, `"antigravity"` or `"fake"` | required |
+| `model` | an id from `.models()` | the provider's default |
 | `access` | `"none"`, `"read_only"`, `"write"` or `"full"` | `read_only` (`none` on antigravity, which cannot do read-only) |
 | `instructions` | standing instructions, sent with every message | none |
+| `home` | where its sessions are kept | `~/.research_backend` |
 | anything else | passed to the provider: `timeout`, `max_seconds`, `gpu`, ... | |
 
-`send(prompt)` returns a `Reply`:
+An unknown provider, or an access level it cannot do, fails here rather than
+at the first message.
+
+| method | |
+| --- | --- |
+| `.models()` | the models it accepts: loop over them, or print |
+| `.usage()` | its limits: `.windows` (each with `used_percent`, `resets_at`), `.plan`, `.credits` |
+| `.status()` | whether it is installed and logged in |
+| `.new_session(name=None, model=, workdir=, access=, instructions=, **options)` | a new conversation; anything not given comes from the Provider |
+| `.session(id)` | one of its sessions, to continue it |
+| `.sessions()` | its sessions, the most recently used first |
+
+`workdir` is the folder the model works in. Without one, each session gets a
+new empty folder of its own. Without a `name`, the id is made up from the
+provider and the time, e.g. `codex-20261023-093047-1f2e`.
+
+## Session
+
+One conversation with one model, saved after every turn. Its id is what you
+continue it by. It has `.id`, `.provider`, `.model`, `.access`, `.workdir`,
+`.instructions` and `.thread_id`, the provider's own id for the conversation.
+
+`.send(prompt)` returns a `Reply`:
 
 | field | |
 | --- | --- |
@@ -68,24 +105,25 @@ class Pick(BaseModel):
     dataset: str
     why: str
 
-reply = s.send("Pick the best one.", schema=Pick)
+reply = reader.send("Pick the best one.", schema=Pick)
 reply.data.dataset
 ```
 
-`send(..., progress=True)` prints what the model is doing while it works.
+`send(..., progress=True)` prints what the model is doing while it works;
+otherwise turns are quiet, and the same detail is in the reply's `events`.
 A session answers one message at a time. Sending to a session that is already
 answering raises `SessionBusy`, whichever process sent the first message.
 A failed turn is recorded in the session and raised: `BackendBusy`,
 `BackendOutOfCredits`, `BackendTimeout`, and the other errors.
 
-Other methods: `s.turns` (every turn, as dicts), `s.rename(new_id)`,
-`s.delete()`. Deleting removes the session's own folder; a `workdir` you chose
+Other methods: `.history()` (the conversation as text), `.turns` (every turn,
+as dicts), `.rename(new_id)` and `.delete()`. Deleting removes the session's own folder; a `workdir` you chose
 is left alone.
 
 ## Where things are kept
 
 ```
-~/.research_backend/            (or $RESEARCH_BACKEND_HOME)
+~/.research_backend/            (or $RESEARCH_BACKEND_HOME, or a Provider's home=)
     sessions/<id>/session.json  the session and every turn, as indented JSON
     sessions/<id>/workspace/    its working folder, unless you gave one
     limits/claude_code.json     the last limits a Claude Code turn reported
@@ -107,7 +145,8 @@ comes back with `error` saying why.
 
 ```
 research_backend/
-    __init__.py       the functions above
+    __init__.py       the every-provider functions
+    provider.py       Provider
     conversation.py   Session, Reply: sending, continuing, saving
     catalog.py        models()
     limits.py         usage()

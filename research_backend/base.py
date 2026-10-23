@@ -163,6 +163,17 @@ class BackendTimeout(BackendError):
     """
 
 
+def say(backend, *args, **kwargs) -> None:
+    """print(), unless the backend was told to keep quiet.
+
+    A backend prints a line per thing the model does, which is what a person
+    watching a run wants and what a library caller usually does not. Per
+    instance rather than by swapping sys.stdout: sessions on several providers
+    run side by side, in threads, and stdout is one for the whole process."""
+    if not getattr(backend, "quiet", False):
+        print(*args, **kwargs)
+
+
 class AgentBackend(Protocol):
     """What every backend must provide.
 

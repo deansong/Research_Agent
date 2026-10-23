@@ -90,7 +90,7 @@ from __future__ import annotations
 
 from research_backend.backends._cli import CliBackend, usage_from_keys
 from research_backend.backends._progress import _clip
-from research_backend.base import Access, BackendUnavailable, Usage
+from research_backend.base import Access, BackendUnavailable, Usage, say
 
 #: The parameter that says WHAT a tool acted on, per tool. Without it every
 #: non-command tool call reads "view_file" with no object, which is the same
@@ -203,7 +203,7 @@ class AntigravityBackend(CliBackend):
 
         if not self._warned_dangerous:
             self._warned_dangerous = True
-            print(f"[antigravity] {access.value} access runs `agy` with "
+            say(self, f"[antigravity] {access.value} access runs `agy` with "
                   f"--dangerously-skip-permissions; it has no setting between "
                   f"that and refusing every tool call.", flush=True)
         return ["--dangerously-skip-permissions"]

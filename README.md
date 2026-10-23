@@ -582,10 +582,13 @@ the agent: which models each provider offers, how much of its usage limits is
 left, and conversations you can continue by id from any script.
 
 ```python
-import research_backend as rb
-print(rb.usage())
-rb.new_session("codex", name="lit-review").send("Which datasets exist for ...?")
-rb.send("lit-review", "Which of those are free to use?")
+from research_backend import Provider
+
+codex, claude = Provider("codex"), Provider("claude_code", model="opus")
+print(codex.usage())
+codex.new_session("lit-review").send("Which datasets exist for ...?")
+claude.new_session("draft").send("Draft the introduction.")
+codex.session("lit-review").send("Which of those are free to use?")
 ```
 
 See [research_backend/README.md](research_backend/README.md).

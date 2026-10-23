@@ -175,12 +175,12 @@ class Spy:
 @pytest.fixture
 def spy(monkeypatch):
     backend = Spy()
-    monkeypatch.setattr(sessions, "_backend", lambda *a: backend)
+    monkeypatch.setattr(sessions, "_backend", lambda *a, **k: backend)
     return backend
 
 
 def test_a_session_is_continued_by_id_from_anywhere(spy):
-    s = rb.new_session("fake", name="lit-review", instructions="Be brief.")
+    s = rb.Provider("fake").new_session(name="lit-review", instructions="Be brief.")
     first = s.send("hello")
     assert str(first) == "answer 1" and first.turn == 1 and first.tokens.input_tokens == 10
     assert spy.calls[0]["thread_id"] is None
@@ -189,7 +189,7 @@ def test_a_session_is_continued_by_id_from_anywhere(spy):
     assert spy.calls[0]["repo_path"] == str(s.folder / "workspace")
 
     # As another process would: by id, from the file.
-    again = rb.send("lit-review", "and then?")
+    again = rb.session("lit-review").send("and then?")
     assert again.turn == 2 and spy.calls[1]["thread_id"] == "provider-thread-1"
     assert len(s.turns) == 1, "an object made earlier is stale..."
     s.send("third")
@@ -207,7 +207,7 @@ def test_a_schema_gets_a_structured_answer(spy):
         dataset: str
         why: str
 
-    reply = rb.new_session("fake").send("pick one", schema=Pick)
+    reply = rb.Provider("fake").new_session().send("pick one", schema=Pick)
     assert isinstance(reply.data, Pick) and reply.data.dataset == "imdb"
     assert json.loads(reply.text) == {"dataset": "imdb", "why": "free"}
 
@@ -217,8 +217,8 @@ def test_a_failed_turn_is_recorded_and_raised(monkeypatch):
         def run_structured(self, **kwargs):
             raise rb.BackendBusy("overloaded")
 
-    monkeypatch.setattr(sessions, "_backend", lambda *a: Down())
-    s = rb.new_session("fake", name="down")
+    monkeypatch.setattr(sessions, "_backend", lambda *a, **k: Down())
+    s = rb.Provider("fake").new_session(name="down")
     with pytest.raises(rb.BackendBusy):
         s.send("hello")
     turn = rb.session("down").turns[0]
@@ -234,27 +234,27 @@ def test_one_turn_at_a_time_per_session(monkeypatch):
             release.wait(5)
             return super().run_structured(**kwargs)
 
-    monkeypatch.setattr(sessions, "_backend", lambda *a: Slow())
-    rb.new_session("fake", name="slow")
-    worker = threading.Thread(target=rb.send, args=("slow", "first"))
+    monkeypatch.setattr(sessions, "_backend", lambda *a, **k: Slow())
+    rb.Provider("fake").new_session(name="slow")
+    worker = threading.Thread(target=lambda: rb.session("slow").send("first"))
     worker.start()
     assert entered.wait(5)
     with pytest.raises(rb.SessionBusy, match="answering another message"):
-        rb.send("slow", "second")
+        rb.session("slow").send("second")
     release.set()
     worker.join(5)
     assert [t["prompt"] for t in rb.session("slow").turns] == ["first"]
 
 
 def test_the_real_fake_provider_continues_its_conversation():
-    s = rb.new_session("fake", name="echo")
+    s = rb.Provider("fake").new_session(name="echo")
     assert str(s.send("hello")).startswith("[fake] reply 1 in this conversation, to: hello")
-    assert str(rb.send("echo", "again")).startswith("[fake] reply 2 in this conversation")
+    assert str(rb.session("echo").send("again")).startswith("[fake] reply 2 in this conversation")
 
 
 def test_sessions_are_listed_newest_first_and_printed(spy):
-    rb.new_session("fake", name="older").send("a")
-    rb.new_session("fake", name="newer").send("b")
+    rb.Provider("fake").new_session(name="older").send("a")
+    rb.Provider("fake").new_session(name="newer").send("b")
     listed = rb.sessions()
     assert [s.id for s in listed][:2] == ["newer", "older"]
     text = str(listed)
@@ -264,23 +264,25 @@ def test_sessions_are_listed_newest_first_and_printed(spy):
 
 def test_bad_names_missing_sessions_and_access_are_refused(tmp_path):
     with pytest.raises(ValueError, match="cannot be a session id"):
-        rb.new_session("fake", name="../escape")
-    rb.new_session("fake", name="taken")
+        rb.Provider("fake").new_session(name="../escape")
+    rb.Provider("fake").new_session(name="taken")
     with pytest.raises(ValueError, match="open_session"):
-        rb.new_session("fake", name="taken")
+        rb.Provider("fake").new_session(name="taken")
     with pytest.raises(rb.SessionNotFound, match="Sessions: taken"):
         rb.session("nobody")
     with pytest.raises(FileNotFoundError):
-        rb.new_session("fake", workdir=tmp_path / "missing")
+        rb.Provider("fake").new_session(workdir=tmp_path / "missing")
     with pytest.raises(rb.BackendUnavailable, match="cannot do read_only"):
-        rb.new_session("antigravity", access="read_only")
+        rb.Provider("antigravity", access="read_only")
+    with pytest.raises(rb.BackendUnavailable, match="Unknown provider 'gpt'"):
+        rb.Provider("gpt")
     # agy cannot do read_only, so by default it gets none, not a surprise.
-    assert rb.new_session("antigravity").access is Access.NONE
-    assert rb.new_session("fake", workdir=tmp_path).workdir == str(tmp_path)
+    assert rb.Provider("antigravity").new_session().access is Access.NONE
+    assert rb.Provider("fake").new_session(workdir=tmp_path).workdir == str(tmp_path)
 
 
 def test_a_session_can_be_renamed_and_deleted(spy, tmp_path):
-    s = rb.new_session("fake", name="draft")
+    s = rb.Provider("fake").new_session(name="draft")
     s.send("hello")
     s.rename("final")
     assert rb.session("final").workdir == str(s.folder / "workspace")
@@ -288,11 +290,68 @@ def test_a_session_can_be_renamed_and_deleted(spy, tmp_path):
     with pytest.raises(rb.SessionNotFound):
         rb.session("draft")
 
-    mine = rb.new_session("fake", name="mine", workdir=tmp_path)
+    mine = rb.Provider("fake").new_session(name="mine", workdir=tmp_path)
     mine.delete()
     assert tmp_path.exists(), "a workdir you chose is left alone"
     rb.session("final").delete()
     assert [s.id for s in rb.sessions()] == []
+
+
+def test_providers_side_by_side_each_with_its_own_sessions(spy, tmp_path):
+    codex = rb.Provider("codex", model="gpt-5.6-sol", instructions="Read papers.")
+    claude = rb.Provider("claude_code", model="opus", access="write")
+    assert repr(claude) == "Provider('claude_code', model='opus', access='write')"
+
+    reader = codex.new_session("lit-review")
+    writer = claude.new_session("draft", instructions="You write LaTeX.")
+    scratch = codex.new_session("scratch", model="gpt-5.6-luna", access="none")
+    reader.send("find datasets")
+    writer.send("draft it")
+    scratch.send("quick question")
+
+    assert [(c["developer_instructions"], c["access"]) for c in spy.calls] == [
+        ("Read papers.", Access.READ_ONLY), ("You write LaTeX.", Access.WRITE),
+        ("Read papers.", Access.NONE)]
+    assert (reader.model, writer.model, scratch.model) == ("gpt-5.6-sol", "opus",
+                                                            "gpt-5.6-luna")
+    assert scratch.access is Access.NONE, "a session may differ from its provider"
+
+    assert {s.id for s in codex.sessions()} == {"lit-review", "scratch"}
+    assert [s.id for s in claude.sessions()] == ["draft"]
+    assert codex.session("lit-review").send("more").turn == 2
+    with pytest.raises(ValueError, match="is a claude_code session, not codex"):
+        codex.session("draft")
+    assert {s.id for s in rb.sessions()} == {"lit-review", "scratch", "draft"}
+
+    # A Provider can keep its sessions somewhere of its own.
+    elsewhere = rb.Provider("fake", home=tmp_path / "project-a")
+    elsewhere.new_session("lit-review").send("same id, another place")
+    assert (tmp_path / "project-a" / "sessions" / "lit-review" / "session.json").exists()
+    assert rb.session("lit-review", home=tmp_path / "project-a").provider == "fake"
+    assert rb.session("lit-review").provider == "codex"
+
+
+def test_a_quiet_backend_prints_nothing_and_a_watched_one_does(capsys):
+    from research_backend.base import say
+
+    class Backend:
+        quiet = True
+
+    say(Backend(), "hidden")
+    Backend.quiet = False
+    say(Backend(), "shown")
+    assert capsys.readouterr().out == "shown\n"
+
+    quiet = sessions._backend("fake", None, {}, quiet=True)
+    watched = sessions._backend("fake", None, {}, quiet=False)
+    assert quiet is not watched and quiet.quiet and not watched.quiet
+    assert sessions._backend("fake", None, {}) is quiet
+
+
+def test_a_provider_answers_for_itself():
+    fake = rb.Provider("fake")
+    assert fake.models().ids == ["fake"]
+    assert fake.usage().ok and fake.status().ok
 
 
 # ---- the agent still finds everything where it was ---------------------------------

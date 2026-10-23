@@ -29,7 +29,7 @@ from typing import Any
 
 from pydantic import BaseModel
 
-from research_backend import home
+from research_backend import home as _home
 from research_backend.base import Access, BackendError, BackendUnavailable, Usage
 
 #: What a session id may look like: it is a folder name.
@@ -169,17 +169,16 @@ class Session:
         """
         with _lock(self):
             self._reload()
-            backend = _backend(self.provider, self.model, self.options)
+            backend = _backend(self.provider, self.model, self.options, quiet=not progress)
             output_model = schema or Text
             turn = len(self._record.get("turns", [])) + 1
             started = time.monotonic()
             entry: dict[str, Any] = {"turn": turn, "at": _now(), "prompt": prompt}
             try:
-                with _quiet(not progress):
-                    run = backend.run_structured(
-                        thread_id=self.thread_id, repo_path=self.workdir, access=self.access,
-                        developer_instructions=self.instructions, prompt=prompt,
-                        output_model=output_model)
+                run = backend.run_structured(
+                    thread_id=self.thread_id, repo_path=self.workdir, access=self.access,
+                    developer_instructions=self.instructions, prompt=prompt,
+                    output_model=output_model)
             except BaseException as exc:
                 entry.update(error=f"{type(exc).__name__}: {exc}",
                              seconds=round(time.monotonic() - started, 1))
@@ -203,7 +202,7 @@ class Session:
     def rename(self, new_id: str) -> "Session":
         """Give the session another id. Its folder moves with it."""
         _check_id(new_id)
-        target = _folder(new_id)
+        target = self.folder.parent / new_id
         if target.exists():
             raise ValueError(f"There is already a session called {new_id!r}.")
         with _lock(self):
@@ -233,12 +232,12 @@ class Session:
         self._save()
 
     def _save(self) -> None:
-        home.write_json(self._path, self._record)
+        _home.write_json(self._path, self._record)
 
     def _reload(self) -> None:
         """Another process may have sent a turn since this object was made."""
         if self._path.exists():
-            self._record = home.read_json(self._path)
+            self._record = _home.read_json(self._path)
 
 
 # ---- making and finding sessions --------------------------------------------------
@@ -247,7 +246,7 @@ class Session:
 def new_session(provider: str, *, model: str | None = None, name: str | None = None,
                 workdir: str | os.PathLike | None = None,
                 access: str | Access | None = None, instructions: str = "",
-                **options) -> Session:
+                home: str | os.PathLike | None = None, **options) -> Session:
     """Start a conversation. Nothing is sent until send().
 
     provider      "codex", "claude_code", "antigravity" or "fake"
@@ -257,6 +256,7 @@ def new_session(provider: str, *, model: str | None = None, name: str | None = N
     access        "none", "read_only", "write" or "full"; default read_only
                   (none on antigravity, which cannot do read_only)
     instructions  standing instructions, sent with every message
+    home          where sessions are kept; ~/.research_backend if None
     options       passed to the provider: timeout, max_seconds, gpu, ...
     """
     from research_backend.backends import load
@@ -267,7 +267,7 @@ def new_session(provider: str, *, model: str | None = None, name: str | None = N
 
     session_id = name or f"{provider}-{datetime.now():%Y%m%d-%H%M%S}-{secrets.token_hex(2)}"
     _check_id(session_id)
-    folder = _folder(session_id)
+    folder = _folder(session_id, home)
     if (folder / "session.json").exists():
         raise ValueError(f"There is already a session called {session_id!r}; "
                          f"open_session({session_id!r}) continues it.")
@@ -289,23 +289,23 @@ def new_session(provider: str, *, model: str | None = None, name: str | None = N
     return session
 
 
-def open_session(session_id: str) -> Session:
+def open_session(session_id: str, *, home: str | os.PathLike | None = None) -> Session:
     """A session made earlier, by its id -- in this process or any other."""
     _check_id(session_id)
-    path = _folder(session_id) / "session.json"
+    path = _folder(session_id, home) / "session.json"
     if not path.exists():
-        known = ", ".join(s.id for s in list_sessions()[:10]) or "none yet"
+        known = ", ".join(s.id for s in list_sessions(home=home)[:10]) or "none yet"
         raise SessionNotFound(f"No session called {session_id!r}. Sessions: {known}")
-    return Session(home.read_json(path), path)
+    return Session(_home.read_json(path), path)
 
 
-def list_sessions() -> list[Session]:
+def list_sessions(*, home: str | os.PathLike | None = None) -> list[Session]:
     """Every session, the most recently used first."""
-    root = home.home() / "sessions"
+    root = _root(home)
     found = []
     for path in root.glob("*/session.json") if root.exists() else ():
         try:
-            found.append(Session(home.read_json(path), path))
+            found.append(Session(_home.read_json(path), path))
         except (OSError, ValueError):
             continue
     return sorted(found, key=lambda s: s._record.get("updated_at", ""), reverse=True)
@@ -317,22 +317,31 @@ _backends: dict[tuple, Any] = {}
 _backends_lock = threading.Lock()
 
 
-def _backend(provider: str, model: str | None, options: dict):
-    """One backend per (provider, model, options), made on first use."""
+def _backend(provider: str, model: str | None, options: dict, *, quiet: bool = True):
+    """One backend per (provider, model, options, quiet), made on first use.
+    Quiet is part of the key so a session watched with progress=True does not
+    make another one, running at the same time, start printing."""
     from research_backend.backends import make
 
-    key = (provider, model, tuple(sorted((k, repr(v)) for k, v in options.items())))
+    key = (provider, model, tuple(sorted((k, repr(v)) for k, v in options.items())), quiet)
     with _backends_lock:
         if key not in _backends:
-            _backends[key] = make(provider, model, **options)
+            backend = make(provider, model, **options)
+            backend.quiet = quiet
+            _backends[key] = backend
         return _backends[key]
 
 
 # ---- small helpers ------------------------------------------------------------------
 
 
-def _folder(session_id: str) -> Path:
-    return home.home() / "sessions" / session_id
+def _root(where) -> Path:
+    """The sessions folder under `where`, or under the default home."""
+    return (Path(where).expanduser() if where else _home.home()) / "sessions"
+
+
+def _folder(session_id: str, where=None) -> Path:
+    return _root(where) / session_id
 
 
 def _check_id(session_id: str) -> None:
@@ -378,15 +387,6 @@ class _lock:
     def __exit__(self, *exc):
         fcntl.flock(self.handle, fcntl.LOCK_UN)
         self.handle.close()
-
-
-def _quiet(quiet: bool):
-    """The backends print a line per thing the model does; a library caller
-    usually wants none of that."""
-    import contextlib
-    import io
-
-    return contextlib.redirect_stdout(io.StringIO()) if quiet else contextlib.nullcontext()
 
 
 def _now() -> str:

@@ -1,20 +1,25 @@
 """
 research_backend -- talk to Codex, Claude Code and Antigravity the same way.
 
-    import research_backend as rb
+Each provider is a Provider object, set up once; each conversation is a
+Session it opens. Use as many of both as you like, side by side:
 
-    rb.providers()                      # ['antigravity', 'claude_code', 'codex', 'fake']
-    print(rb.models("codex"))           # the models codex will accept
-    print(rb.usage())                   # how much of every provider's limits is used
-    print(rb.status())                  # which providers are logged in
+    from research_backend import Provider
 
-    s = rb.new_session("codex", model="gpt-5.6-sol", name="lit-review")
-    print(s.send("Which datasets exist for hotel review classification?"))
+    codex  = Provider("codex", model="gpt-5.6-sol")
+    claude = Provider("claude_code", model="opus", access="write")
 
-    # later, from anywhere:
-    rb.send("lit-review", "Which of those are free to use?")
-    print(rb.session("lit-review").history())
-    print(rb.sessions())
+    print(codex.models())               # the models codex accepts
+    print(codex.usage())                # its limits, and when they reset
+    print(claude.status())              # logged in? how to log in if not
+
+    reader = codex.new_session("lit-review")
+    writer = claude.new_session("draft", instructions="You write LaTeX.")
+    print(reader.send("Which datasets exist for hotel review classification?"))
+    print(writer.send("Draft a related-work paragraph."))
+
+    # later, from any script:
+    codex.session("lit-review").send("Which of those are free to use?")
 
 A structured answer instead of text: pass a Pydantic class.
 
@@ -22,15 +27,24 @@ A structured answer instead of text: pass a Pydantic class.
         dataset: str
         why: str
 
-    reply = s.send("Pick one.", schema=Pick)
+    reply = reader.send("Pick one.", schema=Pick)
     reply.data.dataset
 
-Every function here asks the provider itself; nothing is a hard-coded guess
-except where a provider cannot answer (Claude Code cannot list its models or
-report its limits outside a turn -- see catalog.py and limits.py).
+For every provider at once:
 
-Sessions are kept in ~/.research_backend (or $RESEARCH_BACKEND_HOME); see
-home.py for the layout.
+    import research_backend as rb
+    rb.providers()        # ['antigravity', 'claude_code', 'codex', 'fake']
+    print(rb.usage())     # every provider's limits
+    print(rb.status())    # every provider's login
+    print(rb.sessions())  # every session, whichever provider
+    rb.session("lit-review")
+
+Everything here asks the provider itself; nothing is a hard-coded guess except
+where a provider cannot answer (Claude Code cannot list its models or report
+its limits outside a turn -- see catalog.py and limits.py).
+
+Sessions are kept in ~/.research_backend (or $RESEARCH_BACKEND_HOME, or the
+`home` you give a Provider); see home.py for the layout.
 """
 
 from __future__ import annotations
@@ -55,16 +69,16 @@ from research_backend.conversation import (
     SessionBusy,
     SessionNotFound,
     list_sessions,
-    new_session,
     open_session,
 )
 from research_backend.limits import Quota, Window
+from research_backend.provider import Provider
 
 __all__ = [
-    # what is there
-    "providers", "models", "usage", "status",
-    # conversations
-    "new_session", "session", "sessions", "send", "Session", "Reply",
+    # one provider, and its conversations
+    "Provider", "Session", "Reply",
+    # every provider at once
+    "providers", "models", "usage", "status", "sessions", "session",
     # the types those return
     "Model", "ModelList", "Quota", "Window", "AuthStatus", "Usage", "Access",
     # what can go wrong
@@ -124,16 +138,11 @@ def status(provider: str | None = None):
     return Listing(status_all(_real()))
 
 
-def session(session_id: str) -> Session:
-    """A session made earlier, by its id."""
-    return open_session(session_id)
+def session(session_id: str, *, home=None) -> Session:
+    """A session made earlier, by its id, whichever provider it is on."""
+    return open_session(session_id, home=home)
 
 
-def sessions() -> Listing:
-    """Every session, the most recently used first."""
-    return Listing(list_sessions())
-
-
-def send(session_id: str, prompt: str, *, schema=None, progress: bool = False) -> Reply:
-    """Send a message to a session by its id, continuing its conversation."""
-    return open_session(session_id).send(prompt, schema=schema, progress=progress)
+def sessions(*, home=None) -> Listing:
+    """Every session, whichever provider, the most recently used first."""
+    return Listing(list_sessions(home=home))

@@ -57,6 +57,7 @@ from research_backend.backends._progress import (_LiveText, flood_message, poll_
                                       runaway_message, silent_message,
                                       wait_or_cancel, LIVE_FLUSH_SECONDS)
 from research_backend import quota
+from research_backend.base import say
 from research_backend.base import (Access, BackendBusy, BackendCancelled,
                                  BackendError, BackendOutOfCredits, BackendOutputError,
                                  BackendTimeout, BackendUnavailable, OutputT,
@@ -263,7 +264,7 @@ class CliBackend:
                             f"waiting {credits.describe_budget()}. It said:\n\n"
                             f"    {refused[:600]}\n\nYour progress is saved -- "
                             f"Start the session again to carry on.") from None
-                    print(f"\n    {self.label} is over its usage limit. Waiting "
+                    say(self, f"\n    {self.label} is over its usage limit. Waiting "
                           f"{seconds / 60:.0f} min ({why}, at {quota.until(seconds)}); "
                           f"check {credits.tries}, giving up after "
                           f"{credits.describe_budget()}.\n    It said: "
@@ -284,7 +285,7 @@ class CliBackend:
                         f"not this node failing. Resume the session to try "
                         f"again, or point the role at another model.")
                 seconds = 5.0 * (2 ** (busy_tries - 1))
-                print(f"\n    {self.label} is busy ({reason[:120]}). Waiting "
+                say(self, f"\n    {self.label} is busy ({reason[:120]}). Waiting "
                       f"{seconds:.0f}s, then retrying ({busy_tries}/"
                       f"{self.busy_attempts}).", flush=True)
                 wait_or_cancel(seconds, self.cancel, self.pause)
@@ -496,7 +497,7 @@ class CliBackend:
                     line_out = headline(entry)
                     if line_out and line_out != last_seen[0]:
                         last_seen[0] = line_out.strip()
-                        print(line_out, flush=True)
+                        say(self, line_out, flush=True)
                         last_line[0] = time.monotonic()
             except (OSError, ValueError):
                 # The pipe closed under us: _abandon killed the group, or the
@@ -585,7 +586,7 @@ class CliBackend:
 
                 if now - last_line[0] >= 30.0:
                     from research_backend.backends.codex import _heartbeat
-                    print(_heartbeat(elapsed, idle, len(recorded), kinds,
+                    say(self, _heartbeat(elapsed, idle, len(recorded), kinds,
                                      live.tail() or last_result[0] or last_seen[0],
                                      streamed[0]),
                           flush=True)

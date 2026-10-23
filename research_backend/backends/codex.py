@@ -18,6 +18,7 @@ from research_backend.backends._progress import (_LiveText, flood_message, headl
                                       runaway_message, silent_message,
                                       wait_or_cancel, LIVE_FLUSH_SECONDS)
 from research_backend.backends._schema import strict_json_schema
+from research_backend.base import say
 from research_backend.base import (
     BackendCancelled,
     Access,
@@ -326,7 +327,7 @@ class CodexBackend:
                             f"Your progress is saved -- Start the session again "
                             f"(or rerun with the same --session) to carry on."
                         ) from None
-                    print(f"\n    Out of credits or over the usage limit. "
+                    say(self, f"\n    Out of credits or over the usage limit. "
                           f"Waiting {seconds / 60:.0f} min ({why}, at "
                           f"{quota.until(seconds)}); check {credits.tries}, "
                           f"giving up after {credits.describe_budget()}.\n"
@@ -356,11 +357,11 @@ class CodexBackend:
         so pressing it during a credit wait did nothing for up to twenty
         minutes.
         """
-        print(f"\n    {reason}. Waiting {seconds:.0f}s, then retrying "
+        say(self, f"\n    {reason}. Waiting {seconds:.0f}s, then retrying "
               f"({attempt}/{limit}).", flush=True)
         if advice:
-            print(f"    {advice}", flush=True)
-        print("    Ctrl-C to stop -- your progress is saved.", flush=True)
+            say(self, f"    {advice}", flush=True)
+        say(self, "    Ctrl-C to stop -- your progress is saved.", flush=True)
 
         wait_or_cancel(seconds, self.cancel, self.pause)
 
@@ -454,7 +455,7 @@ class CodexBackend:
             if line == last_printed[0]:
                 return
             last_printed[0] = line
-            print(line, flush=True)
+            say(self, line, flush=True)
             last_line[0] = time.monotonic()
 
         def drain() -> None:
@@ -559,7 +560,7 @@ class CodexBackend:
                 # live.tail() first: "message: {\"task_brief\": \"Compare
                 # hotel-employee skill..." beats the last line worth printing,
                 # which during a long answer is whatever came before it.
-                print(_heartbeat(elapsed, idle, events[0], kinds,
+                say(self, _heartbeat(elapsed, idle, events[0], kinds,
                                  live.tail() or last_seen[0], streamed[0]),
                       flush=True)
                 last_line[0] = now
@@ -584,7 +585,7 @@ class CodexBackend:
         try:
             handle.interrupt()
         except Exception as exc:  # noqa: BLE001
-            print(f"    ! could not interrupt the Codex turn: {exc}", flush=True)
+            say(self, f"    ! could not interrupt the Codex turn: {exc}", flush=True)
         worker.join(timeout=30.0)
 
     # ---- diagnostics ----------------------------------------------------
@@ -606,7 +607,7 @@ class CodexBackend:
 
     def _get_thread(self, *, thread_id, repo_path, access, developer_instructions):
         if len(developer_instructions) > SAFE_INSTRUCTIONS_CHARS:
-            print(
+            say(self, 
                 f"    ! warning: these developer instructions are "
                 f"{len(developer_instructions):,} characters. Past about "
                 f"{SAFE_INSTRUCTIONS_CHARS:,}, Codex turns have been measured to hang "
