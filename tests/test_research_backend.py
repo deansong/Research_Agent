@@ -21,7 +21,7 @@ sys.path.insert(0, str(pathlib.Path(__file__).resolve().parents[1]))
 import pytest  # noqa: E402
 from pydantic import BaseModel  # noqa: E402
 
-import research_backend as rb  # noqa: E402
+import research_backend as RB  # noqa: E402
 from research_backend import conversation as sessions, limits as usage  # noqa: E402
 from research_backend.base import Access, StructuredRun, Usage  # noqa: E402
 
@@ -53,21 +53,21 @@ CODEX_LIMITS = {
 
 
 def test_the_providers_are_the_ones_you_can_send_to():
-    assert rb.providers() == ["antigravity", "claude_code", "codex", "fake"]
-    assert callable(rb.providers), "not shadowed by a subpackage of the same name"
+    assert RB.list_providers() == ["antigravity", "claude_code", "codex", "fake"]
+    assert RB().list_providers() == RB.list_providers()
 
 
 def test_models_can_be_looped_over_and_printed():
-    listed = rb.models("fake")
+    listed = RB.list_models("fake")
     assert [m.id for m in listed] == ["fake"] and listed.ids == ["fake"]
     assert str(listed).startswith("fake: 1 model(s)\n  fake  canned answers")
-    unknown = rb.models("nope")
+    unknown = RB.list_models("nope")
     assert not len(unknown) and "not supported" in unknown.error
 
 
 def test_status_says_how_to_log_in():
-    assert str(rb.status("fake")).startswith("fake: logged in")
-    out = rb.AuthStatus(provider="codex", installed=True, logged_in=False,
+    assert str(RB.status("fake")).startswith("fake: logged in")
+    out = RB.AuthStatus(provider="codex", installed=True, logged_in=False,
                         detail="Not logged in.", login_command="codex login")
     assert str(out) == "codex: NOT logged in\n  to log in: codex login"
 
@@ -100,7 +100,7 @@ def test_codex_limits_are_read_from_its_app_server(monkeypatch):
 
     monkeypatch.setattr("shutil.which", lambda name: f"/bin/{name}")
     monkeypatch.setattr("research_backend.backends.codex_client", lambda: Codex())
-    quota = rb.usage("codex")
+    quota = RB.usage("codex")
     assert asked == ["account/rateLimits/read"] and GetAccountRateLimitsResponse
     assert quota.ok and quota.plan == "team"
     assert [(w.name, w.used_percent) for w in quota.windows] == [("5 hours", 0.0),
@@ -112,10 +112,10 @@ def test_codex_limits_are_read_from_its_app_server(monkeypatch):
 
 
 def test_claude_limits_are_the_last_ones_a_turn_reported():
-    assert "No limits seen yet" in rb.usage("claude_code").error
+    assert "No limits seen yet" in RB.usage("claude_code").error
     usage.remember_claude_limits([{"kind": "command"},
                                   {"kind": "rate_limit_event", "info": CLAUDE_EVENT}])
-    quota = rb.usage("claude_code")
+    quota = RB.usage("claude_code")
     assert quota.ok and quota.checked_at is not None
     assert [(w.name, w.used_percent, w.status) for w in quota.windows] == [
         ("5 hours", 20.0, "allowed"), ("weekly", 41.0, "")]
@@ -135,7 +135,7 @@ def test_a_claude_turn_keeps_the_limits_it_was_told(monkeypatch):
     assert backend.run_structured(thread_id=None, repo_path=".", access=Access.READ_ONLY,
                                   developer_instructions="", prompt="x",
                                   output_model=sessions.Text) is run
-    assert rb.usage("claude_code").most_used.name == "weekly"
+    assert RB.usage("claude_code").most_used.name == "weekly"
 
 
 def test_every_providers_usage_at_once_never_raises(monkeypatch):
@@ -144,13 +144,13 @@ def test_every_providers_usage_at_once_never_raises(monkeypatch):
 
     monkeypatch.setitem(usage.READERS, "codex", broken)
     monkeypatch.setitem(usage.READERS, "antigravity", lambda: usage.Quota("antigravity"))
-    report = rb.usage()
+    report = RB.usage()
     assert [q.provider for q in report] == ["antigravity", "claude_code", "codex"]
     assert report[2].error == "RuntimeError: app-server gone"
     assert "codex\n  RuntimeError: app-server gone" in str(report)
 
 
-# ---- sessions ---------------------------------------------------------------------
+# ---- RB(...): one provider, one model, the current session -------------------------
 
 
 class Spy:
@@ -169,7 +169,9 @@ class Spy:
                 else model.model_validate({"dataset": "imdb", "why": "free"}))
         return StructuredRun(data=data, thread_id=kwargs["thread_id"] or "provider-thread-1",
                              is_new_thread=kwargs["thread_id"] is None,
-                             usage=Usage(input_tokens=10, output_tokens=2), events=[{"k": 1}])
+                             usage=Usage(input_tokens=1500, cached_input_tokens=1000,
+                                         output_tokens=2, context_window=10_000),
+                             events=[{"k": 1}])
 
 
 @pytest.fixture
@@ -179,27 +181,112 @@ def spy(monkeypatch):
     return backend
 
 
+def test_the_module_is_called_to_make_one():
+    reader = RB(provider="fake", model="m1")
+    assert isinstance(reader, RB.ResearchBackend)
+    assert repr(reader) == "RB(provider='fake', model='m1', session=None)"
+    empty = RB()
+    assert empty.provider is None and empty.session_id is None
+    with pytest.raises(ValueError, match="No provider chosen"):
+        empty.send("hello")
+    with pytest.raises(RB.BackendUnavailable, match="Unknown provider 'gpt'"):
+        RB(provider="gpt")
+
+
+def test_choose_then_start_a_session_then_talk(spy):
+    reader = RB()
+    reader.set_provider("fake")
+    assert reader.list_models().ids == ["fake"] and reader.usage().ok and reader.status().ok
+    assert reader.new_session("lit-review") == "lit-review" == reader.session_id
+    first = reader.send("hello")
+    assert str(first) == "answer 1" and first.turn == 1
+    assert spy.calls[0]["thread_id"] is None and spy.calls[0]["access"] is Access.READ_ONLY
+    assert spy.calls[0]["repo_path"] == str(reader.session.folder / "workspace")
+    assert reader.send("and then?").turn == 2
+    assert spy.calls[1]["thread_id"] == "provider-thread-1", "the same conversation"
+    assert "you: and then?\nfake: answer 2" in reader.history()
+
+
+def test_send_starts_a_session_when_there_is_none(spy):
+    writer = RB(provider="fake")
+    writer.send("hello")
+    assert writer.session_id.startswith("fake-") and len(writer.session.turns) == 1
+
+
 def test_a_session_is_continued_by_id_from_anywhere(spy):
-    s = rb.Provider("fake").new_session(name="lit-review", instructions="Be brief.")
-    first = s.send("hello")
-    assert str(first) == "answer 1" and first.turn == 1 and first.tokens.input_tokens == 10
-    assert spy.calls[0]["thread_id"] is None
-    assert spy.calls[0]["developer_instructions"] == "Be brief."
-    assert spy.calls[0]["access"] is Access.READ_ONLY
-    assert spy.calls[0]["repo_path"] == str(s.folder / "workspace")
+    RB(provider="fake", instructions="Be brief.").new_session("lit-review")
+    RB(session="lit-review").send("hello")              # as another script would
+    later = RB(session="lit-review")
+    assert later.provider == "fake" and later.send("more").turn == 2
+    assert [c["developer_instructions"] for c in spy.calls] == ["Be brief.", "Be brief."]
+    assert spy.calls[1]["thread_id"] == "provider-thread-1"
 
-    # As another process would: by id, from the file.
-    again = rb.session("lit-review").send("and then?")
-    assert again.turn == 2 and spy.calls[1]["thread_id"] == "provider-thread-1"
-    assert len(s.turns) == 1, "an object made earlier is stale..."
-    s.send("third")
-    assert spy.calls[2]["thread_id"] == "provider-thread-1" and len(s.turns) == 3, \
-        "...until it sends, which reads the file first"
+    reader = RB(provider="fake")
+    reader.new_session("other")
+    assert reader.open_session("lit-review") == "lit-review" == reader.session_id
+    assert reader.send("third").turn == 3
 
-    saved = json.loads((rb.session("lit-review").folder / "session.json").read_text())
-    assert [t["prompt"] for t in saved["turns"]] == ["hello", "and then?", "third"]
-    assert saved["turns"][0]["tokens"] == {"input_tokens": 10, "output_tokens": 2}
-    assert "you: and then?\nfake: answer 2" in rb.session("lit-review").history()
+    saved = json.loads((later.session.folder / "session.json").read_text())
+    assert [t["prompt"] for t in saved["turns"]] == ["hello", "more", "third"]
+    with pytest.raises(ValueError, match="is on fake, not codex"):
+        RB(provider="codex", session="lit-review")
+    with pytest.raises(RB.SessionNotFound, match="Sessions: "):
+        RB(session="nobody")
+
+
+def test_several_side_by_side_each_in_its_own_session(spy):
+    codex = RB(provider="codex", model="gpt-5.6-sol", instructions="Read papers.")
+    claude = RB(provider="claude_code", model="opus", access="write")
+    codex.new_session("lit-review")
+    claude.new_session("draft")
+    codex.send("find datasets")
+    claude.send("draft it")
+    assert [(c["developer_instructions"], c["access"]) for c in spy.calls] == [
+        ("Read papers.", Access.READ_ONLY), ("", Access.WRITE)]
+    assert (codex.session.model, claude.session.model) == ("gpt-5.6-sol", "opus")
+    assert [s.id for s in RB.list_sessions("codex")] == ["lit-review"]
+    assert {s.id for s in RB.list_sessions()} == {"lit-review", "draft"}
+
+
+def test_changing_model_access_or_instructions_carries_the_session_on(spy):
+    reader = RB(provider="fake", model="small")
+    reader.new_session("s")
+    reader.send("one")
+    reader.set_model("large").set_instructions("Be thorough.").set_access("write")
+    reader.send("two")
+    assert spy.calls[1]["thread_id"] == "provider-thread-1"
+    assert (spy.calls[1]["developer_instructions"], spy.calls[1]["access"]) == (
+        "Be thorough.", Access.WRITE)
+    assert RB(session="s").model == "large", "saved with the session"
+
+    reader.set_provider("claude_code")
+    assert reader.session_id is None, "a session belongs to one provider"
+    assert reader.model is None
+    with pytest.raises(RB.BackendUnavailable, match="cannot do read_only"):
+        RB(provider="antigravity", access="read_only")
+    assert RB(provider="antigravity").new_session() and \
+        RB.list_sessions("antigravity")[0].access is Access.NONE
+
+
+def test_context_says_how_full_the_window_is(spy):
+    reader = RB(provider="fake")
+    assert "no session yet" in str(reader.context())
+    reader.send("hello")
+    context = reader.context()
+    assert (context.tokens, context.window, context.percent) == (1500, 10_000, 15.0)
+    text = str(context)
+    assert text.startswith(f"{reader.session_id}: fake/default model, 1 turn(s)\n"
+                           "context: about 1,500 of 10,000 tokens (15%)")
+    assert "you: hello" in text
+
+
+def test_tokens_in_context_are_counted_the_way_each_provider_reports_them():
+    from research_backend.client import context_tokens
+
+    codex = {"input_tokens": 15857, "cached_input_tokens": 14080}
+    claude = {"input_tokens": 6, "cached_input_tokens": 38284}
+    assert context_tokens("codex", codex) == 15857, "cached is inside input"
+    assert context_tokens("claude_code", claude) == 38290, "cached is apart"
 
 
 def test_a_schema_gets_a_structured_answer(spy):
@@ -207,7 +294,7 @@ def test_a_schema_gets_a_structured_answer(spy):
         dataset: str
         why: str
 
-    reply = rb.Provider("fake").new_session().send("pick one", schema=Pick)
+    reply = RB(provider="fake").send("pick one", schema=Pick)
     assert isinstance(reply.data, Pick) and reply.data.dataset == "imdb"
     assert json.loads(reply.text) == {"dataset": "imdb", "why": "free"}
 
@@ -215,14 +302,15 @@ def test_a_schema_gets_a_structured_answer(spy):
 def test_a_failed_turn_is_recorded_and_raised(monkeypatch):
     class Down(Spy):
         def run_structured(self, **kwargs):
-            raise rb.BackendBusy("overloaded")
+            raise RB.BackendBusy("overloaded")
 
     monkeypatch.setattr(sessions, "_backend", lambda *a, **k: Down())
-    s = rb.Provider("fake").new_session(name="down")
-    with pytest.raises(rb.BackendBusy):
-        s.send("hello")
-    turn = rb.session("down").turns[0]
-    assert turn["error"] == "BackendBusy: overloaded" and rb.session("down").thread_id is None
+    reader = RB(provider="fake")
+    reader.new_session("down")
+    with pytest.raises(RB.BackendBusy):
+        reader.send("hello")
+    again = RB(session="down").session
+    assert again.turns[0]["error"] == "BackendBusy: overloaded" and again.thread_id is None
 
 
 def test_one_turn_at_a_time_per_session(monkeypatch):
@@ -235,123 +323,70 @@ def test_one_turn_at_a_time_per_session(monkeypatch):
             return super().run_structured(**kwargs)
 
     monkeypatch.setattr(sessions, "_backend", lambda *a, **k: Slow())
-    rb.Provider("fake").new_session(name="slow")
-    worker = threading.Thread(target=lambda: rb.session("slow").send("first"))
+    RB(provider="fake").new_session("slow")
+    worker = threading.Thread(target=lambda: RB(session="slow").send("first"))
     worker.start()
     assert entered.wait(5)
-    with pytest.raises(rb.SessionBusy, match="answering another message"):
-        rb.session("slow").send("second")
+    with pytest.raises(RB.SessionBusy, match="answering another message"):
+        RB(session="slow").send("second")
     release.set()
     worker.join(5)
-    assert [t["prompt"] for t in rb.session("slow").turns] == ["first"]
+    assert [t["prompt"] for t in RB(session="slow").session.turns] == ["first"]
 
 
 def test_the_real_fake_provider_continues_its_conversation():
-    s = rb.Provider("fake").new_session(name="echo")
-    assert str(s.send("hello")).startswith("[fake] reply 1 in this conversation, to: hello")
-    assert str(rb.session("echo").send("again")).startswith("[fake] reply 2 in this conversation")
+    reader = RB(provider="fake")
+    assert str(reader.send("hello")).startswith("[fake] reply 1 in this conversation, to: hello")
+    assert str(reader.send("again")).startswith("[fake] reply 2 in this conversation")
 
 
 def test_sessions_are_listed_newest_first_and_printed(spy):
-    rb.Provider("fake").new_session(name="older").send("a")
-    rb.Provider("fake").new_session(name="newer").send("b")
-    listed = rb.sessions()
-    assert [s.id for s in listed][:2] == ["newer", "older"]
+    RB(provider="fake").new_session("older")
+    RB(session="older").send("a")
+    newer = RB(provider="fake")
+    newer.new_session("newer")
+    newer.send("b")
+    listed = RB.list_sessions()
+    assert [s.id for s in listed] == ["newer", "older"]
     text = str(listed)
     assert text.startswith("newer: fake/default model, read_only access in ")
     assert "last: b -> answer" in text
 
 
-def test_bad_names_missing_sessions_and_access_are_refused(tmp_path):
+def test_bad_names_and_workdirs_are_refused(tmp_path):
+    reader = RB(provider="fake")
     with pytest.raises(ValueError, match="cannot be a session id"):
-        rb.Provider("fake").new_session(name="../escape")
-    rb.Provider("fake").new_session(name="taken")
-    with pytest.raises(ValueError, match="open_session"):
-        rb.Provider("fake").new_session(name="taken")
-    with pytest.raises(rb.SessionNotFound, match="Sessions: taken"):
-        rb.session("nobody")
+        reader.new_session("../escape")
+    reader.new_session("taken")
+    with pytest.raises(ValueError, match="already a session called 'taken'"):
+        RB(provider="fake").new_session("taken")
     with pytest.raises(FileNotFoundError):
-        rb.Provider("fake").new_session(workdir=tmp_path / "missing")
-    with pytest.raises(rb.BackendUnavailable, match="cannot do read_only"):
-        rb.Provider("antigravity", access="read_only")
-    with pytest.raises(rb.BackendUnavailable, match="Unknown provider 'gpt'"):
-        rb.Provider("gpt")
-    # agy cannot do read_only, so by default it gets none, not a surprise.
-    assert rb.Provider("antigravity").new_session().access is Access.NONE
-    assert rb.Provider("fake").new_session(workdir=tmp_path).workdir == str(tmp_path)
+        reader.new_session(workdir=tmp_path / "missing")
+    reader.new_session("mine", workdir=tmp_path)
+    assert reader.session.workdir == str(tmp_path)
 
 
-def test_a_session_can_be_renamed_and_deleted(spy, tmp_path):
-    s = rb.Provider("fake").new_session(name="draft")
-    s.send("hello")
-    s.rename("final")
-    assert rb.session("final").workdir == str(s.folder / "workspace")
-    assert rb.session("final").send("more").turn == 2
-    with pytest.raises(rb.SessionNotFound):
-        rb.session("draft")
-
-    mine = rb.Provider("fake").new_session(name="mine", workdir=tmp_path)
-    mine.delete()
-    assert tmp_path.exists(), "a workdir you chose is left alone"
-    rb.session("final").delete()
-    assert [s.id for s in rb.sessions()] == []
-
-
-def test_providers_side_by_side_each_with_its_own_sessions(spy, tmp_path):
-    codex = rb.Provider("codex", model="gpt-5.6-sol", instructions="Read papers.")
-    claude = rb.Provider("claude_code", model="opus", access="write")
-    assert repr(claude) == "Provider('claude_code', model='opus', access='write')"
-
-    reader = codex.new_session("lit-review")
-    writer = claude.new_session("draft", instructions="You write LaTeX.")
-    scratch = codex.new_session("scratch", model="gpt-5.6-luna", access="none")
-    reader.send("find datasets")
-    writer.send("draft it")
-    scratch.send("quick question")
-
-    assert [(c["developer_instructions"], c["access"]) for c in spy.calls] == [
-        ("Read papers.", Access.READ_ONLY), ("You write LaTeX.", Access.WRITE),
-        ("Read papers.", Access.NONE)]
-    assert (reader.model, writer.model, scratch.model) == ("gpt-5.6-sol", "opus",
-                                                            "gpt-5.6-luna")
-    assert scratch.access is Access.NONE, "a session may differ from its provider"
-
-    assert {s.id for s in codex.sessions()} == {"lit-review", "scratch"}
-    assert [s.id for s in claude.sessions()] == ["draft"]
-    assert codex.session("lit-review").send("more").turn == 2
-    with pytest.raises(ValueError, match="is a claude_code session, not codex"):
-        codex.session("draft")
-    assert {s.id for s in rb.sessions()} == {"lit-review", "scratch", "draft"}
-
-    # A Provider can keep its sessions somewhere of its own.
-    elsewhere = rb.Provider("fake", home=tmp_path / "project-a")
-    elsewhere.new_session("lit-review").send("same id, another place")
+def test_sessions_can_be_kept_elsewhere_renamed_and_deleted(spy, tmp_path):
+    elsewhere = RB(provider="fake", home=tmp_path / "project-a")
+    elsewhere.new_session("lit-review")
+    elsewhere.send("hello")
     assert (tmp_path / "project-a" / "sessions" / "lit-review" / "session.json").exists()
-    assert rb.session("lit-review", home=tmp_path / "project-a").provider == "fake"
-    assert rb.session("lit-review").provider == "codex"
+    assert [s.id for s in RB.list_sessions(home=tmp_path / "project-a")] == ["lit-review"]
+    assert not RB.list_sessions(), "not in the default place"
 
+    reader = RB(provider="fake")
+    reader.new_session("draft")
+    reader.send("hello")
+    reader.session.rename("final")
+    assert RB(session="final").session.workdir == str(reader.session.folder / "workspace")
+    assert RB(session="final").send("more").turn == 2
 
-def test_a_quiet_backend_prints_nothing_and_a_watched_one_does(capsys):
-    from research_backend.base import say
-
-    class Backend:
-        quiet = True
-
-    say(Backend(), "hidden")
-    Backend.quiet = False
-    say(Backend(), "shown")
-    assert capsys.readouterr().out == "shown\n"
-
-    quiet = sessions._backend("fake", None, {}, quiet=True)
-    watched = sessions._backend("fake", None, {}, quiet=False)
-    assert quiet is not watched and quiet.quiet and not watched.quiet
-    assert sessions._backend("fake", None, {}) is quiet
-
-
-def test_a_provider_answers_for_itself():
-    fake = rb.Provider("fake")
-    assert fake.models().ids == ["fake"]
-    assert fake.usage().ok and fake.status().ok
+    mine = RB(provider="fake", workdir=tmp_path)
+    mine.new_session("mine")
+    mine.delete_session()
+    assert mine.session_id is None and tmp_path.exists(), "a workdir you chose stays"
+    RB().delete_session("final")
+    assert list(RB.list_sessions()) == []
 
 
 # ---- the agent still finds everything where it was ---------------------------------

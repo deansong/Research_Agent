@@ -4,93 +4,99 @@ Talk to Codex, Claude Code and Antigravity the same way: which models they
 offer, how much of their usage limits is left, and conversations you can
 continue by id, from any script, at any time.
 
-Each provider is a `Provider` object, set up once. Each conversation is a
-`Session` it opens. Use as many of both as you like, side by side, in threads
-if you want them at the same time.
-
 ```python
-from research_backend import Provider
+import research_backend as RB
 
-codex  = Provider("codex", model="gpt-5.6-sol")
-claude = Provider("claude_code", model="opus", access="write")
-agy    = Provider("antigravity")
+RB.list_providers()          # ['antigravity', 'claude_code', 'codex', 'fake']
+RB.list_models("codex")      # the models codex accepts
+RB.usage()                   # every provider's limits, and when they reset
+RB.status()                  # who is logged in, and how to log in if not
+RB.list_sessions()           # every session so far
 
-print(codex.models())     # the models codex accepts
-print(codex.usage())      # its limits, and when they reset
-print(claude.status())    # logged in? how to log in if not
+reader = RB(provider="codex", model="gpt-5.6-sol")    # or RB(), then set_provider
+reader.list_models()
+reader.new_session("lit-review")
+reader.session_id            # 'lit-review'
+reader.send("Which datasets exist for hotel review classification?")
+reader.context()             # how full its context window is, and the last turns
+reader.usage()               # codex's limits
 
-reader = codex.new_session("lit-review")
-writer = claude.new_session("draft", instructions="You write LaTeX.")
-quick  = codex.new_session("scratch", model="gpt-5.6-luna")   # another codex session
+writer = RB(provider="claude_code", model="opus", access="write")   # side by side
+writer.send("Draft a related-work paragraph.")      # starts a session if none
 
-print(reader.send("Which datasets exist for hotel review classification?"))
-print(writer.send("Draft a related-work paragraph."))
-
-# later, from any script:
-codex.session("lit-review").send("Which of those are free to use?")
-print(codex.sessions())   # codex's sessions
+later = RB(session="lit-review")                    # continue it, from any script
+later.send("Which of those are free to use?")
 ```
 
+Everything prints readably:
+
 ```
+>>> print(reader.usage())
 codex (team plan)
   5 hours    0% used, resets Fri 23 Oct 14:30 (in 4h 59m)
   weekly     5% used, resets Thu 29 Oct 17:17 (in 6d 8h)
   no credits; 2 free limit resets available
   [codex app-server (account/rateLimits/read), as of Fri 23 Oct 09:30]
+
+>>> print(reader.context())
+lit-review: codex/gpt-5.6-sol, 3 turn(s)
+context: about 15,857 of 258,400 tokens (6.1%)
+
+--- turn 1 (23 Oct 09:30) ---
+you: Which datasets exist for hotel review classification?
+codex: ...
 ```
 
-For every provider at once:
+## RB(...)
 
-```python
-import research_backend as rb
+`import research_backend as RB`, then `RB(...)` makes a `ResearchBackend`: a
+provider, a model and the current session. Make one for each conversation you
+want open at once.
 
-rb.providers()            # ['antigravity', 'claude_code', 'codex', 'fake']
-print(rb.usage())         # every provider's limits
-print(rb.status())        # every provider's login
-print(rb.sessions())      # every session, whichever provider
-rb.session("lit-review")  # one, by id
-```
-
-## Provider
-
-`Provider(name, model=None, access=None, instructions="", home=None, **options)`
+`RB(provider=None, model=None, *, session=None, access=None, instructions="", workdir=None, home=None, **options)`
 
 | argument | meaning | default |
 | --- | --- | --- |
-| `name` | `"codex"`, `"claude_code"`, `"antigravity"` or `"fake"` | required |
-| `model` | an id from `.models()` | the provider's default |
+| `provider` | `"codex"`, `"claude_code"`, `"antigravity"` or `"fake"` | none yet: `set_provider()` later |
+| `model` | an id from `list_models()` | the provider's default |
+| `session` | continue this session; its provider and model come with it | none yet |
 | `access` | `"none"`, `"read_only"`, `"write"` or `"full"` | `read_only` (`none` on antigravity, which cannot do read-only) |
 | `instructions` | standing instructions, sent with every message | none |
-| `home` | where its sessions are kept | `~/.research_backend` |
+| `workdir` | the folder the model works in | a new empty folder for each session |
+| `home` | where sessions are kept | `~/.research_backend` |
 | anything else | passed to the provider: `timeout`, `max_seconds`, `gpu`, ... | |
 
-An unknown provider, or an access level it cannot do, fails here rather than
-at the first message.
+An unknown provider, or an access level a provider cannot do, fails right
+away rather than at the first message.
 
-| method | |
+| | |
 | --- | --- |
-| `.models()` | the models it accepts: loop over them, or print |
-| `.usage()` | its limits: `.windows` (each with `used_percent`, `resets_at`), `.plan`, `.credits` |
-| `.status()` | whether it is installed and logged in |
-| `.new_session(name=None, model=, workdir=, access=, instructions=, **options)` | a new conversation; anything not given comes from the Provider |
-| `.session(id)` | one of its sessions, to continue it |
-| `.sessions()` | its sessions, the most recently used first |
+| `.provider`, `.model`, `.session_id` | what is set now |
+| `.list_providers()` | the providers there are |
+| `.list_models(provider=None)` | the models a provider accepts (the current one unless named) |
+| `.usage(provider=None)` | its limits: `.windows` (each with `used_percent`, `resets_at`), `.plan`, `.credits` |
+| `.status(provider=None)` | whether it is installed and logged in |
+| `.set_provider(name, model=None)` | talk to another provider; the current session is put aside, since a session belongs to one provider |
+| `.set_model(model)`, `.set_access(level)`, `.set_instructions(text)` | from the next message on; the current session carries on with them |
+| `.new_session(name=None, workdir=None)` | start a conversation and make it current; returns its id, made up if you give no name |
+| `.open_session(id)` | continue an earlier session; its provider and model become current |
+| `.list_sessions(provider=None)` | every session, or one provider's, most recently used first |
+| `.send(prompt, schema=None, progress=False)` | send a message and wait for the `Reply`; starts a session if there is none |
+| `.context()` | how much of the model's context window the conversation fills, and its last turns |
+| `.history(last=None)` | the conversation so far, as text |
+| `.delete_session(id=None)` | forget a session, the current one unless named |
+| `.session` | the current `Session` itself: `.turns`, `.folder`, `.thread_id`, `.rename()` |
 
-`workdir` is the folder the model works in. Without one, each session gets a
-new empty folder of its own. Without a `name`, the id is made up from the
-provider and the time, e.g. `codex-20261023-093047-1f2e`.
+The `set_...` methods return the object, so they chain:
+`RB().set_provider("codex").set_model("gpt-5.6-sol")`.
 
-## Session
+## Replies
 
-One conversation with one model, saved after every turn. Its id is what you
-continue it by. It has `.id`, `.provider`, `.model`, `.access`, `.workdir`,
-`.instructions` and `.thread_id`, the provider's own id for the conversation.
-
-`.send(prompt)` returns a `Reply`:
+`.send()` returns a `Reply`; printing it prints the answer.
 
 | field | |
 | --- | --- |
-| `text` | the answer (printing the reply prints this) |
+| `text` | the answer |
 | `data` | with `schema=`, the validated object |
 | `tokens` | input, cached, output and reasoning tokens, and the context window |
 | `seconds` | how long the turn took |
@@ -116,14 +122,15 @@ answering raises `SessionBusy`, whichever process sent the first message.
 A failed turn is recorded in the session and raised: `BackendBusy`,
 `BackendOutOfCredits`, `BackendTimeout`, and the other errors.
 
-Other methods: `.history()` (the conversation as text), `.turns` (every turn,
-as dicts), `.rename(new_id)` and `.delete()`. Deleting removes the session's own folder; a `workdir` you chose
-is left alone.
+`context()` counts the last turn's prompt: Codex and Antigravity report cached
+tokens inside their input count, and Claude Code reports them separately, so
+the two are added for it. The window is the one the provider reports (Codex),
+else a per-model table in `catalog.py`.
 
 ## Where things are kept
 
 ```
-~/.research_backend/            (or $RESEARCH_BACKEND_HOME, or a Provider's home=)
+~/.research_backend/            (or $RESEARCH_BACKEND_HOME, or RB(home=...))
     sessions/<id>/session.json  the session and every turn, as indented JSON
     sessions/<id>/workspace/    its working folder, unless you gave one
     limits/claude_code.json     the last limits a Claude Code turn reported
@@ -138,17 +145,18 @@ is left alone.
 | antigravity | `agy models` | `agy -p /quota` | `agy --conversation <id>` |
 | fake | one placeholder | made up | an echo that counts its turns |
 
-None of `models`, `usage` and `status` raise. A provider that cannot answer
+None of `list_models`, `usage` and `status` raise. A provider that cannot answer
 comes back with `error` saying why.
 
 ## The code
 
 ```
 research_backend/
-    __init__.py       the every-provider functions
-    provider.py       Provider
+    __init__.py       RB.list_providers() and the other every-provider functions;
+                      makes the module callable
+    client.py         ResearchBackend -- what RB(...) returns; Context
     conversation.py   Session, Reply: sending, continuing, saving
-    catalog.py        models()
+    catalog.py        list_models()
     limits.py         usage()
     auth.py           status()
     quota.py          waiting out a usage limit during a turn

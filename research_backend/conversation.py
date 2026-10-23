@@ -199,6 +199,27 @@ class Session:
             return Reply(session=self.id, turn=turn, text=text, data=data,
                          tokens=run.usage, seconds=seconds, events=list(run.events))
 
+    def update(self, *, model: str | None | object = ..., access: str | Access | None = None,
+               instructions: str | None = None) -> "Session":
+        """Change the model, access or instructions from the next turn on. The
+        conversation continues: the providers accept another model or other
+        instructions on a conversation they already have."""
+        with _lock(self):
+            self._reload()
+            if model is not ...:
+                self._record["model"] = model
+            if access is not None:
+                from research_backend.backends import load
+
+                cls = load(self.provider)
+                level = _access(access, cls)
+                _check_access(self.provider, cls, level)
+                self._record["access"] = level.value
+            if instructions is not None:
+                self._record["instructions"] = instructions
+            self._save()
+        return self
+
     def rename(self, new_id: str) -> "Session":
         """Give the session another id. Its folder moves with it."""
         _check_id(new_id)
