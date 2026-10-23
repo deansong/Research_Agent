@@ -17,6 +17,7 @@ CONCEPT: One folder per session under ~/.research_backend/sessions/<id>/;
 from __future__ import annotations
 
 import fcntl
+import json
 import os
 import re
 import secrets
@@ -30,6 +31,7 @@ from typing import Any
 from pydantic import BaseModel
 
 from research_backend import home as _home
+from research_backend import json_schema
 from research_backend.base import Access, BackendError, BackendUnavailable, Usage
 
 #: What a session id may look like: it is a folder name.
@@ -59,8 +61,9 @@ class Reply:
     turn: int
     text: str
     """The answer. For a `schema` reply, its JSON."""
-    data: BaseModel | None = None
-    """For a `schema` reply, the validated object; else None."""
+    data: BaseModel | dict | None = None
+    """For a `schema` reply, the answer: an instance of the Pydantic class, or
+    a plain dict for a JSON schema. Else None."""
     tokens: Usage | None = None
     seconds: float = 0.0
     events: list[dict] = field(default_factory=list, repr=False)
@@ -159,12 +162,13 @@ class Session:
 
     # ---- talking to it -------------------------------------------------------
 
-    def send(self, prompt: str, *, schema: type[BaseModel] | None = None,
-             progress: bool = False) -> Reply:
+    def send(self, prompt: str, *, schema=None, progress: bool = False) -> Reply:
         """Send one message and wait for the answer.
 
-        `schema` asks for a structured answer: a Pydantic class, and the reply's
-        `data` is an instance of it. Without one the answer is plain text.
+        `schema` asks for a structured answer: a Pydantic class (the reply's
+        `data` is an instance of it), or a JSON schema -- a dict, JSON text, or
+        the path of a .json file (`data` is a dict). Without one the answer is
+        plain text.
         `progress=True` prints what the model is doing while it works -- the
         commands it runs, the files it changes; otherwise the turn is quiet
         and the same detail is in the reply's `events`.
@@ -177,7 +181,7 @@ class Session:
             self._reload()
             options = {**self.options, **({"effort": self.effort} if self.effort else {})}
             backend = _backend(self.provider, self.model, options, quiet=not progress)
-            output_model = schema or Text
+            output_model = _output_model(schema)
             turn = len(self._record.get("turns", [])) + 1
             started = time.monotonic()
             entry: dict[str, Any] = {"turn": turn, "at": _now(), "prompt": prompt}
@@ -195,6 +199,10 @@ class Session:
             seconds = round(time.monotonic() - started, 1)
             if schema is None:
                 text, data = run.data.text, None
+            elif json_schema.is_raw(output_model):
+                data = run.data.root
+                text = json.dumps(data, indent=2, ensure_ascii=False)
+                entry["schema"] = output_model.raw_schema
             else:
                 text, data = run.data.model_dump_json(indent=2), run.data
                 entry["schema"] = schema.__name__
@@ -387,6 +395,16 @@ def _root(where) -> Path:
 
 def _folder(session_id: str, where=None) -> Path:
     return _root(where) / session_id
+
+
+def _output_model(schema):
+    """What the backend is asked for: plain text, a Pydantic class, or a class
+    standing for a JSON schema."""
+    if schema is None:
+        return Text
+    if isinstance(schema, type) and issubclass(schema, BaseModel):
+        return schema
+    return json_schema.model_for(schema)
 
 
 def _check_id(session_id: str) -> None:

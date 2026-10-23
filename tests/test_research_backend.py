@@ -165,8 +165,14 @@ class Spy:
     def run_structured(self, **kwargs):
         self.calls.append(kwargs)
         model = kwargs["output_model"]
-        data = (model(text=f"answer {len(self.calls)}") if model is sessions.Text
-                else model.model_validate({"dataset": "imdb", "why": "free"}))
+        if model is sessions.Text:
+            data = model(text=f"answer {len(self.calls)}")
+        elif hasattr(model, "raw_schema"):
+            from research_backend.json_schema import example
+
+            data = model.model_validate(example(model.raw_schema))
+        else:
+            data = model.model_validate({"dataset": "imdb", "why": "free"})
         return StructuredRun(data=data, thread_id=kwargs["thread_id"] or "provider-thread-1",
                              is_new_thread=kwargs["thread_id"] is None,
                              usage=Usage(input_tokens=1500, cached_input_tokens=1000,
@@ -367,6 +373,68 @@ def test_a_schema_gets_a_structured_answer(spy):
     reply = RB(provider="fake").send("pick one", schema=Pick)
     assert isinstance(reply.data, Pick) and reply.data.dataset == "imdb"
     assert json.loads(reply.text) == {"dataset": "imdb", "why": "free"}
+
+
+PAPERS = {
+    "title": "Papers", "type": "object", "required": ["papers"],
+    "properties": {"papers": {"type": "array", "items": {
+        "type": "object", "required": ["title", "year", "kind"],
+        "properties": {"title": {"type": "string"}, "year": {"type": "integer"},
+                       "kind": {"type": "string", "enum": ["method", "dataset", "survey"]}}}}}}
+
+
+def test_a_json_schema_from_a_dict_text_or_file_gives_a_dict(tmp_path):
+    path = tmp_path / "papers.json"
+    path.write_text(json.dumps(PAPERS))
+    reader = RB(provider="fake")
+    for schema in (PAPERS, json.dumps(PAPERS), str(path), path):
+        reply = reader.send("two papers", schema=schema)
+        assert reply.data == {"papers": [{"title": "[fake title #%d]" % reply.turn,
+                                          "year": reply.turn, "kind": "method"}]}
+        assert json.loads(reply.text) == reply.data
+    assert reader.session.turns[0]["schema"] == PAPERS, "kept with the turn"
+
+
+def test_set_schema_shapes_every_answer_until_cleared(spy):
+    reader = RB(provider="fake").set_schema(PAPERS)
+    reader.send("one")
+    assert spy.calls[-1]["output_model"].raw_schema == PAPERS
+
+    class Pick(BaseModel):
+        dataset: str
+        why: str
+
+    assert isinstance(reader.send("two", schema=Pick).data, Pick), "per message wins"
+    reader.set_schema(None)
+    assert str(reader.send("three")) == "answer 3", "plain text again"
+
+
+def test_a_json_schema_is_checked_both_ways():
+    from pydantic import ValidationError
+
+    from research_backend import json_schema
+    from research_backend.backends._schema import strict_json_schema
+
+    reader = RB(provider="fake")
+    with pytest.raises(ValueError, match="top level must be"):
+        reader.set_schema({"type": "array"})
+    with pytest.raises(ValueError, match="not a valid JSON schema"):
+        reader.set_schema({"type": "object", "properties": {"a": {"type": "strin"}}})
+    with pytest.raises(ValueError, match="not valid JSON"):
+        reader.set_schema("{not json")
+    with pytest.raises(FileNotFoundError):
+        reader.set_schema("/no/such/schema.json")
+
+    model = json_schema.model_for(PAPERS)
+    # What is SENT is the schema, made strict the way codex requires.
+    sent = strict_json_schema(model)
+    assert sent["additionalProperties"] is False
+    assert sent["properties"]["papers"]["items"]["additionalProperties"] is False
+    # What comes BACK is checked against the schema as written.
+    good = model.model_validate_json('{"papers": [{"title": "LoRA", "year": 2021, "kind": "method"}]}')
+    assert good.root["papers"][0]["title"] == "LoRA"
+    with pytest.raises(ValidationError, match="papers/0/kind: 'blog' is not one of"):
+        model.model_validate_json('{"papers": [{"title": "x", "year": 1, "kind": "blog"}]}')
 
 
 def test_a_failed_turn_is_recorded_and_raised(monkeypatch):

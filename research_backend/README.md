@@ -81,12 +81,13 @@ away rather than at the first message.
 | `.status(provider=None)` | whether it is installed and logged in |
 | `.set_provider(name, model=None)` | talk to another provider; the current session is put aside, since a session belongs to one provider |
 | `.set_model(model)`, `.set_effort(level)`, `.set_access(level)`, `.set_instructions(text)` | from the next message on; the current session carries on with them |
+| `.set_schema(schema)` | the shape of every answer from now on: a JSON schema or a Pydantic class; `None` for plain text |
 | `.list_efforts(provider=None, model=None)` | the effort levels a model has (the current one unless named) |
 | `.new_session(name=None, workdir=None, exist_ok=False)` | start a conversation and make it current; returns its id, made up if you give no name. A name already taken is refused, unless `exist_ok=True`, which continues that session |
 | `.open_session(id)` | continue an earlier session; its provider and model become current |
 | `.list_sessions(provider=None)` | every session, or one provider's, most recently used first; prints as a table |
 | `.close_session()` | stop using the current session, and keep it; the next `send()` starts a new one |
-| `.send(prompt, schema=None, progress=False)` | send a message and wait for the `Reply`; starts a session if there is none |
+| `.send(prompt, schema=None, progress=False)` | send a message and wait for the `Reply`; starts a session if there is none; `schema` shapes this answer only |
 | `.context()` | how much of the model's context window the conversation fills, and its last turns |
 | `.history(last=None)` | the conversation so far, as text |
 | `.delete_session(id=None)` | delete a session for good, the current one unless named |
@@ -149,7 +150,39 @@ levels differ.
 | `seconds` | how long the turn took |
 | `events` | what the model did on the way: commands, file changes, reasoning |
 
-Ask for a structured answer with a Pydantic class:
+## Structured answers: a JSON schema
+
+Give a JSON schema and the answer comes back as a dict that matches it. The
+schema can be a dict, JSON text, or the path of a `.json` file:
+
+```python
+papers = {
+    "type": "object",
+    "properties": {
+        "papers": {
+            "type": "array",
+            "items": {
+                "type": "object",
+                "properties": {
+                    "title": {"type": "string"},
+                    "year": {"type": "integer"},
+                    "kind": {"type": "string", "enum": ["method", "dataset", "survey"]},
+                },
+                "required": ["title", "year", "kind"],
+            },
+        }
+    },
+    "required": ["papers"],
+}
+
+reply = reader.send("Name two papers on LoRA.", schema=papers)    # this answer only
+reply.data["papers"][0]["title"]          # 'LoRA: Low-Rank Adaptation of Large Language Models'
+
+reader.set_schema("schemas/papers.json")  # every answer from now on
+reader.set_schema(None)                   # plain text again
+```
+
+A Pydantic class works the same way, and then `reply.data` is an instance of it:
 
 ```python
 from pydantic import BaseModel
@@ -158,9 +191,16 @@ class Pick(BaseModel):
     dataset: str
     why: str
 
-reply = reader.send("Pick the best one.", schema=Pick)
-reply.data.dataset
+reader.send("Pick the best one.", schema=Pick).data.dataset
 ```
+
+The rules:
+
+- **The top level must be an object** (`"type": "object"`): the providers answer with a JSON object. For a list, put it in a property, as `papers` is above.
+- **Strict mode:** the schema sent is tightened the way Codex requires. Every property is required, and no extra properties are allowed. So an optional field comes back present, possibly empty, rather than missing.
+- **Checked twice:** the provider enforces the schema, and the answer is checked again against your schema as written. A bad schema is refused when you set it, and an answer that does not match raises `BackendOutputError`.
+
+`reply.text` is the answer as JSON text either way.
 
 `send(..., progress=True)` prints what the model is doing while it works;
 otherwise turns are quiet, and the same detail is in the reply's `events`.

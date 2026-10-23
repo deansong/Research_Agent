@@ -58,6 +58,7 @@ class ResearchBackend:
         self._provider: str | None = None
         self._model = model
         self._effort = effort
+        self._schema = None
         self._access = access
         self._instructions = instructions
         self._workdir = workdir
@@ -157,6 +158,18 @@ class ResearchBackend:
         if provider is None:
             provider, model = self._need(None), model or self.model
         return list_efforts(provider, model)
+
+    def set_schema(self, schema) -> "ResearchBackend":
+        """The shape of every answer from now on: a Pydantic class, or a JSON
+        schema (dict, JSON text, or .json file path). None: plain text again.
+        A bad schema is refused here, not at the next send."""
+        if schema is not None and not (isinstance(schema, type)
+                                       and issubclass(schema, BaseModel)):
+            from research_backend import json_schema
+
+            json_schema.model_for(schema)  # check it now
+        self._schema = schema
+        return self
 
     def set_access(self, access: str) -> "ResearchBackend":
         """"none", "read_only", "write" or "full", from the next message on."""
@@ -263,15 +276,19 @@ class ResearchBackend:
 
     # ---- talking ----------------------------------------------------------------------
 
-    def send(self, prompt: str, *, schema: type[BaseModel] | None = None,
-             progress: bool = False) -> Reply:
+    def send(self, prompt: str, *, schema=None, progress: bool = False) -> Reply:
         """Send a message in the current session and wait for the answer; with
-        no session yet, one is started. `schema` (a Pydantic class) asks for a
-        structured answer, in the reply's `data`; `progress=True` prints what
-        the model does while it works."""
+        no session yet, one is started.
+
+        schema    the shape of the answer, for this message: a Pydantic class
+                  (reply.data is an instance), or a JSON schema -- a dict, JSON
+                  text or a .json file path (reply.data is a dict). Without
+                  one, the schema from set_schema(), else plain text.
+        progress  print what the model does while it works"""
         if self._session is None:
             self.new_session()
-        return self._session.send(prompt, schema=schema, progress=progress)
+        return self._session.send(prompt, schema=schema if schema is not None else self._schema,
+                                  progress=progress)
 
     def history(self, last: int | None = None) -> str:
         """The conversation so far, as text."""

@@ -49,7 +49,12 @@ class FakeBackend:
         thread = thread_id or f"fake-thread-{turn}"
         self.turns[thread] = self.turns.get(thread, 0) + 1
 
-        fields = _placeholder_fields(output_model, turn)
+        if hasattr(output_model, "raw_schema"):   # a JSON schema, not a class
+            from research_backend.json_schema import example
+
+            fields = example(output_model.raw_schema, turn)
+        else:
+            fields = _placeholder_fields(output_model, turn)
         if set(output_model.model_fields) == {"text"}:
             fields = {"text": f"[fake] reply {self.turns[thread]} in this conversation, "
                               f"to: {prompt.strip()[:200]}"}
