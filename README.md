@@ -568,14 +568,27 @@ the role and the fix.
 
 `python main.py login` asks each of them directly — `codex login status`,
 `claude auth status --json`, `agy models`. The measured details are in
-`agent/backends/auth.py`, including the one that matters: `claude auth status`
+`research_backend/auth.py`, including the one that matters: `claude auth status`
 exits 0 whether or not you are signed in, so the exit code cannot be the test.
 
-The two CLI backends share `agent/backends/_cli.py` — one subprocess per turn,
+The two CLI backends share `research_backend/backends/_cli.py` — one subprocess per turn,
 NDJSON out — so each provider module is just vocabulary: an argv builder, an
 access mapping, an event mapping and a usage mapping. Neither needs a Python
 package installed; they need the CLI on `PATH` and logged in, and they say so
 at startup if it is not.
+
+The providers are a package of their own, `research_backend`, usable without
+the agent: which models each provider offers, how much of its usage limits is
+left, and conversations you can continue by id from any script.
+
+```python
+import research_backend as rb
+print(rb.usage())
+rb.new_session("codex", name="lit-review").send("Which datasets exist for ...?")
+rb.send("lit-review", "Which of those are free to use?")
+```
+
+See [research_backend/README.md](research_backend/README.md).
 
 ---
 

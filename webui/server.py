@@ -860,7 +860,7 @@ def _register(app: FastAPI) -> None:
     def models(provider: str | None = None, refresh: bool = False):
         """The models each provider offers, for the dropdowns that pick one.
 
-        Asked of the providers themselves (see agent/backends/models.py), in
+        Asked of the providers themselves (see research_backend/catalog.py), in
         parallel, and cached for a few minutes. A provider that cannot answer
         is still listed, with an empty list and the reason.
         """

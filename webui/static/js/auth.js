@@ -129,7 +129,7 @@ export class AuthPanel {
     badge.className = 'auth-badge';
     // Three states, not two. "Could not tell" must not read as "signed out",
     // or people re-run a login that is working -- the same three-valued rule
-    // the probe itself keeps. See agent/backends/auth.py.
+    // the probe itself keeps. See research_backend/auth.py.
     badge.textContent = !provider.installed ? 'not installed'
       : provider.logged_in === null ? 'unknown'
       : provider.logged_in ? 'signed in' : 'signed out';

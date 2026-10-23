@@ -6,7 +6,7 @@ CONCEPT: Not LangGraph -- but note that usage_by_role IS a state channel, so
        these dicts get checkpointed and survive a restart.
 
 Every provider reports usage differently.  Each backend converts to the
-neutral Usage dataclass (agent/backends/base.py) and this module only ever
+neutral Usage dataclass (research_backend/base.py) and this module only ever
 sees that one shape.
 """
 

@@ -1,0 +1,17 @@
+[build-system]
+requires = ["setuptools>=64"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "research-backend"
+version = "0.1.0"
+description = "Codex, Claude Code and Antigravity behind one interface: models, usage limits, and sessions you can continue."
+readme = "research_backend/README.md"
+requires-python = ">=3.11"
+dependencies = ["pydantic>=2"]
+
+[project.optional-dependencies]
+codex = ["openai-codex"]
+
+[tool.setuptools.packages.find]
+include = ["research_backend*"]

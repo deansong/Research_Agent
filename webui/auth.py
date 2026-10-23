@@ -27,7 +27,7 @@ Antigravity.  `agy` has no login subcommand at all -- signing in means running
 the bare TUI, which opens the alternate screen buffer and negotiates the kitty
 keyboard protocol.  Driving that from a browser means writing a terminal
 emulator, and a half-working one would be worse than the sentence telling you
-to run `agy` yourself.  agent/backends/auth.py says so per provider, in
+to run `agy` yourself.  research_backend/auth.py says so per provider, in
 `browser_login`, and the page reads it from there rather than hardcoding it.
 
 --------------------------------------------------------------------------

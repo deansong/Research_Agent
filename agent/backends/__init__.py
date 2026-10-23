@@ -10,23 +10,16 @@ from __future__ import annotations
 
 from typing import Mapping
 
-from agent.backends.base import Access, AgentBackend, BackendUnavailable
+from research_backend.base import Access, AgentBackend, BackendUnavailable
 
-# provider name -> the class implementing it.
-# Adding a provider = write the module, add one line here, done.
-PROVIDERS: dict[str, str] = {
-    "codex": "agent.backends.codex:CodexBackend",
-    "claude_code": "agent.backends.claude_code:ClaudeCodeBackend",
-    "api": "agent.backends.api:ApiBackend",
-    "antigravity": "agent.backends.antigravity:AntigravityBackend",
-    "fake": "agent.backends.fake:FakeBackend",
-}
+# provider name -> the class implementing it. The providers live in the
+# research_backend package; the agent swaps in its own fake, which also plays
+# the planner, designer and orchestrator.
+from research_backend.backends import PROVIDERS as _PACKAGE_PROVIDERS
+from research_backend.backends import STUB_PROVIDERS  # noqa: F401 -- re-exported
 
-
-#: Registered, but not implemented. The tests read THIS rather than keeping a
-#: copy: a hand-maintained list is exactly how a test asserting "these three
-#: refuse to construct" would keep passing after two of them started working.
-STUB_PROVIDERS: frozenset[str] = frozenset({"api"})
+PROVIDERS: dict[str, str] = {**_PACKAGE_PROVIDERS,
+                             "fake": "agent.backends.fake:FakeBackend"}
 
 
 def _load(provider: str):
@@ -125,7 +118,7 @@ def _warn_signed_out(built: dict) -> None:
     on an unverified signal would block a setup that works; saying so loudly
     costs a line.
     """
-    from agent.backends.auth import status_all
+    from research_backend.auth import status_all
 
     providers = sorted({backend.name for backend in built.values()})
     signed_out = [s for s in status_all(providers) if s.logged_in is False]

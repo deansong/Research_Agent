@@ -79,7 +79,7 @@ SANDBOX_GPU_NOTE = (
 def sandbox_note(backend, access: str) -> str:
     """The GPU note, for a turn that runs in Codex's sandbox: any Codex turn,
     unless its role has `gpu` on and the turn may write (see
-    agent/backends/codex.py)."""
+    research_backend/backends/codex.py)."""
     if getattr(backend, "name", "") != "codex":
         return ""
     if getattr(backend, "gpu", False) and access == "write":

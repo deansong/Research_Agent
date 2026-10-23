@@ -16,7 +16,7 @@ CONCEPT: A wrapper in front of the role's backend. Its primary is told not to
 
 from __future__ import annotations
 
-from agent.backends.base import BackendError, BackendOutOfCredits
+from research_backend.base import BackendError, BackendOutOfCredits
 
 #: Set on BOTH backends, so whichever is active has them: Stop and Pause,
 #: the live-progress callback, the extra writable folders.

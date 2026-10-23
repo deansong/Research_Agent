@@ -1,0 +1,421 @@
+"""
+WHAT:  The Antigravity backend -- drives the `agy` CLI, one subprocess a turn.
+WHY:   It reaches models nothing else here does (Gemini 3.8 Flash and 3.1 Pro,
+       GPT-OSS 120B), and the cheap tiers are a good fit for the roles that
+       run experiments rather than design them.
+CONCEPT: An adapter. All the machinery is in _cli.py; this file is vocabulary.
+
+--------------------------------------------------------------------------
+MEASURED, 2026-09-08, agy 1.1.27
+--------------------------------------------------------------------------
+The envelope, from `-p --output-format json --json-schema <path>`:
+
+    {"conversation_id": "...", "status": "SUCCESS",
+     "response": "{\\"answer\\":\\"ok\\",\\"toolAction\\":\\"...\\"}\\n",
+     "structured_output": {"answer": "ok"},
+     "json_schema": {...echoed...},
+     "usage": {"input_tokens", "output_tokens", "thinking_tokens",
+               "cache_read_tokens", "total_tokens"}}
+
+USE `structured_output`, NOT `response`. They are not the same: `response`
+carried two keys the model invented (toolAction, toolSummary) that the schema
+did not ask for, and `structured_output` is parsed and filtered to the schema.
+Reading `response` would hand extra="forbid" models a validation error that
+has nothing to do with the design.
+
+`status: "SUCCESS"` IS NOT A SUCCESS TEST. A denied tool call gives SUCCESS,
+`response: ""`, and no `structured_output` at all. The presence of a parseable
+answer is the only test worth running -- _cli.py does that.
+
+CONVERSATION IDS ARE READ BACK, NOT MINTED. `--conversation <fresh-uuid>`
+prints `warning: conversation "..." not found` on stderr and then silently
+creates a DIFFERENT conversation, so a minted id would leave every turn
+starting fresh while we believed it was resuming. Resuming a real id works --
+a second turn recalled a codeword from the first.
+
+DO NOT USE `--continue`. It means "the most recent conversation in this
+directory": two agy roles in one repository would continue each OTHER's
+conversation, and the symptom -- a checker that already knows what the runner
+was told -- would take a long time to trace back here.
+
+--------------------------------------------------------------------------
+ACCESS, AND WHY THERE IS NO MIDDLE SETTING
+--------------------------------------------------------------------------
+Measured with one prompt and every flag set agy offers, in `-p` mode. The
+last row was added after a real run failed on it:
+
+    --sandbox                       run a command: DENIED   read a file: DENIED
+    --mode accept-edits             run a command: DENIED
+    --dangerously-skip-permissions  run a command: works    read a file: works
+    --mode plan                     read a file: DENIED
+                                    (denied_actions: read_file / ListDir)
+
+`--mode plan` was the last candidate for a genuine read-only setting, and it
+is not one: it refuses reads as firmly as --sandbox refuses commands. So this
+CLI has a HOLE IN THE MIDDLE of the access range -- it can do FULL and it
+cannot do READ_ONLY -- which `max_access` cannot express, because that field
+assumes a backend able to do more can also do less.
+
+`unsupported_access` below is what expresses it, and build_backends refuses
+the combination at startup. Before that, every check_* verifier pointed here
+spent about 90 seconds and 45,000 tokens to return SUCCESS with no answer,
+and the shipped default put `checker` on this provider -- so every generated
+research agent had four broken verifiers in it.
+
+The node's declared `access` in nodes.json stays the policy boundary for the
+levels this backend CAN serve, and the backend prints a line naming the flag
+every time it uses --dangerously-skip-permissions, because a silent one is
+the one thing here that can damage a machine.
+
+Denial is at least clean: it refuses rather than blocking, arrives as a
+step_update with state "ERROR" and a readable tool_info.error.message, and
+the final envelope lists what was refused in `denied_actions`.
+
+--------------------------------------------------------------------------
+THE STREAM
+--------------------------------------------------------------------------
+`--output-format stream-json` discriminates on `event`, not `type`:
+
+    {"event": "init",        "init": {model, cwd, tools}}
+    {"event": "step_update", "step_update": {step_index, state, step_type,
+                                             tool_name, tool_info, usage}}
+    {"event": "result",      "result": {...the envelope above...}}
+
+There are no text deltas -- no --include-partial-messages equivalent -- so the
+live-text tail stays empty for this provider and the heartbeat falls back to
+the last step it saw. Not a defect to fix here; the CLI does not send them.
+"""
+
+from __future__ import annotations
+
+from research_backend.backends._cli import CliBackend, usage_from_keys
+from research_backend.backends._progress import _clip
+from research_backend.base import Access, BackendUnavailable, Usage
+
+#: The parameter that says WHAT a tool acted on, per tool. Without it every
+#: non-command tool call reads "view_file" with no object, which is the same
+#: amount of information as "* tool" -- the thing this replaced.
+_TOOL_SUBJECT = ("CommandLine", "AbsolutePath", "DirectoryPath", "Pattern",
+                 "SearchDirectory", "Query", "TaskId")
+
+
+def _describe_tool(name: str, params: dict) -> str:
+    """`view_file /repo/train.py`, not `view_file`."""
+    for key in _TOOL_SUBJECT:
+        value = params.get(key)
+        if value:
+            return f"{name} {value}" if name else str(value)
+    return name
+
+
+#: state -> the phase vocabulary _progress.py already uses, so headline(),
+#: Turn.counts() and the web UI's activity panel work with no changes.
+_PHASE = {"ACTIVE": "started", "DONE": "completed", "ERROR": "error"}
+
+#: An ERROR envelope whose `error` says the model was full rather than the
+#: request wrong -- the measured 503 in _why_empty below is the model case.
+#: Retried a few times with backoff by _cli.py.
+_TRANSIENT = ("unavailable", "no capacity", "503", "502", "429",
+              "resource_exhausted", "overloaded", "rate limit",
+              "deadline_exceeded", "try again")
+
+
+class AntigravityBackend(CliBackend):
+    name = "antigravity"
+    label = "Antigravity"
+    executable_default = "agy"
+
+    supports_repo_access = True
+    #: FULL, raised from NONE. The CLI genuinely can do this, and max_access is
+    #: a capability statement -- policy is the node's declared `access`, which
+    #: _check_access enforces against this. Left at NONE, the research
+    #: skeleton's run_exp_* nodes (which declare write) could not use it at all.
+    max_access = Access.FULL
+    #: The hole in the middle. MEASURED 2026-09-15, agy 1.1.27, all three
+    #: settings, with a prompt that asks for one file to be read:
+    #:
+    #:   --sandbox                        denied_actions: RunCommand
+    #:   --mode plan                      denied_actions: read_file (ListDir)
+    #:   --dangerously-skip-permissions   works
+    #:
+    #: So there is no read-only mode: a node declared read_only would get a
+    #: turn that can do nothing, return SUCCESS with no structured_output, and
+    #: fail 90 seconds in. Declared here so build_backends refuses at startup
+    #: and names the role instead.
+    unsupported_access = frozenset({Access.READ_ONLY})
+
+    def __init__(self, *, effort: str | None = None, **options):
+        self.effort = effort
+        self._warned_dangerous = False
+        super().__init__(**options)
+
+    # ---- vocabulary ------------------------------------------------------
+
+    def argv(self, *, prompt, instructions, access, schema_path, session):
+        # agy has no system-prompt flag, so the persona rides in the prompt.
+        # Separated loudly, because the model has to be able to tell the
+        # standing instructions from this turn's request.
+        body = prompt
+        if instructions.strip():
+            body = (f"{instructions.strip()}\n\n"
+                    f"{'=' * 70}\n\n{prompt}")
+
+        argv = [self.executable, "-p", body,
+                "--output-format", "stream-json",
+                "--json-schema", schema_path,
+                # Above our own idle timeout, so the CLI never gives up first:
+                # its default is 5m and ours is 300s, which would race.
+                "--print-timeout", f"{int(self.max_seconds)}s"]
+        if self.model:
+            argv += ["--model", self.model]
+        if self.effort:
+            argv += ["--effort", self.effort]
+        argv += self.access_flags(access)
+        return argv + session
+
+    def access_flags(self, access: Access) -> list[str]:
+        """See the module docstring: there is no middle setting.
+
+        READ_ONLY never reaches here -- `unsupported_access` refuses it at
+        startup. NONE still maps to --sandbox, and for NONE that IS honest: a
+        node declared `none` is asking for a turn that touches nothing, and
+        refusing every tool call is exactly that.
+        """
+        if access is Access.NONE:
+            return ["--sandbox"]
+
+        # Defence in depth, and not theoretical: build_backends checks a ROLE
+        # at the maximum access any node using it asks for, so a role shared
+        # between a read_only verifier and a write worker passes that check as
+        # "write" -- and the verifier would then fall through to the branch
+        # below and run with permission checks off. A node declared read_only
+        # silently getting --dangerously-skip-permissions is the worst outcome
+        # available here, so this refuses instead.
+        if access is Access.READ_ONLY:
+            raise BackendUnavailable(
+                "A node asked for read_only access on antigravity, which "
+                "cannot express that level -- see the module docstring. "
+                "Running it anyway would mean --dangerously-skip-permissions "
+                "for a node declared read_only.\n"
+                "Point that node's role at another provider:\n"
+                '    {"roles": {"checker": {"provider": "codex"}}}'
+            )
+
+        if not self._warned_dangerous:
+            self._warned_dangerous = True
+            print(f"[antigravity] {access.value} access runs `agy` with "
+                  f"--dangerously-skip-permissions; it has no setting between "
+                  f"that and refusing every tool call.", flush=True)
+        return ["--dangerously-skip-permissions"]
+
+    def session_args(self, thread_id):
+        # minted=None: ids come BACK from agy, they are not accepted.
+        return (["--conversation", thread_id] if thread_id else [], None)
+
+    def is_envelope(self, event):
+        return event.get("event") == "result"
+
+    def record_for(self, event):
+        kind = event.get("event")
+        if kind == "init":
+            return None
+        if kind == "result":
+            return None
+        if kind != "step_update":
+            return {"kind": str(kind or "unknown"), "phase": "other"}
+
+        step = event.get("step_update") or {}
+        phase = _PHASE.get(str(step.get("state")), "other")
+        step_type = step.get("step_type")
+
+        if step_type == "tool":
+            info = step.get("tool_info") or {}
+            params = info.get("parameters") or {}
+            tool_name = step.get("tool_name", "")
+            entry = {
+                "kind": "command" if tool_name == "run_command" else "tool",
+                "phase": phase,
+                "command": (params.get("CommandLine")
+                            or _describe_tool(tool_name, params)),
+            }
+            error = info.get("error") or {}
+            if error:
+                entry["output"] = str(error.get("message", ""))[:4000]
+                entry["exit_code"] = 1
+            elif info.get("output") is not None:
+                # MEASURED 2026-09-16, agy 1.2.4: tool_info.output carries what
+                # the command PRINTED, and this branch did not exist -- so a
+                # training run's "epoch 2/3 loss=0.712 acc=0.88" was parsed,
+                # thrown away, and the only thing left to watch was the step
+                # counter. The web UI has rendered `output` all along; nothing
+                # was ever putting it there for this provider.
+                #
+                # It arrives on the DONE step, so it is a record of what the
+                # command said, not a live feed while it says it.
+                entry["output"] = _clip(str(info["output"]))
+                if phase == "completed":
+                    entry["exit_code"] = 0
+            return entry
+
+        if step_type == "agent_response":
+            # agy sends NO reasoning text -- measured against 1.2.4, and there
+            # is no flag for it: an agent_response step carries step_index,
+            # duration_seconds and usage, and nothing else. This used to render
+            # as "step 171", which is a line that repeats, says nothing, and
+            # crowds out the lines that do.
+            #
+            # So report the two facts it DOES carry. "thought for 41s" is the
+            # honest version of the thinking process from this provider, and
+            # unlike a step number it tells you whether a quiet stretch was
+            # deliberation or a hang.
+            seconds = step.get("duration_seconds")
+            thinking = (step.get("usage") or {}).get("thinking_tokens")
+            if phase != "completed" or not seconds:
+                return None
+            said = f"thought for {float(seconds):.0f}s"
+            if thinking:
+                said += f" ({int(thinking):,} thinking tokens)"
+            return {"kind": "reasoning", "phase": phase, "summary": [said]}
+        return None
+
+    def final_text(self, envelope):
+        import json
+
+        result = envelope.get("result") or envelope
+        parsed = result.get("structured_output")
+        return json.dumps(parsed) if parsed is not None else ""
+
+    def refusal_text(self, envelope):
+        result = envelope.get("result") or envelope
+        if str(result.get("status") or "").upper() != "ERROR":
+            return ""
+        if result.get("structured_output") is not None:
+            return ""
+        return str(result.get("error") or "")
+
+    def transient_error(self, envelope):
+        text = self.refusal_text(envelope)
+        return text if any(m in text.lower() for m in _TRANSIENT) else ""
+
+    def _why_empty(self, envelope, access=None):
+        """Say what was actually refused -- and only when something was.
+
+        MEASURED, agy 1.2.4, from a real failing envelope:
+
+            status: 'ERROR'
+            denied_actions: None
+            error: 'API error (attempt 1): UNAVAILABLE (code 503): No capacity
+                    available for model gemini-3.8-flash-medium on the server'
+
+        THE ENVELOPE SAYS WHY, IN `error`, AND THIS FUNCTION USED TO IGNORE IT.
+        Every empty answer got the same paragraph about the permission model
+        and the same advice to move `checker` to codex -- told, in the case
+        above, to somebody whose failing node was a `runner` with WRITE access
+        during a capacity outage. Nothing in the advice applied, the real
+        reason was in the envelope all along, and the one sentence that would
+        have ended it in ten seconds was thrown away to make room for a guess.
+
+        The permission diagnosis is real, and it is the right one when agy
+        lists denied_actions or the node ran read_only -- which the startup
+        check in build_backends now prevents in the first place. It is not the
+        right one for everything else, and the two are distinguishable.
+        """
+        result = envelope.get("result") or envelope
+        denied = result.get("denied_actions") or []
+        names = sorted({str(d.get("display_name") or d.get("action"))
+                        for d in denied if isinstance(d, dict)})
+        reported = str(result.get("error") or "").strip()
+        read_only = access is not None and str(getattr(access, "value", access)) \
+            == Access.READ_ONLY.value
+
+        # The provider's own words first, whenever it gave any. Even an error
+        # this file has never seen beats a confident sentence about the wrong
+        # subsystem, and an unrecognised one is how the next measurement
+        # starts.
+        if reported and not names:
+            return (
+                f"agy reported status={result.get('status')!r} and said:\n\n"
+                f"    {reported}\n\n"
+                f"That is the provider's own account of the failure, so start "
+                f"there -- it is not this node's prompt, its access level or "
+                f"its plan steps.\n\n"
+                f"A 503 or 'no capacity' is the model being full and says "
+                f"nothing about the run: try again, or pin this role to a "
+                f"model with room:\n"
+                f'    {{"roles": {{{self._role_hint()}: '
+                f'{{"model": "gemini-4-argon-medium"}}}}}}\n'
+                f"in <repo>/.agent/config.json."
+            )
+
+        # SUCCESS with no answer and no denials IS the measured denial
+        # signature -- that is the shape the read_only hole produces, and it
+        # is what the original measurement recorded. So when the access level
+        # is not known (an older call path, a direct test), that shape is
+        # still the best available reading. What it must NOT override is a
+        # known-good access level: WRITE can do everything on this CLI, so a
+        # denial there is impossible however empty the answer is.
+        status = str(result.get("status") or "")
+        looks_denied = access is None and status == "SUCCESS"
+
+        if names or read_only or looks_denied:
+            refused = (f"agy refused {', '.join(names)}" if names else
+                       f"agy reported status={result.get('status')!r} and sent "
+                       f"no structured_output, which is what a refused tool "
+                       f"call looks like"
+                       + (", and this node ran read_only" if read_only else ""))
+            return (
+                f"{refused}.\n\n"
+                f"This is agy's permission model, not the model failing. It "
+                f"has no setting between --dangerously-skip-permissions and "
+                f"refusing every tool call, so a node that must read files or "
+                f"run commands cannot run on this provider under read_only."
+                f"\n\n"
+                f"Point the role at a provider that can, which for a verifier "
+                f"is the right fix and costs one line:\n"
+                f'    {{"roles": {{{self._role_hint()}: '
+                f'{{"provider": "codex"}}}}}}\n'
+                f"in <repo>/.agent/config.json.\n\n"
+                f"Do NOT give a check_* node write access to get past this. A "
+                f"verifier is read_only by design -- that is what stops the "
+                f"judge fixing the work it is judging, and it is how the "
+                f"validator recognises a verifier at all."
+            )
+
+        # Nothing refused, nothing reported, nothing read_only. Say exactly
+        # that rather than picking a cause: the status and the absence of an
+        # error message are the whole of what is known.
+        return (
+            f"agy reported status={result.get('status')!r}, listed no denied "
+            f"actions and gave no error message, so it has not said why.\n\n"
+            f"The node ran with "
+            f"{str(getattr(access, 'value', access) or 'unknown')} access, "
+            f"which is a level this provider can express -- so this is not "
+            f"the permission hole that usually empties an agy answer. Rerun "
+            f"it; if it repeats, the turn's events are in the Conversation "
+            f"panel and the last one is where it stopped."
+        )
+
+    def _role_hint(self) -> str:
+        """The role names to put in the config snippet.
+
+        Hardcoding "checker" sent people to change a role their failing node
+        did not use. build_backends stamps the real ones onto the instance.
+        """
+        return ", ".join(f'"{role}"' for role in self.roles) or '"<role>"'
+
+    def usage_from(self, envelope) -> Usage | None:
+        result = envelope.get("result") or envelope
+        usage = result.get("usage")
+        if not usage:
+            return None
+        return usage_from_keys(
+            usage,
+            input_tokens="input_tokens",
+            output_tokens="output_tokens",
+            reasoning_tokens="thinking_tokens",
+            cached_input_tokens="cache_read_tokens",
+        )
+
+    def session_id_from(self, envelope):
+        result = envelope.get("result") or envelope
+        return result.get("conversation_id")

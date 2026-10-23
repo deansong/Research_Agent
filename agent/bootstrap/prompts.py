@@ -24,7 +24,7 @@ So the split is deliberate:
 The example is still read from disk rather than pasted, so what the model is
 shown can never drift from what the loader accepts.
 
-See SAFE_INSTRUCTIONS_CHARS in agent/backends/codex.py for the measurements.
+See SAFE_INSTRUCTIONS_CHARS in research_backend/backends/codex.py for the measurements.
 """
 
 from __future__ import annotations
