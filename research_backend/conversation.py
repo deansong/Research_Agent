@@ -32,6 +32,7 @@ from pydantic import BaseModel
 
 from research_backend import home as _home
 from research_backend import json_schema
+from research_backend import skills as _skills
 from research_backend.base import Access, BackendError, BackendUnavailable, Usage
 
 #: What a session id may look like: it is a folder name.
@@ -103,6 +104,15 @@ class Session:
     def effort(self) -> str | None:
         """How hard the model thinks; None = the model's default."""
         return self._record.get("effort")
+
+    @property
+    def skills(self) -> None | str | list[str]:
+        """The skills it is given: None, "auto", or a list of names."""
+        return self._record.get("skills")
+
+    @property
+    def skills_dir(self) -> str | None:
+        return self._record.get("skills_dir")
 
     @property
     def access(self) -> Access:
@@ -180,15 +190,22 @@ class Session:
         with _lock(self):
             self._reload()
             options = {**self.options, **({"effort": self.effort} if self.effort else {})}
-            backend = _backend(self.provider, self.model, options, quiet=not progress)
+            # The skills folder is readable on every turn that has skills, so
+            # "auto" can open them and the chosen ones' own files can be used.
+            readable = (self.skills_dir,) if self.skills is not None and self.skills_dir else ()
+            backend = _backend(self.provider, self.model, options, quiet=not progress,
+                               readable=readable)
             output_model = _output_model(schema)
             turn = len(self._record.get("turns", [])) + 1
             started = time.monotonic()
             entry: dict[str, Any] = {"turn": turn, "at": _now(), "prompt": prompt}
+            sent, skills_now = self._with_skills(prompt)
+            if sent != prompt:
+                entry["skills"] = self.skills
             try:
                 run = backend.run_structured(
                     thread_id=self.thread_id, repo_path=self.workdir, access=self.access,
-                    developer_instructions=self.instructions, prompt=prompt,
+                    developer_instructions=self.instructions, prompt=sent,
                     output_model=output_model)
             except BaseException as exc:
                 entry.update(error=f"{type(exc).__name__}: {exc}",
@@ -210,18 +227,40 @@ class Session:
                          events=len(run.events))
             if run.thread_id:
                 self._record["thread_id"] = run.thread_id
+            if sent != prompt:
+                self._record["skills_sent"] = skills_now
             self._append(entry)
             return Reply(session=self.id, turn=turn, text=text, data=data,
                          tokens=run.usage, seconds=seconds, events=list(run.events))
 
+    def _with_skills(self, prompt: str) -> tuple[str, dict]:
+        """The prompt as sent: with the skills in front when this conversation
+        has not been given the current choice yet -- its first message, or the
+        first after the choice changed. Not in the instructions: those go with
+        every message, and Codex hangs past ~6 KB of them."""
+        now = {"skills": self.skills, "skills_dir": self.skills_dir}
+        if self.skills is None or self._record.get("skills_sent") == now:
+            return prompt, now
+        text = _skills.block(self.skills, self.skills_dir, workspace=self.workdir)
+        if not text:
+            return prompt, now
+        return f"{text}\n\n{'=' * 70}\n\n{prompt}", now
+
     def update(self, *, model: str | None | object = ..., effort: str | None | object = ...,
-               access: str | Access | None = None,
-               instructions: str | None = None) -> "Session":
-        """Change the model, effort, access or instructions from the next turn
-        on. The conversation continues: the providers accept another model or
-        other instructions on a conversation they already have."""
+               access: str | Access | None = None, instructions: str | None = None,
+               skills: None | str | list | object = ...,
+               skills_dir: str | os.PathLike | None | object = ...) -> "Session":
+        """Change the model, effort, access, instructions or skills from the
+        next turn on. The conversation continues: the providers accept another
+        model or other instructions on a conversation they already have, and
+        new skills are sent with the next message."""
         with _lock(self):
             self._reload()
+            if skills is not ... or skills_dir is not ...:
+                choice = self.skills if skills is ... else skills
+                folder = self.skills_dir if skills_dir is ... else skills_dir
+                choice, folder = _skills.checked(choice, folder)
+                self._record["skills"], self._record["skills_dir"] = choice, folder
             if model is not ...:
                 self._record["model"] = model
             if effort is not ...:
@@ -286,6 +325,7 @@ class Session:
 
 
 def new_session(provider: str, *, model: str | None = None, effort: str | None = None,
+                skills: None | str | list = None, skills_dir: str | os.PathLike | None = None,
                 name: str | None = None,
                 workdir: str | os.PathLike | None = None,
                 access: str | Access | None = None, instructions: str = "",
@@ -296,6 +336,9 @@ def new_session(provider: str, *, model: str | None = None, effort: str | None =
     model         a model id from models(provider); None = the provider's default
     effort        how hard the model thinks: a level from its backend's `efforts`;
                   None = the model's default
+    skills        None, "auto" (the model is shown every skill and reads what it
+                  needs) or a list of skill names (given in full)
+    skills_dir    the folder of <name>/SKILL.md; $RESEARCH_BACKEND_SKILLS_DIR if None
     name          the session's id; made up from the provider and time if None
     workdir       the folder the model works in; a new empty one if None
     access        "none", "read_only", "write" or "full"; default read_only
@@ -310,6 +353,7 @@ def new_session(provider: str, *, model: str | None = None, effort: str | None =
     access = _access(access, cls)
     _check_access(provider, cls, access)
     effort = _effort(provider, cls, effort, model)
+    skills, skills_dir = _skills.checked(skills, skills_dir)
 
     session_id = name or f"{provider}-{datetime.now():%Y%m%d-%H%M%S}-{secrets.token_hex(2)}"
     _check_id(session_id)
@@ -329,6 +373,7 @@ def new_session(provider: str, *, model: str | None = None, effort: str | None =
 
     now = _now()
     record = {"id": session_id, "provider": provider, "model": model, "effort": effort,
+              "skills": skills, "skills_dir": skills_dir,
               "workdir": str(work), "access": access.value, "instructions": instructions,
               "options": options, "thread_id": None, "created_at": now, "updated_at": now,
               "turns": []}
@@ -370,17 +415,20 @@ _backends: dict[tuple, Any] = {}
 _backends_lock = threading.Lock()
 
 
-def _backend(provider: str, model: str | None, options: dict, *, quiet: bool = True):
-    """One backend per (provider, model, options, quiet), made on first use.
-    Quiet is part of the key so a session watched with progress=True does not
-    make another one, running at the same time, start printing."""
+def _backend(provider: str, model: str | None, options: dict, *, quiet: bool = True,
+             readable: tuple = ()):
+    """One backend per (provider, model, options, quiet, readable folders),
+    made on first use. Quiet and the folders are part of the key so that two
+    sessions running at once never change each other's."""
     from research_backend.backends import make
 
-    key = (provider, model, tuple(sorted((k, repr(v)) for k, v in options.items())), quiet)
+    key = (provider, model, tuple(sorted((k, repr(v)) for k, v in options.items())), quiet,
+           tuple(readable))
     with _backends_lock:
         if key not in _backends:
             backend = make(provider, model, **options)
             backend.quiet = quiet
+            backend.readable_roots = list(readable)
             _backends[key] = backend
         return _backends[key]
 

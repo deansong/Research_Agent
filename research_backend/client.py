@@ -36,6 +36,8 @@ class ResearchBackend:
 
     def __init__(self, provider: str | None = None, model: str | None = None, *,
                  effort: str | None = None,
+                 skills: None | str | list[str] = None,
+                 skills_dir: str | os.PathLike | None = None,
                  session: str | None = None, access: str | None = None,
                  instructions: str = "", workdir: str | os.PathLike | None = None,
                  home: str | os.PathLike | None = None, **options):
@@ -46,7 +48,13 @@ class ResearchBackend:
         effort        how hard the model thinks, e.g. "low", "medium", "high";
                       list_efforts() says which levels the provider has.
                       None = the model's default
-        session       continue this session (its provider and model come with it)
+        skills        which skills the model is given: None (none), "auto" (it
+                      is shown every skill and reads the ones it needs), or a
+                      list of skill names (given in full)
+        skills_dir    the folder of <name>/SKILL.md; $RESEARCH_BACKEND_SKILLS_DIR
+                      if None
+        session       continue this session (its provider, model and skills
+                      come with it)
         access        "none", "read_only", "write" or "full"; default read_only
                       (none on antigravity, which cannot do read_only)
         instructions  standing instructions, sent with every message
@@ -58,6 +66,9 @@ class ResearchBackend:
         self._provider: str | None = None
         self._model = model
         self._effort = effort
+        from research_backend import skills as _skills
+
+        self._skills, self._skills_dir = _skills.checked(skills, skills_dir)
         self._schema = None
         self._access = access
         self._instructions = instructions
@@ -90,6 +101,15 @@ class ResearchBackend:
         return self._session.effort if self._session else self._effort
 
     @property
+    def skills(self) -> None | str | list[str]:
+        """The skills the model is given: None, "auto", or a list of names."""
+        return self._session.skills if self._session else self._skills
+
+    @property
+    def skills_dir(self) -> str | None:
+        return self._session.skills_dir if self._session else self._skills_dir
+
+    @property
     def session_id(self) -> str | None:
         """The current session's id -- what you continue it by. None until a
         session is started or opened."""
@@ -102,7 +122,8 @@ class ResearchBackend:
 
     def __repr__(self) -> str:
         effort = f", effort={self.effort!r}" if self.effort else ""
-        return (f"RB(provider={self.provider!r}, model={self.model!r}{effort}, "
+        skills = f", skills={self.skills!r}" if self.skills is not None else ""
+        return (f"RB(provider={self.provider!r}, model={self.model!r}{effort}{skills}, "
                 f"session={self.session_id!r})")
 
     # ---- choosing -------------------------------------------------------------
@@ -171,6 +192,34 @@ class ResearchBackend:
         self._schema = schema
         return self
 
+    def set_skills(self, skills: None | str | list[str]) -> "ResearchBackend":
+        """Which skills the model is given, from the next message on: None,
+        "auto", or a list of names. An unknown name is refused here, listing
+        the folder's skills. In the current session too: the new skills go
+        with its next message."""
+        from research_backend import skills as _skills
+
+        self._skills, self._skills_dir = _skills.checked(skills, self.skills_dir)
+        if self._session:
+            self._session.update(skills=self._skills, skills_dir=self._skills_dir)
+        return self
+
+    def set_skills_dir(self, skills_dir: str | os.PathLike | None) -> "ResearchBackend":
+        """Where the skills are: a folder of <name>/SKILL.md. The chosen skills
+        must be in it."""
+        from research_backend import skills as _skills
+
+        self._skills, self._skills_dir = _skills.checked(self.skills, skills_dir)
+        if self._session:
+            self._session.update(skills=self._skills, skills_dir=self._skills_dir)
+        return self
+
+    def list_skills(self):
+        """The skills in the folder, the chosen ones marked; prints as a table."""
+        from research_backend import list_skills
+
+        return list_skills(self.skills_dir, chosen=self.skills)
+
     def set_access(self, access: str) -> "ResearchBackend":
         """"none", "read_only", "write" or "full", from the next message on."""
         if self._provider:
@@ -232,7 +281,8 @@ class ResearchBackend:
                                  f"not {self._provider}.")
             return self.open_session(name)
         self._session = conversation.new_session(
-            self._need(None), model=self._model, effort=self._effort, name=name,
+            self._need(None), model=self._model, effort=self._effort,
+            skills=self._skills, skills_dir=self._skills_dir, name=name,
             workdir=workdir if workdir is not None else self._workdir,
             access=self._access, instructions=self._instructions, home=self._home,
             **self._options)
@@ -245,6 +295,7 @@ class ResearchBackend:
         self._provider = self._session.provider
         self._model = self._session.model
         self._effort = self._session.effort
+        self._skills, self._skills_dir = self._session.skills, self._session.skills_dir
         return self._session.id
 
     def close_session(self) -> str | None:

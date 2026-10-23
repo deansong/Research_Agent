@@ -277,7 +277,7 @@ def test_changing_model_access_or_instructions_carries_the_session_on(spy):
 def test_effort_is_set_kept_with_the_session_and_sent(monkeypatch):
     made = []
 
-    def backend(provider, model, options, quiet=True):
+    def backend(provider, model, options, quiet=True, readable=()):
         made.append(dict(options))
         return Spy()
 
@@ -551,6 +551,136 @@ def test_sessions_can_be_kept_elsewhere_renamed_and_deleted(spy, tmp_path):
     assert mine.session_id is None and tmp_path.exists(), "a workdir you chose stays"
     RB().delete_session("final")
     assert list(RB.list_sessions()) == []
+
+
+# ---- skills --------------------------------------------------------------------------
+
+
+@pytest.fixture
+def skills_dir(tmp_path, monkeypatch):
+    """A folder of two skills, and no $RESEARCH_BACKEND_SKILLS_DIR."""
+    monkeypatch.delenv("RESEARCH_BACKEND_SKILLS_DIR", raising=False)
+    root = tmp_path / "skills"
+    (root / "alpha").mkdir(parents=True)
+    (root / "alpha" / "SKILL.md").write_text(
+        "---\nname: alpha\ndescription: >\n  First skill,\n  for testing.\nlicense: MIT\n---\n\n"
+        "ALPHA BODY: run {python} {skill_dir}/tool.py in {workspace}, read {skills_dir}, "
+        "keep \\usepackage{acl} and {artifacts_dir} as written.\n")
+    (root / "beta").mkdir()
+    (root / "beta" / "SKILL.md").write_text("---\ndescription: Second.\n---\nBETA BODY\n")
+    (root / "notes").mkdir()                       # no SKILL.md: not a skill
+    (root / "notes" / "README.md").write_text("x")
+    return root
+
+
+def test_skills_are_found_in_a_folder_and_listed(skills_dir):
+    listed = RB.list_skills(skills_dir)
+    assert listed.names == ["alpha", "beta"]
+    assert listed[0].description == "First skill, for testing.", "YAML > block"
+    assert listed[0].body.startswith("ALPHA BODY")
+    text = str(RB(provider="fake", skills_dir=skills_dir, skills=["beta"]).list_skills())
+    assert text.splitlines()[0] == f"2 skills in {skills_dir}"
+    assert " * beta" in text and "   alpha" in text
+    assert str(RB.list_skills()).startswith("(no skills folder")
+
+
+def test_auto_lists_the_skills_and_chosen_ones_are_given_in_full(spy, skills_dir):
+    auto = RB(provider="fake", skills_dir=skills_dir, skills="auto")
+    auto.send("plan a study")
+    first = spy.calls[-1]["prompt"]
+    assert first.startswith("SKILLS YOU CAN USE")
+    assert "alpha: First skill, for testing." in first
+    assert str(skills_dir / "beta" / "SKILL.md") in first
+    assert "ALPHA BODY" not in first and first.endswith("plan a study")
+
+    chosen = RB(provider="fake", skills_dir=skills_dir, skills=["alpha"])
+    chosen.send("go")
+    sent = spy.calls[-1]["prompt"]
+    assert sent.startswith("SKILLS FOR THIS TASK") and "BETA BODY" not in sent
+    workdir = chosen.session.workdir
+    assert f"run {sys.executable} {skills_dir / 'alpha'}/tool.py in {workdir}" in sent
+    assert f"read {skills_dir}," in sent
+    assert "\\usepackage{acl} and {artifacts_dir} as written" in sent, "others left alone"
+
+
+def test_skills_go_with_the_first_message_and_again_only_when_changed(spy, skills_dir):
+    reader = RB(provider="fake", skills_dir=skills_dir, skills=["alpha"])
+    reader.send("one")
+    reader.send("two")
+    assert "ALPHA BODY" in spy.calls[0]["prompt"]
+    assert spy.calls[1]["prompt"] == "two"
+    assert spy.calls[0]["developer_instructions"] == "", "not in the instructions"
+
+    reader.set_skills(["beta"])
+    reader.send("three")
+    assert "BETA BODY" in spy.calls[2]["prompt"] and spy.calls[2]["prompt"].endswith("three")
+
+    later = RB(session=reader.session_id)
+    assert later.skills == ["beta"] and later.skills_dir == str(skills_dir)
+    later.send("four")
+    assert spy.calls[3]["prompt"] == "four", "continued later: not sent again"
+
+    turns = later.session.turns
+    assert [t.get("skills") for t in turns] == [["alpha"], None, ["beta"], None]
+    assert [t["prompt"] for t in turns] == ["one", "two", "three", "four"], "your words only"
+    assert "SKILL" not in later.history()
+
+    later.set_skills(None)
+    later.send("five")
+    assert spy.calls[4]["prompt"] == "five"
+
+
+def test_the_skills_folder_is_readable_on_turns_with_skills(monkeypatch, skills_dir):
+    made = []
+
+    def backend(provider, model, options, quiet=True, readable=()):
+        made.append(readable)
+        return Spy()
+
+    monkeypatch.setattr(sessions, "_backend", backend)
+    RB(provider="fake", skills_dir=skills_dir, skills="auto").send("x")
+    RB(provider="fake").send("y")
+    assert made == [(str(skills_dir),), ()]
+
+    # The real factory hands it to the backend, which Claude turns into --add-dir.
+    from research_backend.backends import claude_code
+
+    monkeypatch.undo()   # the real sessions._backend again
+    monkeypatch.setattr("shutil.which", lambda name: f"/bin/{name}")
+    monkeypatch.setattr("research_backend.backends.make",
+                        lambda provider, model, **o: claude_code.ClaudeCodeBackend(model=model))
+    claude = sessions._backend("claude_code", None, {}, readable=(str(skills_dir),))
+    argv = claude.argv(prompt="x", instructions="", access=Access.READ_ONLY,
+                       schema_path=__file__, session=[])
+    assert argv[argv.index("--add-dir") + 1] == str(skills_dir)
+
+
+def test_skills_need_a_folder_and_known_names(skills_dir, monkeypatch):
+    with pytest.raises(ValueError, match="needs a skills folder"):
+        RB(provider="fake", skills="auto")
+    with pytest.raises(ValueError, match=r"No skill called 'gamma'.*It has: alpha, beta"):
+        RB(provider="fake", skills_dir=skills_dir, skills=["alpha", "gamma"])
+    with pytest.raises(FileNotFoundError):
+        RB(provider="fake", skills_dir=skills_dir / "missing", skills="auto")
+    reader = RB(provider="fake", skills_dir=skills_dir)
+    with pytest.raises(ValueError, match="No skill called 'gamma'"):
+        reader.set_skills(["gamma"])
+    assert reader.skills is None
+    with pytest.raises(ValueError, match="No skill called 'alpha'"):
+        RB(provider="fake", skills_dir=skills_dir, skills=["alpha"]).set_skills_dir(
+            skills_dir / "notes")
+
+    monkeypatch.setenv("RESEARCH_BACKEND_SKILLS_DIR", str(skills_dir))
+    from_env = RB(provider="fake", skills="beta")
+    assert from_env.skills == ["beta"] and from_env.skills_dir == str(skills_dir)
+    assert RB.list_skills().names == ["alpha", "beta"]
+
+
+def test_the_repository_skills_folder_reads():
+    root = pathlib.Path(__file__).resolve().parents[1] / "skills"
+    listed = RB.list_skills(root)
+    assert len(listed) >= 24 and all(s.description for s in listed)
+    assert {"acl-paper", "statistical-power", "research"} <= set(listed.names)
 
 
 # ---- the agent still finds everything where it was ---------------------------------

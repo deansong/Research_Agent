@@ -6,6 +6,7 @@ research_backend -- talk to Codex, Claude Code and Antigravity the same way.
     RB.list_providers()                 # ['antigravity', 'claude_code', 'codex', 'fake']
     RB.list_models("codex")             # the models codex accepts
     RB.list_efforts("codex")            # its reasoning-effort levels
+    RB.list_skills("skills")            # the skills in a folder of <name>/SKILL.md
     RB.usage("codex")                   # its limits, and when they reset
     RB.usage()                          # every provider's
     RB.list_sessions()                  # every session so far
@@ -63,14 +64,16 @@ from research_backend.client import Context, ResearchBackend
 from research_backend.conversation import Reply, Session, SessionBusy, SessionNotFound
 from research_backend.conversation import _one_line, _short
 from research_backend.limits import Quota, Window
+from research_backend.skills import Skill
 
 __all__ = [
     # RB(...) makes one of these
     "ResearchBackend",
     # every provider at once
-    "list_providers", "list_models", "list_efforts", "usage", "status", "list_sessions",
+    "list_providers", "list_models", "list_efforts", "list_skills", "usage", "status",
+    "list_sessions",
     # what those and its methods return
-    "Reply", "Context", "Session", "Model", "ModelList", "Quota", "Window",
+    "Reply", "Context", "Session", "Skill", "Model", "ModelList", "Quota", "Window",
     "AuthStatus", "Usage", "Access",
     # what can go wrong
     "BackendError", "BackendUnavailable", "BackendOutputError", "BackendOutOfCredits",
@@ -106,6 +109,16 @@ def list_models(provider: str | None = None, *, refresh: bool = False):
     if provider is not None:
         return one(provider, refresh=refresh)
     return Listing(list_all(_real(), refresh=refresh))
+
+
+def list_skills(skills_dir=None, *, chosen=None):
+    """The skills in a folder of <name>/SKILL.md ($RESEARCH_BACKEND_SKILLS_DIR
+    if none is given): a list of Skill (.name, .description, .folder, .body)
+    that prints as a table."""
+    from research_backend import skills as _skills
+
+    folder = _skills.folder_of(skills_dir)
+    return _skills.SkillList(_skills.discover(folder), folder=folder, chosen=chosen)
 
 
 def list_efforts(provider: str, model: str | None = None) -> list[str]:

@@ -10,6 +10,7 @@ import research_backend as RB
 RB.list_providers()          # ['antigravity', 'claude_code', 'codex', 'fake']
 RB.list_models("codex")      # the models codex accepts, and each one's effort levels
 RB.list_efforts("codex")     # ['low', 'medium', 'high', 'xhigh', 'max', 'ultra']
+RB.list_skills("skills")     # the skills in a folder of <name>/SKILL.md
 RB.usage()                   # every provider's limits, and when they reset
 RB.status()                  # who is logged in, and how to log in if not
 RB.list_sessions()           # every session so far
@@ -55,13 +56,15 @@ codex: ...
 provider, a model and the current session. Make one for each conversation you
 want open at once.
 
-`RB(provider=None, model=None, *, effort=None, session=None, access=None, instructions="", workdir=None, home=None, **options)`
+`RB(provider=None, model=None, *, effort=None, skills=None, skills_dir=None, session=None, access=None, instructions="", workdir=None, home=None, **options)`
 
 | argument | meaning | default |
 | --- | --- | --- |
 | `provider` | `"codex"`, `"claude_code"`, `"antigravity"` or `"fake"` | none yet: `set_provider()` later |
 | `model` | an id from `list_models()` | the provider's default |
 | `effort` | how hard the model thinks: a level from `list_efforts()` | the model's default |
+| `skills` | which skills the model gets: `None`, `"auto"`, or a list of names (see Skills) | `None` |
+| `skills_dir` | the folder of skills | `$RESEARCH_BACKEND_SKILLS_DIR` |
 | `session` | continue this session; its provider and model come with it | none yet |
 | `access` | `"none"`, `"read_only"`, `"write"` or `"full"` | `read_only` (`none` on antigravity, which cannot do read-only) |
 | `instructions` | standing instructions, sent with every message | none |
@@ -83,6 +86,7 @@ away rather than at the first message.
 | `.set_model(model)`, `.set_effort(level)`, `.set_access(level)`, `.set_instructions(text)` | from the next message on; the current session carries on with them |
 | `.set_schema(schema)` | the shape of every answer from now on: a JSON schema or a Pydantic class; `None` for plain text |
 | `.list_efforts(provider=None, model=None)` | the effort levels a model has (the current one unless named) |
+| `.set_skills(skills)`, `.set_skills_dir(folder)`, `.list_skills()` | choose skills from the next message on; list the folder's, the chosen ones marked |
 | `.new_session(name=None, workdir=None, exist_ok=False)` | start a conversation and make it current; returns its id, made up if you give no name. A name already taken is refused, unless `exist_ok=True`, which continues that session |
 | `.open_session(id)` | continue an earlier session; its provider and model become current |
 | `.list_sessions(provider=None)` | every session, or one provider's, most recently used first; prints as a table |
@@ -120,6 +124,58 @@ reader.delete_session("draft")       # gone for good
 Nothing has to be closed before a script ends: every turn is saved as it
 happens, so any session can be continued later. Closing only means this `RB`
 stops sending to it.
+
+## Skills
+
+A skill is a folder with a `SKILL.md`, the format Claude Code and Antigravity
+use. Point RB at a folder of them and choose which ones a session gets:
+
+```
+skills/
+  statistical-power/
+    SKILL.md          ---
+                      name: statistical-power
+                      description: When to use it, in a sentence or two.
+                      ---
+                      The instructions, in Markdown.
+    power.py          anything else it needs
+```
+
+```python
+RB.list_skills("skills")               # what is there: name and description
+
+reader = RB(provider="codex", skills_dir="skills", skills="auto")
+writer = RB(provider="claude_code", skills_dir="skills", skills=["acl-paper", "academic-plotting"])
+
+reader.set_skills(["statistical-power"])   # from the next message on
+reader.set_skills(None)                    # no skills
+print(reader.list_skills())                # the folder's skills, chosen ones marked *
+```
+
+| `skills=` | the model gets |
+| --- | --- |
+| `None` (default) | no skills |
+| `"auto"` | every skill's name, description and `SKILL.md` path; it reads the ones that fit |
+| a list of names | those skills' full text |
+
+- **How skills are sent:** with the first message of a session, in front of
+  your text, and again only when you change the choice. They are not sent in
+  the instructions, which go with every message (and Codex hangs on long
+  instructions).
+- **The folder is readable** on every turn that has skills. Claude Code is given
+  `--add-dir` for it; the other providers can read it already. The model is
+  told not to change it.
+- **Placeholders** filled in a skill's text: `{skill_dir}` (its folder),
+  `{skills_dir}`, `{python}` (the running Python) and `{workspace}` (the
+  session's folder). Any other `{...}`, such as LaTeX, is left as written.
+- **Kept with the session:** `RB(session=...)` continues with the same skills,
+  and does not send them again.
+- **Errors:** an unknown skill name is refused when you set it, listing what
+  the folder has.
+- **Where the folder comes from:** `skills_dir=`, else
+  `$RESEARCH_BACKEND_SKILLS_DIR`.
+- **What you see:** `history()` shows your messages as you wrote them; each
+  turn records which skills went with it.
 
 ## Thinking effort
 
@@ -245,6 +301,7 @@ research_backend/
     conversation.py   Session, Reply: sending, continuing, saving
     catalog.py        list_models()
     limits.py         usage()
+    skills.py         list_skills(); reading SKILL.md; what a session is sent
     auth.py           status()
     quota.py          waiting out a usage limit during a turn
     base.py           what every backend implements, Access, Usage, the errors
