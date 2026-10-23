@@ -82,17 +82,43 @@ away rather than at the first message.
 | `.set_provider(name, model=None)` | talk to another provider; the current session is put aside, since a session belongs to one provider |
 | `.set_model(model)`, `.set_effort(level)`, `.set_access(level)`, `.set_instructions(text)` | from the next message on; the current session carries on with them |
 | `.list_efforts(provider=None, model=None)` | the effort levels a model has (the current one unless named) |
-| `.new_session(name=None, workdir=None)` | start a conversation and make it current; returns its id, made up if you give no name |
+| `.new_session(name=None, workdir=None, exist_ok=False)` | start a conversation and make it current; returns its id, made up if you give no name. A name already taken is refused, unless `exist_ok=True`, which continues that session |
 | `.open_session(id)` | continue an earlier session; its provider and model become current |
-| `.list_sessions(provider=None)` | every session, or one provider's, most recently used first |
+| `.list_sessions(provider=None)` | every session, or one provider's, most recently used first; prints as a table |
+| `.close_session()` | stop using the current session, and keep it; the next `send()` starts a new one |
 | `.send(prompt, schema=None, progress=False)` | send a message and wait for the `Reply`; starts a session if there is none |
 | `.context()` | how much of the model's context window the conversation fills, and its last turns |
 | `.history(last=None)` | the conversation so far, as text |
-| `.delete_session(id=None)` | forget a session, the current one unless named |
+| `.delete_session(id=None)` | delete a session for good, the current one unless named |
 | `.session` | the current `Session` itself: `.turns`, `.folder`, `.thread_id`, `.rename()` |
 
 The `set_...` methods return the object, so they chain:
 `RB().set_provider("codex").set_model("gpt-5.6-sol")`.
+
+## Listing, continuing, closing
+
+```python
+print(RB.list_sessions())            # or RB.list_sessions("codex")
+```
+
+```
+id          provider     model        effort   turns  last used     last message
+lit-review  codex        gpt-5.6-sol  high     3      23 Oct 10:06  Which of those are free to use?
+draft       claude_code  opus         default  1      23 Oct 09:31  Draft the introduction.
+```
+
+```python
+reader = RB(session="lit-review")    # continue one: its provider, model, effort come with it
+reader.open_session("draft")         # or switch an existing RB to another one
+reader.new_session("lit-review", exist_ok=True)   # continue it if it exists, else start it
+
+reader.close_session()               # stop using it; it is kept, continue it any time
+reader.delete_session("draft")       # gone for good
+```
+
+Nothing has to be closed before a script ends: every turn is saved as it
+happens, so any session can be continued later. Closing only means this `RB`
+stops sending to it.
 
 ## Thinking effort
 

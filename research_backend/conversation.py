@@ -307,8 +307,10 @@ def new_session(provider: str, *, model: str | None = None, effort: str | None =
     _check_id(session_id)
     folder = _folder(session_id, home)
     if (folder / "session.json").exists():
-        raise ValueError(f"There is already a session called {session_id!r}; "
-                         f"open_session({session_id!r}) continues it.")
+        raise ValueError(
+            f"There is already a session called {session_id!r}. Continue it with "
+            f"RB(session={session_id!r}) or .open_session({session_id!r}), or use "
+            f".new_session({session_id!r}, exist_ok=True).")
     if workdir is None:
         work = folder / "workspace"
         work.mkdir(parents=True, exist_ok=True)
@@ -335,6 +337,11 @@ def open_session(session_id: str, *, home: str | os.PathLike | None = None) -> S
         known = ", ".join(s.id for s in list_sessions(home=home)[:10]) or "none yet"
         raise SessionNotFound(f"No session called {session_id!r}. Sessions: {known}")
     return Session(_home.read_json(path), path)
+
+
+def exists(session_id: str, *, home: str | os.PathLike | None = None) -> bool:
+    _check_id(session_id)
+    return (_folder(session_id, home) / "session.json").exists()
 
 
 def list_sessions(*, home: str | os.PathLike | None = None) -> list[Session]:

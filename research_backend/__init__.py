@@ -61,6 +61,7 @@ from research_backend.catalog import ModelInfo as Model
 from research_backend.catalog import ModelList
 from research_backend.client import Context, ResearchBackend
 from research_backend.conversation import Reply, Session, SessionBusy, SessionNotFound
+from research_backend.conversation import _one_line, _short
 from research_backend.limits import Quota, Window
 
 __all__ = [
@@ -137,12 +138,30 @@ def status(provider: str | None = None):
     return Listing(status_all(_real()))
 
 
-def list_sessions(provider: str | None = None, *, home=None) -> Listing:
+class SessionList(Listing):
+    """Sessions, printed as a table: one line each."""
+
+    def __str__(self) -> str:
+        if not self:
+            return "(no sessions)"
+        rows = [("id", "provider", "model", "effort", "turns", "last used", "last message")]
+        for s in self:
+            turns = s.turns
+            last = turns[-1]["prompt"] if turns else ""
+            rows.append((s.id, s.provider, s.model or "default", s.effort or "default",
+                         str(len(turns)), _short(s._record.get("updated_at", "")),
+                         _one_line(last, 40)))
+        widths = [max(len(r[i]) for r in rows) for i in range(len(rows[0]) - 1)]
+        return "\n".join("  ".join(cell.ljust(w) for cell, w in zip(row, widths)) + "  " + row[-1]
+                         for row in rows).rstrip()
+
+
+def list_sessions(provider: str | None = None, *, home=None) -> SessionList:
     """Every session, the most recently used first; only one provider's if you
-    name it. Continue one with RB(session=its_id)."""
+    name it. Printing it gives a table. Continue one with RB(session=its_id)."""
     from research_backend.conversation import list_sessions as every
 
-    return Listing(s for s in every(home=home) if provider in (None, s.provider))
+    return SessionList(s for s in every(home=home) if provider in (None, s.provider))
 
 
 class _CallableModule(types.ModuleType):

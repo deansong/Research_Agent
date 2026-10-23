@@ -205,9 +205,19 @@ class ResearchBackend:
     # ---- sessions -----------------------------------------------------------------
 
     def new_session(self, name: str | None = None, *,
-                    workdir: str | os.PathLike | None = None) -> str:
+                    workdir: str | os.PathLike | None = None,
+                    exist_ok: bool = False) -> str:
         """Start a new conversation and make it the current one. Returns its id;
-        without a name, one is made up from the provider and the time."""
+        without a name, one is made up from the provider and the time.
+
+        A name already taken is refused -- unless exist_ok=True, which
+        continues that session instead (if it is on this provider)."""
+        if exist_ok and name and conversation.exists(name, home=self._home):
+            found = conversation.open_session(name, home=self._home)
+            if found.provider != self._need(None):
+                raise ValueError(f"Session {name!r} is on {found.provider}, "
+                                 f"not {self._provider}.")
+            return self.open_session(name)
         self._session = conversation.new_session(
             self._need(None), model=self._model, effort=self._effort, name=name,
             workdir=workdir if workdir is not None else self._workdir,
@@ -224,6 +234,14 @@ class ResearchBackend:
         self._effort = self._session.effort
         return self._session.id
 
+    def close_session(self) -> str | None:
+        """Stop using the current session. It is kept: continue it any time with
+        open_session(id) or RB(session=id). Returns its id. The next send()
+        starts a new session."""
+        closed = self.session_id
+        self._session = None
+        return closed
+
     def list_sessions(self, provider: str | None = None):
         """Every session, the most recently used first; only one provider's if
         you name it."""
@@ -232,7 +250,9 @@ class ResearchBackend:
         return list_sessions(provider, home=self._home)
 
     def delete_session(self, session_id: str | None = None) -> None:
-        """Forget a session -- the current one unless you name one."""
+        """Delete a session for good -- the current one unless you name one: its
+        record, its turns and the folder it made. A workdir you chose is left
+        alone. To stop using a session but keep it, close_session()."""
         target = (conversation.open_session(session_id, home=self._home)
                   if session_id else self._session)
         if target is None:

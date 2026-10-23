@@ -418,9 +418,35 @@ def test_sessions_are_listed_newest_first_and_printed(spy):
     newer.send("b")
     listed = RB.list_sessions()
     assert [s.id for s in listed] == ["newer", "older"]
-    text = str(listed)
-    assert text.startswith("newer: fake/default model, read_only access in ")
-    assert "last: b -> answer" in text
+    lines = str(listed).splitlines()
+    assert lines[0].split() == ["id", "provider", "model", "effort", "turns", "last", "used",
+                                "last", "message"]
+    assert lines[1].split()[:5] == ["newer", "fake", "default", "default", "1"]
+    assert lines[1].endswith("  b") and lines[2].startswith("older ")
+    assert str(RB.list_sessions("codex")) == "(no sessions)"
+
+
+def test_continue_close_and_delete(spy):
+    reader = RB(provider="fake")
+    reader.new_session("lit-review")
+    reader.send("hello")
+    with pytest.raises(ValueError, match=r"RB\(session='lit-review'\)"):
+        RB(provider="fake").new_session("lit-review")
+
+    again = RB(provider="fake")
+    assert again.new_session("lit-review", exist_ok=True) == "lit-review"
+    assert again.send("more").turn == 2, "continued, not started over"
+    assert RB(provider="fake").new_session("fresh", exist_ok=True) == "fresh"
+    with pytest.raises(ValueError, match="is on fake, not claude_code"):
+        RB(provider="claude_code").new_session("lit-review", exist_ok=True)
+
+    assert again.close_session() == "lit-review" and again.session_id is None
+    assert again.send("new topic").turn == 1, "the next send starts a new session"
+    assert RB(session="lit-review").send("back again").turn == 3, "closed, not gone"
+
+    again.delete_session("lit-review")
+    with pytest.raises(RB.SessionNotFound):
+        RB(session="lit-review")
 
 
 def test_bad_names_and_workdirs_are_refused(tmp_path):
