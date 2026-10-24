@@ -230,11 +230,10 @@ def hypothesize(run: Run, st: dict, *, task: str) -> Outcome:
     hypotheses, rubric, evidence = _ids(st, "hypotheses"), _ids(st, "rubric"), _ids(st, "evidence")
 
     def check(out: schemas.HypothesizeOutput) -> list[str]:
-        problems = [f"hypothesis id {h.id} does not exist (use \"\" for a new one)"
-                    for h in out.hypotheses if h.id and h.id not in hypotheses]
-        problems += [f"rubric id {r.id} does not exist (use \"\" for a new one)"
-                     for r in out.rubric if r.id and r.id not in rubric]
-        problems += [f"{h.id or h.statement[:40]!r} cites {e}, which is not an evidence id"
+        # An id that does not exist yet is a new item -- models number their
+        # drafts (H1, H2, ...), and a retry costs a whole turn. Code assigns
+        # the real ids.
+        problems = [f"{h.id or h.statement[:40]!r} cites {e}, which is not an evidence id"
                      for h in out.hypotheses for e in h.evidence if e not in evidence]
         problems += [f"hypothesis {h.statement[:40]!r} has no prediction"
                      for h in out.hypotheses if not h.prediction.strip()]
@@ -247,11 +246,11 @@ def hypothesize(run: Run, st: dict, *, task: str) -> Outcome:
     for h in out.hypotheses:
         value = h.model_dump(exclude={"id"})
         ops.append({"op": "update", "section": "hypotheses", "id": h.id, "value": value}
-                   if h.id else {"op": "add", "section": "hypotheses", "value": value})
+                   if h.id in hypotheses else {"op": "add", "section": "hypotheses", "value": value})
     for r in out.rubric:
         value = r.model_dump(exclude={"id"})
         ops.append({"op": "update", "section": "rubric", "id": r.id, "value": value}
-                   if r.id else {"op": "add", "section": "rubric", "value": value})
+                   if r.id in rubric else {"op": "add", "section": "rubric", "value": value})
     ops.append({"op": "set", "section": "protocol", "value": out.protocol.model_dump()})
     ops += [{"op": "add", "section": "risks", "value": r.model_dump()} for r in out.risks]
     ops += [{"op": "add", "section": "assumptions", "value": a.model_dump()}

@@ -117,6 +117,22 @@ def test_a_bad_answer_goes_back_with_what_is_wrong(run, script):
         nodes.hypothesize(run, st, task="again")
 
 
+def test_a_draft_s_own_numbering_means_new_items(run, script):
+    st = _apply(S.new(), nodes.Outcome(ops=[
+        {"op": "add", "section": "evidence", "value": {"claim": "c", "source": "s"}},
+        {"op": "add", "section": "hypotheses", "value": {"statement": "old"}}]), "x")
+    revised = {**HYPO, "hypotheses": [
+        {**HYPO["hypotheses"][0], "id": "H1", "statement": "old, sharpened"},
+        {**HYPO["hypotheses"][0], "id": "H7", "statement": "brand new"}],
+        "rubric": [{**HYPO["rubric"][0], "id": "R3"}]}
+    script.add("HypothesizeOutput", revised)
+    st = _apply(st, nodes.hypothesize(run, st, task="revise"), "planner")
+    assert len(script.calls) == 1, "no retry"
+    assert [(h["id"], h["statement"]) for h in st["hypotheses"]] == [
+        ("H1", "old, sharpened"), ("H2", "brand new")]
+    assert [r["id"] for r in st["rubric"]] == ["R1"]
+
+
 def test_the_plan_is_checked_against_the_rubric(run, script):
     st = _apply(S.new(), nodes.Outcome(ops=[{"op": "add", "section": "rubric", "value": {
         "criterion": "Effect"}}]), "x")

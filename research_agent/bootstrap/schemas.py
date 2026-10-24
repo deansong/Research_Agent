@@ -140,7 +140,7 @@ class ResearcherOutput(BaseModel):
 
 class HypothesisIn(BaseModel):
     id: str = ""
-    """"" for a new one; an existing id (H2) to revise it."""
+    """An existing id (H2) to revise it; anything else is a new one."""
     statement: str
     prediction: str
     rationale: str = ""
