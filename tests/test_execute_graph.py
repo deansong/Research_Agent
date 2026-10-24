@@ -80,6 +80,13 @@ def done_writing(run, step_id, name="out.txt", text="ok"):
     return answer
 
 
+REVIEW = {"summary": "A small, clean study.", "strengths": ["fixed seeds"],
+          "weaknesses": ["two seeds only"], "questions": ["why these ranks?"],
+          "limitations": "one dataset", "soundness": 3, "presentation": 3, "contribution": 2,
+          "rating": 5, "confidence": 4, "requests": [
+              {"what": "Run five seeds", "why": "two give no variance", "priority": "must"}]}
+
+
 def verdict(v="pass", **fields):
     return {"verdict": v, "summary": f"{v} it is", **fields}
 
@@ -92,6 +99,7 @@ def test_a_whole_execution_from_the_approved_design_to_done(run, script):
 
     script.add("ExecDecision", decide("run", "1"), decide("run", "2"), decide("run", "2"),
                decide("done"))
+    script.add("ReviewOutput", REVIEW)
     script.add("StepReport", done_writing(run, "1", "rows.json", "[1000]"), launch,
                lambda prompt: {"state": "done", "summary": "both seeds scored",
                                "artifacts": ["scores.txt"], "metrics": [
@@ -183,6 +191,7 @@ def test_a_skipped_step_leaves_a_record_and_unblocks_the_next(tmp_path, script):
                         quiet=True)
     script.add("ExecDecision", decide("skip", "1", "the protocol's T3 branch does not apply"),
                decide("run", "2"), decide("done"))
+    script.add("ReviewOutput", REVIEW)
     script.add("StepReport", done_writing(run, "2"))
     script.add("Verdict", verdict())
     script.add("ExecDiscussorOutput", say("Done; step 1 was skipped."))
@@ -280,6 +289,7 @@ def test_the_user_can_stop_and_the_discussor_never_relays_into_more_work(run, sc
 def test_a_go_by_command_reaches_the_discussor_and_a_result_keeps_the_approval(run, script):
     script.add("ExecDecision", decide("run", "1"), decide("run", "2"), decide("run", "2"),
                decide("done"))
+    script.add("ReviewOutput", REVIEW)
     script.add("StepReport", done_writing(run, "1"), lambda prompt: {
         **done_writing(run, "2")(prompt),
         "hypotheses": [{"id": "H1", "status": "supported", "why": "out.txt"}]})
@@ -296,3 +306,93 @@ def test_a_go_by_command_reaches_the_discussor_and_a_result_keeps_the_approval(r
     assert "Go for step 2: Train" in told, "the discussor learns of a /go"
     st = ex.research
     assert st["hypotheses"][0]["status"] == "supported" and S.approved(st, "hypotheses")
+
+
+def test_the_review_is_kept_for_the_next_run(run, script):
+    script.add("ExecDecision", decide("run", "1"), decide("run", "2"), decide("run", "2"),
+               decide("done"))
+    script.add("StepReport", done_writing(run, "1"), done_writing(run, "2"))
+    script.add("Verdict", verdict(), verdict())
+    script.add("ReviewOutput", REVIEW)
+    script.add("ExecDiscussorOutput", say("Go?"), say("Reviewed: 5/10."))
+    ex = Execution(run)
+    ex.start()
+    turn = ex.answer(go=True)
+    assert turn.outcome == "done" and turn.reply == "Reviewed: 5/10."
+    review = ex.research["reviews"][0]
+    assert review["id"] == "V1" and review["rating"] == 5 and review["run"] == str(run.folder)
+    assert review["requests"][0] == {"what": "Run five seeds", "why": "two give no variance",
+                                     "priority": "must"}
+    text = (run.folder / "reviews" / "V1.md").read_text()
+    assert "[must] Run five seeds" in text and "1. [pass] Data" in text
+    brief = script.prompts("ReviewOutput")[0]
+    assert "step_01: out.txt" in brief and "own work" in brief
+    told = script.prompts("ExecDiscussorOutput")[1]
+    assert "rating 5/10" in told and f"bootstrap --from {run.folder}" in told
+    reviewer = [c for c in script.calls if c["schema"] == "ReviewOutput"][0]
+    assert reviewer["access"].value == "read_only" and reviewer["thread"] is None
+
+
+def test_the_user_writes_while_the_team_works_and_sets_a_breakpoint(run, script):
+    ex = Execution(run)
+
+    def owner(prompt):
+        # The user writes while step 1 runs: answered on the side.
+        out = ex.aside("What is step 1 doing? Stop after it, I want to look.")
+        assert out.reply == "Counting rows; I will stop after step 1."
+        return done_writing(run, "1")(prompt)
+
+    script.add("ExecDecision", decide("run", "1"))
+    script.add("StepReport", owner)
+    script.add("Verdict", verdict())
+    script.add("AsideOutput", {"reply": "Counting rows; I will stop after step 1.",
+                               "breakpoints": [{"step": "1", "when": "after"}],
+                               "requests": ["Log the row count per class"]})
+    script.add("ExecDiscussorOutput", say("Step 1 passed: 1000 rows. Go on?"))
+    turn = ex.start()
+    assert turn.reply == "Step 1 passed: 1000 rows. Go on?" and ex.awaiting == "after:1"
+    aside = script.prompts("AsideOutput")[0]
+    assert "AN ASIDE" in aside and "Step 1 (builder): running, attempt 1" in aside
+    told = script.prompts("ExecDiscussorOutput")[0]
+    assert "PAUSED AFTER STEP 1" in told
+    # The aside and the graph's turns are one conversation.
+    disc = [c for c in script.calls if c["schema"] in ("AsideOutput", "ExecDiscussorOutput")]
+    assert disc[1]["thread"] == disc[0]["thread"] or disc[0]["thread"] is None
+
+    script.add("ExecDecision", decide("ask_user", task="Anything else?"))
+    script.add("ExecDiscussorOutput", say("Going on."))
+    ex.answer(go=True)
+    orch = script.prompts("ExecDecision")[1]
+    assert "- Log the row count per class" in orch, "the aside's request reaches the orchestrator"
+    st = ex.research
+    assert any(d["what"] == "Go on after step 1" for d in st["decisions"])
+    assert not nodes.records(st)["1"]["pause_after"]
+
+
+def test_a_breakpoint_before_a_step_holds_it(run, script):
+    from research_agent.execute import inbox
+
+    inbox.post(run.folder, "breakpoint", step="1", when="before", on=True)
+    script.add("ExecDecision", decide("run", "1"))
+    script.add("ExecDiscussorOutput", say("Step 1 is next; go?"))
+    ex = Execution(run)
+    ex.start()
+    assert ex.awaiting == "1" and not script.prompts("StepReport")
+    assert "WAITING FOR THE USER'S GO (a breakpoint)" in script.prompts("ExecDiscussorOutput")[0]
+    assert inbox.peek(run.folder) == []
+
+
+def test_a_stop_while_jobs_run_stops_them(run, script):
+    ex = Execution(run)
+
+    def launch(prompt):
+        job = jobs.launch(run.folder, "1", "sleep 30")
+        ex.stop_now()                                  # /stop, typed while it runs
+        return {"state": "launched", "summary": "counting", "jobs": [job["id"]]}
+
+    script.add("ExecDecision", decide("run", "1"))
+    script.add("StepReport", launch)
+    script.add("ExecDiscussorOutput", say("Stopped, as you asked."))
+    turn = ex.start()
+    assert turn.outcome == "stopped" and nodes.records(ex.research)["1"]["status"] == "stopped"
+    assert all(jobs.status(j)["state"] != "running" for j in jobs.records(run.folder))

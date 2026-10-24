@@ -94,7 +94,59 @@ class Verdict(BaseModel):
     """For a retry: what the owner must do differently."""
 
 
+# ---- reviewer -------------------------------------------------------------------------------
+
+
+class ReviewRequestIn(BaseModel):
+    what: str
+    """What the next run should do -- an experiment, a baseline, an analysis,
+    a fix -- specific enough to plan."""
+    why: str
+    """The weakness or question it answers."""
+    priority: Literal["must", "should", "could"]
+
+
+class ReviewOutput(BaseModel):
+    """A review as a major ML conference asks for one (NeurIPS, ICML, ICLR)."""
+
+    summary: str
+    """What the study claims and did, in your own words."""
+    strengths: list[str] = Field(max_length=10)
+    weaknesses: list[str] = Field(max_length=12)
+    questions: list[str] = Field(default_factory=list, max_length=10)
+    limitations: str = ""
+    """Are the limitations and the possible negative impact addressed?"""
+    soundness: int = Field(ge=1, le=4)
+    presentation: int = Field(ge=1, le=4)
+    contribution: int = Field(ge=1, le=4)
+    rating: int = Field(ge=1, le=10)
+    """1 strong reject ... 6 weak accept ... 10 award quality."""
+    confidence: int = Field(ge=1, le=5)
+    requests: list[ReviewRequestIn] = Field(min_length=1, max_length=12)
+
+
 # ---- discussor ------------------------------------------------------------------------------
+
+
+class BreakpointIn(BaseModel):
+    step: str
+    """A plan step id."""
+    when: Literal["before", "after"]
+    """Stop before the step starts, or once it is checked."""
+    on: bool = True
+    """False removes the breakpoint."""
+
+
+class AsideOutput(BaseModel):
+    """An answer while the team works: nothing waits for it."""
+
+    reply: str
+    breakpoints: list[BreakpointIn] = Field(default_factory=list, max_length=10)
+    stop: bool = False
+    """The user just said to stop the execution."""
+    requests: list[str] = Field(default_factory=list, max_length=6)
+    """Work for the orchestrator at its next decision, in clean words."""
+    decisions: list[DecisionIn] = Field(default_factory=list, max_length=6)
 
 
 class ExecDiscussorOutput(BaseModel):
@@ -108,5 +160,7 @@ class ExecDiscussorOutput(BaseModel):
     """The user just said to stop the execution."""
     requests: list[str] = Field(default_factory=list, max_length=6)
     """Work for the orchestrator, in clean words (never the chat)."""
+    breakpoints: list[BreakpointIn] = Field(default_factory=list, max_length=10)
+    """Where the user wants the work to stop for them."""
     decisions: list[DecisionIn] = Field(default_factory=list, max_length=6)
     answers: list[AnswerIn] = Field(default_factory=list, max_length=6)

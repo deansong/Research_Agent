@@ -23,7 +23,7 @@ from research_agent.bootstrap.config import REPOSITORY, RoleConfig
 
 #: Roles the execution stage runs. Step owners are worker, runner and writer,
 #: by the role the design gives them.
-ROLES = ("orchestrator", "worker", "runner", "writer", "validator")
+ROLES = ("orchestrator", "worker", "runner", "writer", "validator", "reviewer")
 OWNERS = ("worker", "runner", "writer")
 CONFIRM = ("gated", "all", "none")
 
@@ -35,6 +35,7 @@ LIMITS = ("confirm", "max_attempts", "wall_hours", "gpu_hours", "poll_seconds", 
 class ExecConfig:
     roles: dict[str, RoleConfig]
     skills_dir: Path | None
+    reviewer_skills: tuple = ("peer-review", "scientific-critical-thinking")
     confirm: str = "gated"
     max_attempts: int = 3
     wall_hours: float = 0.0
@@ -51,7 +52,8 @@ class ExecConfig:
         # Every field, empty ones too: a role given without a model must not
         # get the default's model back when the file is read again.
         return {"roles": {r: asdict(c) for r, c in self.roles.items()},
-                "skills": {"dir": str(self.skills_dir) if self.skills_dir else None},
+                "skills": {"dir": str(self.skills_dir) if self.skills_dir else None,
+                           "reviewer": list(self.reviewer_skills)},
                 "execute": {k: getattr(self, k) for k in LIMITS}}
 
 
@@ -119,5 +121,7 @@ def _merge(cfg: ExecConfig, data: dict, *, base: Path) -> ExecConfig:
     folder = (data.get("skills") or {}).get("dir", ...)
     if folder is not ...:
         skills_dir = (base / Path(folder).expanduser()).resolve() if folder else None
+    reviewer = (data.get("skills") or {}).get("reviewer", cfg.reviewer_skills)
     limits = {k: v for k, v in (data.get("execute") or {}).items() if k in LIMITS}
-    return replace(cfg, roles=roles, skills_dir=skills_dir, **limits)
+    return replace(cfg, roles=roles, skills_dir=skills_dir,
+                   reviewer_skills=tuple(reviewer or ()), **limits)

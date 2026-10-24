@@ -144,6 +144,10 @@ class StepRecord(BaseModel):
                     "stopped"] = "pending"
     go: bool = False
     """The user let this gated step start."""
+    pause_before: bool = False
+    """A breakpoint: stop for the user before this step starts."""
+    pause_after: bool = False
+    """A breakpoint: stop for the user once this step is checked."""
     attempts: int = 0
     sessions: list[str] = Field(default_factory=list)
     artifacts: list[str] = Field(default_factory=list)
@@ -167,6 +171,40 @@ class Execution(BaseModel):
     gpu_hours: float = 0.0
     """The limit on GPU-hours used by jobs; 0 = none."""
     steps: list[StepRecord] = Field(default_factory=list)
+
+
+class ReviewRequest(BaseModel):
+    what: str
+    why: str = ""
+    priority: Literal["must", "should", "could"] = "should"
+
+
+class Review(BaseModel):
+    """A conference-style review of a run's results, by the reviewer. It is
+    carried into the next run, whose planner and designer address it."""
+
+    id: str = ""
+    run: str = ""
+    """The run folder it reviews -- its artifacts are there."""
+    summary: str = ""
+    strengths: list[str] = Field(default_factory=list)
+    weaknesses: list[str] = Field(default_factory=list)
+    questions: list[str] = Field(default_factory=list)
+    limitations: str = ""
+    soundness: int = 0
+    presentation: int = 0
+    contribution: int = 0
+    """1-4 each, as NeurIPS asks."""
+    rating: int = 0
+    """1-10, as NeurIPS asks (6: weak accept)."""
+    confidence: int = 0
+    """1-5."""
+    requests: list[ReviewRequest] = Field(default_factory=list)
+    """What the next run should do."""
+    outcome: str = ""
+    """The run's step table when it was reviewed."""
+    file: str = ""
+    at: str = ""
 
 
 class Decision(BaseModel):
@@ -225,6 +263,7 @@ class ResearchState(BaseModel):
     decisions: list[Decision] = Field(default_factory=list)
     open_questions: list[Question] = Field(default_factory=list)
     risks: list[Risk] = Field(default_factory=list)
+    reviews: list[Review] = Field(default_factory=list)
     results: list[Result] = Field(default_factory=list)
     status: Status = Field(default_factory=Status)
     versions: dict[str, int] = Field(default_factory=dict)
@@ -241,6 +280,7 @@ LISTS: dict[str, tuple[str, type[BaseModel]]] = {
     "decisions": ("D", Decision),
     "open_questions": ("Q", Question),
     "risks": ("K", Risk),
+    "reviews": ("V", Review),
     "results": ("N", Result),
 }
 OBJECTS: dict[str, type[BaseModel]] = {
@@ -249,11 +289,11 @@ OBJECTS: dict[str, type[BaseModel]] = {
 }
 SECTIONS = ("goal", "constraints", "assumptions", "evidence", "hypotheses", "rubric",
             "protocol", "plan", "design", "execution", "decisions", "open_questions", "risks",
-            "results", "status")
+            "reviews", "results", "status")
 #: What the user approves, in the order the work needs them.
 APPROVABLE = ("hypotheses", "rubric", "protocol", "plan", "design")
 #: Never deleted: a dropped hypothesis is marked dropped, a decision stands.
-KEPT = {"hypotheses", "decisions", "results"}
+KEPT = {"hypotheses", "decisions", "results", "reviews"}
 
 
 class StateError(ValueError):
@@ -338,7 +378,7 @@ def _list_op(state: dict, section: str, kind: str, op: dict, by: str) -> None:
             value.setdefault("at", _now())
         if section == "evidence":
             value.setdefault("found_by", by)
-        if section == "results":
+        if section in ("results", "reviews"):
             value.setdefault("at", _now())
         items.append(model.model_validate(value).model_dump(by_alias=True))
         return
@@ -446,6 +486,7 @@ def _render(state: dict, section: str, brief: bool) -> str:
             if brief and len(tail) > 160:
                 tail = tail[:157] + "..."
             go = ", go given" if r.get("go") else ""
+            go += "".join(f", pause {w}" for w in ("before", "after") if r.get(f"pause_{w}"))
             lines.append(f"{r['id']}. [{r['status']}] {r.get('title', '')} ({r.get('owner', '')}{go}, "
                          f"{r.get('attempts', 0)} attempts, {r.get('gpu_hours', 0):.1f} GPU-h){tail}")
         return "\n".join(lines)
@@ -483,6 +524,22 @@ def _line(section: str, x: dict, brief: bool) -> str:
     if section == "risks":
         return f"- {i} {x['text']}" + (f" -- mitigation: {x['mitigation']}"
                                        if x.get("mitigation") and not brief else "")
+    if section == "reviews":
+        head = (f"- {i} rating {x.get('rating')}/10 (confidence {x.get('confidence')}/5; "
+                f"soundness {x.get('soundness')}, presentation {x.get('presentation')}, "
+                f"contribution {x.get('contribution')}) of {x.get('run') or 'this run'}: "
+                f"{x.get('summary', '')}")
+        requests = "".join(f"\n  [{r['priority']}] {r['what']}" + (f" -- {r['why']}" if r.get("why")
+                                                                     and not brief else "")
+                           for r in x.get("requests") or [])
+        if brief:
+            return head + requests
+        return head + "".join(
+            f"\n  {label}:" + "".join(f"\n    - {v}" for v in x.get(key) or [])
+            for key, label in (("strengths", "strengths"), ("weaknesses", "weaknesses"),
+                               ("questions", "questions")) if x.get(key)) + (
+            f"\n  limitations: {x['limitations']}" if x.get("limitations") else "") + (
+            "\n  requests:" + requests if requests else "")
     if section == "results":
         return f"- {i} {x['node']}{'/' + x['job'] if x.get('job') else ''}: {x['summary']}"
     return f"- {json.dumps(x)}"

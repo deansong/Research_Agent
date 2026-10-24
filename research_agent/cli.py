@@ -10,9 +10,11 @@ WHY:   The bootstrap is a conversation. The terminal shows the discussor's
 from __future__ import annotations
 
 import argparse
+import queue
 import re
 import sys
 import textwrap
+import threading
 from datetime import datetime
 from pathlib import Path
 
@@ -22,6 +24,7 @@ from research_agent import state as S
 from research_agent.bootstrap import config, nodes, views
 from research_agent.bootstrap.session import Bootstrap
 from research_agent.execute import config as exec_config
+from research_agent.execute import inbox as exec_inbox
 from research_agent.execute import jobs as exec_jobs
 from research_agent.execute import nodes as exec_nodes
 from research_agent.execute.session import Execution
@@ -246,8 +249,11 @@ def _show_turn(boot: Bootstrap, turn) -> None:
 EXEC_HELP = """\
 Commands:
   /steps                 the step table: status, attempts, GPU-hours, last verdict
-  /go                    let the step waiting for you start
+  /go                    let the step waiting for you go on
   /stop                  stop the execution: running jobs and steps
+  /break [before|after] <step> [off]
+                         stop for you before a step starts, or after it is checked
+  /review                the reviewer's review (once every step is settled)
   /jobs                  every job: state, GPUs, hours
   /logs <job or step>    the last lines of a job's log (a step: its jobs')
   /budget                hours and GPU-hours used, and the limits
@@ -258,10 +264,11 @@ Commands:
   /trace on|off          print every model call's input and output
   /help                  this
   /exit                  leave (jobs keep running; carry on with execute --run)
-Anything else is said to the discussor."""
+Anything else is said to the discussor -- also while the team works: it
+answers on the side, and the work goes on."""
 
 #: Execution commands that only show things, allowed while a failed step waits.
-EXEC_READ_ONLY = READ_ONLY + ("/steps", "/jobs", "/logs", "/budget")
+EXEC_READ_ONLY = READ_ONLY + ("/steps", "/jobs", "/logs", "/budget", "/review")
 
 
 def _execute(parser, args) -> int:
@@ -282,22 +289,64 @@ def _execute(parser, args) -> int:
     return _converse_exec(ex, cfg)
 
 
-def _converse_exec(ex: Execution, cfg) -> int:
+class _Typed:
+    """What the user types. With a terminal, it is read on a thread of its
+    own, so the user can write while the team works: such a line is handled
+    at once (`while_working`); others wait for the conversation (`next`)."""
+
+    def __init__(self, while_working, concurrent: bool):
+        self.while_working = while_working
+        self.concurrent = concurrent
+        self.busy = threading.Event()
+        self.lines: queue.Queue = queue.Queue()
+        if concurrent:
+            threading.Thread(target=self._read, daemon=True).start()
+
+    def next(self) -> str | None:
+        """The next line for the conversation; None at the end of input."""
+        if not self.concurrent:
+            try:
+                return input("you> ")
+            except EOFError:
+                return None
+        return self.lines.get()
+
+    def _read(self) -> None:
+        while True:
+            try:
+                line = input("you> ")
+            except EOFError:
+                self.lines.put(None)
+                return
+            if self.busy.is_set():
+                try:
+                    self.while_working(line.strip())
+                except Exception as exc:          # a thread must not die of it
+                    print(f"! {exc}", flush=True)
+            else:
+                self.lines.put(line)
+
+
+def _converse_exec(ex: Execution, cfg, *, concurrent: bool | None = None) -> int:
     folder = ex.run.folder
     resume_hint = f"Carry on with:  python -m research_agent execute --run {folder}"
     print(f"Run: {folder}")
     print("  saved as it goes: state/research.md, work/ (the code, a git repository), "
-          "artifacts/step_NN/, jobs/ (records and logs), rb/sessions/")
+          "artifacts/step_NN/, jobs/ (records and logs), reviews/, rb/sessions/")
     print(f"Discussor={ex.run.roles['discussor']} (the bootstrap's conversation)\n{cfg.describe()}")
     print("Nodes: " + ", ".join(f"{name} (steps {', '.join(n['steps'])}; "
                                 f"{exec_nodes.access_for(n)} access)"
                                 for name, n in ex.design.owners.items()))
     _warn_signed_out(ex)
-    print("Type /help for commands.\n")
+    concurrent = sys.stdin.isatty() if concurrent is None else concurrent
+    print("Type /help for commands." + (" You can write at any time, also while the team works."
+                                        if concurrent else "") + "\n")
+    typed = _Typed(lambda text: _while_working(ex, text), concurrent)
     failed = False
 
     def advance(action) -> bool:
         nonlocal failed
+        typed.busy.set()
         try:
             turn = action()
         except RB.BackendCancelled:
@@ -306,6 +355,8 @@ def _converse_exec(ex: Execution, cfg) -> int:
             failed = True
             print(f"\n! {exc}\n  Nothing is lost: /retry carries on; /exit leaves.")
             return True
+        finally:
+            typed.busy.clear()
         failed = False
         if turn is None:
             return True
@@ -322,18 +373,18 @@ def _converse_exec(ex: Execution, cfg) -> int:
             print("Carrying on from where it stopped...")
             going = advance(lambda: ex.resume(on_step=_show_exec_step))
         while going:
-            try:
-                text = input("you> ").strip()
-            except EOFError:
+            text = typed.next()
+            if text is None:
                 print(f"\nStopped. {resume_hint}")
                 return 0
+            text = text.strip()
             if not text:
                 continue
             command = text.split()[0] if text.startswith("/") else ""
             if command == "/retry":
                 going = advance(lambda: ex.resume(on_step=_show_exec_step)) if failed \
                     else (print("Nothing to retry.") or True)
-            elif failed and command not in EXEC_READ_ONLY + ("/exit",):
+            elif failed and command not in EXEC_READ_ONLY + ("/exit", "/break"):
                 print("The last step failed: /retry it first (or /exit).")
             elif command:
                 going = advance(lambda: _exec_command(ex, text))
@@ -347,20 +398,69 @@ def _converse_exec(ex: Execution, cfg) -> int:
         ex.close()
 
 
+def _while_working(ex: Execution, text: str) -> None:
+    """A line typed while the team works: the work goes on."""
+    if not text:
+        return
+    command = text.split()[0] if text.startswith("/") else ""
+    if command == "/stop":
+        stopped = ex.stop_now()
+        print(f"Stopping: {stopped} running jobs stopped; the team stops at its next step.",
+              flush=True)
+    elif command in EXEC_READ_ONLY + ("/break",):
+        _exec_command(ex, text)
+    elif command:
+        print(f"{command} waits until the team stops for you. Meanwhile: /steps, /jobs, /logs, "
+              f"/budget, /break, /stop, or just ask.", flush=True)
+    else:
+        print("  > discussor: answering on the side; the team works on...", flush=True)
+        out = ex.aside(text)
+        print()
+        for paragraph in out.reply.split("\n"):
+            print(textwrap.fill(paragraph, 100) if paragraph.strip() else "")
+        noted = ([f"breakpoint {'on' if b.on else 'off'} {b.when} step {b.step}"
+                  for b in out.breakpoints] + [f"request: {r}" for r in out.requests]
+                 + (["stop"] if out.stop else []))
+        if noted:
+            print(f"[for the team's next step: {'; '.join(noted)}]")
+        print(flush=True)
+
+
 def _exec_command(ex: Execution, text: str):
     name, *words = text[1:].split()
     folder = ex.run.folder
+    st = S.Store(folder).read()        # the state as the team last wrote it
     if name == "help":
         print(EXEC_HELP)
     elif name == "steps":
-        print(S.render(ex.research, ["execution"]) or "(no steps yet)")
+        print(S.render(st, ["execution"]) or "(no steps yet)")
+    elif name == "state":
+        print(S.render(st))
+    elif name == "show":
+        unknown = [w for w in words if w not in S.SECTIONS]
+        if not words or unknown:
+            print(f"Show which? {', '.join(S.SECTIONS)}")
+        else:
+            print(S.render(st, words) or "(nothing there yet)")
     elif name == "go":
         if not ex.awaiting:
-            print("No step is waiting for your go.")
+            print("Nothing is waiting for your go.")
         else:
             return ex.answer("", go=True, on_step=_show_exec_step)
     elif name == "stop":
         return ex.answer("", stop=True, on_step=_show_exec_step)
+    elif name == "break":
+        when = words[0] if words[:1] in (["before"], ["after"]) else "before"
+        rest = words[1:] if words[:1] in (["before"], ["after"]) else words
+        on = not (rest[:1] == ["off"])
+        steps = [w for w in rest if w != "off"]
+        known = {s["id"] for s in (st.get("plan") or {}).get("steps") or []}
+        if len(steps) != 1 or steps[0] not in known:
+            print("/break [before|after] <step> [off] -- e.g. /break after 4")
+        else:
+            exec_inbox.post(folder, "breakpoint", step=steps[0], when=when, on=on)
+            print(f"Breakpoint {'set' if on else 'removed'}: {when} step {steps[0]} "
+                  f"(from the team's next step).")
     elif name == "jobs":
         print("\n".join(exec_jobs.describe(j) for j in exec_jobs.records(folder)) or "(no jobs)")
     elif name == "logs":
@@ -376,9 +476,20 @@ def _exec_command(ex: Execution, text: str):
     elif name == "budget":
         from research_agent.execute.graph import budget
 
-        print(budget(ex.run, ex.research)[0])
-    elif name in ("state", "show", "sessions", "usage", "trace"):
-        return _command(ex, text)
+        print(budget(ex.run, st)[0])
+    elif name == "review":
+        print(S.render(st, ["reviews"]) or "(no review yet: the reviewer reviews once every "
+                                           "step has passed or been skipped)")
+    elif name == "sessions":
+        print(RB.list_sessions(home=ex.run.rb_home))
+    elif name == "usage":
+        print(RB.Listing(RB.usage(p) for p in sorted({c.provider for c in ex.run.roles.values()})))
+    elif name == "trace":
+        if words[:1] not in (["on"], ["off"]):
+            print(f"/trace on or /trace off (it is {'on' if ex.run.trace else 'off'}).")
+        else:
+            ex.run.trace = words[0] == "on"
+            print(f"Tracing is {words[0]}.")
     elif name == "exit":
         return ex.exit()
     else:

@@ -133,7 +133,7 @@ def test_execute_runs_the_approved_design_with_commands(tmp_path, script, monkey
     import json
 
     from research_agent import state as S
-    from tests.test_execute_graph import approved_state, done_writing
+    from tests.test_execute_graph import REVIEW, approved_state, done_writing
     from tests.test_execute_graph import decide as move, say as tell, verdict
 
     run = tmp_path / "run"
@@ -147,6 +147,7 @@ def test_execute_runs_the_approved_design_with_commands(tmp_path, script, monkey
             return run / "artifacts" / f"step_{int(step_id):02d}"
 
     script.add("ExecDecision", move("run", "1"), move("run", "2"), move("run", "2"), move("done"))
+    script.add("ReviewOutput", REVIEW)
     script.add("StepReport", done_writing(Folder, "1"), done_writing(Folder, "2"))
     script.add("Verdict", verdict(), verdict())
     script.add("ExecDiscussorOutput", tell("Step 1 passed. Step 2 is next; go?"),
@@ -173,3 +174,61 @@ def test_execute_refuses_a_run_that_is_not_approved(tmp_path, capsys):
     with pytest.raises(SystemExit):
         cli.main(["execute", "--run", str(tmp_path), "--role", "all=fake"])
     assert "the hypotheses is not approved" in capsys.readouterr().err
+
+
+def test_execute_answers_while_the_team_works(tmp_path, script, monkeypatch, capsys):
+    """With a terminal, a line typed while the team works is answered on the
+    side, and the work goes on."""
+    import threading
+    import time
+
+    from research_agent import state as S
+    from research_agent.bootstrap.config import RoleConfig
+    from research_agent.execute import config as exec_config, nodes as exec_nodes
+    from research_agent.execute.session import Execution
+    from tests.test_execute_graph import approved_state, done_writing
+    from tests.test_execute_graph import decide as move, say as tell, verdict
+
+    run_dir = tmp_path / "run"
+    S.Store(run_dir).write(approved_state())
+    roles = {r: RoleConfig("fake") for r in (*exec_config.ROLES, "discussor")}
+    run = exec_nodes.ExecRun(run_dir, roles, skills={}, quiet=True,
+                             limits=exec_config.defaults())
+    working, answered, settled = threading.Event(), threading.Event(), threading.Event()
+
+    def owner(prompt):
+        working.set()
+        assert answered.wait(10), "the side answer came while the step was working"
+        return done_writing(run, "1")(prompt)
+
+    def side(prompt):
+        answered.set()
+        return {"reply": "Step 1 is counting the rows."}
+
+    def last_words(prompt):
+        settled.set()
+        return tell("Step 1 passed. Anything else?")
+
+    script.add("ExecDecision", move("run", "1"), move("ask_user", task="Anything else?"))
+    script.add("StepReport", owner)
+    script.add("Verdict", verdict())
+    script.add("AsideOutput", side)
+    script.add("ExecDiscussorOutput", last_words)
+    lines = iter([(working, "how is step 1 going?"), (settled, "/exit")])
+
+    def typed(prompt=""):
+        try:
+            event, line = next(lines)
+        except StopIteration:
+            raise EOFError
+        assert event.wait(10)
+        time.sleep(0.2)                  # let the graph get where it is going
+        return line
+
+    monkeypatch.setattr("builtins.input", typed)
+    assert cli._converse_exec(Execution(run), exec_config.defaults(), concurrent=True) == 0
+    out = capsys.readouterr().out
+    assert "You can write at any time" in out
+    assert "answering on the side; the team works on" in out
+    assert "Step 1 is counting the rows." in out and "Step 1 passed. Anything else?" in out
+    assert out.index("Step 1 is counting the rows.") < out.index("Step 1 passed.")

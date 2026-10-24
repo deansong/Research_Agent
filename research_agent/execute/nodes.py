@@ -19,14 +19,16 @@ from __future__ import annotations
 
 import subprocess
 import sys
+import threading
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from pathlib import Path
 
 from research_agent import run as run_base
+from research_agent import state as S
 from research_agent.bootstrap.config import RoleConfig
 from research_agent.bootstrap.nodes import DISCUSSOR_SESSION, Outcome, design_problems
-from research_agent.execute import config, jobs, prompts, schemas, views
+from research_agent.execute import config, inbox, jobs, prompts, schemas, views
 
 NodeFailed = run_base.NodeFailed
 
@@ -48,6 +50,9 @@ class ExecRun(run_base.Run):
         self.instructions = {**prompts.INSTRUCTIONS, **self.instructions}
         if self.limits is None:
             self.limits = config.defaults()
+        # One discussor turn at a time: the graph's, and the user's asides
+        # while the graph works, share one conversation.
+        self.discussor_lock = threading.Lock()
 
     @classmethod
     def from_config(cls, folder: Path, cfg: config.ExecConfig, discussor: RoleConfig, *,
@@ -202,6 +207,24 @@ class DiscussorTurn(Outcome):
     stop: bool = False
 
 
+def breakpoint_problems(st: dict, breakpoints) -> list[str]:
+    steps = {s["id"] for s in (st.get("plan") or {}).get("steps") or []}
+    return [f"breakpoints: {b.step} is not a plan step" for b in breakpoints if b.step not in steps]
+
+
+def breakpoint_ops(st: dict, breakpoints) -> list[dict]:
+    """Each breakpoint as a change to its step's record."""
+    ops = []
+    for b in breakpoints:
+        ops.append(record_op(st, b.step, **{f"pause_{b.when}": b.on}))
+        st = _apply_one(st, ops[-1])
+    return ops
+
+
+def _apply_one(st: dict, op: dict) -> dict:
+    return S.apply(st, [op], by="discussor")[0]
+
+
 def discussor(run: ExecRun, st: dict, *, seen: dict, user: str = "", note: str = "",
               awaiting: str = "") -> DiscussorTurn:
     open_ids = {q["id"] for q in st.get("open_questions") or [] if q.get("status") == "open"}
@@ -214,18 +237,44 @@ def discussor(run: ExecRun, st: dict, *, seen: dict, user: str = "", note: str =
         if out.hand_to == "orchestrator" and not (out.requests or out.go or out.stop):
             problems.append('hand_to is "orchestrator" but there is no request or go for the '
                             'team to act on: add the request, or hand to "user"')
-        return problems
+        return problems + breakpoint_problems(st, out.breakpoints)
 
-    out, session = run.call("discussor", brief=views.discussor_turn(
-        st, seen, user=user, note=note, awaiting=awaiting), schema=schemas.ExecDiscussorOutput,
-        session=DISCUSSOR_SESSION, check=check)
-    ops = [{"op": "add", "section": "decisions", "value": {**d.model_dump(), "by": "user"}}
-           for d in out.decisions]
+    with run.discussor_lock:
+        out, session = run.call("discussor", brief=views.discussor_turn(
+            st, seen, user=user, note=note, awaiting=awaiting),
+            schema=schemas.ExecDiscussorOutput, session=DISCUSSOR_SESSION, check=check)
+    ops = breakpoint_ops(st, out.breakpoints)
+    ops += [{"op": "add", "section": "decisions", "value": {**d.model_dump(), "by": "user"}}
+            for d in out.decisions]
     ops += [{"op": "update", "section": "open_questions", "id": a.id,
              "value": {"status": "answered", "answer": a.answer}} for a in out.answers]
     return DiscussorTurn(ops=ops, summary=out.reply[:200], session=session, data=out,
                          reply=out.reply, requests=list(out.requests), hand_to=out.hand_to,
                          go=out.go and bool(awaiting), stop=out.stop)
+
+
+def aside(run: ExecRun, st: dict, *, user: str, activity: str) -> schemas.AsideOutput:
+    """The user writes while the team works. The answer is the discussor's;
+    what it records goes to the inbox, for the graph to apply at its next
+    step -- the state here may already be behind."""
+
+    def check(out: schemas.AsideOutput) -> list[str]:
+        return breakpoint_problems(st, out.breakpoints)
+
+    with run.discussor_lock:
+        out, _ = run.call("discussor", brief=views.aside(st, user=user, activity=activity,
+                                                         run_dir=str(run.folder)),
+                          schema=schemas.AsideOutput, session=DISCUSSOR_SESSION, check=check,
+                          label="discussor (aside)")
+    for b in out.breakpoints:
+        inbox.post(run.folder, "breakpoint", step=b.step, when=b.when, on=b.on)
+    for r in out.requests:
+        inbox.post(run.folder, "request", text=r)
+    for d in out.decisions:
+        inbox.post(run.folder, "decision", what=d.what, why=d.why)
+    if out.stop:
+        inbox.post(run.folder, "stop", why="the user stopped the execution")
+    return out
 
 
 # ---- orchestrator ---------------------------------------------------------------------------
@@ -389,3 +438,31 @@ def validator(run: ExecRun, st: dict, design: Design, *, node: dict, step: dict,
         "asked": step["title"][:500], "summary": verdict[:1500], "session": session}})
     return Outcome(ops=ops, summary=f"step {step['id']} {verdict}", session=session, data=out)
 
+
+# ---- reviewer -------------------------------------------------------------------------------
+
+
+def reviewer(run: ExecRun, st: dict) -> Outcome:
+    """A conference-style review of the finished study, kept in the state
+    (reviews) and as <run>/reviews/V<n>.md, for the next run."""
+    out, session = run.call("reviewer", brief=views.reviewer(st, run_dir=str(run.folder)),
+                            schema=schemas.ReviewOutput, access="read_only", workdir=run.folder,
+                            skills=[s for s in run.limits.reviewer_skills
+                                    if s in run.known_skills()] or None,
+                            label="reviewer")
+    review_id = f"V{len(st.get('reviews') or []) + 1}"
+    folder = run.folder / "reviews"
+    folder.mkdir(parents=True, exist_ok=True)
+    path = folder / f"{review_id}.md"
+    outcome = S.render(st, ["execution"])
+    value = {**out.model_dump(), "run": str(run.folder), "outcome": outcome, "file": str(path)}
+    shown = S.render({"reviews": [{**value, "id": review_id}]}, ["reviews"]).split("\n", 1)[-1]
+    path.write_text(f"# Review {review_id} of {run.folder.name}\n\n{shown}\n\n"
+                    f"## What was run\n{outcome}\n")
+    ops = [{"op": "add", "section": "reviews", "value": value},
+           {"op": "add", "section": "results", "value": {
+               "node": "reviewer", "job": "review", "asked": "review the finished study",
+               "summary": f"rating {out.rating}/10 (confidence {out.confidence}/5): {out.summary}"[:1500],
+               "session": session}}]
+    return Outcome(ops=ops, summary=f"review {review_id}: rating {out.rating}/10", session=session,
+                   data=out)

@@ -13,7 +13,9 @@ CONCEPT: LangGraph, as the bootstrap, in the same checkpoint file under its
                                                          --launched--> wait --jobs done--> <owner of S>
                                                          --failed/blocked--> orchestrator
                           --skip S--> orchestrator (the terminal record written)
-                          --ask_user / a gated step / stop / done / limit--> discussor -> human
+                          --ask_user / a gated step or breakpoint / stop / limit--> discussor -> human
+                          --done--> reviewer --> discussor (the review goes to the next run)
+    validator --a breakpoint after the step--> discussor
     human --> discussor --(go, or a request)--> orchestrator, else --> human
           --> orchestrator on /go; END on /exit
 """
@@ -31,7 +33,7 @@ from typing_extensions import TypedDict
 import research_backend as RB
 
 from research_agent import state as S
-from research_agent.execute import jobs, nodes
+from research_agent.execute import inbox, jobs, nodes
 
 
 class ExecState(TypedDict, total=False):
@@ -49,7 +51,8 @@ class ExecState(TypedDict, total=False):
     decisions: int
     """Orchestrator decisions since the user last spoke."""
     awaiting: str
-    """The step waiting for the user's go."""
+    """The step waiting for the user's go ("5"), or the breakpoint after a
+    step the work is paused at ("after:4")."""
     step: str
     """The step being worked on."""
     report: dict
@@ -97,14 +100,38 @@ def build(run: nodes.ExecRun, design: nodes.Design, checkpointer=None):
         store.write(new, by=by, ops=ops, changed=changed)
         return new
 
-    def go_ops(st: dict, step_id: str) -> list[dict]:
+    def go_ops(st: dict, awaiting: str) -> list[dict]:
         """The user's go: on the step's record, and as their decision -- which
         the discussor sees, even when /go did not pass through it."""
+        after = awaiting.startswith("after:")
+        step_id = awaiting.split(":", 1)[1] if after else awaiting
         step = nodes.plan_step(st, step_id) or {}
-        return [nodes.record_op(st, step_id, go=True),
-                {"op": "add", "section": "decisions", "value": {
-                    "what": f"Go for step {step_id}: {step.get('title', '')}".strip(),
-                    "why": "the user said go", "by": "user"}}]
+        record = (nodes.record_op(st, step_id, pause_after=False) if after else
+                  nodes.record_op(st, step_id, go=True, pause_before=False))
+        what = (f"Go on after step {step_id}" if after else
+                f"Go for step {step_id}: {step.get('title', '')}".strip())
+        return [record, {"op": "add", "section": "decisions", "value": {
+            "what": what, "why": "the user said go", "by": "user"}}]
+
+    def drain(st: dict) -> tuple[dict, list[str], str]:
+        """What the user said while the team worked: (state, requests, why to
+        stop -- "" if not)."""
+        items = inbox.take(run.folder)
+        steps = {s["id"] for s in (st.get("plan") or {}).get("steps") or []}
+        ops, requests, stop = [], [], ""
+        for item in items:
+            if item["kind"] == "breakpoint" and item.get("step") in steps:
+                ops.append(nodes.record_op(st, item["step"],
+                                           **{f"pause_{item['when']}": item.get("on", True)}))
+                st = commit(st, ops[-1:], "user")
+            elif item["kind"] == "decision":
+                st = commit(st, [{"op": "add", "section": "decisions", "value": {
+                    "what": item["what"], "why": item.get("why", ""), "by": "user"}}], "user")
+            elif item["kind"] == "request":
+                requests.append(item["text"])
+            elif item["kind"] == "stop":
+                stop = item.get("why") or "the user stopped the execution"
+        return st, requests, stop
 
     def stop_all(st: dict, why: str) -> dict:
         """Stop the jobs and every step under way."""
@@ -169,7 +196,14 @@ def build(run: nodes.ExecRun, design: nodes.Design, checkpointer=None):
     # ---- the orchestrator -------------------------------------------------------------
 
     def orchestrator(state: ExecState) -> dict:
-        st = state["research"]
+        st, asked, stop = drain(state["research"])
+        pending = list(state.get("pending") or []) + asked
+        if stop:
+            st = stop_all(st, stop)
+            return {"research": st, "note": f"Execution stopped: {stop}. Running jobs were "
+                                             f"stopped. Tell the user where things stand.",
+                    "outcome": "stopped", "pending": pending, "_to": "discussor",
+                    "decision": {"action": "stop", "step": "", "reason": stop}}
         used, over = budget(run, st)
         if over:
             st = stop_all(st, f"stopped: {over}")
@@ -181,9 +215,9 @@ def build(run: nodes.ExecRun, design: nodes.Design, checkpointer=None):
         if state.get("decisions", 0) >= limits.max_decisions:
             note = (f"The team has made {limits.max_decisions} decisions since the user last "
                     f"spoke. Tell the user where things stand and ask how to continue.")
-            return {"note": note, "_to": "discussor",
+            return {"research": st, "note": note, "_to": "discussor", "pending": pending,
                     "decision": {"action": "ask_user", "step": "", "reason": "the limit"}}
-        out = nodes.orchestrator(run, st, design, budget=used, requests=state.get("pending") or [],
+        out = nodes.orchestrator(run, st, design, budget=used, requests=pending,
                                  last=state.get("last", ""))
         st = commit(st, out.ops, "orchestrator")
         d = out.data
@@ -194,9 +228,10 @@ def build(run: nodes.ExecRun, design: nodes.Design, checkpointer=None):
         if d.action in ("run", "retry"):
             step = nodes.plan_step(st, d.step)
             rec = nodes.records(st)[d.step]
-            if needs_go(step) and not rec.get("go"):
-                note = (f"Step {d.step} is next ({d.reason}). It waits for the user's go: say "
-                        f"what it will do and cost, and ask. {note}").strip()
+            if (needs_go(step) and not rec.get("go")) or rec.get("pause_before"):
+                why = "a breakpoint" if rec.get("pause_before") else "the plan gates it"
+                note = (f"Step {d.step} is next ({d.reason}). It waits for the user's go ({why}): "
+                        f"say what it will do and cost, and ask. {note}").strip()
                 return {**base, "awaiting": d.step, "note": note, "_to": "discussor"}
             attempt = rec.get("attempts", 0) + 1
             st = commit(st, [nodes.record_op(
@@ -220,7 +255,7 @@ def build(run: nodes.ExecRun, design: nodes.Design, checkpointer=None):
             st = commit(st, [{"op": "merge", "section": "status", "value": {
                 "phase": "done", "next": "the paper"}}], "execution")
             note = note or "Every step has passed or been skipped: the execution is done."
-            return {**base, "research": st, "note": note, "outcome": "done", "_to": "discussor"}
+            return {**base, "research": st, "note": note, "outcome": "done", "_to": "reviewer"}
         if d.action == "stop":
             st = stop_all(st, f"stopped by the orchestrator: {d.task}")
             return {**base, "research": st, "note": f"The orchestrator stopped the execution: "
@@ -279,6 +314,12 @@ def build(run: nodes.ExecRun, design: nodes.Design, checkpointer=None):
             print(f"  . step {sid}: waiting on jobs {', '.join(ids)} (Ctrl-C leaves them "
                   f"running; --resume picks them up)", flush=True)
         while True:
+            stops = inbox.take(run.folder, kinds=("stop",))
+            if stops:
+                st = stop_all(st, stops[0].get("why") or "the user stopped the execution")
+                return {"research": st, "note": f"The user stopped the execution while step {sid} "
+                                                f"was running; its jobs were stopped.",
+                        "outcome": "stopped", "_to": "discussor"}
             found = [jobs.get(run.folder, i) for i in ids]
             if not any(j and jobs.status(j)["state"] == "running" for j in found):
                 break
@@ -294,7 +335,15 @@ def build(run: nodes.ExecRun, design: nodes.Design, checkpointer=None):
         return {"research": st, "_to": design.owner_of[sid]}
 
     def validator(state: ExecState) -> dict:
-        st, sid = state["research"], state["step"]
+        # What the user said while the step ran counts now: a breakpoint
+        # after this step, or a stop.
+        st, asked, stop = drain(state["research"])
+        sid = state["step"]
+        pending = list(state.get("pending") or []) + asked
+        if stop:
+            st = stop_all(st, stop)
+            return {"research": st, "pending": pending, "outcome": "stopped", "_to": "discussor",
+                    "note": f"Execution stopped before step {sid} was checked: {stop}."}
         node = design.owners[design.owner_of[sid]]
         try:
             out = nodes.validator(run, st, design, node=node, step=nodes.plan_step(st, sid),
@@ -316,7 +365,29 @@ def build(run: nodes.ExecRun, design: nodes.Design, checkpointer=None):
         rec = nodes.records(st)[sid]
         last = f"step {sid} verdict -- {rec['verdict']}" + "".join(
             f"\n- {p}" for p in rec.get("problems") or [])
-        return {"research": st, "last": last, "_to": "orchestrator"}
+        if rec["status"] == "pass" and rec.get("pause_after"):
+            return {"research": st, "last": last, "awaiting": f"after:{sid}", "_to": "discussor",
+                    "pending": pending,
+                    "note": f"Step {sid} passed and the user asked to stop here (a breakpoint). "
+                            f"Show them its results and ask whether to go on."}
+        return {"research": st, "last": last, "pending": pending, "_to": "orchestrator"}
+
+    def reviewer(state: ExecState) -> dict:
+        st = state["research"]
+        try:
+            out = nodes.reviewer(run, st)
+        except RB.BackendCancelled:
+            raise
+        except RB.BackendError as exc:
+            return {"note": f"{state.get('note', '')} The review could not be written: "
+                            f"{str(exc)[:400]}".strip(), "_to": "discussor"}
+        st = commit(st, out.ops, "reviewer")
+        review = st["reviews"][-1]
+        return {"research": st, "_to": "discussor", "note": (
+            f"{state.get('note', '')} The reviewer reviewed the study (review {review['id']}, "
+            f"{review['file']}): rating {review['rating']}/10, confidence {review['confidence']}/5. "
+            f"Tell the user its main points, and that the next run starts from it: "
+            f"python -m research_agent bootstrap --from {run.folder}").strip()}
 
     graph = StateGraph(_Routed)
     graph.add_node("discussor", discussor)
@@ -326,16 +397,19 @@ def build(run: nodes.ExecRun, design: nodes.Design, checkpointer=None):
         graph.add_node(name, owner(name))
     graph.add_node("wait", wait)
     graph.add_node("validator", validator)
+    graph.add_node("reviewer", reviewer)
 
     owners = list(design.owners)
     graph.add_edge(START, "orchestrator")
-    graph.add_conditional_edges("orchestrator", _route, ["discussor", "orchestrator", *owners])
+    graph.add_conditional_edges("orchestrator", _route,
+                                ["discussor", "orchestrator", "reviewer", *owners])
     graph.add_conditional_edges("discussor", _route, ["orchestrator", "human"])
     graph.add_conditional_edges("human", _route, ["discussor", "orchestrator", END])
     for name in owners:
         graph.add_conditional_edges(name, _route, ["wait", "validator", "orchestrator"])
     graph.add_conditional_edges("wait", _route, ["discussor", *owners])
-    graph.add_edge("validator", "orchestrator")
+    graph.add_conditional_edges("validator", _route, ["orchestrator", "discussor"])
+    graph.add_edge("reviewer", "discussor")
     return graph.compile(checkpointer=checkpointer)
 
 

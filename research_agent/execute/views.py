@@ -45,12 +45,65 @@ def discussor_turn(st: dict, seen: dict, *, user: str = "", note: str = "",
     if changed or S.version(st, "results") > int((seen or {}).get("results", 0)):
         parts.append(_block("CHANGED SINCE YOU LAST SPOKE",
                             S.render(st, changed) + _latest_results(st, seen)))
-    if awaiting:
+    if awaiting.startswith("after:"):
+        sid = awaiting.split(":", 1)[1]
+        parts.append(_block(f"PAUSED AFTER STEP {sid} -- a breakpoint", "Show the user its results; "
+                            "the work goes on when they say go."))
+    elif awaiting:
         step = _step(st, awaiting)
-        parts.append(_block("WAITING FOR THE USER'S GO", step_text(step) if step else awaiting))
+        record = (st.get("execution") or {}).get("steps") or []
+        why = ("a breakpoint" if any(r["id"] == awaiting and r.get("pause_before") for r in record)
+               else "the plan gates it")
+        parts.append(_block(f"WAITING FOR THE USER'S GO ({why})",
+                            step_text(step) if step else awaiting))
     status = st.get("status") or {}
     if status.get("summary"):
         parts.append(_block("WHERE THINGS STAND", status["summary"]))
+    return "\n\n".join(parts)
+
+
+def aside(st: dict, *, user: str, activity: str, run_dir: str) -> str:
+    """The user writes while the team works: what is happening now, from code."""
+    parts = [_block("AN ASIDE -- the team is working; nothing waits for your answer",
+                    "Answer from the state and the files; record breakpoints, a stop or "
+                    "requests if the user asks for them."),
+             _block("THE USER SAYS", user),
+             _block("WHAT IS HAPPENING NOW", activity),
+             _block("THE STEP TABLE", S.render(st, ["execution"]))]
+    status = st.get("status") or {}
+    if status.get("summary"):
+        parts.append(_block("WHERE THINGS STAND", status["summary"]))
+    parts.append(_block("FILES", f"Everything is in {run_dir}: artifacts/step_NN/ (outputs), "
+                                 f"work/ (code), jobs/ (logs), state/research.md"))
+    return "\n\n".join(parts)
+
+
+# ---- reviewer -----------------------------------------------------------------------------
+
+
+def reviewer(st: dict, *, run_dir: str) -> str:
+    root = Path(run_dir)
+    listing = []
+    for folder in sorted((root / "artifacts").glob("step_*")):
+        files = sorted(p.relative_to(folder).as_posix() for p in folder.rglob("*") if p.is_file())
+        listing.append(f"{folder}: {', '.join(files[:30]) or '(empty)'}"
+                       + (f" ... and {len(files) - 30} more" if len(files) > 30 else ""))
+    parts = [f"Today is {_today()}.",
+             _block("THE STUDY", S.render(st, ["goal", "constraints", "protocol"])),
+             _block("HYPOTHESES AND RUBRIC", S.render({**st, "hypotheses": _live(st)},
+                                                      ["hypotheses", "rubric"])),
+             _block("THE PLAN", "\n\n".join(step_text(s) for s in _steps(st))),
+             _block("WHAT WAS RUN -- the step table", S.render(st, ["execution"])),
+             _block("DECISIONS AND RISKS", S.render(st, ["decisions", "risks"], brief=True)),
+             _block("EVIDENCE CITED", S.render(st, ["evidence"], brief=True)),
+             _block("THE FILES -- read them", "\n".join(listing + [
+                 f"Code (a git repository; `git log` shows each step): {root / 'work'}",
+                 f"Job records and logs: {root / 'jobs'}"]))]
+    if st.get("reviews"):
+        parts.append(_block("EARLIER REVIEWS -- say whether this run answers them",
+                            S.render(st, ["reviews"], brief=True)))
+    parts.append("The authors -- the user who owns this run -- ask for this review of their "
+                 "own work.")
     return "\n\n".join(parts)
 
 
