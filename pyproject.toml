@@ -10,7 +10,8 @@ readme = "research_backend/README.md"
 requires-python = ">=3.11"
 dependencies = ["pydantic>=2"]
 
-# The agent (research_agent) also needs: langgraph, langgraph-checkpoint-sqlite, jsonschema.
+# The agent (research_agent) also needs: langgraph, langgraph-checkpoint-sqlite, jsonschema;
+# its web UI: fastapi, uvicorn[standard].
 
 [project.optional-dependencies]
 codex = ["openai-codex"]
@@ -19,4 +20,5 @@ codex = ["openai-codex"]
 include = ["research_backend*", "research_agent*"]
 
 [tool.setuptools.package-data]
-research_agent = ["bootstrap/config.toml", "execute/config.toml"]
+research_agent = ["bootstrap/config.toml", "execute/config.toml", "web/static/*.html",
+                  "web/static/css/*", "web/static/js/*", "web/static/vendor/*"]

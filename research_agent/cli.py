@@ -84,8 +84,24 @@ def main(argv: list[str] | None = None) -> int:
                      help="print what each model does while it works: commands, files")
     exe.add_argument("--trace", action="store_true",
                      help="print every model call's full input and output (implies --progress)")
+    web = sub.add_parser("web", help="the web UI: every run in the runs folder, its conversation, "
+                                     "research state, graph and files")
+    web.add_argument("--runs", default=str(RUNS_ROOT), help=f"the runs folder (default {RUNS_ROOT})")
+    web.add_argument("--host", default="127.0.0.1",
+                     help="where to listen (default 127.0.0.1; there is no authentication)")
+    web.add_argument("--port", type=int, default=8421)
+    web.add_argument("--role", action="append", default=[], metavar="ROLE=PROVIDER[:MODEL[:EFFORT]]",
+                     help="override a role for every run opened (all=fake: a free demo)")
     args = parser.parse_args(argv)
 
+    if args.command == "web":
+        try:
+            from research_agent.web import server
+        except ImportError as exc:
+            parser.error(f"the web UI needs fastapi and uvicorn: pip install fastapi "
+                         f"'uvicorn[standard]' ({exc})")
+        server.serve(Path(args.runs), host=args.host, port=args.port, roles=args.role)
+        return 0
     if args.command == "execute":
         return _execute(parser, args)
     if args.resume:

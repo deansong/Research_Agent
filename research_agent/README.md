@@ -281,6 +281,12 @@ The run folder gains:
 
 `state/research.json` gains an `execution` section: one record per step, holding its owner, status, attempts, sessions, artifacts, jobs, GPU-hours and verdict.
 
+## The web UI
+
+`python -m research_agent web` shows every run in one page. The discussor is
+always there to talk to, also while the team works, and the research state has
+a tab and a window of its own. See [web/README.md](web/README.md).
+
 ## The code
 
 ```
@@ -288,6 +294,8 @@ research_agent/
     state.py            the research state, its operations, rendering, history
     run.py              one run's model calls: briefs, schemas, checks, retries
     cli.py              the command line
+    inbox.py            what the user says while a graph works
+    web/                the web UI (see web/README.md)
     bootstrap/
         config.toml     the defaults: models and skills
         config.py       reading config.toml, <run>/config.json and the flags
@@ -307,7 +315,6 @@ research_agent/
         views.py        each node's brief
         nodes.py        the design read as nodes; the orchestrator, owner, validator, discussor
         jobs.py         background jobs on free GPUs (also a plain script)
-        inbox.py        what the user says while the graph works
         graph.py        the LangGraph graph built from the design
         session.py      start, answer, go, stop, resume
 ```

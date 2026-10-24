@@ -1,0 +1,401 @@
+"""
+WHAT:  One open run in the web UI: its graph running on a worker thread, the
+       discussor always there to talk to, and a feed of events.
+WHY:   The two things the UI must guarantee live here.
+       - The discussor is always alive: a message while the graph waits for
+         the user answers it; a message while the team works is an aside --
+         the discussor answers on the side and the work goes on; a message
+         after a failure or a pause is an aside too.
+       - The research state is always current: a watcher sends a `state`
+         event whenever state/research.json changes, whoever changed it.
+CONCEPT: The stage follows the run folder: "bootstrap" until execute.json
+       exists (the execution was started), then "execution". Only the worker
+       thread touches the graph's checkpoint; requests read the state from
+       its files, and the status the worker left.
+"""
+
+from __future__ import annotations
+
+import json
+import re
+import threading
+import traceback
+from pathlib import Path
+from typing import Callable
+
+import research_backend as RB
+
+from research_agent import inbox
+from research_agent import state as S
+from research_agent.bootstrap import config as boot_config
+from research_agent.bootstrap import nodes as boot_nodes
+from research_agent.bootstrap.session import Bootstrap
+from research_agent.execute import config as exec_config
+from research_agent.execute import nodes as exec_nodes
+from research_agent.execute.session import Execution
+from research_agent.web.events import EventBus
+
+#: How often the watcher looks at the research state file, in seconds.
+WATCH_SECONDS = 0.5
+
+
+class Busy(RuntimeError):
+    """The run is working; this needs it to stop for the user first."""
+
+
+class _Paused(Exception):
+    """Raised between nodes when the user asked to pause."""
+
+
+class RunHost:
+    def __init__(self, folder: Path, *, roles=(), watch: bool = True):
+        self.folder = Path(folder).expanduser().resolve()
+        self.id = self.folder.name
+        self.bus = EventBus()
+        self.roles = list(roles)
+        """--role style overrides for this server (e.g. all=fake in tests)."""
+        self._lock = threading.RLock()
+        self._worker: threading.Thread | None = None
+        self._pause = threading.Event()
+        self._asides = 0
+        self.error = ""
+        self.current = ""
+        """The model call under way, in words -- for asides and the UI."""
+        self._status: dict = {}
+        self._versions: dict = {}
+        self.stage = "execution" if (self.folder / "execute.json").exists() else "bootstrap"
+        self.session = self._open_execution() if self.stage == "execution" else self._open_bootstrap()
+        self._refresh_status()
+        self._closed = threading.Event()
+        if watch:
+            threading.Thread(target=self._watch, daemon=True, name=f"watch-{self.id}").start()
+
+    # ---- opening the stage ------------------------------------------------------------
+
+    def _open_bootstrap(self) -> Bootstrap:
+        cfg = boot_config.load(self.folder, roles=self.roles)
+        self.folder.mkdir(parents=True, exist_ok=True)
+        boot_config.save(self.folder, cfg)
+        run = boot_nodes.Run.from_config(self.folder, cfg)
+        run.quiet, run.listener = True, self._feed
+        return Bootstrap(run)
+
+    def _open_execution(self, limits: dict | None = None, roles=()) -> Execution:
+        cfg = exec_config.load(self.folder, roles=list(roles), limits=limits or {})
+        exec_config.save(self.folder, cfg)
+        discussor = boot_config.load(self.folder, roles=[r for r in self.roles
+                                                         if r.split("=")[0] in ("all", "discussor")])
+        run = exec_nodes.ExecRun.from_config(self.folder, cfg, discussor.roles["discussor"])
+        run.quiet, run.listener = True, self._feed
+        return Execution(run)
+
+    # ---- what is there ----------------------------------------------------------------
+
+    @property
+    def busy(self) -> bool:
+        return bool(self._worker and self._worker.is_alive())
+
+    def detail(self) -> dict:
+        st = S.Store(self.folder).read()
+        roles = {r: str(c) for r, c in self.session.run.roles.items()}
+        return {"id": self.id, "folder": str(self.folder), "stage": self.stage,
+                "phase": (st.get("status") or {}).get("phase") or "discussing",
+                "goal": (st.get("goal") or {}).get("question", ""),
+                "busy": self.busy, "asides": self._asides, "current": self.current if self.busy else "",
+                "error": self.error, "roles": roles,
+                "can_execute": self.stage == "bootstrap" and S.approved(st, "design")
+                and not self.busy,
+                **self._status}
+
+    def _refresh_status(self) -> None:
+        """Read where the graph stopped. Only from the worker, or while idle."""
+        s = self.session
+        turn = s.last_turn
+        waiting = s.waiting_for_user if s.started else False
+        self._status = {"started": s.started, "waiting": waiting, "outcome": turn.outcome,
+                        "awaiting": getattr(s, "awaiting", "") if self.stage == "execution" else "",
+                        "stopped_midway": s.started and not waiting and not turn.outcome}
+
+    def status_event(self) -> None:
+        self.bus.emit("status", **self.detail())
+
+    # ---- what the user does -----------------------------------------------------------
+
+    def message(self, text: str) -> str:
+        """The user says something: an answer, an aside, or the idea that
+        starts the run. Returns which."""
+        text = text.strip()
+        if not text:
+            raise ValueError("Say something.")
+        with self._lock:
+            if self.stage == "bootstrap" and not self._status.get("started") and not self.busy:
+                self.bus.emit("chat", role="user", text=text, kind="answer")
+                self._run(lambda on: self.session.start(text, on_step=on))
+                return "start"
+            if not self.busy and self._status.get("waiting"):
+                self.bus.emit("chat", role="user", text=text, kind="answer")
+                self._run(lambda on: self.session.answer(text, on_step=on))
+                return "answer"
+            self.bus.emit("chat", role="user", text=text, kind="aside")
+            self._aside(text)
+            return "aside"
+
+    def approve(self, sections: list[str]) -> None:
+        bad = [s for s in sections if s not in S.APPROVABLE]
+        if self.stage != "bootstrap" or not sections or bad:
+            raise ValueError(f"Approve which? {', '.join(S.APPROVABLE)} (in the bootstrap).")
+        st = S.Store(self.folder).read()
+        missing = [s for s in sections if not S.version(st, s)]
+        if missing:
+            raise ValueError(f"There is no {', '.join(missing)} to approve yet.")
+        with self._lock:
+            self._need_waiting()
+            self.bus.emit("chat", role="user", text=f"(approved: {', '.join(sections)})",
+                          kind="answer")
+            self._run(lambda on: self.session.answer("", approve=sections, on_step=on))
+
+    def go(self) -> None:
+        with self._lock:
+            self._need_waiting()
+            if self.stage != "execution" or not self._status.get("awaiting"):
+                raise ValueError("Nothing is waiting for your go.")
+            self.bus.emit("chat", role="user", text=f"(go: {self._status['awaiting']})",
+                          kind="answer")
+            self._run(lambda on: self.session.answer("", go=True, on_step=on))
+
+    def stop(self) -> str:
+        """Execution: stop the jobs now and the work at its next step. The
+        bootstrap has nothing running on its own: pause it."""
+        with self._lock:
+            if self.stage == "bootstrap":
+                return self.pause()
+            if self.busy:
+                stopped = self.session.stop_now()
+                self.bus.emit("note", text=f"Stopping: {stopped} running jobs stopped; the team "
+                                           f"stops at its next step.")
+                return "stopping"
+            self._need_waiting()
+            self.bus.emit("chat", role="user", text="(stop)", kind="answer")
+            self._run(lambda on: self.session.answer("", stop=True, on_step=on))
+            return "stopped"
+
+    def pause(self) -> str:
+        if not self.busy:
+            raise ValueError("Nothing is running.")
+        self._pause.set()
+        self.bus.emit("note", text="Pausing after the current step...")
+        return "pausing"
+
+    def resume(self) -> None:
+        """Carry on after a failure or a pause."""
+        with self._lock:
+            if self.busy:
+                raise Busy("The run is already working.")
+            if not self._status.get("stopped_midway"):
+                raise ValueError("The run is not stopped midway: say something instead.")
+            go_on = self.session.retry if self.stage == "bootstrap" else self.session.resume
+            self._run(lambda on: go_on(on_step=on))
+
+    def breakpoint(self, step: str, when: str, on: bool) -> None:
+        if self.stage != "execution":
+            raise ValueError("Breakpoints are for the execution stage.")
+        steps = {s["id"] for s in (S.Store(self.folder).read().get("plan") or {}).get("steps") or []}
+        if step not in steps or when not in ("before", "after"):
+            raise ValueError("A breakpoint is a plan step, before or after.")
+        inbox.post(self.folder, "breakpoint", step=step, when=when, on=on)
+        self.bus.emit("note", text=f"Breakpoint {'set' if on else 'removed'}: {when} step {step} "
+                                   f"(from the team's next step).")
+
+    def execute(self, *, limits: dict | None = None, roles=()) -> None:
+        """Start the execution stage of an approved run."""
+        with self._lock:
+            if self.stage != "bootstrap":
+                raise ValueError("The execution has already started.")
+            if self.busy:
+                raise Busy("The bootstrap is working.")
+            if not S.approved(S.Store(self.folder).read(), "design"):
+                raise ValueError("The design is not approved yet.")
+            session = self._open_execution(limits, roles=[*self.roles, *roles])
+            self.session.close()
+            self.session, self.stage = session, "execution"
+            self._refresh_status()
+            self.bus.emit("note", text="Execution started.")
+            self._run(lambda on: self.session.start(on_step=on))
+
+    # ---- running ----------------------------------------------------------------------
+
+    def _need_waiting(self) -> None:
+        if self.busy:
+            raise Busy("The team is working; this waits until it stops for you.")
+        if not self._status.get("waiting"):
+            raise ValueError("The run is not waiting for you.")
+
+    def _run(self, drive: Callable) -> None:
+        if self.busy:
+            raise Busy("The run is already working.")
+        self._pause.clear()
+        self.error = ""
+
+        def work():
+            try:
+                drive(self._on_step)
+            except _Paused:
+                self.bus.emit("note", text="Paused. Carry on when you are ready.")
+            except RB.BackendCancelled:
+                self.bus.emit("note", text="Cancelled.")
+            except RB.BackendError as exc:
+                self.error = str(exc)
+                self.bus.emit("error", message=str(exc)[:3000])
+            except Exception as exc:                     # shown, never swallowed
+                self.error = f"{type(exc).__name__}: {exc}"
+                self.bus.emit("error", message=self.error,
+                              detail="".join(traceback.format_exc(limit=8)))
+            finally:
+                try:
+                    self._refresh_status()
+                finally:
+                    self.current = ""
+                    self.status_event()
+
+        self._worker = threading.Thread(target=work, daemon=True, name=f"run-{self.id}")
+        self._worker.start()
+        self.status_event()
+
+    def _on_step(self, node: str, update: dict) -> None:
+        if node == "discussor" and update.get("reply"):
+            self.bus.emit("chat", role="discussor", text=update["reply"], kind="answer")
+        else:
+            self.bus.emit("step", node=node, text=_summary(node, update))
+        research = update.get("research")
+        if isinstance(research, dict):
+            self._state_event(research)
+        if self._pause.is_set():
+            raise _Paused
+
+    def _aside(self, text: str) -> None:
+        self._asides += 1
+        activity = (f"Working now: {self.current}." if self.current else "") + (
+            f" The last run stopped with an error: {self.error}" if self.error else "")
+
+        def answer():
+            try:
+                if self.stage == "execution":
+                    out = self.session.aside(text)
+                    noted = ([f"breakpoint {'on' if b.on else 'off'} {b.when} step {b.step}"
+                              for b in out.breakpoints] + [f"request: {r}" for r in out.requests]
+                             + (["stop"] if out.stop else []))
+                else:
+                    out = self.session.aside(text, activity=activity.strip())
+                    noted = [f"request: {r.detail}" for r in out.requests]
+                self.bus.emit("chat", role="discussor", text=out.reply, kind="aside", noted=noted)
+            except Exception as exc:
+                self.bus.emit("chat", role="discussor", kind="aside",
+                              text=f"(The discussor could not answer: {str(exc)[:500]})")
+            finally:
+                self._asides -= 1
+                self.status_event()
+
+        threading.Thread(target=answer, daemon=True, name=f"aside-{self.id}").start()
+        self.status_event()
+
+    def _feed(self, kind: str, data: dict) -> None:
+        if kind == "call":
+            if data.get("state") == "start":
+                self.current = f"{data['label']} ({data['model']})"
+            self.bus.emit("call", **data)
+        else:
+            self.bus.emit("note", **data)
+
+    # ---- the research state, watched --------------------------------------------------
+
+    def _state_event(self, st: dict) -> None:
+        versions = st.get("versions") or {}
+        if versions != self._versions:
+            self._versions = dict(versions)
+            self.bus.emit("state", versions=versions,
+                          phase=(st.get("status") or {}).get("phase", ""))
+
+    def _watch(self) -> None:
+        """Changes the graph's steps do not report: an aside's, another
+        process's (the CLI), a hand edit."""
+        path = self.folder / "state" / "research.json"
+        seen = path.stat().st_mtime_ns if path.exists() else 0
+        while not self._closed.wait(WATCH_SECONDS):
+            try:
+                now = path.stat().st_mtime_ns if path.exists() else 0
+                if now != seen:
+                    seen = now
+                    self._state_event(json.loads(path.read_text()))
+            except (OSError, ValueError):
+                continue
+
+    def close(self) -> None:
+        if self.busy:
+            raise Busy("The run is working; pause or stop it first.")
+        self._closed.set()
+        self.session.close()
+
+
+# ---- reading a run from its folder ------------------------------------------------------
+
+
+def _summary(node: str, update: dict) -> str:
+    d = update.get("decision") or {}
+    if node == "orchestrator" and d:
+        step = f" {d.get('step')}" if d.get("step") else ""
+        return f"orchestrator -> {d.get('action')}{step}: {d.get('reason', '')}"
+    if update.get("last"):
+        return str(update["last"]).splitlines()[0]
+    if node == "human":
+        return "the user answered"
+    return node
+
+
+_USER = re.compile(r"=== THE USER SAYS ===\n(.*?)(?:\n\n=== |\Z)", re.S)
+_NOTE = re.compile(r"=== FROM THE ORCHESTRATOR ===\n(.*?)(?:\n\n=== |\Z)", re.S)
+
+
+def transcript(folder: Path) -> list[dict]:
+    """The conversation with the discussor, from its research_backend session
+    -- whoever drove it (the CLI or this UI). Retried answers are left out."""
+    path = Path(folder) / "rb" / "sessions" / "discussor" / "session.json"
+    if not path.exists():
+        return []
+    turns = json.loads(path.read_text()).get("turns") or []
+    out = []
+    for i, turn in enumerate(turns):
+        prompt = turn.get("prompt") or ""
+        retried = i + 1 < len(turns) and (turns[i + 1].get("prompt") or "").startswith(
+            "Your answer could not be used")
+        aside = "=== AN ASIDE" in prompt
+        user = _USER.search(prompt)
+        if user and not prompt.startswith("Your answer could not be used"):
+            out.append({"role": "user", "text": user.group(1).strip(), "at": turn.get("at"),
+                        "kind": "aside" if aside else "answer"})
+        if turn.get("error") or retried:
+            continue
+        try:
+            reply = json.loads(turn.get("reply") or "{}").get("reply", "")
+        except ValueError:
+            reply = turn.get("reply") or ""
+        if reply:
+            out.append({"role": "discussor", "text": reply, "at": turn.get("at"),
+                        "kind": "aside" if aside else "answer"})
+    return out
+
+
+def run_summary(folder: Path, hosts: dict) -> dict | None:
+    path = folder / "state" / "research.json"
+    if not path.exists():
+        return None
+    try:
+        st = json.loads(path.read_text())
+    except ValueError:
+        return None
+    host = hosts.get(folder.name)
+    return {"id": folder.name, "folder": str(folder),
+            "goal": (st.get("goal") or {}).get("question", ""),
+            "phase": (st.get("status") or {}).get("phase") or "discussing",
+            "stage": "execution" if (folder / "execute.json").exists() else "bootstrap",
+            "updated": path.stat().st_mtime, "open": host is not None,
+            "busy": bool(host and host.busy)}

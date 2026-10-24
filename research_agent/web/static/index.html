@@ -1,0 +1,157 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Research Agent</title>
+  <link rel="stylesheet" href="/css/app.css">
+  <script src="/vendor/cytoscape.min.js"></script>
+  <script src="/vendor/dagre.min.js"></script>
+  <script src="/vendor/cytoscape-dagre.min.js"></script>
+  <script>cytoscape.use(cytoscapeDagre);</script>
+</head>
+<body>
+  <header class="topbar">
+    <div class="brand"><span class="dot"></span>research agent</div>
+    <div class="run-bar">
+      <span id="run-name" class="mono">no run open</span>
+      <span id="run-stage" class="pill">-</span>
+      <span id="run-phase" class="pill">-</span>
+      <span id="run-activity" class="activity"></span>
+    </div>
+    <div class="topbar-actions">
+      <button id="btn-resume" class="btn" hidden title="Carry on after a failure or a pause">Carry on</button>
+      <button id="btn-pause" class="btn" hidden title="Stop after the current step">Pause</button>
+      <button id="btn-execute" class="btn primary" hidden title="Carry out the approved design">Start execution</button>
+      <button id="btn-stop" class="btn danger" hidden title="Stop the running jobs and steps">Stop</button>
+      <button id="btn-new" class="btn">New run</button>
+      <button id="btn-open" class="btn">Open run</button>
+    </div>
+  </header>
+
+  <main class="shell" id="shell">
+    <section class="panel" id="panel-chat">
+      <div class="panel-head">
+        <h2>Conversation</h2>
+        <span id="chat-mode" class="chat-mode">-</span>
+        <button id="btn-scroll" class="btn icon" title="Scroll to the newest">&#8595;</button>
+      </div>
+      <div id="chat-log" class="chat-log">
+        <div id="chat-empty" class="empty">Open a run, or start a new one with your research idea.</div>
+      </div>
+      <div id="chat-actions" class="chat-actions"></div>
+      <form id="composer" class="composer">
+        <textarea id="composer-input" rows="3" placeholder="Write to the discussor..."></textarea>
+        <div class="composer-foot">
+          <span id="composer-hint" class="hint"></span>
+          <button id="btn-send" class="btn primary" type="submit">Send</button>
+        </div>
+      </form>
+    </section>
+
+    <div class="divider" data-resize="chat"></div>
+
+    <section class="panel panel-canvas" id="panel-canvas">
+      <nav class="tabs" id="canvas-tabs">
+        <button class="tab active" data-tab="state">Research state</button>
+        <button class="tab" data-tab="graph">Graph</button>
+        <button class="tab" data-tab="files">Files</button>
+        <button class="tab" data-tab="history">History</button>
+        <span class="tabs-spacer"></span>
+        <button id="btn-popout" class="btn small" title="Open the research state in its own window">Open in window &#8599;</button>
+      </nav>
+      <div class="tab-body active" id="tab-state"><div id="state-view" class="state-view"></div></div>
+      <div class="tab-body" id="tab-graph">
+        <div id="graph-canvas" class="cy-canvas"></div>
+        <div id="graph-legend" class="legend"></div>
+      </div>
+      <div class="tab-body" id="tab-files">
+        <div class="files-layout">
+          <div id="files-list" class="files-list"></div>
+          <div id="files-view" class="files-view"><div class="empty">Pick a file.</div></div>
+        </div>
+      </div>
+      <div class="tab-body" id="tab-history">
+        <div class="history-layout">
+          <div id="history-list" class="history-list"></div>
+          <div id="history-view" class="history-view"><div class="empty">Pick a change to see what it did.</div></div>
+        </div>
+      </div>
+    </section>
+
+    <div class="divider" data-resize="inspector"></div>
+
+    <section class="panel" id="panel-inspector">
+      <nav class="tabs" id="inspector-tabs">
+        <button class="tab active" data-tab="run">Run</button>
+        <button class="tab" data-tab="calls">Model calls</button>
+        <button class="tab" data-tab="jobs">Jobs</button>
+      </nav>
+      <div class="tab-body active" id="tab-run"><dl id="run-facts" class="facts"></dl></div>
+      <div class="tab-body" id="tab-calls">
+        <h3>Live</h3>
+        <div id="calls-live" class="calls"></div>
+        <h3>Every session <button id="btn-sessions" class="btn small">refresh</button></h3>
+        <div id="sessions-list" class="calls"></div>
+      </div>
+      <div class="tab-body" id="tab-jobs">
+        <div id="jobs-list" class="jobs"></div>
+        <pre id="job-log" class="job-log" hidden></pre>
+      </div>
+    </section>
+  </main>
+
+  <dialog id="dialog-new">
+    <form id="form-new" method="dialog">
+      <h2>New run</h2>
+      <label>Your research idea
+        <textarea id="new-idea" rows="4" placeholder="What is the best way to train an open-vocabulary emotion classifier?"></textarea>
+      </label>
+      <label>Or start from a finished run (its review becomes the agenda)
+        <select id="new-from"><option value="">-- a new idea --</option></select>
+      </label>
+      <label>Folder name (optional)<input id="new-name" class="mono" placeholder="made from the date and the idea"></label>
+      <p id="new-error" class="form-error"></p>
+      <div class="dialog-actions">
+        <button id="new-cancel" class="btn" type="button">Cancel</button>
+        <button id="new-ok" class="btn primary" type="submit">Start</button>
+      </div>
+    </form>
+  </dialog>
+
+  <dialog id="dialog-open">
+    <h2>Open a run</h2>
+    <div id="run-list" class="run-list"></div>
+    <div class="dialog-actions"><button id="open-cancel" class="btn" type="button">Close</button></div>
+  </dialog>
+
+  <dialog id="dialog-execute">
+    <form id="form-execute" method="dialog">
+      <h2>Start the execution</h2>
+      <p class="hint">The approved design's nodes carry out the plan. Steps the plan gates wait for your go.</p>
+      <label>Wall-hour limit (0: none)<input id="exec-wall" type="number" min="0" step="0.5" value="0"></label>
+      <label>GPU-hour limit (0: none)<input id="exec-gpu" type="number" min="0" step="1" value="0"></label>
+      <label>Which steps wait for your go
+        <select id="exec-confirm">
+          <option value="gated">the steps the plan gates</option>
+          <option value="all">every step</option>
+          <option value="none">none</option>
+        </select>
+      </label>
+      <p id="exec-error" class="form-error"></p>
+      <div class="dialog-actions">
+        <button id="exec-cancel" class="btn" type="button">Cancel</button>
+        <button id="exec-ok" class="btn primary" type="submit">Start</button>
+      </div>
+    </form>
+  </dialog>
+
+  <dialog id="dialog-session" class="wide">
+    <div class="dialog-head"><h2 id="session-title">Session</h2>
+      <button id="session-close" class="btn" type="button">Close</button></div>
+    <div id="session-body" class="session-body"></div>
+  </dialog>
+
+  <script type="module" src="/js/app.js"></script>
+</body>
+</html>

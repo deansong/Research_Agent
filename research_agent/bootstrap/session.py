@@ -12,7 +12,6 @@ from __future__ import annotations
 
 import sqlite3
 from dataclasses import dataclass
-from pathlib import Path
 from typing import Callable
 
 from langgraph.checkpoint.sqlite import SqliteSaver
@@ -50,6 +49,11 @@ class Bootstrap:
     @property
     def research(self) -> dict:
         return self.graph.get_state(THREAD).values.get("research") or S.new()
+
+    @property
+    def waiting_for_user(self) -> bool:
+        """Stopped at the user's turn -- not midway, after a failure."""
+        return "human" in (self.graph.get_state(THREAD).next or ())
 
     @property
     def last_turn(self) -> Turn:

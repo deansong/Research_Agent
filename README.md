@@ -18,4 +18,5 @@ research design. The execution stage carries that design out.
 pip install langgraph langgraph-checkpoint-sqlite jsonschema openai-codex
 python -m research_agent bootstrap "your research idea"
 python -m research_agent execute --run ~/research_runs/<run>
+python -m research_agent web          # the web UI: http://127.0.0.1:8421 (pip install fastapi 'uvicorn[standard]')
 ```
