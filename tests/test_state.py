@@ -122,3 +122,17 @@ def test_questions_keep_their_for_field():
                                "value": {"text": "GPU budget?", "for": "user"}}], by="o")
     assert st["open_questions"][0]["for"] == "user"
     assert "(for user, open) GPU budget?" in S.render(st, ["open_questions"])
+
+
+def test_the_execution_section_records_each_step():
+    st, changed = S.apply(S.new(), [{"op": "set", "section": "execution", "value": {
+        "started": "2026-10-24T12:00:00+00:00", "gpu_hours": 140, "steps": [
+            {"id": "1", "title": "Data", "owner": "builder", "status": "pass",
+             "attempts": 1, "verdict": "pass: rows counted"},
+            {"id": "2", "title": "Train", "owner": "trainer"}]}}], by="execution")
+    assert changed == ["execution"] and st["execution"]["steps"][1]["status"] == "pending"
+    text = S.render(st, ["execution"])
+    assert "limits: 140 GPU-hours" in text
+    assert "1. [pass] Data (builder, 1 attempts, 0.0 GPU-h) -- pass: rows counted" in text
+    with pytest.raises(S.StateError):
+        S.apply(st, [{"op": "add", "section": "execution", "value": {}}], by="x")

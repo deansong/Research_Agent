@@ -132,6 +132,43 @@ class Design(BaseModel):
     notes: str = ""
 
 
+class StepRecord(BaseModel):
+    """How one plan step went in the execution stage."""
+
+    id: str
+    """The plan step's id."""
+    title: str = ""
+    owner: str = ""
+    """The design node that carries it out."""
+    status: Literal["pending", "running", "waiting", "validating", "pass", "fail", "skipped",
+                    "stopped"] = "pending"
+    go: bool = False
+    """The user let this gated step start."""
+    attempts: int = 0
+    sessions: list[str] = Field(default_factory=list)
+    artifacts: list[str] = Field(default_factory=list)
+    jobs: list[str] = Field(default_factory=list)
+    summary: str = ""
+    """The owner's last report, short."""
+    verdict: str = ""
+    """The validator's last verdict, short."""
+    problems: list[str] = Field(default_factory=list)
+    gpu_hours: float = 0.0
+    started: str = ""
+    finished: str = ""
+
+
+class Execution(BaseModel):
+    """The execution stage: one record per plan step, and the budget."""
+
+    started: str = ""
+    wall_hours: float = 0.0
+    """The limit on hours since execution started; 0 = none."""
+    gpu_hours: float = 0.0
+    """The limit on GPU-hours used by jobs; 0 = none."""
+    steps: list[StepRecord] = Field(default_factory=list)
+
+
 class Decision(BaseModel):
     id: str = ""
     what: str
@@ -184,6 +221,7 @@ class ResearchState(BaseModel):
     protocol: Protocol = Field(default_factory=Protocol)
     plan: Plan = Field(default_factory=Plan)
     design: Design = Field(default_factory=Design)
+    execution: Execution = Field(default_factory=Execution)
     decisions: list[Decision] = Field(default_factory=list)
     open_questions: list[Question] = Field(default_factory=list)
     risks: list[Risk] = Field(default_factory=list)
@@ -207,10 +245,10 @@ LISTS: dict[str, tuple[str, type[BaseModel]]] = {
 }
 OBJECTS: dict[str, type[BaseModel]] = {
     "goal": Goal, "constraints": Constraints, "protocol": Protocol, "plan": Plan,
-    "design": Design, "status": Status,
+    "design": Design, "execution": Execution, "status": Status,
 }
 SECTIONS = ("goal", "constraints", "assumptions", "evidence", "hypotheses", "rubric",
-            "protocol", "plan", "design", "decisions", "open_questions", "risks",
+            "protocol", "plan", "design", "execution", "decisions", "open_questions", "risks",
             "results", "status")
 #: What the user approves, in the order the work needs them.
 APPROVABLE = ("hypotheses", "rubric", "protocol", "plan", "design")
@@ -394,6 +432,21 @@ def _render(state: dict, section: str, brief: bool) -> str:
                          f"{', '.join(n.get('skills') or []) or '-'}")
         if d.get("notes") and not brief:
             lines.append(d["notes"])
+        return "\n".join(lines)
+    if section == "execution":
+        e = value or {}
+        if not e.get("steps"):
+            return ""
+        limits = [f"{e[k]:g} {label}" for k, label in (("wall_hours", "wall hours"),
+                                                        ("gpu_hours", "GPU-hours")) if e.get(k)]
+        lines = [f"Started {e.get('started') or '-'}; limits: {', '.join(limits) or 'none'}"]
+        for r in e["steps"]:
+            tail = f" -- {r['verdict'] or r['summary']}" if (r.get("verdict") or r.get("summary")) \
+                else ""
+            if brief and len(tail) > 160:
+                tail = tail[:157] + "..."
+            lines.append(f"{r['id']}. [{r['status']}] {r.get('title', '')} ({r.get('owner', '')}, "
+                         f"{r.get('attempts', 0)} attempts, {r.get('gpu_hours', 0):.1f} GPU-h){tail}")
         return "\n".join(lines)
     return "\n".join(_line(section, x, brief) for x in value or [])
 
