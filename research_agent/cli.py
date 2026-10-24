@@ -86,7 +86,8 @@ def main(argv: list[str] | None = None) -> int:
                      help="print every model call's full input and output (implies --progress)")
     web = sub.add_parser("web", help="the web UI: every run in the runs folder, its conversation, "
                                      "research state, graph and files")
-    web.add_argument("--runs", default=str(RUNS_ROOT), help=f"the runs folder (default {RUNS_ROOT})")
+    web.add_argument("--runs", "--sessions-root", dest="runs", default=str(RUNS_ROOT),
+                     help=f"the runs folder (default {RUNS_ROOT}); --sessions-root is v1's name for it")
     web.add_argument("--host", default="127.0.0.1",
                      help="where to listen (default 127.0.0.1; there is no authentication)")
     web.add_argument("--port", type=int, default=8421)
