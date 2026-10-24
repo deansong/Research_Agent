@@ -21,7 +21,7 @@ from pathlib import Path
 import research_backend as RB
 
 from research_agent import state as S
-from research_agent.bootstrap import config, nodes, views
+from research_agent.bootstrap import carry, config, nodes, views
 from research_agent.bootstrap.session import Bootstrap
 from research_agent.execute import config as exec_config
 from research_agent.execute import inbox as exec_inbox
@@ -54,6 +54,10 @@ def main(argv: list[str] | None = None) -> int:
     boot.add_argument("idea", nargs="?", help="the idea, in a sentence or a paragraph")
     boot.add_argument("--run", help=f"the run folder (default: a new one in {RUNS_ROOT})")
     boot.add_argument("--resume", metavar="RUN", help="carry on with an earlier run")
+    boot.add_argument("--from", dest="start_from", metavar="RUN",
+                      help="start a new run from a finished one: its research state and its "
+                           "reviewer's review; the planner and designer revise the plan and "
+                           "design for it")
     boot.add_argument("--role", action="append", default=[], metavar="ROLE=PROVIDER[:MODEL[:EFFORT]]",
                       help="which model a role uses, e.g. planner=codex:gpt-5.6-sol:high "
                            "(all=... sets every role)")
@@ -88,6 +92,17 @@ def main(argv: list[str] | None = None) -> int:
         folder = Path(args.resume).expanduser()
         if not (folder / "checkpoint.sqlite").exists():
             parser.error(f"{folder} is not a run folder (no checkpoint.sqlite).")
+    elif args.start_from:
+        old = Path(args.start_from).expanduser().resolve()
+        folder = Path(args.run).expanduser() if args.run else carry.next_folder(old)
+        if (folder / "checkpoint.sqlite").exists():
+            parser.error(f"{folder} has already started; --resume it.")
+        try:
+            carry.start_from(old, folder)
+        except ValueError as exc:
+            parser.error(str(exc))
+        print(f"Starting from {old}: its research state and review are carried into {folder}.")
+        args.idea = args.idea or carry.first_message(old)
     elif args.idea:
         folder = Path(args.run).expanduser() if args.run else _new_folder(args.idea)
     else:

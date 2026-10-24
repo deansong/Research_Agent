@@ -99,10 +99,11 @@ def researcher(st: dict, *, task: str) -> str:
 def planner(st: dict, *, job: str, task: str) -> str:
     if job == "hypothesize":
         sections = ["goal", "constraints", "assumptions", "evidence", "decisions",
-                    "hypotheses", "rubric", "protocol", "risks"]
+                    "hypotheses", "rubric", "protocol", "risks", "reviews"]
         title = "JOB: HYPOTHESIZE -- hypotheses, rubric and protocol"
     else:
-        sections = ["goal", "constraints", "decisions", "protocol", "rubric", "risks", "plan"]
+        sections = ["goal", "constraints", "decisions", "protocol", "rubric", "risks", "plan",
+                    "reviews"]
         title = "JOB: PLAN -- the plan for the approved hypotheses"
     parts = [_block(title, task), _block("THE RESEARCH STATE", S.render(st, sections))]
     if job == "plan":
@@ -125,5 +126,7 @@ def designer(st: dict, *, task: str, skills: list[tuple[str, str]]) -> str:
             ["hypotheses", "rubric", "protocol"])),
         _block("CONSTRAINTS", S.render(st, ["goal", "constraints"])),
         _block("THE CURRENT DESIGN", S.render(st, ["design"])),
+        *([_block("THE REVIEW OF AN EARLIER RUN", S.render(st, ["reviews"]))]
+          if st.get("reviews") else []),
         _block("SKILLS YOU CAN GIVE A NODE", catalogue),
     ])

@@ -48,7 +48,7 @@ class Run:
     """Role -> its standing instructions."""
 
     def __post_init__(self):
-        self.folder = Path(self.folder)
+        self.folder = Path(self.folder).expanduser().resolve()
         self._traced: set[str] = set()
 
     @property

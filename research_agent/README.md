@@ -7,6 +7,7 @@ the design of the agent that will carry the plan out.
 ```
 python -m research_agent bootstrap "Does LoRA rank matter for small-data sentiment classification?"
 python -m research_agent bootstrap --resume ~/research_runs/20261024-0930-does-lora-rank-matter
+python -m research_agent bootstrap --from ~/research_runs/20261024-0930-does-lora-rank-matter   # the next run, from its review
 ```
 
 ## The team
@@ -179,13 +180,55 @@ builds the graph from it: one graph node per step owner, plus fixed nodes.
 | **step owners** | each `worker`, `runner`, `writer` node: its instructions, skills, steps | one per attempt (`step05-a1`), continued when its jobs finish | writes the code in `work/`, launches jobs, writes `artifacts/step_05/` |
 | **wait** | -- (code only) | none | polls the step's jobs and counts their GPU-hours |
 | **validator** | its `validator` node | new for each verdict, read-only | checks the step's files against its check and rubric items |
+| **reviewer** | -- (always there) | new, read-only | once every step is settled: reviews the study as a NeurIPS/ICML/ICLR reviewer |
 
 ```
 orchestrator --run/retry 5--> owner of 5 --done--> validator --> orchestrator
                                          --launched--> wait --jobs finished--> owner of 5 (same session)
              --skip 5--> orchestrator (artifacts/step_05/SKIPPED.md says why)
-             --ask_user / a gated step / stop / done--> discussor --> you
+             --ask_user / a gated step or breakpoint / stop--> discussor --> you
+             --done--> reviewer --> discussor --> you
+validator --a breakpoint after the step--> discussor --> you
 ```
+
+**Talk to the discussor at any time.** In a terminal, you can type while the
+team works. The discussor answers on the side, in the same conversation, and
+the work goes on: ask what a step does, how it went, or what a number means.
+If you ask for something -- "stop after the smoke test, I want to look", "stop",
+"also log the per-class counts" -- it goes to `<run>/inbox.json`. The graph
+applies it at its next step. `/stop` also stops the running jobs at once.
+`/steps`, `/jobs`, `/logs`, `/budget` and `/review` work at any time too.
+
+**Breakpoints.** The work stops for you before a step starts, or after a step
+is checked. Set one by asking the discussor, or with
+`/break [before|after] <step> [off]`. The discussor also sets one itself when a
+step's result is yours to judge, such as a tier or a costly branch. `/go`
+carries on.
+
+**The review, and the next run.** Once every step has passed or been skipped,
+the reviewer reviews the study. By default it runs on codex with high effort,
+has the peer-review skill, and can only read. It reads the files, not only
+the reports, and writes a review in the form a major ML conference asks for:
+a summary, strengths, weaknesses, questions, limitations, soundness,
+presentation and contribution (1-4), a rating (1-10) and its confidence (1-5).
+It ends with **requests** for the next run (must, should, could). The review
+is kept in the state (`reviews`, V1...) and as `<run>/reviews/V1.md`.
+
+The next run starts from it:
+
+```
+python -m research_agent bootstrap --from ~/research_runs/<run>
+```
+
+This makes `<run>-next` and carries the research state over, with the
+review: the goal, constraints, evidence, hypotheses and their results, rubric,
+protocol, plan, design, decisions and risks. The step table and the node calls
+stay behind; the old folder keeps the files. The hypotheses, rubric and
+protocol stay approved. The orchestrator works through the review's requests:
+the planner revises the plan (and the hypotheses or protocol only where a
+request needs it), saying which request each step answers. The designer then
+revises the design, and you approve the plan and the design again. The new
+run's owners can read the earlier run's files.
 
 Code holds what a model cannot change:
 - **Order.** A step runs only once the steps it depends on have passed or been skipped.
@@ -217,8 +260,10 @@ Commands:
 | command | what |
 | --- | --- |
 | `/steps` | the step table: status, attempts, GPU-hours, last verdict |
-| `/go` | let the step waiting for you start |
+| `/go` | let the step waiting for you start, or carry on after a breakpoint |
 | `/stop` | stop the running jobs and steps |
+| `/break [before\|after] <step> [off]` | a breakpoint |
+| `/review` | the reviewer's review |
 | `/jobs`, `/logs <job or step>` | the jobs, and the end of their logs |
 | `/budget` | hours and GPU-hours used, and the limits |
 | `/state`, `/show`, `/sessions`, `/usage`, `/trace`, `/retry`, `/exit` | as in the bootstrap |
@@ -230,6 +275,8 @@ The run folder gains:
     work/                the code: a git repository, committed after every owner turn
     artifacts/step_NN/   each step's outputs: what the validator checks
     jobs/                one record, log and exit code per job
+    reviews/V1.md        the reviewer's review
+    inbox.json           what you said while the team worked, until the graph takes it
 ```
 
 `state/research.json` gains an `execution` section: one record per step, holding its owner, status, attempts, sessions, artifacts, jobs, GPU-hours and verdict.
@@ -249,6 +296,7 @@ research_agent/
         views.py        each node's brief, built from the state
         nodes.py        the five nodes: one research_backend call each, answers checked
         verify.py       checking arXiv sources
+        carry.py        starting a run from a reviewed one (--from)
         graph.py        the LangGraph graph, gates and limits
         session.py      start, answer, approve, retry, resume
     execute/
@@ -259,6 +307,7 @@ research_agent/
         views.py        each node's brief
         nodes.py        the design read as nodes; the orchestrator, owner, validator, discussor
         jobs.py         background jobs on free GPUs (also a plain script)
+        inbox.py        what the user says while the graph works
         graph.py        the LangGraph graph built from the design
         session.py      start, answer, go, stop, resume
 ```

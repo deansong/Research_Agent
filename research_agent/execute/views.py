@@ -155,6 +155,8 @@ def owner(st: dict, *, node: dict, step: dict, task: str, paths: dict, jobs_comm
             f"Workspace (your current folder; code goes here): {paths['work']}",
             f"Your artifacts folder (outputs go here): {paths['artifacts']}",
             f"The run folder (read anything in it): {paths['run']}",
+            *[f"An earlier run, reviewed in {r['id']} (its files stand; read them): {r['run']}"
+              for r in st.get("reviews") or [] if r.get("run") and r["run"] != paths["run"]],
             "Launch anything longer than a few minutes as a job, e.g.:",
             f"  {jobs_command} launch --step {step['id']} --gpus 1 --name seed17 -- "
             f"python train.py --seed 17",

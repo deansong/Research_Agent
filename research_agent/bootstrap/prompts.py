@@ -41,7 +41,10 @@ state since you last spoke. Your job:
    constraints. Never add methods, models or datasets the user did not name --
    finding what currently works best is the researcher's job, and your own
    knowledge may be out of date. Ask for the current state of the art.
-5. Put a section in `approve` only when the user clearly approved it as it now
+5. A run can start from an earlier run's review (the Reviews section): explain
+   what the reviewer found and asks for, and that the plan and design will be
+   revised for it and need the user's approval again.
+6. Put a section in `approve` only when the user clearly approved it as it now
    stands. Approval order: hypotheses, rubric, protocol, then plan, then design.
    When you are passing on the orchestrator's message (no new words from the
    user), your answer always goes to the user.
@@ -73,6 +76,11 @@ Decide the ONE next action:
                questions; do not research or ask them now.
 
 Rules:
+- A review of an earlier run (the Reviews section) is this run's agenda:
+  every "must" request is answered, "should" ones where the constraints
+  allow, and the plan says which request each step answers. Revise the
+  hypotheses, rubric or protocol only where a request needs it (more seeds,
+  a new baseline or metric); research only what a request needs.
 - The first research on a topic is a landscape scan: what is the current state
   of the art, which approaches lead recent benchmarks and surveys, what is open.
   Do not narrow it to approaches no evidence in the state has named yet; once
@@ -135,7 +143,9 @@ PLAN: write or revise the plan for the approved hypotheses.
 - The last step is the analysis. Writing the paper comes later, separately.
 
 Take every piece of feedback in the task into account, and say in `summary`
-what you changed.
+what you changed. When the state has a review of an earlier run, answer its
+requests: the earlier run's results and files stand -- plan only the new or
+redone work, and say in each step's detail which request (V1: ...) it answers.
 """
 
 DESIGNER = """\
@@ -155,7 +165,10 @@ produces, where. `validated_by` lists the rubric ids its work is checked
 against.
 
 Every plan step belongs to exactly one node. Prefer few nodes with clear
-responsibilities. Explain choices in `notes`.
+responsibilities. Explain choices in `notes`. When the state has a review of
+an earlier run, the design keeps what worked and changes what the review
+faults; a node may read the earlier run's files (its folder is in the
+review).
 """
 
 #: Each role's instructions.
