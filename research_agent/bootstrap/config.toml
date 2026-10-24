@@ -36,8 +36,7 @@ designer = "none"
 # `options` go to the provider: timeout, max_seconds, ...
 
 [roles.discussor]
-provider = "claude_code"
-model = "opus"
+provider = "codex"
 
 [roles.orchestrator]
 provider = "codex"

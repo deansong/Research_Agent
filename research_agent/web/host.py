@@ -8,8 +8,10 @@ WHY:   The two things the UI must guarantee live here.
          after a failure or a pause is an aside too.
        - The research state is always current: a watcher sends a `state`
          event whenever state/research.json changes, whoever changed it.
-CONCEPT: The stage follows the run folder: "bootstrap" until execute.json
-       exists (the execution was started), then "execution". Only the worker
+CONCEPT: The stage follows the research state: "bootstrap" until the
+       execution has started (the state has its step table), then
+       "execution". execute.json can be written before that, to choose the
+       execution's models. Only the worker
        thread touches the graph's checkpoint; requests read the state from
        its files, and the status the worker left.
 """
@@ -69,7 +71,7 @@ class RunHost:
         self.live: dict[str, dict] = {}
         """Session -> the call running in it: label, node, model, when it
         started, and the newest snapshot of what the model is doing."""
-        self.stage = "execution" if (self.folder / "execute.json").exists() else "bootstrap"
+        self.stage = stage_of(S.Store(self.folder).read())
         self.session = self._open_execution() if self.stage == "execution" else self._open_bootstrap()
         self._refresh_status()
         self._closed = threading.Event()
@@ -373,6 +375,11 @@ class RunHost:
 # ---- reading a run from its folder ------------------------------------------------------
 
 
+def stage_of(st: dict) -> str:
+    """"execution" once it has started -- its step table is in the state."""
+    return "execution" if (st.get("execution") or {}).get("steps") else "bootstrap"
+
+
 def node_of(label: str) -> str:
     """The graph node a call belongs to, from its label: "researcher",
     "planner hypothesize", "step 5 (trainer)", "validate step 5",
@@ -463,6 +470,6 @@ def run_summary(folder: Path, hosts: dict) -> dict | None:
     return {"id": folder.name, "folder": str(folder),
             "goal": (st.get("goal") or {}).get("question", ""),
             "phase": (st.get("status") or {}).get("phase") or "discussing",
-            "stage": "execution" if (folder / "execute.json").exists() else "bootstrap",
+            "stage": stage_of(st),
             "updated": path.stat().st_mtime, "open": host is not None,
             "busy": bool(host and host.busy)}

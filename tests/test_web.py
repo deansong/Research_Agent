@@ -262,3 +262,23 @@ def test_a_node_s_work_live_and_afterwards(web, script):
     assert page.status_code == 200 and "node live view" in page.text
     events = web.get("/api/runs/n/events?follow=false").text
     assert '"node": "researcher"' in events, "call events say which node"
+
+
+def test_execute_json_written_before_the_start_chooses_models_and_keeps_the_start(web, script):
+    folder = web.root / "early"
+    S.Store(folder).write(approved_state())
+    (folder / "execute.json").write_text(json.dumps({"roles": {"runner": {"provider": "fake",
+                                                                          "model": "big"}}}))
+    script.add("DiscussorOutput", say("Ready. Start the execution?"))
+    script.add("OrchestratorOutput", decide("ask_user", "Start?"))
+    web.post("/api/runs/early/message", json={"text": "hi"})
+    d = settle(web, "early")
+    assert d["stage"] == "bootstrap" and d["can_execute"], "the file alone starts nothing"
+    from research_agent.execute import config as exec_config
+
+    assert str(exec_config.load(folder).roles["runner"]) == "fake:big", "the file is read"
+    script.add("ExecDecision", move("ask_user", task="Go?"))
+    script.add("ExecDiscussorOutput", tell("Step 1 is next."))
+    d = web.post("/api/runs/early/execute", json={}).json()
+    assert d["stage"] == "execution"
+    settle(web, "early")
