@@ -445,7 +445,8 @@ def _render(state: dict, section: str, brief: bool) -> str:
                 else ""
             if brief and len(tail) > 160:
                 tail = tail[:157] + "..."
-            lines.append(f"{r['id']}. [{r['status']}] {r.get('title', '')} ({r.get('owner', '')}, "
+            go = ", go given" if r.get("go") else ""
+            lines.append(f"{r['id']}. [{r['status']}] {r.get('title', '')} ({r.get('owner', '')}{go}, "
                          f"{r.get('attempts', 0)} attempts, {r.get('gpu_hours', 0):.1f} GPU-h){tail}")
         return "\n".join(lines)
     return "\n".join(_line(section, x, brief) for x in value or [])

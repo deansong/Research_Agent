@@ -97,6 +97,15 @@ def build(run: nodes.ExecRun, design: nodes.Design, checkpointer=None):
         store.write(new, by=by, ops=ops, changed=changed)
         return new
 
+    def go_ops(st: dict, step_id: str) -> list[dict]:
+        """The user's go: on the step's record, and as their decision -- which
+        the discussor sees, even when /go did not pass through it."""
+        step = nodes.plan_step(st, step_id) or {}
+        return [nodes.record_op(st, step_id, go=True),
+                {"op": "add", "section": "decisions", "value": {
+                    "what": f"Go for step {step_id}: {step.get('title', '')}".strip(),
+                    "why": "the user said go", "by": "user"}}]
+
     def stop_all(st: dict, why: str) -> dict:
         """Stop the jobs and every step under way."""
         for job in jobs.records(run.folder):
@@ -118,7 +127,7 @@ def build(run: nodes.ExecRun, design: nodes.Design, checkpointer=None):
         spoke = bool(state.get("user"))
         awaiting, outcome = state.get("awaiting", ""), state.get("outcome", "")
         if spoke and turn.go and awaiting:
-            st = commit(st, [nodes.record_op(st, awaiting, go=True)], "user")
+            st = commit(st, go_ops(st, awaiting), "user")
             awaiting = ""
         if spoke and turn.stop:
             st = stop_all(st, "the user stopped the execution")
@@ -145,11 +154,11 @@ def build(run: nodes.ExecRun, design: nodes.Design, checkpointer=None):
         if answer.get("go") and awaiting and not text:
             # /go is a command, not a conversation: the work goes on, and the
             # discussor sees the go in the step table next time it speaks.
-            st = commit(st, [nodes.record_op(st, awaiting, go=True)], "user")
+            st = commit(st, go_ops(st, awaiting), "user")
             return {"research": st, "awaiting": "", "decisions": 0, "outcome": "",
                     "_to": "orchestrator"}
         if answer.get("go") and awaiting:
-            st = commit(st, [nodes.record_op(st, awaiting, go=True)], "user")
+            st = commit(st, go_ops(st, awaiting), "user")
             awaiting, nudged = "", True
         if answer.get("stop"):
             st = stop_all(st, "the user stopped the execution")
@@ -296,7 +305,12 @@ def build(run: nodes.ExecRun, design: nodes.Design, checkpointer=None):
             why = f"the validator could not give a verdict: {str(exc)[:600]}"
             st = commit(st, [nodes.record_op(st, sid, status="fail", problems=[why])], "execution")
             return {"research": st, "last": f"step {sid}: {why}", "_to": "orchestrator"}
+        was_approved = S.approved(st, "hypotheses")
         st = commit(st, out.ops, design.validator["name"])
+        if was_approved and not S.approved(st, "hypotheses"):
+            # Only their status changed (supported, refuted): a result, not a
+            # change to what was approved.
+            st = commit(st, [{"op": "approve", "section": "hypotheses"}], "execution")
         st = commit(st, [nodes.record_op(st, sid, gpu_hours=round(
             jobs.gpu_hours(run.folder, sid), 3))], "execution")
         rec = nodes.records(st)[sid]

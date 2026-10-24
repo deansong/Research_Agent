@@ -117,6 +117,8 @@ def test_a_whole_execution_from_the_approved_design_to_done(run, script):
     rec = nodes.records(st)
     assert rec["2"]["status"] == "pass" and rec["2"]["go"] and rec["2"]["jobs"] == ["s2-001"]
     assert rec["2"]["artifacts"] == ["scores.txt"] and st["status"]["phase"] == "done"
+    assert any(d["what"] == "Go for step 2: Train" and d["by"] == "user" for d in st["decisions"])
+    assert "2. [pass] Train (trainer, go given, 1 attempts" in S.render(st, ["execution"])
     assert (run.artifacts("2") / "scores.txt").read_text().strip() == "trained"
 
     # The owner of step 2 was woken in its own conversation; validators are fresh.
@@ -273,3 +275,24 @@ def test_the_user_can_stop_and_the_discussor_never_relays_into_more_work(run, sc
     assert turn.outcome == "stopped" and ex.research["status"]["phase"] == "stopped"
     assert "(I stopped the execution.)" in script.prompts("ExecDiscussorOutput")[1]
     assert Path(run.folder / "state" / "research.md").read_text().count("## Execution") == 1
+
+
+def test_a_go_by_command_reaches_the_discussor_and_a_result_keeps_the_approval(run, script):
+    script.add("ExecDecision", decide("run", "1"), decide("run", "2"), decide("run", "2"),
+               decide("done"))
+    script.add("StepReport", done_writing(run, "1"), lambda prompt: {
+        **done_writing(run, "2")(prompt),
+        "hypotheses": [{"id": "H1", "status": "supported", "why": "out.txt"}]})
+    script.add("Verdict", verdict(), verdict())
+    script.add("ExecDiscussorOutput", say("Step 2 next; go?"), say("Done."))
+    st = S.Store(run.folder).read()
+    st["design"]["nodes"][2]["role"] = "writer"
+    S.Store(run.folder).write(st)
+    ex = Execution(run)
+    ex.start()
+    turn = ex.answer(go=True)
+    assert turn.outcome == "done"
+    told = script.prompts("ExecDiscussorOutput")[1]
+    assert "Go for step 2: Train" in told, "the discussor learns of a /go"
+    st = ex.research
+    assert st["hypotheses"][0]["status"] == "supported" and S.approved(st, "hypotheses")
