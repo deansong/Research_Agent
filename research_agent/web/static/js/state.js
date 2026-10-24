@@ -150,6 +150,15 @@ export class StateView {
     try { await api.setBreak(this.runId, step, when, on); } catch (err) { this.hooks.onError && this.hooks.onError(err); }
   }
 
+  async stepAction(step, action) {
+    let why = "";
+    if (action === "waive") {
+      why = window.prompt(`Why does step ${step} pass anyway? (kept as its verdict)`) || "";
+      if (!why.trim()) return;
+    }
+    try { await api.stepAction(this.runId, step, action, why); } catch (err) { this.hooks.onError && this.hooks.onError(err); }
+  }
+
   async go() {
     try { await api.go(this.runId); } catch (err) { this.hooks.onError && this.hooks.onError(err); }
   }
@@ -258,7 +267,12 @@ const DRAW = {
               el("td", {}, ["before", "after"].map((w) => el("label", { class: "brk", title: `Stop for you ${w} step ${r.id}` },
                 el("input", { type: "checkbox", checked: !!r[`pause_${w}`], disabled: !live,
                   onchange: (ev) => this.toggleBreak(r.id, w, ev.target.checked) }), w))),
-              el("td", {}, waits ? el("button", { class: "btn tiny primary", text: "Go", onclick: () => this.go() }) : null)),
+              el("td", {}, waits ? el("button", { class: "btn tiny primary", text: "Go", onclick: () => this.go() }) : null,
+                live && ["fail", "stopped"].includes(r.status) ? [
+                  el("button", { class: "btn tiny", text: "Another attempt", title: `Run step ${r.id} again, beyond the attempt limit`,
+                    onclick: () => this.stepAction(r.id, "retry") }),
+                  el("button", { class: "btn tiny", text: "Pass anyway", title: "Pass this step on your decision (your reason is kept as its verdict)",
+                    onclick: () => this.stepAction(r.id, "waive") })] : null)),
             (r.verdict || r.summary || (r.problems || []).length) ? el("tr", { class: "sub" }, el("td", { colspan: "7" },
               this.fold(`x-${r.id}-v`, "Verdict", r.verdict), this.fold(`x-${r.id}-s`, "Report", r.summary),
               (r.problems || []).length ? this.fold(`x-${r.id}-p`, "Problems", r.problems.join("\n")) : null,

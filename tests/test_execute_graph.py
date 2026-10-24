@@ -432,3 +432,57 @@ def test_a_validator_that_owns_steps_is_refused():
                      for n in DESIGN["nodes"]]}
     assert "the validator checker owns no steps: it only checks" in design_problems(
         bad, steps=["1", "2"], rubric={"R1"}, skills=set())
+
+
+def test_the_user_can_give_a_failed_step_another_attempt_or_pass_it(run, script):
+    """Seen in a real run: step 1 failed its three attempts on a rule the user
+    had already waived, and nothing could move it on."""
+    run.limits = replace(run.limits, max_attempts=1)
+    script.add("ExecDecision", decide("run", "1"), decide("stop", task="step 1 failed its attempts"))
+    script.add("StepReport", done_writing(run, "1"))
+    script.add("Verdict", verdict("fail", problems=["the scorer has no license"], advice="get one"))
+    script.add("ExecDiscussorOutput", say("Step 1 failed; stopped."))
+    ex = Execution(run)
+    ex.start()
+    assert nodes.records(ex.research)["1"]["status"] == "fail"
+
+    # "Use the unlicensed scorer as it is, and try step 1 again."
+    script.add("ExecDiscussorOutput", say("Trying step 1 again.", retry=["1"],
+                                          decisions=[{"what": "Use the scorer as it is",
+                                                      "why": "research use"}]),
+               say("Step 1 failed again."))
+    script.add("ExecDecision", lambda prompt: decide("retry", "1") if "retry 1 (attempt 2 of 2)"
+               in prompt else decide("ask_user", task="?"), decide("ask_user", task="Pass it?"))
+    script.add("StepReport", done_writing(run, "1"))
+    script.add("Verdict", verdict("fail", problems=["still unlicensed"], advice="x"))
+    ex.answer("use the scorer as it is, and try step 1 again")
+    rec = nodes.records(ex.research)["1"]
+    assert rec["attempts"] == 2 and rec["extra_attempts"] == 1
+    owner = script.prompts("StepReport")[-1]
+    assert "THE USER'S DECISIONS" in owner and "Use the scorer as it is -- research use" in owner
+    validator = script.prompts("Verdict")[-1]
+    assert "THE USER'S DECISIONS" in validator and "Use the scorer as it is" in validator
+
+    # "Pass it: the scorer is the official one; we use it as is."
+    script.add("ExecDiscussorOutput", say("Step 1 passes on your decision.",
+                                          waive=[{"step": "1", "why": "official scorer, used as is"}]),
+               say("Step 2 next; go?"))
+    script.add("ExecDecision", decide("run", "2"))
+    ex.answer("pass step 1, the scorer is the official one")
+    st = ex.research
+    rec = nodes.records(st)["1"]
+    assert rec["status"] == "pass" and rec["verdict"].startswith("passed by the user: official scorer")
+    assert "the validator's verdict was: fail" in rec["verdict"] and \
+        "still unlicensed" in rec["problems"], "what the validator said is kept beside it"
+    assert ex.awaiting == "2", "the next step is open again (it is gated)"
+    assert any(d["what"] == "Step 1 passes on the user's decision" for d in st["decisions"])
+
+
+def test_the_rules_for_research_use_and_the_user_s_decisions():
+    from research_agent.bootstrap import prompts as boot
+    from research_agent.execute import prompts as exe
+
+    for text in (exe.OWNER, exe.VALIDATOR):
+        assert "a missing license is never a reason to fail or block" in text
+        assert "stand over the plan" in text
+    assert "never make a license a pass" in boot.PLANNER

@@ -32,6 +32,9 @@ Your job:
    it will do and cost, and ask. Set `go` only when the user clearly says it
    may start.
 3. Set `stop` only when the user clearly asks to stop the execution.
+   A step that failed (or ran out of attempts) can be given another attempt
+   (`retry`), or passed anyway (`waive`, with the user's reason) -- only when
+   the user clearly says so.
    Set `breakpoints` when the user wants to look at something before the work
    goes on ("show me the smoke test before training"): stop before a step
    starts, or after it is checked. Suggest one yourself when a step's result
@@ -81,6 +84,10 @@ Rules:
   what is next, what the budget allows.
 - Record decisions (with why) and open questions; do not repeat ones in the
   state.
+- The user's decisions stand over the plan where they conflict: a step the
+  user said may go a certain way is not stopped for going that way.
+- This is research: a missing or unclear license is recorded, never a reason
+  to stop. Only an explicit prohibition of this use goes to the user.
 """
 
 OWNER = """\
@@ -103,6 +110,15 @@ How to work:
   list in `artifacts` the files that show it.
 - Report numbers as they are; never invent or round away a result. A failed
   run is reported, not hidden.
+- The user's decisions (in your brief) stand over the plan where the two
+  conflict: follow them, and say in your report that you did.
+
+This is research. Code, data and models without a license, or with unclear
+terms, may be used as they are for the study: record what their status is
+and go on -- a missing license is never a reason to fail or block. Only an
+explicit prohibition of this use (a license or terms that forbid it) stops
+the work, and then the user decides. Redistribution is not this stage's
+business.
 """
 
 VALIDATOR = """\
@@ -119,6 +135,16 @@ files themselves -- not the owner's report of them.
 - For each problem, say where (file, line or value). `advice` says what a
   retry must do differently.
 Be exact and fair: judge by the plan, the protocol and the rubric, not taste.
+The user's decisions (in your brief) stand over the plan where they conflict:
+work that follows one passes on that point; check only that it was applied
+as decided.
+
+This is research. Code, data and models without a license, or with unclear
+terms, may be used as they are for the study: record what their status is
+and go on -- a missing license is never a reason to fail or block. Only an
+explicit prohibition of this use (a license or terms that forbid it) stops
+the work, and then the user decides. Redistribution is not this stage's
+business.
 """
 
 REVIEWER = """\

@@ -310,3 +310,32 @@ def test_the_models_each_role_runs_on_can_be_changed(web, script, monkeypatch):
     monkeypatch.setattr(server, "_providers", lambda: [{"provider": "codex", "models": ["m1"],
                                                         "efforts": ["high"], "error": ""}])
     assert web.get("/api/providers").json()[0]["models"] == ["m1"]
+
+
+def test_a_failed_step_can_be_moved_on_from_the_page(web, script):
+    folder = web.root / "s"
+    st = approved_state()
+    st, _ = S.apply(st, [{"op": "set", "section": "execution", "value": {"started": "2026-10-24T12:00:00+00:00", "steps": [
+        {"id": "1", "title": "Data", "owner": "builder", "status": "stopped", "attempts": 3},
+        {"id": "2", "title": "Train", "owner": "trainer"}]}}], by="x")
+    S.Store(folder).write(st)
+    (folder / "execute.json").write_text(json.dumps({"execute": {"confirm": "none"}}))
+    web.app_.state.hosts.pop("s", None)
+    script.add("ExecDecision", move("ask_user", task="Step 1 failed; what now?"))
+    script.add("ExecDiscussorOutput", tell("Step 1 failed; another attempt or pass it?"))
+    web.get("/api/runs/s")
+    h = web.app_.state.hosts["s"]
+    h._run(lambda on: h.session.start(on_step=on))
+    d = settle(web, "s")
+    assert d["stage"] == "execution" and d["waiting"]
+    assert web.post("/api/runs/s/step", json={"step": "2", "action": "retry"}).status_code == 400
+    assert web.post("/api/runs/s/step", json={"step": "1", "action": "waive"}).status_code == 400
+    script.add("ExecDecision", move("retry", "1"), move("ask_user", task="?"))
+    script.add("StepReport", done_writing(_Folder(folder), "1"))
+    script.add("Verdict", verdict())
+    script.add("ExecDiscussorOutput", tell("Step 1 passed."))
+    r = web.post("/api/runs/s/step", json={"step": "1", "action": "retry"})
+    assert r.status_code == 200 and r.json()["when"] == "now"
+    settle(web, "s")
+    rec = {x["id"]: x for x in S.Store(folder).read()["execution"]["steps"]}
+    assert rec["1"]["status"] == "pass" and rec["1"]["attempts"] == 4 and rec["1"]["extra_attempts"] == 1

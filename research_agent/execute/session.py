@@ -80,8 +80,10 @@ class Execution:
         return self._drive(first, on_step)
 
     def answer(self, text: str = "", *, go: bool = False, stop: bool = False,
-               on_step=None) -> Turn:
-        return self._drive(Command(resume={"text": text, "go": go, "stop": stop}), on_step)
+               work: bool = False, on_step=None) -> Turn:
+        """`work`: no words -- the team acts on what the inbox holds now."""
+        return self._drive(Command(resume={"text": text, "go": go, "stop": stop, "work": work}),
+                           on_step)
 
     def resume(self, on_step=None) -> Turn:
         """Carry on from where the run stopped (a failed call, Ctrl-C while

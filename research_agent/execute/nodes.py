@@ -164,7 +164,8 @@ def open_moves(st: dict, max_attempts: int) -> dict:
         ready = all(rec.get(d, {}).get("status") in SETTLED for d in s.get("depends_on") or [])
         if r["status"] == "pending" and ready:
             moves["run"].append(s["id"])
-        if r["status"] in ("fail", "stopped") and ready and r.get("attempts", 0) < max_attempts:
+        if r["status"] in ("fail", "stopped") and ready and \
+                r.get("attempts", 0) < max_attempts + r.get("extra_attempts", 0):
             moves["retry"].append(s["id"])
         if r["status"] in ("pending", "fail", "stopped"):
             moves["skip"].append(s["id"])
@@ -174,7 +175,8 @@ def open_moves(st: dict, max_attempts: int) -> dict:
 def describe_moves(moves: dict, st: dict, max_attempts: int) -> list[str]:
     rec = records(st)
     lines = [f"run {s}" for s in moves["run"]]
-    lines += [f"retry {s} (attempt {rec[s].get('attempts', 0) + 1} of {max_attempts})"
+    lines += [f"retry {s} (attempt {rec[s].get('attempts', 0) + 1} of "
+              f"{max_attempts + rec[s].get('extra_attempts', 0)})"
               for s in moves["retry"]]
     if moves["skip"]:
         lines.append(f"skip one of: {', '.join(moves['skip'])}")
@@ -204,6 +206,48 @@ class DiscussorTurn(Outcome):
     hand_to: str = "user"
     go: bool = False
     stop: bool = False
+    retry: list[str] = field(default_factory=list)
+    waive: list[dict] = field(default_factory=list)
+
+
+def step_problems(st: dict, retry, waive) -> list[str]:
+    """Another attempt, or a pass by the user, is for a step that failed or
+    was stopped."""
+    rec = records(st)
+    problems = [f"retry: step {s} has not failed (it is {rec[s]['status'] if s in rec else 'not a step'})"
+                for s in retry if rec.get(s, {}).get("status") not in ("fail", "stopped")]
+    problems += [f"waive: step {w.step} has not failed (it is "
+                 f"{rec[w.step]['status'] if w.step in rec else 'not a step'})"
+                 for w in waive if rec.get(w.step, {}).get("status") not in ("fail", "stopped")]
+    return problems
+
+
+def user_step_ops(st: dict, retry, waive) -> list[dict]:
+    """The user's call on failed steps, as changes: another attempt beyond
+    the limit, or a pass -- kept as the verdict, with their reason."""
+    ops = []
+    for sid in dict.fromkeys(retry):
+        r = records(st).get(sid)
+        if not r:
+            continue
+        ops.append(record_op(st, sid, extra_attempts=r.get("extra_attempts", 0) + 1))
+        st = S.apply(st, ops[-1:], by="user")[0]
+        ops.append({"op": "add", "section": "decisions", "value": {
+            "what": f"Another attempt at step {sid}", "why": "the user asked for it", "by": "user"}})
+        st = S.apply(st, ops[-1:], by="user")[0]
+    for w in waive:
+        sid, why = (w["step"], w["why"]) if isinstance(w, dict) else (w.step, w.why)
+        r = records(st).get(sid)
+        if not r:
+            continue
+        ops.append(record_op(st, sid, status="pass", finished=_now(),
+                             verdict=f"passed by the user: {why} (the validator's verdict was: "
+                                     f"{r.get('verdict', '')[:600]})"))
+        st = S.apply(st, ops[-1:], by="user")[0]
+        ops.append({"op": "add", "section": "decisions", "value": {
+            "what": f"Step {sid} passes on the user's decision", "why": why, "by": "user"}})
+        st = S.apply(st, ops[-1:], by="user")[0]
+    return ops
 
 
 def breakpoint_problems(st: dict, breakpoints) -> list[str]:
@@ -233,10 +277,12 @@ def discussor(run: ExecRun, st: dict, *, seen: dict, user: str = "", note: str =
                     if a.id not in open_ids]
         if out.go and not awaiting:
             problems.append("go: no step is waiting for the user's go")
-        if out.hand_to == "orchestrator" and not (out.requests or out.go or out.stop):
+        if out.hand_to == "orchestrator" and not (out.requests or out.go or out.stop
+                                                  or out.retry or out.waive):
             problems.append('hand_to is "orchestrator" but there is no request or go for the '
                             'team to act on: add the request, or hand to "user"')
-        return problems + breakpoint_problems(st, out.breakpoints)
+        return (problems + breakpoint_problems(st, out.breakpoints)
+                + step_problems(st, out.retry, out.waive))
 
     brief = views.discussor_turn(st, seen, user=user, note=note, awaiting=awaiting)
     if run.takes_over(DISCUSSOR_SESSION, "discussor"):
@@ -253,7 +299,8 @@ def discussor(run: ExecRun, st: dict, *, seen: dict, user: str = "", note: str =
              "value": {"status": "answered", "answer": a.answer}} for a in out.answers]
     return DiscussorTurn(ops=ops, summary=out.reply[:200], session=session, data=out,
                          reply=out.reply, requests=list(out.requests), hand_to=out.hand_to,
-                         go=out.go and bool(awaiting), stop=out.stop)
+                         go=out.go and bool(awaiting), stop=out.stop, retry=list(out.retry),
+                         waive=[w.model_dump() for w in out.waive])
 
 
 def aside(run: ExecRun, st: dict, *, user: str, activity: str) -> schemas.AsideOutput:
@@ -262,7 +309,7 @@ def aside(run: ExecRun, st: dict, *, user: str, activity: str) -> schemas.AsideO
     step -- the state here may already be behind."""
 
     def check(out: schemas.AsideOutput) -> list[str]:
-        return breakpoint_problems(st, out.breakpoints)
+        return breakpoint_problems(st, out.breakpoints) + step_problems(st, out.retry, out.waive)
 
     brief = views.aside(st, user=user, activity=activity, run_dir=str(run.folder))
     if run.takes_over(DISCUSSOR_SESSION, "discussor"):
@@ -277,6 +324,10 @@ def aside(run: ExecRun, st: dict, *, user: str, activity: str) -> schemas.AsideO
         inbox.post(run.folder, "request", text=r)
     for d in out.decisions:
         inbox.post(run.folder, "decision", what=d.what, why=d.why)
+    for sid in out.retry:
+        inbox.post(run.folder, "retry", step=sid)
+    for w in out.waive:
+        inbox.post(run.folder, "waive", step=w.step, why=w.why)
     if out.stop:
         inbox.post(run.folder, "stop", why="the user stopped the execution")
     return out

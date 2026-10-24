@@ -137,6 +137,12 @@ class BreakpointIn(BaseModel):
     """False removes the breakpoint."""
 
 
+class WaiveIn(BaseModel):
+    step: str
+    why: str
+    """The user's reason, in their words -- kept as the step's verdict."""
+
+
 class AsideOutput(BaseModel):
     """An answer while the team works: nothing waits for it."""
 
@@ -144,6 +150,10 @@ class AsideOutput(BaseModel):
     breakpoints: list[BreakpointIn] = Field(default_factory=list, max_length=10)
     stop: bool = False
     """The user just said to stop the execution."""
+    retry: list[str] = Field(default_factory=list, max_length=10)
+    """Steps the user gives another attempt (beyond the attempt limit)."""
+    waive: list[WaiveIn] = Field(default_factory=list, max_length=10)
+    """Failed steps the user passes anyway, with why."""
     requests: list[str] = Field(default_factory=list, max_length=6)
     """Work for the orchestrator at its next decision, in clean words."""
     decisions: list[DecisionIn] = Field(default_factory=list, max_length=6)
@@ -162,5 +172,9 @@ class ExecDiscussorOutput(BaseModel):
     """Work for the orchestrator, in clean words (never the chat)."""
     breakpoints: list[BreakpointIn] = Field(default_factory=list, max_length=10)
     """Where the user wants the work to stop for them."""
+    retry: list[str] = Field(default_factory=list, max_length=10)
+    """Steps the user gives another attempt (beyond the attempt limit)."""
+    waive: list[WaiveIn] = Field(default_factory=list, max_length=10)
+    """Failed steps the user passes anyway, with why."""
     decisions: list[DecisionIn] = Field(default_factory=list, max_length=6)
     answers: list[AnswerIn] = Field(default_factory=list, max_length=6)

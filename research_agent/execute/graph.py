@@ -132,6 +132,13 @@ def build(run: nodes.ExecRun, design: nodes.Design, checkpointer=None):
                 requests.append(item["text"])
             elif item["kind"] == "stop":
                 stop = item.get("why") or "the user stopped the execution"
+            elif item["kind"] in ("retry", "waive") and item.get("step") in steps:
+                retry = [item["step"]] if item["kind"] == "retry" else []
+                waive = [{"step": item["step"], "why": item.get("why", "")}] \
+                    if item["kind"] == "waive" else []
+                rec = nodes.records(st).get(item["step"], {})
+                if rec.get("status") in ("fail", "stopped"):
+                    st = commit(st, nodes.user_step_ops(st, retry, waive), "user")
         return st, requests, stop
 
     def stop_all(st: dict, why: str) -> dict:
@@ -157,12 +164,15 @@ def build(run: nodes.ExecRun, design: nodes.Design, checkpointer=None):
         if spoke and turn.go and awaiting:
             st = commit(st, go_ops(st, awaiting), "user")
             awaiting = ""
+        if spoke and (turn.retry or turn.waive):
+            st = commit(st, nodes.user_step_ops(st, turn.retry, turn.waive), "user")
         if spoke and turn.stop:
             st = stop_all(st, "the user stopped the execution")
             outcome = "stopped"
         # As in the bootstrap: passing on the orchestrator's message, it
         # answers the user; a go or a request moves the work on.
         go = spoke and not turn.stop and (turn.hand_to == "orchestrator" or turn.go
+                                          or bool(turn.retry or turn.waive)
                                           or bool(state.get("nudged")))
         return {"research": st, "seen": dict(st.get("versions") or {}), "reply": turn.reply,
                 "pending": list(state.get("pending") or []) + turn.requests, "user": "",
@@ -179,6 +189,10 @@ def build(run: nodes.ExecRun, design: nodes.Design, checkpointer=None):
             return {"outcome": "exit", "_to": END}
         st, text = state["research"], answer.get("text", "")
         awaiting, nudged, outcome = state.get("awaiting", ""), False, state.get("outcome", "")
+        if answer.get("work") and not text:
+            # The page changed something the team should act on (another
+            # attempt, a pass): straight to the orchestrator, as /go does.
+            return {"awaiting": awaiting, "decisions": 0, "outcome": "", "_to": "orchestrator"}
         if answer.get("go") and awaiting and not text:
             # /go is a command, not a conversation: the work goes on, and the
             # discussor sees the go in the step table next time it speaks.

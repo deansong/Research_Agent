@@ -72,7 +72,10 @@ What it shows:
   team waits for you.
 - **Execution:** the step table, with each step's status, attempts, GPU-hours
   and verdict. Tick **before** or **after** to set a breakpoint, and press
-  **Go** when a step waits for you.
+  **Go** when a step waits for you. A step that failed can be moved on:
+  **Another attempt** runs it again, past the attempt limit; **Pass anyway**
+  passes it on your decision, and your reason is kept as its verdict, next
+  to what the validator said. You can also just tell the discussor.
 - **Reviews:** the reviewer's scores, requests (must, should, could), and its
   strengths, weaknesses and questions.
 

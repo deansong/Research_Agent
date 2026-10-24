@@ -68,6 +68,13 @@ class Breakpoint(BaseModel):
     model_config = {"extra": "forbid"}
 
 
+class StepAction(BaseModel):
+    step: str
+    action: str
+    why: str = ""
+    model_config = {"extra": "forbid"}
+
+
 class SetModel(BaseModel):
     group: str
     role: str
@@ -207,6 +214,11 @@ def create_app(runs_root: Path = RUNS_ROOT, *, roles=(), watch: bool = True) -> 
     def set_break(run_id: str, body: Breakpoint):
         act(lambda: host_of(run_id).breakpoint(body.step, body.when, body.on))
         return {"ok": True}
+
+    @app.post("/api/runs/{run_id}/step")
+    def step_action(run_id: str, body: StepAction):
+        host = host_of(run_id)
+        return {"ok": True, "when": act(lambda: host.step_action(body.step, body.action, body.why))}
 
     @app.post("/api/runs/{run_id}/execute")
     def execute(run_id: str, body: StartExecution):

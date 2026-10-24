@@ -25,6 +25,13 @@ def step_text(step: dict) -> str:
     return "\n".join(lines)
 
 
+def user_decisions(st: dict) -> str:
+    """What the user decided -- standing over the plan where they conflict."""
+    mine = [d for d in st.get("decisions") or [] if d.get("by") == "user"]
+    return "\n".join(f"- {d['id']} {d['what']}" + (f" -- {d['why']}" if d.get("why") else "")
+                     for d in mine)
+
+
 def rubric_text(st: dict, ids) -> str:
     wanted = list(dict.fromkeys(ids))
     items = [r for r in st.get("rubric") or [] if r.get("id") in wanted]
@@ -145,6 +152,10 @@ def owner(st: dict, *, node: dict, step: dict, task: str, paths: dict, jobs_comm
     if previous and (previous.get("verdict") or previous.get("problems")):
         parts.append(_block("THE LAST ATTEMPT FAILED -- do it differently", "\n".join(
             [previous.get("verdict", "")] + [f"- {p}" for p in previous.get("problems") or []])))
+    decided = user_decisions(st)
+    if decided:
+        parts.append(_block("THE USER'S DECISIONS -- they stand over the plan where they "
+                            "conflict; apply them and say so in your report", decided))
     parts += [
         _block("RUBRIC ITEMS YOUR WORK IS CHECKED AGAINST",
                rubric_text(st, list(step.get("rubric") or []) + list(node.get("validated_by") or []))),
@@ -209,6 +220,8 @@ def validator(st: dict, *, design_part: str, node: dict, step: dict, report: dic
         _block("RUBRIC ITEMS TO CHECK", rubric_text(
             st, list(step.get("rubric") or []) + list(node.get("validated_by") or []))),
         _block("THE PROTOCOL", S.render(st, ["protocol"])),
+        _block("THE USER'S DECISIONS -- they stand over the plan where they conflict: "
+               "work that follows one is not a failure", user_decisions(st) or "(none)"),
         _block("THE OWNER'S REPORT -- check it against the files", "\n".join([
             f"Summary: {report.get('summary', '')}",
             "Artifacts:\n" + "\n".join(f"- {a}" for a in report.get("artifacts") or []),

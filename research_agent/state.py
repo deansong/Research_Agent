@@ -149,6 +149,8 @@ class StepRecord(BaseModel):
     pause_after: bool = False
     """A breakpoint: stop for the user once this step is checked."""
     attempts: int = 0
+    extra_attempts: int = 0
+    """Attempts the user granted beyond the limit."""
     sessions: list[str] = Field(default_factory=list)
     artifacts: list[str] = Field(default_factory=list)
     jobs: list[str] = Field(default_factory=list)

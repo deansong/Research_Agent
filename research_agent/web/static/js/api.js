@@ -40,6 +40,7 @@ export const api = {
   pause: (id) => request("POST", `${run(id)}/pause`),
   resume: (id) => request("POST", `${run(id)}/resume`),
   setBreak: (id, step, when, on) => request("POST", `${run(id)}/break`, { step, when, on }),
+  stepAction: (id, step, action, why) => request("POST", `${run(id)}/step`, { step, action, why: why || "" }),
   execute: (id, body) => request("POST", `${run(id)}/execute`, body),
   state: (id) => request("GET", `${run(id)}/state`),
   history: (id) => request("GET", `${run(id)}/history`),

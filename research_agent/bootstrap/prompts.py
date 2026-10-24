@@ -145,6 +145,9 @@ PLAN: write or revise the plan for the approved hypotheses.
 - Respect the constraints (compute, budget, deadline). Estimate each step's
   cost.
 - The last step is the analysis. Writing the paper comes later, separately.
+- This is research: code, data and models without a license may be used as
+  they are. Have a step record license status; never make a license a pass
+  condition -- only an explicit prohibition of this use matters.
 
 Take every piece of feedback in the task into account, and say in `summary`
 what you changed. When the state has a review of an earlier run, answer its
