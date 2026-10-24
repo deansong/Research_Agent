@@ -151,10 +151,11 @@ export class Inspector {
         const now = await api.setModel(this.runId, { group, role, provider: c.provider, model: c.model, effort: c.effort, ...patch });
         Object.assign(c, patch);
         status.textContent = `\u2713 ${now.now}`;
-        if (patch.provider) this.loadModels();
+        if (patch.provider || patch.model !== undefined) this.loadModels();
       } catch (err) { status.textContent = `! ${err.message}`; }
     };
     const p = known[c.provider] || { models: [], efforts: [] };
+    const efforts = (p.model_efforts || {})[c.model || p.default] || p.efforts;
     const options = (list, value, blank) => [blank !== undefined ? el("option", { value: "", text: blank, selected: !value }) : null,
       ...[...new Set([...(value ? [value] : []), ...list])].map((x) => el("option", { value: x, text: x, selected: x === value }))];
     const status = el("span", { class: "dim small" });
@@ -166,9 +167,9 @@ export class Inspector {
         class: c.model && p.models.length && !p.models.includes(c.model) ? "unknown" : "",
         title: p.error || (c.model && p.models.length && !p.models.includes(c.model)
           ? `${c.provider} does not list ${c.model}: its calls will likely fail` : ""),
-        onchange: (e) => save({ model: e.target.value }) },
+        onchange: (e) => save({ model: e.target.value, effort: "" }) },
         options(p.models, c.model, "default"))),
-      el("td", {}, el("select", { onchange: (e) => save({ effort: e.target.value }) }, options(p.efforts, c.effort, "default"))));
+      el("td", {}, el("select", { onchange: (e) => save({ effort: e.target.value }) }, options(efforts, c.effort, "default"))));
   }
 
   // A model call started or ended (from the event stream).

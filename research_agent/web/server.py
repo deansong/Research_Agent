@@ -472,9 +472,14 @@ def _providers() -> list[dict]:
     for name in RB.list_providers():
         if name == "fake":
             continue
-        entry = {"provider": name, "models": [], "efforts": [], "error": ""}
+        entry = {"provider": name, "models": [], "efforts": [], "model_efforts": {},
+                 "default": "", "error": ""}
         try:
-            entry["models"] = [m.id for m in RB.list_models(name)]
+            listed = list(RB.list_models(name))
+            entry["models"] = [m.id for m in listed]
+            # Codex's levels differ by model (one has no "ultra").
+            entry["model_efforts"] = {m.id: list(m.efforts) for m in listed if m.efforts}
+            entry["default"] = next((m.id for m in listed if m.default), "")
             entry["efforts"] = list(RB.ResearchBackend(name).list_efforts(name))
         except Exception as exc:                 # a provider not set up here
             entry["error"] = str(exc)[:200]
