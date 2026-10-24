@@ -89,7 +89,7 @@ Ctrl-C stops a run, and `--resume <run>` carries on. A step is saved in
 [skills]
 dir = "skills"                      # a folder of <name>/SKILL.md, from the repository root
 discussor = "auto"                  # shown every skill; reads the ones it needs
-orchestrator = "none"
+orchestrator = ["research-orchestration"]
 researcher = ["research"]           # given these in full
 planner_hypothesize = ["hypothesis-generation", "experiment-design", "statistical-power"]
 planner_plan = ["experiment-design"]

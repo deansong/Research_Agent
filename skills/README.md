@@ -14,6 +14,7 @@ Antigravity alike, through `research_backend` (see its README, "Skills").
 | `vllm`, `transformer-lens` | batch inference; looking inside a model's representations |
 | `lm-evaluation-harness`, `tensorboard` | benchmarks; tracking runs |
 | `statistical-analysis`, `scientific-critical-thinking`, `peer-review` | testing results properly; judging claims and the paper |
+| `research-orchestration`, `scientific-brainstorming` | coordinating a study before it runs: the next step, readiness for approval, a clean record of decisions |
 | `acl-paper`, `ml-paper-writing`, `academic-plotting` | the paper (ACL style files bundled in `ml-paper-writing/templates/acl/`), and its figures |
 
 Where the third-party ones came from, at which commit and under which licence:

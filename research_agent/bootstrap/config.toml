@@ -22,7 +22,7 @@ dir = "skills"
 # The planner has two jobs, so two entries. The designer gets the list of all
 # skills in its brief anyway, to choose skills for the execution nodes.
 discussor = "auto"
-orchestrator = "none"
+orchestrator = ["research-orchestration"]   # small: it is re-sent with every orchestrator call
 researcher = ["research"]
 planner_hypothesize = ["hypothesis-generation", "experiment-design", "statistical-power"]
 planner_plan = ["experiment-design"]

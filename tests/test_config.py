@@ -22,7 +22,8 @@ def test_the_defaults_come_from_config_toml():
     cfg = config.defaults()
     assert cfg.roles["researcher"] == config.RoleConfig("antigravity", "gemini-3.8-flash-high")
     assert cfg.roles["planner"].effort == "high"
-    assert cfg.skills["discussor"] == "auto" and cfg.skills["orchestrator"] is None
+    assert cfg.skills["discussor"] == "auto"
+    assert cfg.skills["orchestrator"] == ["research-orchestration"]
     assert cfg.skills["planner_plan"] == ["experiment-design"]
     assert cfg.skills_dir == config.REPOSITORY / "skills"
     assert set(cfg.roles) == set(config.ROLES) and set(cfg.skills) == set(config.NODES)

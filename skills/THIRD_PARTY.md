@@ -2,8 +2,9 @@
 
 These skill folders were copied unchanged from public collections on
 2026-10-22 (only `__pycache__` was left out). Each folder keeps its licence
-file. The rest -- `experiment-design`, `research`, `acl-paper` -- are this
-project's own.
+file. `scientific-brainstorming` was added the same way on 2026-10-24. The rest --
+`experiment-design`, `research`, `acl-paper`, `research-orchestration` -- are
+this project's own.
 
 | skill | from | path there | licence | commit |
 | --- | --- | --- | --- | --- |
@@ -28,6 +29,7 @@ project's own.
 | `transformers` | [K-Dense-AI/scientific-agent-skills](https://github.com/K-Dense-AI/scientific-agent-skills/tree/593377bb048752abb0152deab9fbb1083a6087df/skills/transformers) | `skills/transformers` | MIT | `593377bb0487` |
 | `scikit-learn` | [K-Dense-AI/scientific-agent-skills](https://github.com/K-Dense-AI/scientific-agent-skills/tree/593377bb048752abb0152deab9fbb1083a6087df/skills/scikit-learn) | `skills/scikit-learn` | MIT | `593377bb0487` |
 | `hypothesis-generation` | [K-Dense-AI/scientific-agent-skills](https://github.com/K-Dense-AI/scientific-agent-skills/tree/593377bb048752abb0152deab9fbb1083a6087df/skills/hypothesis-generation) | `skills/hypothesis-generation` | MIT | `593377bb0487` |
+| `scientific-brainstorming` | [K-Dense-AI/scientific-agent-skills](https://github.com/K-Dense-AI/scientific-agent-skills/tree/593377bb048752abb0152deab9fbb1083a6087df/skills/scientific-brainstorming) | `skills/scientific-brainstorming` | MIT | `593377bb0487` |
 
 Before they were added, their scripts were checked for network access,
 shell-outs and `exec`/`eval` (none), and their Markdown for instructions that
