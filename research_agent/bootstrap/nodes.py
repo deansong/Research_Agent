@@ -241,24 +241,28 @@ def orchestrator(run: Run, st: dict, *, requests: list[dict], last: str = "") ->
 
 
 def researcher(run: Run, st: dict, *, task: str, questions: list[str]) -> Outcome:
+    # The questions go into the state first, so they have ids the researcher
+    # answers by -- a plain list made it number them itself (Q1..Q6) and miss.
+    known = {q["text"].strip().lower() for q in st.get("open_questions") or []}
+    ops = [{"op": "add", "section": "open_questions", "value": {"text": q, "for": "research"}}
+           for q in dict.fromkeys(q.strip() for q in questions if q.strip())
+           if q.lower() not in known]
+    if ops:
+        st = S.apply(st, ops, by="orchestrator")[0]
     hypotheses = _ids(st, "hypotheses")
     open_ids = {q["id"] for q in st.get("open_questions") or [] if q.get("status") == "open"}
 
     def check(out: schemas.ResearcherOutput) -> list[str]:
-        problems = [f"novelty: {n.hypothesis} is not a hypothesis" for n in out.novelty
-                    if n.hypothesis not in hypotheses]
-        problems += [f"answers: {a.id} is not an open question" for a in out.answers
-                     if a.id not in open_ids]
-        problems += [f"finding {i + 1} has no source" for i, f in enumerate(out.findings)
-                     if not f.source.strip()]
-        return problems
+        # Only what cannot be kept goes back. A research round costs minutes
+        # and millions of tokens, so a wrong reference is re-filed, not retried.
+        return [f"finding {i + 1} has no source" for i, f in enumerate(out.findings)
+                if not f.source.strip()]
 
     folder = run.folder / "research"
     folder.mkdir(parents=True, exist_ok=True)
-    out, session = run.call("researcher", brief=views.researcher(st, task=task, questions=questions),
+    out, session = run.call("researcher", brief=views.researcher(st, task=task),
                             schema=schemas.ResearcherOutput, access="write", workdir=folder,
                             check=check)
-    ops = []
     checked = {"verified": 0, "not found": 0}
     for f in out.findings:
         ok = verify.source(f.source, run.skills_dir)
@@ -268,15 +272,32 @@ def researcher(run: Run, st: dict, *, task: str, questions: list[str]) -> Outcom
             checked["not found"] += 1
         ops.append({"op": "add", "section": "evidence", "value": {
             "claim": f.claim, "source": f.source, "verified": ok, "found_by": "researcher",
-            "bears_on": [b for b in f.bears_on]}})
-    ops += [{"op": "update", "section": "hypotheses", "id": n.hypothesis,
-             "value": {"novelty": n.note}} for n in out.novelty]
-    ops += [{"op": "update", "section": "open_questions", "id": a.id,
-             "value": {"status": "answered", "answer": a.answer}} for a in out.answers]
+            "bears_on": list(f.bears_on)}})
+    refiled = []
+    for n in out.novelty:
+        if n.hypothesis in hypotheses:
+            ops.append({"op": "update", "section": "hypotheses", "id": n.hypothesis,
+                        "value": {"novelty": n.note}})
+        else:
+            refiled.append(n.hypothesis)
+            ops.append({"op": "add", "section": "evidence", "value": {
+                "claim": f"Novelty: {n.note}", "source": "the researcher's novelty assessment",
+                "found_by": "researcher"}})
+    for a in out.answers:
+        if a.id in open_ids:
+            ops.append({"op": "update", "section": "open_questions", "id": a.id,
+                        "value": {"status": "answered", "answer": a.answer}})
+        else:
+            refiled.append(a.id)
+            ops.append({"op": "add", "section": "open_questions", "value": {
+                "text": f"(answered by the researcher under {a.id}, which is not a question here)",
+                "for": "research", "status": "answered", "answer": a.answer}})
     ops += [{"op": "add", "section": "open_questions", "value": {"text": u, "for": "research"}}
             for u in out.unanswered]
     summary = (f"{len(out.findings)} findings ({checked['verified']} sources verified, "
                f"{checked['not found']} not found). {out.summary}")
+    if refiled:
+        summary += f" (Kept, though filed under unknown ids: {', '.join(refiled)}.)"
     ops.append(_result_op("researcher", "", task, summary, session))
     return Outcome(ops=ops, summary=summary, session=session, data=out)
 

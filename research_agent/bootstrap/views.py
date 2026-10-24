@@ -69,16 +69,21 @@ def orchestrator(st: dict, *, requests: list[dict], last: str = "") -> str:
     return "\n\n".join(parts) + "\n\nDecide the next action."
 
 
-def researcher(st: dict, *, task: str, questions: list[str]) -> str:
+def researcher(st: dict, *, task: str) -> str:
+    """The researcher's questions are open questions in the state, so it
+    answers them by id."""
+    questions = [q for q in st.get("open_questions") or []
+                 if q.get("for") == "research" and q.get("status") == "open"]
+    hypotheses = S.render(st, ["hypotheses"], brief=True)
     return "\n\n".join([
-        _block("YOUR TASK", task + ("\n\nQuestions:\n" + "\n".join(f"- {q}" for q in questions)
-                                    if questions else "")),
+        _block("YOUR TASK", task),
+        _block("THE QUESTIONS -- answer each in `answers` by its id",
+               "\n".join(f"- {q['id']} {q['text']}" for q in questions)),
         _block("THE STUDY", S.render(st, ["goal", "constraints"])),
-        _block("HYPOTHESES SO FAR", S.render(st, ["hypotheses"], brief=True)),
+        _block("HYPOTHESES SO FAR", hypotheses or
+               "None yet: leave `novelty` empty, and say in your findings what has "
+               "already been done."),
         _block("EVIDENCE ALREADY FOUND (do not repeat)", S.render(st, ["evidence"], brief=True)),
-        _block("OPEN QUESTIONS FOR RESEARCH", "\n".join(
-            f"- {q['id']} {q['text']}" for q in st.get("open_questions") or []
-            if q.get("for") == "research" and q.get("status") == "open")),
     ])
 
 

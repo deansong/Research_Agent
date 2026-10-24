@@ -83,13 +83,14 @@ def test_the_researcher_s_sources_are_checked(run, script, monkeypatch):
     st = _apply(st, out, "researcher")
     assert [e["verified"] for e in st["evidence"]] == [True, False, None]
     assert st["hypotheses"][0]["novelty"].startswith("studied for GPT-3")
-    assert st["open_questions"][0] == {"id": "Q1", "text": "cost per run on an A100",
-                                       "for": "research", "status": "open", "answer": ""}
+    assert [(q["id"], q["text"]) for q in st["open_questions"]] == [
+        ("Q1", "LoRA on SST-2?"), ("Q2", "cost per run on an A100")]
     assert out.summary.startswith("3 findings (1 sources verified, 1 not found)")
     assert st["results"][0]["node"] == "researcher" and st["results"][0]["session"] == "researcher-001"
     call = script.calls[0]
     assert call["access"].value == "write" and call["workdir"].endswith("research")
-    assert "- LoRA on SST-2?" in call["prompt"]
+    assert "=== THE QUESTIONS -- answer each in `answers` by its id ===\n- Q1 LoRA on SST-2?" \
+        in call["prompt"]
 
 
 HYPO = {"summary": "two hypotheses", "hypotheses": [
@@ -183,10 +184,34 @@ def test_no_brief_but_the_discussor_s_carries_the_users_words(run, script):
                              {"id": "1", "title": "a"}]}}], by="x")
     user = "my secret aside about the budget"
     briefs = [views.orchestrator(st, requests=[]),
-              views.researcher(st, task="t", questions=["q"]),
+              views.researcher(st, task="t"),
               views.planner(st, job="hypothesize", task="t"),
               views.planner(st, job="plan", task="t"),
               views.designer(st, task="t", skills=[("peft", "LoRA")])]
     assert all(user not in b and "Question: Q?" in b for b in briefs)
     assert user in views.discussor_turn(st, {}, user=user)
     assert "- peft: LoRA" in briefs[-1]
+
+
+def test_the_researcher_is_never_sent_back_for_a_wrong_reference(run, script):
+    # Seen in a real run: no hypotheses yet, yet novelty for H1; answers under
+    # Q5, which did not exist. Ten minutes of research must not be redone for that.
+    st = S.new()
+    script.add("ResearcherOutput", lambda prompt: {
+        "summary": "survey", "findings": [{"claim": "c", "source": "glue/sst2"}],
+        "novelty": [{"hypothesis": "H1", "note": "dual encoders now win"}],
+        "answers": [{"id": "Q1", "answer": "the first answer"},
+                    {"id": "Q5", "answer": "datasets: GoEmotions, ISEAR"}]})
+    out = nodes.researcher(run, st, task="survey", questions=["Which methods?", "Which methods?"])
+    assert len(script.calls) == 1, "no retry"
+    brief = script.calls[0]["prompt"]
+    assert "None yet: leave `novelty` empty" in brief
+    st = _apply(st, out, "researcher")
+    questions = {q["id"]: q for q in st["open_questions"]}
+    assert questions["Q1"]["text"] == "Which methods?" and questions["Q1"]["status"] == "answered"
+    assert len(questions) == 2, "a repeated question is filed once"
+    assert questions["Q2"]["answer"] == "datasets: GoEmotions, ISEAR"
+    assert "under Q5" in questions["Q2"]["text"]
+    assert st["evidence"][1]["claim"] == "Novelty: dual encoders now win"
+    assert st["evidence"][1]["verified"] is None
+    assert out.summary.endswith("(Kept, though filed under unknown ids: H1, Q5.)")
