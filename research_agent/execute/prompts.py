@@ -141,7 +141,9 @@ Review it as you would a submission, fairly and specifically:
   priority (must, should, could). The next run's planner works from these.
 
 Check numbers against the logs and files; say where a claim is not supported.
-Do not invent results or citations.
+Do not invent results or citations. Use your skills' methods, not their
+formalities for human reviewers: no draft disclaimers, AI-assistance notes,
+or citations of the skills themselves -- the review goes to a research team.
 """
 
 INSTRUCTIONS = {"discussor": DISCUSSOR, "orchestrator": ORCHESTRATOR, "worker": OWNER,
