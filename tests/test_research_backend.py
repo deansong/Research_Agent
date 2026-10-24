@@ -681,3 +681,42 @@ def test_the_repository_skills_folder_reads():
     listed = RB.list_skills(root)
     assert len(listed) >= 24 and all(s.description for s in listed)
     assert {"acl-paper", "statistical-power", "research"} <= set(listed.names)
+
+
+def test_on_progress_reaches_the_turn_running_on_its_own_thread(tmp_path, monkeypatch):
+    """A backend reports progress through its on_progress; send(on_progress=)
+    gets it -- each concurrent turn its own, though they share one backend."""
+    import threading
+
+    class Talky:
+        on_progress = None
+        go = threading.Barrier(2)
+
+        def run_structured(self, *, thread_id, repo_path, access, developer_instructions,
+                           prompt, output_model):
+            self.go.wait(5)                  # both turns are running now
+            for n in range(3):
+                self.on_progress({"events": [{"kind": "command", "phase": "started",
+                                              "command": f"{prompt} {n}"}], "elapsed": n})
+            return StructuredRun(data=output_model(text="ok"), thread_id="t", is_new_thread=True,
+                                 usage=Usage(), events=[])
+
+    shared = Talky()
+    monkeypatch.setattr(sessions, "_backend", lambda *a, **k: shared)
+    seen = {"a": [], "b": []}
+
+    def turn(name):
+        rb = RB("fake", home=tmp_path)
+        rb.new_session(name)
+        rb.send(name, on_progress=lambda snap: seen[name].append(snap["events"][0]["command"]))
+
+    threads = [threading.Thread(target=turn, args=(n,)) for n in ("a", "b")]
+    for t in threads:
+        t.start()
+    for t in threads:
+        t.join(10)
+    assert seen == {"a": ["a 0", "a 1", "a 2"], "b": ["b 0", "b 1", "b 2"]}
+    shared.go = threading.Barrier(1)
+    rb = RB("fake", home=tmp_path)
+    rb.new_session("quiet")
+    assert rb.send("no hook").text, "no callback: nothing breaks"

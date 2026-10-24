@@ -172,7 +172,8 @@ class Session:
 
     # ---- talking to it -------------------------------------------------------
 
-    def send(self, prompt: str, *, schema=None, progress: bool = False) -> Reply:
+    def send(self, prompt: str, *, schema=None, progress: bool = False,
+             on_progress=None) -> Reply:
         """Send one message and wait for the answer.
 
         `schema` asks for a structured answer: a Pydantic class (the reply's
@@ -182,6 +183,10 @@ class Session:
         `progress=True` prints what the model is doing while it works -- the
         commands it runs, the files it changes; otherwise the turn is quiet
         and the same detail is in the reply's `events`.
+        `on_progress(snapshot)` is called about once a second while the turn
+        runs, from this thread: {"events", "elapsed", "idle", "counts",
+        "last", "streamed", "live"} -- what the model has done so far and the
+        tails of what it is writing. For a live view; it must not raise.
 
         Raises SessionBusy if this session is already answering a message,
         and the provider's error (BackendError and its kinds) if the turn
@@ -202,6 +207,11 @@ class Session:
             sent, skills_now = self._with_skills(prompt)
             if sent != prompt:
                 entry["skills"] = self.skills
+            if on_progress is not None and hasattr(backend, "on_progress"):
+                # Backends are shared between sessions, so the callback is
+                # found per thread: two turns at once each get their own.
+                backend.on_progress = _dispatch_progress
+            _progress_hooks.hook = on_progress
             try:
                 run = backend.run_structured(
                     thread_id=self.thread_id, repo_path=self.workdir, access=self.access,
@@ -212,6 +222,8 @@ class Session:
                              seconds=round(time.monotonic() - started, 1))
                 self._append(entry)
                 raise
+            finally:
+                _progress_hooks.hook = None
 
             seconds = round(time.monotonic() - started, 1)
             if schema is None:
@@ -413,6 +425,15 @@ def list_sessions(*, home: str | os.PathLike | None = None) -> list[Session]:
 
 _backends: dict[tuple, Any] = {}
 _backends_lock = threading.Lock()
+_progress_hooks = threading.local()
+
+
+def _dispatch_progress(snapshot: dict) -> None:
+    """A backend's on_progress: passes the snapshot to the callback of the
+    turn running on this thread, if it gave one."""
+    hook = getattr(_progress_hooks, "hook", None)
+    if hook is not None:
+        hook(snapshot)
 
 
 def _backend(provider: str, model: str | None, options: dict, *, quiet: bool = True,

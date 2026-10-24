@@ -327,7 +327,8 @@ class ResearchBackend:
 
     # ---- talking ----------------------------------------------------------------------
 
-    def send(self, prompt: str, *, schema=None, progress: bool = False) -> Reply:
+    def send(self, prompt: str, *, schema=None, progress: bool = False,
+             on_progress=None) -> Reply:
         """Send a message in the current session and wait for the answer; with
         no session yet, one is started.
 
@@ -335,11 +336,14 @@ class ResearchBackend:
                   (reply.data is an instance), or a JSON schema -- a dict, JSON
                   text or a .json file path (reply.data is a dict). Without
                   one, the schema from set_schema(), else plain text.
-        progress  print what the model does while it works"""
+        progress  print what the model does while it works
+        on_progress  called about once a second while the model works, with
+                  what it has done so far: {"events", "elapsed", "idle",
+                  "counts", "last", "streamed", "live"} -- for a live view"""
         if self._session is None:
             self.new_session()
         return self._session.send(prompt, schema=schema if schema is not None else self._schema,
-                                  progress=progress)
+                                  progress=progress, on_progress=on_progress)
 
     def history(self, last: int | None = None) -> str:
         """The conversation so far, as text."""
