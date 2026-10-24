@@ -236,8 +236,17 @@ def create_app(runs_root: Path = RUNS_ROOT, *, roles=(), watch: bool = True) -> 
         return json.loads(path.read_text())
 
     @app.get("/api/runs/{run_id}/graph")
-    def graph_view(run_id: str):
-        return _graph(S.Store(folder_of(run_id)).read(), host_of(run_id).stage)
+    def graph_view(run_id: str, view: str = ""):
+        """The graph of the run's stage -- or, with view=execution, the
+        execution graph the design builds, before the execution starts."""
+        st = S.Store(folder_of(run_id)).read()
+        stage = host_of(run_id).stage
+        if view == "execution" and (st.get("design") or {}).get("nodes"):
+            stage = "execution"
+        out = _graph(st, stage)
+        out["can_preview"] = bool((st.get("design") or {}).get("nodes"))
+        out["preview"] = stage != host_of(run_id).stage
+        return out
 
     # ---- model calls, files, jobs ---------------------------------------------------
 
@@ -403,16 +412,17 @@ def _graph(st: dict, stage: str) -> dict:
                 "edges": [{"source": a, "target": b, "label": c} for a, b, c in edges]}
     records = {r["id"]: r for r in (st.get("execution") or {}).get("steps") or []}
     for n in (st.get("design") or {}).get("nodes") or []:
-        if n["role"] in ("orchestrator", "validator"):
+        if n["role"] == "validator" or (n["role"] == "orchestrator" and not n.get("steps")):
             continue
         name = f"node_{n['name']}" if n["name"] in ("discussor", "orchestrator", "validator",
                                                     "wait", "human", "reviewer") else n["name"]
         statuses = [records.get(s, {}).get("status", "pending") for s in n.get("steps") or []]
-        nodes.append({"id": name, "label": n["name"], "kind": n["role"],
+        nodes.append({"id": name, "label": n["name"],
+                      "kind": "worker" if n["role"] == "orchestrator" else n["role"],
                       "detail": f"steps {', '.join(n.get('steps') or [])}",
                       "status": _overall(statuses)})
         edges += [("orchestrator", name, "run " + ",".join(n.get("steps") or [])),
-                  (name, "validator", "done"), (name, "wait", "jobs"), ("wait", name, "")]
+                  (name, "validator", "done"), (name, "wait", "jobs")]
     nodes += [{"id": "wait", "label": "wait (jobs)", "kind": "code"},
               {"id": "validator", "label": "validator", "kind": "validator"},
               {"id": "reviewer", "label": "reviewer", "kind": "reviewer"}]

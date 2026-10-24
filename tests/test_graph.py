@@ -120,6 +120,9 @@ def test_a_whole_bootstrap_from_idea_to_an_approved_design(run, script):
     assert "orchestrator-007" in sessions and "orchestrator-008" not in sessions, \
         "with the design approved, no model is asked whether to finish"
     assert st["status"]["phase"] == "ready"
+    told = script.prompts("DiscussorOutput")[-1]
+    assert "**Start execution**" in told and f"execute --run {run.folder}" in told, \
+        "the user is told how to start the execution"
     boot.close()
 
 

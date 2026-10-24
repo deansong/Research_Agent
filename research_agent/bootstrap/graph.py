@@ -88,6 +88,11 @@ def build(run: nodes.Run, checkpointer=None):
         store.write(new, by=by, ops=ops, changed=changed)
         return new
 
+    def how_to_execute() -> str:
+        return ("Tell the user how to start the execution, which carries the plan out with "
+                "the design's nodes: the **Start execution** button in the web UI, or "
+                f"`python -m research_agent execute --run {run.folder}` in a terminal.")
+
     def discussor(state: BootstrapState) -> dict:
         st = state.get("research") or S.new()
         turn = nodes.discussor(run, st, seen=state.get("seen") or {},
@@ -131,7 +136,8 @@ def build(run: nodes.Run, checkpointer=None):
             st = commit(st, [{"op": "merge", "section": "status", "value": {
                 "phase": "ready", "next": "execution"}}], "orchestrator")
             note = ("Everything is approved: the bootstrap is done. Tell the user, and that "
-                    "anything about carrying the plan out is for the execution stage.")
+                    "anything about carrying the plan out is for the execution stage. "
+                    + how_to_execute())
             return {"research": st, "note": note, "pending": [], "outcome": "ready",
                     "decision": {"action": "ready", "task": note, "questions": [],
                                  "reason": "the design is approved and nothing new was asked"}}
@@ -154,7 +160,10 @@ def build(run: nodes.Run, checkpointer=None):
             decision = {"action": "ask_user", "task": note, "questions": [],
                         "reason": f"{d.action} is gated on {', '.join(waiting)}"}
         if decision["action"] == "ready":
-            note = note or "The design is approved and nothing is open: the bootstrap is done."
+            st = commit(st, [{"op": "merge", "section": "status", "value": {
+                "phase": "ready", "next": "execution"}}], "orchestrator")
+            note = (note or "The design is approved and nothing is open: the bootstrap is done.") \
+                + " " + how_to_execute()
         return {"research": st, "decision": decision, "note": note, "pending": [],
                 "steps": state.get("steps", 0) + 1,
                 "outcome": "ready" if decision["action"] == "ready" else ""}

@@ -11,10 +11,12 @@ import { StateView } from "./state.js";
 const $ = (id) => document.getElementById(id);
 const JOBS_POLL_MS = 5000;
 
-const app = { runId: null, detail: null, unsubscribe: null, tab: "state", side: "run", jobsTimer: null };
+const app = { runId: null, detail: null, unsubscribe: null, tab: "state", side: "run", jobsTimer: null,
+  graphView: null };
 
 const chat = new Chat({ onSend: send });
-const stateView = new StateView($("state-view"), { onSession: (sid) => inspector.openSession(sid), onError: problem });
+const stateView = new StateView($("state-view"), { onSession: (sid) => inspector.openSession(sid), onError: problem,
+  onExecute: () => { $("exec-error").textContent = ""; $("dialog-execute").showModal(); } });
 const graph = new GraphPanel($("graph-canvas"), $("graph-legend"), (node, kind) => openNode(node, kind));
 const files = new FilesPanel($("files-list"), $("files-view"), problem);
 const historyPanel = new HistoryPanel($("history-list"), $("history-view"), problem);
@@ -43,6 +45,7 @@ async function openRun(id) {
   try { d = await api.run(id); } catch (err) { problem(err); return; }
   app.runId = id;
   app.detail = d;
+  app.graphView = null;
   window.history.replaceState(null, "", `#${encodeURIComponent(id)}`);
   chat.reset();
   chat.history(d.transcript || []);
@@ -95,7 +98,9 @@ function renderDetail(d) {
   $("btn-execute").hidden = !d.can_execute;
   $("btn-stop").hidden = !(d.stage === "execution" && (d.busy || d.waiting) && d.outcome !== "done");
   chat.setMode(d);
-  stateView.setControls({ stage: d.stage, canApprove: !!(d.waiting && !d.busy), awaiting: d.awaiting || "" });
+  stateView.setControls({ stage: d.stage, canApprove: !!(d.waiting && !d.busy), awaiting: d.awaiting || "",
+    canExecute: !!d.can_execute });
+  $("btn-execute").classList.toggle("pulse", !!d.can_execute);
   inspector.showFacts(d);
   renderActions(d);
 }
@@ -145,8 +150,18 @@ function loadTab(tab) {
   if (tab === "history") historyPanel.load(app.runId);
 }
 
+// The stage's graph. In the bootstrap, once there is a design, the execution
+// graph it builds can be shown too -- first, once the design is approved.
 async function loadGraph() {
-  try { graph.render(await api.graph(app.runId)); } catch (err) { problem(err); }
+  try {
+    const d = app.detail || {};
+    const view = app.graphView ?? (d.stage === "bootstrap" && d.can_execute ? "execution" : "");
+    const g = await api.graph(app.runId, view);
+    graph.render(g);
+    const bar = $("graph-views");
+    bar.hidden = !(d.stage === "bootstrap" && g.can_preview);
+    bar.querySelectorAll("button").forEach((b) => b.classList.toggle("primary", b.dataset.view === (g.preview ? "execution" : "")));
+  } catch (err) { problem(err); }
 }
 
 function wireTabs(navId, onShow) {
@@ -249,6 +264,10 @@ wireTabs("inspector-tabs", (tab) => {
 });
 wireResize();
 wireDialogs();
+$("graph-views").addEventListener("click", (e) => {
+  const b = e.target.closest("button");
+  if (b) { app.graphView = b.dataset.view; loadGraph(); }
+});
 chat.setMode(null);
 window.addEventListener("resize", () => graph.resize());
 

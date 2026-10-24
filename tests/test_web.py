@@ -142,6 +142,11 @@ def test_approve_then_execute_from_the_page(web, script):
     assert web.post("/api/runs/ready/approve", json={"sections": ["design"]}).status_code == 200
     d = settle(web, "ready")
     assert d["can_execute"] and d["outcome"] == "ready"
+    now = web.get("/api/runs/ready/graph").json()
+    planned = web.get("/api/runs/ready/graph", params={"view": "execution"}).json()
+    assert "researcher" in {n["id"] for n in now["nodes"]} and now["can_preview"] and not now["preview"]
+    assert {"builder", "trainer", "validator", "reviewer"} <= {n["id"] for n in planned["nodes"]}
+    assert planned["preview"], "the execution graph, before the execution starts"
 
     (folder / "execute.json").write_text(json.dumps({"execute": {"poll_seconds": 0.05}}))
     (folder / "execute.json").unlink()

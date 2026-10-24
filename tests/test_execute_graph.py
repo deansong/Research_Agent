@@ -396,3 +396,39 @@ def test_a_stop_while_jobs_run_stops_them(run, script):
     turn = ex.start()
     assert turn.outcome == "stopped" and nodes.records(ex.research)["1"]["status"] == "stopped"
     assert all(jobs.status(j)["state"] != "running" for j in jobs.records(run.folder))
+
+
+def test_steps_the_design_gives_its_orchestrator_are_run_by_an_owner(tmp_path, script):
+    """Seen in a real design: the orchestrator node owned the preflight step.
+    The orchestrator only decides; its step is done by an owner made from it."""
+    design = {**DESIGN, "nodes": [{**DESIGN["nodes"][0], "name": "preflight_orchestrator",
+                                   "steps": ["1"], "access": "write",
+                                   "instructions": "Check the data first."},
+                                  *DESIGN["nodes"][2:]]}
+    folder = tmp_path / "run"
+    S.Store(folder).write(approved_state(design=design))
+    run = nodes.ExecRun(folder, {r: RoleConfig("fake") for r in (*config.ROLES, "discussor")},
+                        skills={}, limits=replace(config.defaults(), poll_seconds=0.05,
+                                                  confirm="none"), quiet=True)
+    d = nodes.Design.read(S.Store(folder).read())
+    assert d.owner_of == {"1": "preflight_orchestrator", "2": "trainer"}
+    assert d.owners["preflight_orchestrator"]["role"] == "worker"
+    assert d.orchestrator["name"] == "preflight_orchestrator"
+    script.add("ExecDecision", decide("run", "1"), decide("ask_user", task="ok?"))
+    script.add("StepReport", done_writing(run, "1"))
+    script.add("Verdict", verdict())
+    script.add("ExecDiscussorOutput", say("Step 1 passed."))
+    Execution(run).start()
+    brief = script.prompts("StepReport")[0]
+    assert "You are preflight_orchestrator (worker).\nCheck the data first." in brief
+    rec = nodes.records(S.Store(folder).read())["1"]
+    assert rec["status"] == "pass" and rec["owner"] == "preflight_orchestrator"
+
+
+def test_a_validator_that_owns_steps_is_refused():
+    from research_agent.bootstrap.nodes import design_problems
+
+    bad = {"nodes": [{**n, "steps": ["2"]} if n["role"] == "validator" else n
+                     for n in DESIGN["nodes"]]}
+    assert "the validator checker owns no steps: it only checks" in design_problems(
+        bad, steps=["1", "2"], rubric={"R1"}, skills=set())

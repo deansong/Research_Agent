@@ -100,13 +100,15 @@ class Design:
                      f"validator, worker, runner or writer"
                      for n in design.get("nodes") or []
                      if n["role"] not in ("orchestrator", "validator", *config.OWNERS)]
-        problems += [f"{n['name']} owns steps but is the {n['role']}"
-                     for n in design.get("nodes") or []
-                     if n["role"] in ("orchestrator", "validator") and n.get("steps")]
         if problems:
             raise ValueError("The design cannot be run:\n" + "\n".join(f"- {p}" for p in problems))
         nodes = design["nodes"]
-        owners = {graph_name(n["name"]): n for n in nodes if n["role"] in config.OWNERS}
+        # Steps the design gives its orchestrator (a preflight, say) are done
+        # by a step owner made from that node: the orchestrator itself only
+        # decides. The validator owns none: it cannot write.
+        owners = {graph_name(n["name"]): n if n["role"] in config.OWNERS else {**n, "role": "worker"}
+                  for n in nodes if n["role"] in config.OWNERS
+                  or (n["role"] == "orchestrator" and n.get("steps"))}
         return cls(orchestrator=next(n for n in nodes if n["role"] == "orchestrator"),
                    validator=next(n for n in nodes if n["role"] == "validator"),
                    owners=owners,

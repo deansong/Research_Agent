@@ -155,6 +155,10 @@ h4 { font-size: 12px; margin: 10px 0 4px; color: var(--text-dim); }
 .sv-head { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; margin-bottom: 6px; }
 .sv-status { border-color: var(--line-bright); background: var(--bg-raised); }
 .sv-summary { font-size: 13.5px; margin: 4px 0 6px; }
+.callout { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-top: 10px;
+  padding: 10px 12px; border: 1px solid var(--accent-dim); border-radius: 8px; background: #0f2a2a; }
+.btn.pulse { animation: pulse 2s ease-in-out infinite; }
+@keyframes pulse { 50% { box-shadow: 0 0 0 4px rgba(53, 214, 196, .25); } }
 .new-dot { font-size: 10px; color: var(--accent); text-transform: uppercase; letter-spacing: .06em; }
 .approvals { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 8px; }
 .approval { font-size: 11.5px; padding: 3px 8px; border-radius: 6px; border: 1px solid var(--line-bright); color: var(--text-dim); }
@@ -198,6 +202,7 @@ ol.steps > li { border: 1px solid var(--line); border-radius: 7px; padding: 7px 
 
 /* ---- graph, files, history ----------------------------------------------------------- */
 
+.graph-views { position: absolute; top: 8px; left: 10px; z-index: 2; display: flex; gap: 6px; }
 .cy-canvas { position: absolute; inset: 0; bottom: 30px; }
 .legend { position: absolute; left: 0; right: 0; bottom: 0; height: 30px; display: flex; gap: 14px; align-items: center;
   padding: 0 12px; border-top: 1px solid var(--line); background: var(--bg-panel); font-size: 11px; color: var(--text-dim); }

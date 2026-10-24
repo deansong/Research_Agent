@@ -299,6 +299,8 @@ def design_problems(design: dict, *, steps: list[str], rubric: set[str],
             problems.append(f"there must be exactly one {role} node, not {count}")
     problems += [f"the validator {n['name']} must be read_only" for n in nodes
                  if n["role"] == "validator" and n.get("access") != "read_only"]
+    problems += [f"the validator {n['name']} owns no steps: it only checks" for n in nodes
+                 if n["role"] == "validator" and n.get("steps")]
     owners: dict[str, list[str]] = {}
     for n in nodes:
         for s in n.get("steps") or []:

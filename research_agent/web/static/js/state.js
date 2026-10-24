@@ -22,7 +22,7 @@ export class StateView {
     this.data = null;
     this.seen = null;             // section versions when last rendered
     this.fresh = new Set();       // sections changed since the user looked
-    this.controls = { stage: "bootstrap", canApprove: false, awaiting: "" };
+    this.controls = { stage: "bootstrap", canApprove: false, awaiting: "", canExecute: false };
     this.openKeys = new Set();    // <details> the user opened
     this.pending = null;
   }
@@ -122,7 +122,12 @@ export class StateView {
         pill(status.phase || "discussing", status.phase)),
       status.summary ? el("p", { class: "sv-summary", text: status.summary }) : null,
       status.next ? el("p", { class: "dim" }, el("b", { text: "Next: " }), status.next) : null,
-      el("div", { class: "approvals" }, approvals));
+      el("div", { class: "approvals" }, approvals),
+      this.controls.canExecute ? el("div", { class: "callout" },
+        el("div", {}, el("b", { text: "The design is approved: the bootstrap is done." }),
+          el("div", { class: "dim small", text: "The execution carries the plan out with the design's nodes. Steps the plan gates wait for your go." })),
+        this.hooks.onExecute ? el("button", { class: "btn primary", text: "Start execution", onclick: () => this.hooks.onExecute() })
+          : el("span", { class: "dim small", text: "Start it from the main page." })) : null);
   }
 
   section(name, st) {

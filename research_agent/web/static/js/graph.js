@@ -39,10 +39,14 @@ export class GraphPanel {
 
   render(view) {
     this.view = view;
+    // Many step owners side by side make a graph too wide to read: lay a big
+    // one out left to right, so they stack, and keep only the telling labels.
+    const big = view.nodes.length > 9;
     const elements = [
       ...view.nodes.map((n) => ({ data: { id: n.id, kind: n.kind, status: n.status || "",
         text: n.detail ? `${n.label}\n${n.detail}${n.status ? " · " + n.status : ""}` : n.label } })),
-      ...view.edges.map((e, i) => ({ data: { id: `e${i}`, source: e.source, target: e.target, label: e.label || "" } })),
+      ...view.edges.map((e, i) => ({ data: { id: `e${i}`, source: e.source, target: e.target,
+        label: big && !["request / go", "ask", "done", "review"].includes(e.label) && !/^run /.test(e.label || "") ? "" : big && /^run /.test(e.label || "") ? "" : e.label || "" } })),
     ];
     if (!window.cytoscape) {
       clear(this.container).append(el("div", { class: "empty", text: "The graph library did not load." }));
@@ -50,7 +54,7 @@ export class GraphPanel {
     }
     if (this.cy) this.cy.destroy();
     this.cy = window.cytoscape({ container: this.container, elements, style: STYLE,
-      layout: { name: "dagre", rankDir: "TB", nodeSep: 40, rankSep: 55, fit: true, padding: 24 },
+      layout: { name: "dagre", rankDir: big ? "LR" : "TB", nodeSep: big ? 14 : 40, rankSep: big ? 90 : 55, fit: true, padding: 24 },
       autoungrabify: true, wheelSensitivity: 0.2 });
     if (this.active) this.highlight(this.active);
     this.cy.on("tap", "node", (e) => this.onSelect && this.onSelect(e.target.id(), e.target.data("kind")));

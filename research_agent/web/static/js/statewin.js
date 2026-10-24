@@ -17,7 +17,8 @@ function show(d) {
   $("run-phase").textContent = d.phase || "-";
   $("run-phase").className = `pill pill-${d.phase || "none"}`;
   $("run-activity").textContent = d.busy ? `working: ${d.current || "..."}` : d.waiting ? "waiting for the user" : d.outcome || "";
-  view.setControls({ stage: d.stage, canApprove: !!(d.waiting && !d.busy), awaiting: d.awaiting || "" });
+  view.setControls({ stage: d.stage, canApprove: !!(d.waiting && !d.busy), awaiting: d.awaiting || "",
+    canExecute: !!d.can_execute });
   document.title = `Research State — ${runId}`;
 }
 

@@ -44,7 +44,7 @@ export const api = {
   state: (id) => request("GET", `${run(id)}/state`),
   history: (id) => request("GET", `${run(id)}/history`),
   historyEntry: (id, n) => request("GET", `${run(id)}/history/${n}`),
-  graph: (id) => request("GET", `${run(id)}/graph`),
+  graph: (id, view) => request("GET", `${run(id)}/graph${view ? `?view=${view}` : ""}`),
   sessions: (id) => request("GET", `${run(id)}/sessions`),
   session: (id, sid) => request("GET", `${run(id)}/sessions/${encodeURIComponent(sid)}`),
   files: (id) => request("GET", `${run(id)}/files`),
