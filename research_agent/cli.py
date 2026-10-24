@@ -34,6 +34,7 @@ Commands:
   /sessions              every model call of this run (research_backend sessions)
   /retry                 run again the step that failed
   /usage                 the providers' usage limits
+  /trace on|off          print every model call's full input and output (or stop)
   /help                  this
   /exit                  finish (the run stays in its folder)
 Anything else is said to the discussor."""
@@ -54,7 +55,9 @@ def main(argv: list[str] | None = None) -> int:
                            "statistical-power; nodes: " + ", ".join(config.NODES))
     boot.add_argument("--skills-dir", metavar="FOLDER", help="the skills folder to use")
     boot.add_argument("--progress", action="store_true",
-                      help="print what each model does while it works")
+                      help="print what each model does while it works: commands, files")
+    boot.add_argument("--trace", action="store_true",
+                      help="print every model call's full input and output")
     args = parser.parse_args(argv)
 
     if args.resume:
@@ -71,7 +74,8 @@ def main(argv: list[str] | None = None) -> int:
         parser.error(str(exc))
     folder.mkdir(parents=True, exist_ok=True)
     config.save(folder, cfg)
-    return _converse(Bootstrap(nodes.Run.from_config(folder, cfg, progress=args.progress)),
+    return _converse(Bootstrap(nodes.Run.from_config(folder, cfg, progress=args.progress,
+                                                     trace=args.trace)),
                      args.idea if not args.resume else None)
 
 
@@ -79,6 +83,8 @@ def _converse(boot: Bootstrap, idea: str | None) -> int:
     folder = boot.run.folder
     resume_hint = f"Carry on with:  python -m research_agent bootstrap --resume {folder}"
     print(f"Run: {folder}")
+    print(f"  saved as it goes: state/research.md (the research state), rb/sessions/ (every model "
+          f"call, input and output), checkpoint.sqlite (for --resume)")
     run = boot.run
     print(config.BootstrapConfig(run.roles, run.skills or {}, run.skills_dir).describe())
     _warn_signed_out(boot)
@@ -141,7 +147,7 @@ def _converse(boot: Bootstrap, idea: str | None) -> int:
 
 
 #: Commands that only show things, allowed while a failed step waits for /retry.
-READ_ONLY = ("/help", "/state", "/show", "/sessions", "/usage")
+READ_ONLY = ("/help", "/state", "/show", "/sessions", "/usage", "/trace")
 
 
 def _command(boot: Bootstrap, text: str):
@@ -172,6 +178,12 @@ def _command(boot: Bootstrap, text: str):
         print(RB.list_sessions(home=boot.run.rb_home))
     elif name == "usage":
         print(RB.Listing(RB.usage(p) for p in sorted({c.provider for c in boot.run.roles.values()})))
+    elif name == "trace":
+        if words[:1] not in (["on"], ["off"]):
+            print(f"/trace on or /trace off (it is {'on' if boot.run.trace else 'off'}).")
+        else:
+            boot.run.trace = words[0] == "on"
+            print(f"Tracing is {words[0]}.")
     elif name == "exit":
         return boot.exit()
     else:

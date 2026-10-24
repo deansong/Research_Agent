@@ -76,7 +76,21 @@ team does, and a status line:
 | `/sessions` | every model call of this run |
 | `/usage` | the providers' usage limits |
 | `/retry` | run a failed step again |
+| `/trace on` / `/trace off` | print every model call's full input and output, or stop |
 | `/exit` | finish; the run stays in its folder |
+
+Every model call is announced as it starts and when it answers:
+
+```
+  > researcher: asking antigravity:gemini-3.8-flash-high (session researcher-001)...
+  < researcher: answered in 512s
+```
+
+`--trace` (or `/trace on`) also prints each call's full input -- the brief,
+and the role's standing instructions the first time -- and its full output.
+`--progress` prints what a model does while it works: the commands it runs,
+the files it changes. Nothing is only on screen: every call's input and
+output is kept in `<run>/rb/sessions/`.
 
 Ctrl-C stops a run, and `--resume <run>` carries on. A step is saved in
 `checkpoint.sqlite` as soon as it finishes.

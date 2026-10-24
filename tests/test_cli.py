@@ -90,3 +90,40 @@ def test_a_failed_step_waits_for_retry(tmp_path, script, monkeypatch, capsys):
     assert "The last step failed: /retry it first" in out
     assert "Hello! What shall we study?" in out
     assert "Nothing to retry." in out
+
+
+def test_every_call_is_announced_and_trace_shows_input_and_output(tmp_path, script, monkeypatch,
+                                                                  capsys):
+    script.add("DiscussorOutput", say("Let me look.", ("research", "find baselines")),
+               say("Found one."), say("Hi."), say("Hi again."))
+    script.add("ResearcherOutput", FINDINGS)
+    script.add("OrchestratorOutput", decide("research", questions=["q"]), decide("ask_user", "ok?"))
+    _typing(monkeypatch)
+    cli.main(["bootstrap", "idea one", "--run", str(tmp_path / "a"), "--role", "all=fake"])
+    out = capsys.readouterr().out
+    assert "saved as it goes: state/research.md" in out
+    assert "  > discussor: asking fake (session discussor)..." in out
+    assert "  > orchestrator: asking fake (session orchestrator-001)..." in out
+    assert "  > researcher: asking fake (session researcher-001)..." in out
+    assert "  < researcher: answered in" in out
+    assert "INPUT" not in out, "without --trace, no prompts"
+
+    _typing(monkeypatch)
+    cli.main(["bootstrap", "idea two", "--run", str(tmp_path / "b"), "--role", "all=fake",
+              "--trace"])
+    out = capsys.readouterr().out
+    assert out.count("---- discussor: standing instructions") == 1
+    assert "You are the DISCUSSOR" in out
+    assert "---- discussor: INPUT" in out and "=== THE USER SAYS ===\nidea two" in out
+    assert "[+ skills, sent in front of the first message: auto]" in out
+    assert "---- discussor: OUTPUT (" in out and '"reply": "Hi."' in out
+
+
+def test_trace_can_be_switched_during_a_run(tmp_path, script, monkeypatch, capsys):
+    script.add("DiscussorOutput", say("Hi."), say("Sure."))
+    _typing(monkeypatch, "/trace maybe", "/trace on", "go on", "/exit")
+    cli.main(["bootstrap", "idea", "--run", str(tmp_path / "r"), "--role", "all=fake"])
+    out = capsys.readouterr().out
+    assert "/trace on or /trace off (it is off)." in out and "Tracing is on." in out
+    assert out.count("---- discussor: INPUT") == 1, "only the call after /trace on"
+    assert "=== THE USER SAYS ===\ngo on" in out
