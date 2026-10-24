@@ -19,4 +19,4 @@ codex = ["openai-codex"]
 include = ["research_backend*", "research_agent*"]
 
 [tool.setuptools.package-data]
-research_agent = ["bootstrap/config.toml"]
+research_agent = ["bootstrap/config.toml", "execute/config.toml"]

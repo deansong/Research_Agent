@@ -51,9 +51,13 @@ def test_what_a_run_saves_is_what_it_reads_back(tmp_path):
     config.save(tmp_path, cfg)
     saved = json.loads((tmp_path / "config.json").read_text())
     assert saved["skills"]["designer"] == "none" and saved["skills"]["researcher"] == ["research"]
-    assert saved["roles"]["researcher"] == {"provider": "antigravity",
-                                            "model": "gemini-3.8-flash-high"}
+    assert saved["roles"]["researcher"] == {"provider": "antigravity", "options": {},
+                                            "model": "gemini-3.8-flash-high", "effort": None}
     assert config.load(tmp_path) == cfg
+    # A role given without a model stays without one when read back.
+    cfg = config.load(None, roles=["discussor=claude_code"])
+    config.save(tmp_path, cfg)
+    assert config.load(tmp_path).roles["discussor"].model is None
 
 
 def test_mistakes_are_named(tmp_path):

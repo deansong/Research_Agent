@@ -56,9 +56,10 @@ class BootstrapConfig:
         return f"Roles: {roles}\nSkills ({self.skills_dir or 'no folder'}): {skills}"
 
     def to_dict(self) -> dict:
-        return {"roles": {r: {k: v for k, v in (("provider", c.provider), ("model", c.model),
-                                                ("effort", c.effort), ("options", c.options))
-                              if v} for r, c in self.roles.items()},
+        # Every field, empty ones too: a role given without a model must not
+        # get the default's model back when the file is read again.
+        return {"roles": {r: {"provider": c.provider, "model": c.model, "effort": c.effort,
+                              "options": c.options} for r, c in self.roles.items()},
                 "skills": {"dir": str(self.skills_dir) if self.skills_dir else None,
                            **{n: c if c is not None else "none" for n, c in self.skills.items()}}}
 

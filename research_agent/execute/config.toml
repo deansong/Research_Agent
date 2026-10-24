@@ -1,0 +1,58 @@
+# The execution stage's configuration: which model each role runs on, and the
+# limits code holds while the plan is carried out.
+#
+# This file holds the defaults. A run copies what it starts with into
+# <run>/execute.json -- edit that to change one run (it is read again on
+# --resume) -- and the command line overrides both for one start:
+#     --role runner=claude_code:opus  --gpu-hours 140  --wall-hours 24
+#
+# The discussor is the bootstrap's (same conversation, same model): see
+# research_agent/bootstrap/config.toml. Each node's skills come from the
+# approved design.
+
+[execute]
+# Before a step starts, the user says go: for "gated" steps (the plan marks
+# them), "all" steps, or "none".
+confirm = "gated"
+# Attempts per step: the first, and retries with the validator's verdict.
+max_attempts = 3
+# Hard limits, checked between pieces of work and while jobs run; going over
+# stops the jobs and asks the user. 0 = no limit.
+wall_hours = 0
+gpu_hours = 0
+# How often a step waiting on its jobs looks at them, in seconds.
+poll_seconds = 30
+# Orchestrator decisions in a row before the user hears where things stand.
+max_decisions = 30
+
+
+[skills]
+# The folder the design's skill names are looked up in (relative: from the
+# repository root).
+dir = "skills"
+
+
+# Which provider and model each role runs on, as in the bootstrap. Step owners
+# (worker, runner, writer) write code and run it: Claude Code by default, with
+# a long idle timeout because a command may run for minutes.
+
+[roles.orchestrator]
+provider = "codex"
+
+[roles.worker]
+provider = "claude_code"
+model = "opus"
+options = { timeout = 1200 }
+
+[roles.runner]
+provider = "claude_code"
+model = "opus"
+options = { timeout = 1200 }
+
+[roles.writer]
+provider = "claude_code"
+model = "opus"
+options = { timeout = 1200 }
+
+[roles.validator]
+provider = "codex"
