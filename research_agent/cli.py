@@ -34,7 +34,7 @@ Commands:
   /sessions              every model call of this run (research_backend sessions)
   /retry                 run again the step that failed
   /usage                 the providers' usage limits
-  /trace on|off          print every model call's full input and output (or stop)
+  /trace on|off          print every model call's input, output and what it does between
   /help                  this
   /exit                  finish (the run stays in its folder)
 Anything else is said to the discussor."""
@@ -57,7 +57,8 @@ def main(argv: list[str] | None = None) -> int:
     boot.add_argument("--progress", action="store_true",
                       help="print what each model does while it works: commands, files")
     boot.add_argument("--trace", action="store_true",
-                      help="print every model call's full input and output")
+                      help="print every model call's full input and output, and what the "
+                           "model does in between (implies --progress)")
     args = parser.parse_args(argv)
 
     if args.resume:

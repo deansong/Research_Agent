@@ -87,9 +87,9 @@ Every model call is announced as it starts and when it answers:
 ```
 
 `--trace` (or `/trace on`) also prints each call's full input -- the brief,
-and the role's standing instructions the first time -- and its full output.
-`--progress` prints what a model does while it works: the commands it runs,
-the files it changes. Nothing is only on screen: every call's input and
+and the role's standing instructions the first time -- its full output, and
+what the model does in between: the commands it runs, the files it changes.
+`--progress` prints only that in-between activity. Nothing is only on screen: every call's input and
 output is kept in `<run>/rb/sessions/`.
 
 Ctrl-C stops a run, and `--resume <run>` carries on. A step is saved in

@@ -87,7 +87,8 @@ class Run:
             self._announce(label, cfg, rb, attempt, prompt, chosen if skills_dir else None)
             started = time.monotonic()
             try:
-                reply = rb.send(prompt, schema=schema, progress=self.progress)
+                # Tracing shows the work as it happens too, not only its ends.
+                reply = rb.send(prompt, schema=schema, progress=self.progress or self.trace)
                 problems = check(reply.data) if check else []
             except RB.BackendOutputError as exc:
                 problems = [str(exc)[:2000]]
