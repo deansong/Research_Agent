@@ -24,7 +24,7 @@ from research_agent import state as S
 from research_agent.bootstrap import carry, config, nodes, views
 from research_agent.bootstrap.session import Bootstrap
 from research_agent.execute import config as exec_config
-from research_agent.execute import inbox as exec_inbox
+from research_agent import inbox as exec_inbox
 from research_agent.execute import jobs as exec_jobs
 from research_agent.execute import nodes as exec_nodes
 from research_agent.execute.session import Execution

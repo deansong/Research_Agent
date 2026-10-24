@@ -19,7 +19,8 @@ from langgraph.types import Command
 
 from research_agent import state as S
 from research_agent.bootstrap.session import Turn
-from research_agent.execute import graph, inbox, jobs, nodes
+from research_agent import inbox
+from research_agent.execute import graph, jobs, nodes
 
 THREAD = {"configurable": {"thread_id": "execute"}, "recursion_limit": 10_000}
 

@@ -29,6 +29,7 @@ from typing_extensions import TypedDict
 
 import research_backend as RB
 
+from research_agent import inbox
 from research_agent import state as S
 from research_agent.bootstrap import nodes
 
@@ -105,8 +106,23 @@ def build(run: nodes.Run, checkpointer=None):
                 "steps": 0 if spoke else state.get("steps", 0),
                 "_to": "orchestrator" if go else "human"}
 
+    def drain(st: dict) -> tuple[dict, list[dict]]:
+        """What the user said while the team worked (asides): requests for
+        the orchestrator, and decisions."""
+        requests = []
+        for item in inbox.take(run.folder, kinds=("request", "decision")):
+            if item["kind"] == "request":
+                requests.append({"kind": item.get("request_kind") or "other",
+                                 "detail": item["text"]})
+            else:
+                st = commit(st, [{"op": "add", "section": "decisions", "value": {
+                    "what": item["what"], "why": item.get("why", ""), "by": "user"}}], "user")
+        return st, requests
+
     def orchestrator(state: BootstrapState) -> dict:
-        st = state["research"]
+        st, asked = drain(state["research"])
+        if asked:
+            state = {**state, "pending": list(state.get("pending") or []) + asked}
         if S.approved(st, "design") and not state.get("pending"):
             # Done, whatever a model might still want to look into: seen in a
             # real run, an orchestrator with everything approved went on to

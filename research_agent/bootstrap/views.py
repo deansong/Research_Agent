@@ -65,6 +65,18 @@ def _latest_results(st: dict, seen: dict) -> str:
         f"- {r['node']}{'/' + r['job'] if r.get('job') else ''}: {r['summary']}" for r in recent)
 
 
+def aside(st: dict, *, user: str, activity: str) -> str:
+    """The user writes while the team works."""
+    parts = [_block("AN ASIDE -- the team is working; nothing waits for your answer",
+                    "Answer from the research state. Work the user asks for goes in "
+                    "`requests`; the orchestrator takes it at its next decision."),
+             _block("THE USER SAYS", user),
+             _block("WHAT IS HAPPENING NOW", activity or "(the team is working)"),
+             _block("THE RESEARCH STATE", S.render(st, brief=True)),
+             _block("APPROVALS", approvals_line(st))]
+    return "\n\n".join(parts)
+
+
 def orchestrator(st: dict, *, requests: list[dict], last: str = "") -> str:
     parts = [f"Today is {_today()}.",
              _block("THE RESEARCH STATE", S.render(st, brief=True)),

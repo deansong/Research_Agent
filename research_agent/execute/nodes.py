@@ -19,7 +19,6 @@ from __future__ import annotations
 
 import subprocess
 import sys
-import threading
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from pathlib import Path
@@ -28,7 +27,8 @@ from research_agent import run as run_base
 from research_agent import state as S
 from research_agent.bootstrap.config import RoleConfig
 from research_agent.bootstrap.nodes import DISCUSSOR_SESSION, Outcome, design_problems
-from research_agent.execute import config, inbox, jobs, prompts, schemas, views
+from research_agent import inbox
+from research_agent.execute import config, jobs, prompts, schemas, views
 
 NodeFailed = run_base.NodeFailed
 
@@ -50,9 +50,6 @@ class ExecRun(run_base.Run):
         self.instructions = {**prompts.INSTRUCTIONS, **self.instructions}
         if self.limits is None:
             self.limits = config.defaults()
-        # One discussor turn at a time: the graph's, and the user's asides
-        # while the graph works, share one conversation.
-        self.discussor_lock = threading.Lock()
 
     @classmethod
     def from_config(cls, folder: Path, cfg: config.ExecConfig, discussor: RoleConfig, *,

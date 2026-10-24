@@ -1,8 +1,8 @@
 """
-WHAT:  Messages for the execution graph from outside it: what the user said
-       while the team was working -- a breakpoint, a stop, a request for the
-       orchestrator, a decision -- kept in <run>/inbox.json until the graph
-       takes them.
+WHAT:  Messages for a run's graph from outside it: what the user said while
+       the team was working -- a request for the orchestrator, a decision, and
+       in execution a breakpoint or a stop -- kept in <run>/inbox.json until
+       the graph takes them.
 WHY:   The user can talk to the discussor at any time, but the work runs in
        the graph and changes the research state there. So a conversation on
        the side never writes the state; it posts here, and the graph applies

@@ -16,6 +16,7 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from pathlib import Path
 
+from research_agent import inbox
 from research_agent import run as run_base
 from research_agent import state as S
 from research_agent.bootstrap import prompts, schemas, verify, views
@@ -89,8 +90,11 @@ def discussor(run: Run, st: dict, *, seen: dict, user: str = "", note: str = "")
                             'for the team to act on: add the request, or hand to "user"')
         return problems
 
-    out, session = run.call("discussor", brief=views.discussor_turn(st, seen, user=user, note=note),
-                            schema=schemas.DiscussorOutput, session=DISCUSSOR_SESSION, check=check)
+    with run.discussor_lock:
+        out, session = run.call("discussor", brief=views.discussor_turn(st, seen, user=user,
+                                                                        note=note),
+                                schema=schemas.DiscussorOutput, session=DISCUSSOR_SESSION,
+                                check=check)
     ops: list[dict] = []
     goal = {k: v for k, v in out.goal.model_dump().items() if v}
     if goal:
@@ -108,6 +112,20 @@ def discussor(run: Run, st: dict, *, seen: dict, user: str = "", note: str = "")
     return DiscussorTurn(ops=ops, summary=out.reply[:200], session=session, data=out,
                          reply=out.reply, requests=[r.model_dump() for r in out.requests],
                          hand_to=out.hand_to)
+
+
+def aside(run: Run, st: dict, *, user: str, activity: str = "") -> schemas.BootstrapAside:
+    """The user writes while the team works: the discussor answers in its own
+    conversation; requests and decisions go to the inbox for the graph."""
+    with run.discussor_lock:
+        out, _ = run.call("discussor", brief=views.aside(st, user=user, activity=activity),
+                          schema=schemas.BootstrapAside, session=DISCUSSOR_SESSION,
+                          label="discussor (aside)")
+    for r in out.requests:
+        inbox.post(run.folder, "request", text=r.detail, request_kind=r.kind)
+    for d in out.decisions:
+        inbox.post(run.folder, "decision", what=d.what, why=d.why)
+    return out
 
 
 # ---- orchestrator ---------------------------------------------------------------------------

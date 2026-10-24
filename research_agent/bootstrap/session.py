@@ -82,5 +82,10 @@ class Bootstrap:
                     on_step(node, update)
         return self.last_turn
 
+    def aside(self, text: str, activity: str = ""):
+        """The user writes while the team works (from another thread): the
+        discussor answers from the state on disk."""
+        return nodes.aside(self.run, S.Store(self.run.folder).read(), user=text, activity=activity)
+
     def close(self) -> None:
         self._db.close()

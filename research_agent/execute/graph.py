@@ -33,7 +33,8 @@ from typing_extensions import TypedDict
 import research_backend as RB
 
 from research_agent import state as S
-from research_agent.execute import inbox, jobs, nodes
+from research_agent import inbox
+from research_agent.execute import jobs, nodes
 
 
 class ExecState(TypedDict, total=False):
@@ -310,9 +311,8 @@ def build(run: nodes.ExecRun, design: nodes.Design, checkpointer=None):
 
     def wait(state: ExecState) -> dict:
         st, sid, ids = state["research"], state["step"], list(state.get("wake") or [])
-        if not run.quiet:
-            print(f"  . step {sid}: waiting on jobs {', '.join(ids)} (Ctrl-C leaves them "
-                  f"running; --resume picks them up)", flush=True)
+        run.say(f"  . step {sid}: waiting on jobs {', '.join(ids)} (Ctrl-C leaves them "
+                f"running; --resume picks them up)")
         while True:
             stops = inbox.take(run.folder, kinds=("stop",))
             if stops:

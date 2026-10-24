@@ -12,6 +12,7 @@ CONCEPT: A call is a new session named <role>-NNN unless it names one; naming
 
 from __future__ import annotations
 
+import threading
 import time
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -46,10 +47,29 @@ class Run:
     """Print nothing about calls -- not even that one has started."""
     instructions: dict = field(default_factory=dict)
     """Role -> its standing instructions."""
+    listener: Callable[[str, dict], None] | None = None
+    """Told of every call as it starts and ends, and of notes -- the web UI's
+    feed. ("call", {...}) and ("note", {"text": ...})."""
 
     def __post_init__(self):
         self.folder = Path(self.folder).expanduser().resolve()
         self._traced: set[str] = set()
+        # One discussor turn at a time: the graph's, and the user's asides
+        # while the graph works, share one conversation.
+        self.discussor_lock = threading.Lock()
+
+    def say(self, text: str) -> None:
+        """A line about the work (not a model call): printed, and passed on."""
+        if not self.quiet:
+            print(text, flush=True)
+        self._tell("note", {"text": text.strip()})
+
+    def _tell(self, kind: str, data: dict) -> None:
+        if self.listener:
+            try:
+                self.listener(kind, data)
+            except Exception:           # the feed must never stop the work
+                pass
 
     @property
     def rb_home(self) -> Path:
@@ -108,6 +128,8 @@ class Run:
     # ---- what the terminal shows -----------------------------------------------------
 
     def _announce(self, label, cfg, rb, attempt, prompt, skills) -> None:
+        self._tell("call", {"state": "start", "label": label, "model": str(cfg),
+                            "session": rb.session_id, "attempt": attempt})
         if self.quiet:
             return
         again = f", attempt {attempt}" if attempt > 1 else ""
@@ -124,6 +146,11 @@ class Run:
         print(box(f"{label}: INPUT", sent))
 
     def _report(self, label, reply, problems, seconds) -> None:
+        tokens = reply.tokens if reply is not None else None
+        self._tell("call", {"state": "problems" if problems else "end", "label": label,
+                            "seconds": round(seconds, 1), "problems": [p[:300] for p in problems[:4]],
+                            "tokens": {"input": tokens.input_tokens, "output": tokens.output_tokens}
+                            if tokens else None})
         if self.quiet:
             return
         if self.trace and reply is not None:

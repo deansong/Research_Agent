@@ -370,7 +370,7 @@ def test_the_user_writes_while_the_team_works_and_sets_a_breakpoint(run, script)
 
 
 def test_a_breakpoint_before_a_step_holds_it(run, script):
-    from research_agent.execute import inbox
+    from research_agent import inbox
 
     inbox.post(run.folder, "breakpoint", step="1", when="before", on=True)
     script.add("ExecDecision", decide("run", "1"))

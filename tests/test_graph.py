@@ -273,3 +273,29 @@ def test_research_starts_open_from_the_newest_evidence():
     today = f"Today is {date.today().isoformat()}."
     assert views.researcher(S.new(), task="t").startswith(today)
     assert views.orchestrator(S.new(), requests=[]).startswith(today)
+
+
+def test_the_user_writes_while_the_team_works(run, script):
+    boot = Bootstrap(run)
+
+    def researching(prompt):
+        out = boot.aside("While you search: also look at text-only datasets.",
+                         activity="the researcher is searching")
+        assert out.reply == "Noted; the team will look at text-only datasets too."
+        return FINDINGS
+
+    script.add("DiscussorOutput", say("Researching.", ("research", "survey")), say("Found it."))
+    script.add("ResearcherOutput", researching)
+    script.add("BootstrapAside", {"reply": "Noted; the team will look at text-only datasets too.",
+                                  "requests": [{"kind": "research",
+                                                "detail": "Include text-only datasets"}]})
+    script.add("OrchestratorOutput", decide("research", questions=["q"]),
+               decide("ask_user", "Anything else?"))
+    boot.start("open-vocabulary emotion")
+    aside = script.prompts("BootstrapAside")[0]
+    assert "AN ASIDE" in aside and "the researcher is searching" in aside
+    second = script.prompts("OrchestratorOutput")[1]
+    assert "- [research] Include text-only datasets" in second
+    threads = [c["thread"] for c in script.calls
+               if c["schema"] in ("DiscussorOutput", "BootstrapAside")]
+    assert len(set(t for t in threads[1:])) == 1, "one conversation"

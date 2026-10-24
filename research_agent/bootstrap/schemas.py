@@ -97,6 +97,15 @@ class DiscussorOutput(BaseModel):
     """Work for the orchestrator. Empty: the conversation simply continues."""
 
 
+class BootstrapAside(BaseModel):
+    """An answer while the team works: nothing waits for it."""
+
+    reply: str
+    requests: list[Request] = Field(default_factory=list, max_length=6)
+    """Work for the orchestrator at its next decision."""
+    decisions: list[DecisionIn] = Field(default_factory=list, max_length=6)
+
+
 # ---- orchestrator ----------------------------------------------------------------------
 
 
