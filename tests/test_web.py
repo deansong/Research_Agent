@@ -282,3 +282,31 @@ def test_execute_json_written_before_the_start_chooses_models_and_keeps_the_star
     d = web.post("/api/runs/early/execute", json={}).json()
     assert d["stage"] == "execution"
     settle(web, "early")
+
+
+def test_the_models_each_role_runs_on_can_be_changed(web, script, monkeypatch):
+    folder = web.root / "m"
+    S.Store(folder).write(approved_state())
+    m = web.get("/api/runs/m/models").json()
+    assert [g["name"] for g in m["groups"]] == ["bootstrap", "execution"]
+    assert "discussor" in m["groups"][0]["roles"] and "runner" in m["groups"][1]["roles"]
+    r = web.put("/api/runs/m/models", json={"group": "bootstrap", "role": "discussor",
+                                            "provider": "codex", "model": "gpt-5.6-sol"})
+    assert r.status_code == 200 and r.json()["now"] == "codex:gpt-5.6-sol"
+    host = web.app_.state.hosts["m"]
+    assert str(host.session.run.roles["discussor"]) == "codex:gpt-5.6-sol", "used from the next call"
+    assert json.loads((folder / "config.json").read_text())["roles"]["discussor"]["provider"] == "codex"
+    r = web.put("/api/runs/m/models", json={"group": "execution", "role": "runner",
+                                            "provider": "claude_code", "model": "opus",
+                                            "effort": "high"})
+    assert r.status_code == 200 and json.loads((folder / "execute.json").read_text())[
+        "roles"]["runner"] == {"provider": "claude_code", "model": "opus", "effort": "high",
+                               "options": {"timeout": 1200}}
+    assert web.get("/api/runs/m").json()["stage"] == "bootstrap", "execute.json starts nothing"
+    assert web.put("/api/runs/m/models", json={"group": "execution", "role": "chef",
+                                               "provider": "codex"}).status_code == 400
+    assert web.put("/api/runs/m/models", json={"group": "bootstrap", "role": "planner",
+                                               "provider": "gpt"}).status_code == 400
+    monkeypatch.setattr(server, "_providers", lambda: [{"provider": "codex", "models": ["m1"],
+                                                        "efforts": ["high"], "error": ""}])
+    assert web.get("/api/providers").json()[0]["models"] == ["m1"]

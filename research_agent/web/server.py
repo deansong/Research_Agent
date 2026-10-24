@@ -68,6 +68,15 @@ class Breakpoint(BaseModel):
     model_config = {"extra": "forbid"}
 
 
+class SetModel(BaseModel):
+    group: str
+    role: str
+    provider: str
+    model: str = ""
+    effort: str = ""
+    model_config = {"extra": "forbid"}
+
+
 class StartExecution(BaseModel):
     wall_hours: float | None = Field(None, ge=0)
     gpu_hours: float | None = Field(None, ge=0)
@@ -207,6 +216,21 @@ def create_app(runs_root: Path = RUNS_ROOT, *, roles=(), watch: bool = True) -> 
         return host.detail()
 
     # ---- the research state -------------------------------------------------------
+
+    @app.get("/api/providers")
+    def providers():
+        """Each provider's models and effort levels, for the pickers (cached)."""
+        return _providers()
+
+    @app.get("/api/runs/{run_id}/models")
+    def models(run_id: str):
+        return act(host_of(run_id).models)
+
+    @app.put("/api/runs/{run_id}/models")
+    def set_model(run_id: str, body: SetModel):
+        host = host_of(run_id)
+        return act(lambda: host.set_model(body.group, body.role, body.provider, body.model,
+                                          body.effort))
 
     @app.get("/api/runs/{run_id}/state")
     def get_state(run_id: str):
@@ -430,6 +454,33 @@ def _graph(st: dict, stage: str) -> dict:
               ("reviewer", "discussor", "review")]
     return {"stage": stage, "nodes": nodes,
             "edges": [{"source": a, "target": b, "label": c} for a, b, c in edges]}
+
+
+_PROVIDERS: dict = {"at": 0.0, "value": None}
+
+
+def _providers() -> list[dict]:
+    """research_backend's providers with their models and efforts, asked at
+    most every ten minutes (Codex's list is a call to its app server)."""
+    import time
+
+    import research_backend as RB
+
+    if _PROVIDERS["value"] is not None and time.time() - _PROVIDERS["at"] < 600:
+        return _PROVIDERS["value"]
+    out = []
+    for name in RB.list_providers():
+        if name == "fake":
+            continue
+        entry = {"provider": name, "models": [], "efforts": [], "error": ""}
+        try:
+            entry["models"] = [m.id for m in RB.list_models(name)]
+            entry["efforts"] = list(RB.ResearchBackend(name).list_efforts(name))
+        except Exception as exc:                 # a provider not set up here
+            entry["error"] = str(exc)[:200]
+        out.append(entry)
+    _PROVIDERS.update(at=time.time(), value=out)
+    return out
 
 
 def _overall(statuses: list[str]) -> str:

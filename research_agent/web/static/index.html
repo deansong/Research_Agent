@@ -91,7 +91,11 @@
         <button class="tab" data-tab="calls">Model calls</button>
         <button class="tab" data-tab="jobs">Jobs</button>
       </nav>
-      <div class="tab-body active" id="tab-run"><dl id="run-facts" class="facts"></dl></div>
+      <div class="tab-body active" id="tab-run">
+        <dl id="run-facts" class="facts"></dl>
+        <h3>Models <span class="hint">used from each role's next call</span></h3>
+        <div id="models-editor" class="models-editor"></div>
+      </div>
       <div class="tab-body" id="tab-calls">
         <h3>Live</h3>
         <div id="calls-live" class="calls"></div>

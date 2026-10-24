@@ -106,6 +106,32 @@ opens the Jobs tab, and **you** goes back to the chat.
 The live feed comes from research_backend's `send(on_progress=)`: every
 provider reports what its model is doing about once a second.
 
+### Which model each role runs on
+
+The **Run** tab lists every role with a provider, model and effort picker.
+The **Bootstrap** group holds the discussor, orchestrator, researcher,
+planner and designer. The **Execution** group holds the orchestrator, worker,
+runner, writer, validator and reviewer. Every node of the design runs on its
+role's model.
+
+- **Where it is saved:** a change goes into the run's `config.json` or
+  `execute.json`.
+- **When it applies:** from the role's next call. The execution group can be
+  set before the execution starts, and writing `execute.json` starts nothing.
+- **Unlisted models:** a model the provider does not list is shown in red,
+  because its calls would likely fail.
+- **Moving the discussor to another provider** (Claude Code to Codex) cannot
+  continue its conversation, because a provider cannot resume another
+  provider's thread. Instead:
+  - the old session is kept as `discussor-<provider>-NNN`;
+  - a new session starts with the last 30 messages and the whole research
+    state;
+  - the chat shows both sessions as one conversation.
+
+The defaults for new runs are in `research_agent/bootstrap/config.toml` and
+`research_agent/execute/config.toml`. On Codex, step owners already see the
+GPUs: they run with `full` access, which is Codex's unsandboxed mode.
+
 ### The rest
 
 | where | what |
@@ -152,6 +178,8 @@ Deep links: `/?tab=graph&side=jobs#<run>` opens a run with those tabs showing.
 | POST | `/api/runs/{id}/break` | `{step, when: before\|after, on}` |
 | POST | `/api/runs/{id}/execute` | `{wall_hours, gpu_hours, confirm}` |
 | GET | `/api/runs/{id}/state`, `/history`, `/history/{n}` | the research state and its changes |
+| GET, PUT | `/api/runs/{id}/models` | each role's provider, model and effort; `{group, role, provider, model, effort}` changes one |
+| GET | `/api/providers` | each provider's models and effort levels (cached ten minutes) |
 | GET | `/api/runs/{id}/graph`, `/sessions`, `/sessions/{sid}`, `/files`, `/file?path=`, `/jobs`, `/jobs/{job}/log` | |
 | GET | `/api/runs/{id}/events?after_seq=` | the event stream |
 | GET | `/api/runs/{id}/live?node=` | the calls under way (of one node): their newest events and what is being written |

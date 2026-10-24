@@ -57,6 +57,7 @@ async function openRun(id) {
   loadTab(app.tab);
   if (app.side === "jobs") inspector.loadJobs();
   if (app.side === "calls") inspector.loadSessions();
+  inspector.loadModels();
   app.unsubscribe = subscribe(id, d.last_seq, {
     status: (e) => { app.detail = { ...app.detail, ...e }; renderDetail(app.detail); },
     chat: (e) => chat.message(e.role, e.text, e.kind, e.noted),

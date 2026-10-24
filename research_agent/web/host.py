@@ -23,6 +23,7 @@ import re
 import threading
 import time
 import traceback
+from dataclasses import replace
 from pathlib import Path
 from typing import Callable
 
@@ -31,6 +32,7 @@ import research_backend as RB
 from research_agent import chat, inbox
 from research_agent import state as S
 from research_agent.bootstrap import config as boot_config
+from research_agent.bootstrap.config import RoleConfig
 from research_agent.bootstrap import nodes as boot_nodes
 from research_agent.bootstrap.session import Bootstrap
 from research_agent.execute import config as exec_config
@@ -229,6 +231,56 @@ class RunHost:
             self._refresh_status()
             self.bus.emit("note", text="Execution started.")
             self._run(lambda on: self.session.start(on_step=on))
+
+    # ---- which model each role runs on ------------------------------------------------
+
+    def models(self) -> dict:
+        """The bootstrap's roles (with the discussor) and the execution's, as
+        the run's config.json and execute.json have them."""
+        boot = boot_config.load(self.folder)
+        exe = exec_config.load(self.folder)
+
+        def show(roles):
+            return {r: {"provider": c.provider, "model": c.model or "", "effort": c.effort or ""}
+                    for r, c in roles.items()}
+        return {"stage": self.stage, "groups": [
+            {"name": "bootstrap", "file": "config.json", "roles": show(boot.roles)},
+            {"name": "execution", "file": "execute.json", "roles": show(exe.roles)}]}
+
+    def set_model(self, group: str, role: str, provider: str, model: str = "",
+                  effort: str = "") -> dict:
+        """Change one role's provider, model or effort: saved to the run's
+        config file, and used from the next call. A discussor moved to another
+        provider hands its conversation over (research_agent/chat.py)."""
+        def changed(old: RoleConfig | None) -> RoleConfig:
+            options = dict(old.options) if old else {}
+            if old and old.provider != provider:
+                options = {k: v for k, v in options.items() if k in ("timeout", "max_seconds")}
+            return RoleConfig(provider, model or None, effort or None, options)
+
+        if provider not in RB.list_providers():
+            raise ValueError(f"No provider {provider!r}; they are {', '.join(RB.list_providers())}.")
+        if group == "bootstrap":
+            if role not in boot_config.ROLES:
+                raise ValueError(f"No bootstrap role {role!r}; they are {', '.join(boot_config.ROLES)}.")
+            cfg = boot_config.load(self.folder)
+            spec = changed(cfg.roles.get(role))
+            boot_config.save(self.folder, replace(cfg, roles={**cfg.roles, role: spec}))
+            live = self.stage == "bootstrap" or role == "discussor"
+        elif group == "execution":
+            if role not in exec_config.ROLES:
+                raise ValueError(f"No execution role {role!r}; they are {', '.join(exec_config.ROLES)}.")
+            cfg = exec_config.load(self.folder)
+            spec = changed(cfg.roles.get(role))
+            exec_config.save(self.folder, replace(cfg, roles={**cfg.roles, role: spec}))
+            live = self.stage == "execution"
+        else:
+            raise ValueError("The group is bootstrap or execution.")
+        if live:
+            self.session.run.roles[role] = spec
+        self.bus.emit("note", text=f"{group} {role} now runs on {spec} (from its next call).")
+        self.status_event()
+        return {"role": role, "group": group, "now": str(spec)}
 
     # ---- running ----------------------------------------------------------------------
 
