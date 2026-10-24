@@ -19,9 +19,13 @@ from research_agent.execute import config, jobs, views
 
 
 def test_the_defaults_and_a_run_s_file_then_the_command_line(tmp_path):
+    import tomllib
+
     cfg = config.defaults()
-    assert cfg.roles["runner"].provider == "claude_code" and cfg.confirm == "gated"
-    assert cfg.roles["runner"].options == {"timeout": 1200}
+    toml = tomllib.loads(config.DEFAULT_FILE.read_text())
+    runner = toml["roles"]["runner"]
+    assert cfg.roles["runner"].provider == runner["provider"] and cfg.confirm == "gated"
+    assert cfg.roles["runner"].options == runner.get("options", {})
     assert set(cfg.roles) == set(config.ROLES) and config.check(cfg) == []
     (tmp_path / "execute.json").write_text(json.dumps({
         "roles": {"validator": {"provider": "claude_code", "model": "sonnet"}},

@@ -302,3 +302,26 @@ def test_the_user_writes_while_the_team_works(run, script):
     threads = [c["thread"] for c in script.calls
                if c["schema"] in ("DiscussorOutput", "BootstrapAside")]
     assert len(set(t for t in threads[1:])) == 1, "one conversation"
+
+
+def test_moving_the_discussor_to_another_provider_hands_the_conversation_over(run, script):
+    from research_agent import chat
+
+    script.add("DiscussorOutput", say("Which dataset?"), say("SST-2, noted."))
+    boot = Bootstrap(run)
+    boot.start("LoRA rank on small data")
+    run.roles["discussor"] = RoleConfig("claude_code", "opus")       # was fake
+    boot.answer("SST-2 please")
+    handed = script.prompts("DiscussorOutput")[1]
+    assert "=== YOU TAKE OVER THIS CONVERSATION ===" in handed      # after the skills list
+    assert handed.index("YOU TAKE OVER") < handed.index("=== THE USER SAYS ===")
+    assert "[user] LoRA rank on small data" in handed and "[discussor] Which dataset?" in handed
+    assert "=== THE USER SAYS ===\nSST-2 please" in handed
+    assert "=== THE RESEARCH STATE ===" in handed, "the whole state, as for a first turn"
+    sessions = sorted(p.name for p in (run.folder / "rb" / "sessions").iterdir())
+    assert "discussor-fake-001" in sessions and "discussor" in sessions
+    calls = [c for c in script.calls if c["schema"] == "DiscussorOutput"]
+    assert calls[1]["thread"] is None, "a new conversation on the new provider"
+    said = [(m["role"], m["text"]) for m in chat.transcript(run.folder)]
+    assert said == [("user", "LoRA rank on small data"), ("discussor", "Which dataset?"),
+                    ("user", "SST-2 please"), ("discussor", "SST-2, noted.")]

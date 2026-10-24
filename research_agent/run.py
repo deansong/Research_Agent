@@ -92,6 +92,8 @@ class Run:
         rb = RB(cfg.provider, cfg.model, effort=cfg.effort, instructions=standing,
                 access=access, workdir=str(workdir or self.folder), home=self.rb_home,
                 skills=chosen if skills_dir else None, skills_dir=skills_dir, **cfg.options)
+        if session:
+            self._retire_if_moved(session, cfg.provider)
         rb.new_session(session or self.next_name(role), exist_ok=bool(session))
         if rb.session.instructions != standing:
             rb.set_instructions(standing)
@@ -140,6 +142,29 @@ class Run:
                 out.write(json.dumps(record, ensure_ascii=False, default=str) + "\n")
         except OSError:
             pass                        # a record that cannot be kept must not stop the work
+
+    def takes_over(self, session: str, role: str) -> bool:
+        """The named conversation is on another provider than the role's now
+        (its model was changed): the next call starts it afresh."""
+        return self._moved(session, self.roles[role].provider) is not None
+
+    def _moved(self, session: str, provider: str):
+        from research_backend import conversation
+
+        if not conversation.exists(session, home=self.rb_home):
+            return None
+        found = conversation.open_session(session, home=self.rb_home)
+        return found if found.provider != provider else None
+
+    def _retire_if_moved(self, session: str, provider: str) -> None:
+        """A provider cannot continue another's thread: keep the old session
+        as <session>-<provider>-NNN, so the name starts afresh."""
+        old = self._moved(session, provider)
+        if old is None:
+            return
+        folder = self.rb_home / "sessions"
+        n = len(list(folder.glob(f"{session}-{old.provider}-*"))) + 1
+        old.rename(f"{session}-{old.provider}-{n:03d}")
 
     def next_name(self, role: str) -> str:
         folder = self.rb_home / "sessions"

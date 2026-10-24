@@ -28,7 +28,7 @@ from typing import Callable
 
 import research_backend as RB
 
-from research_agent import inbox
+from research_agent import chat, inbox
 from research_agent import state as S
 from research_agent.bootstrap import config as boot_config
 from research_agent.bootstrap import nodes as boot_nodes
@@ -425,37 +425,10 @@ def _summary(node: str, update: dict) -> str:
     return node
 
 
-_USER = re.compile(r"=== THE USER SAYS ===\n(.*?)(?:\n\n=== |\Z)", re.S)
-_NOTE = re.compile(r"=== FROM THE ORCHESTRATOR ===\n(.*?)(?:\n\n=== |\Z)", re.S)
-
-
 def transcript(folder: Path) -> list[dict]:
-    """The conversation with the discussor, from its research_backend session
-    -- whoever drove it (the CLI or this UI). Retried answers are left out."""
-    path = Path(folder) / "rb" / "sessions" / "discussor" / "session.json"
-    if not path.exists():
-        return []
-    turns = json.loads(path.read_text()).get("turns") or []
-    out = []
-    for i, turn in enumerate(turns):
-        prompt = turn.get("prompt") or ""
-        retried = i + 1 < len(turns) and (turns[i + 1].get("prompt") or "").startswith(
-            "Your answer could not be used")
-        aside = "=== AN ASIDE" in prompt
-        user = _USER.search(prompt)
-        if user and not prompt.startswith("Your answer could not be used"):
-            out.append({"role": "user", "text": user.group(1).strip(), "at": turn.get("at"),
-                        "kind": "aside" if aside else "answer"})
-        if turn.get("error") or retried:
-            continue
-        try:
-            reply = json.loads(turn.get("reply") or "{}").get("reply", "")
-        except ValueError:
-            reply = turn.get("reply") or ""
-        if reply:
-            out.append({"role": "discussor", "text": reply, "at": turn.get("at"),
-                        "kind": "aside" if aside else "answer"})
-    return out
+    """The conversation with the discussor, across its sessions -- whoever
+    drove it (the CLI or this UI)."""
+    return chat.transcript(folder)
 
 
 def run_summary(folder: Path, hosts: dict) -> dict | None:

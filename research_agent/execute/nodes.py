@@ -27,7 +27,7 @@ from research_agent import run as run_base
 from research_agent import state as S
 from research_agent.bootstrap.config import RoleConfig
 from research_agent.bootstrap.nodes import DISCUSSOR_SESSION, Outcome, design_problems
-from research_agent import inbox
+from research_agent import chat, inbox
 from research_agent.execute import config, jobs, prompts, schemas, views
 
 NodeFailed = run_base.NodeFailed
@@ -238,10 +238,14 @@ def discussor(run: ExecRun, st: dict, *, seen: dict, user: str = "", note: str =
                             'team to act on: add the request, or hand to "user"')
         return problems + breakpoint_problems(st, out.breakpoints)
 
+    brief = views.discussor_turn(st, seen, user=user, note=note, awaiting=awaiting)
+    if run.takes_over(DISCUSSOR_SESSION, "discussor"):
+        # A new provider: the conversation so far, and the whole state.
+        brief = chat.handover(run.folder) + "\n\n" + views.discussor_turn(
+            st, {}, user=user, note=note, awaiting=awaiting)
     with run.discussor_lock:
-        out, session = run.call("discussor", brief=views.discussor_turn(
-            st, seen, user=user, note=note, awaiting=awaiting),
-            schema=schemas.ExecDiscussorOutput, session=DISCUSSOR_SESSION, check=check)
+        out, session = run.call("discussor", brief=brief, schema=schemas.ExecDiscussorOutput,
+                                session=DISCUSSOR_SESSION, check=check)
     ops = breakpoint_ops(st, out.breakpoints)
     ops += [{"op": "add", "section": "decisions", "value": {**d.model_dump(), "by": "user"}}
             for d in out.decisions]
@@ -260,9 +264,11 @@ def aside(run: ExecRun, st: dict, *, user: str, activity: str) -> schemas.AsideO
     def check(out: schemas.AsideOutput) -> list[str]:
         return breakpoint_problems(st, out.breakpoints)
 
+    brief = views.aside(st, user=user, activity=activity, run_dir=str(run.folder))
+    if run.takes_over(DISCUSSOR_SESSION, "discussor"):
+        brief = chat.handover(run.folder) + "\n\n" + brief
     with run.discussor_lock:
-        out, _ = run.call("discussor", brief=views.aside(st, user=user, activity=activity,
-                                                         run_dir=str(run.folder)),
+        out, _ = run.call("discussor", brief=brief,
                           schema=schemas.AsideOutput, session=DISCUSSOR_SESSION, check=check,
                           label="discussor (aside)")
     for b in out.breakpoints:
