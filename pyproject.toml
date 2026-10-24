@@ -10,8 +10,10 @@ readme = "research_backend/README.md"
 requires-python = ">=3.11"
 dependencies = ["pydantic>=2"]
 
+# The agent (research_agent) also needs: langgraph, langgraph-checkpoint-sqlite, jsonschema.
+
 [project.optional-dependencies]
 codex = ["openai-codex"]
 
 [tool.setuptools.packages.find]
-include = ["research_backend*"]
+include = ["research_backend*", "research_agent*"]
