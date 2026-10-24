@@ -127,3 +127,49 @@ def test_trace_can_be_switched_during_a_run(tmp_path, script, monkeypatch, capsy
     assert "/trace on or /trace off (it is off)." in out and "Tracing is on." in out
     assert out.count("---- discussor: INPUT") == 1, "only the call after /trace on"
     assert "=== THE USER SAYS ===\ngo on" in out
+
+
+def test_execute_runs_the_approved_design_with_commands(tmp_path, script, monkeypatch, capsys):
+    import json
+
+    from research_agent import state as S
+    from tests.test_execute_graph import approved_state, done_writing
+    from tests.test_execute_graph import decide as move, say as tell, verdict
+
+    run = tmp_path / "run"
+    S.Store(run).write(approved_state())
+    (run / "config.json").write_text(json.dumps({"roles": {"discussor": {"provider": "fake"}}}))
+    (run / "execute.json").write_text(json.dumps({"execute": {"poll_seconds": 0.05}}))
+
+    class Folder:                     # done_writing() needs only artifacts()
+        @staticmethod
+        def artifacts(step_id):
+            return run / "artifacts" / f"step_{int(step_id):02d}"
+
+    script.add("ExecDecision", move("run", "1"), move("run", "2"), move("run", "2"), move("done"))
+    script.add("StepReport", done_writing(Folder, "1"), done_writing(Folder, "2"))
+    script.add("Verdict", verdict(), verdict())
+    script.add("ExecDiscussorOutput", tell("Step 1 passed. Step 2 is next; go?"),
+               tell("Step 2 passed: all done."))
+    _typing(monkeypatch, "/steps", "/go", "/jobs", "/budget", "/logs 2", "/exit")
+    assert cli.main(["execute", "--run", str(run), "--role", "all=fake"]) == 0
+    out = capsys.readouterr().out
+    assert "Nodes: builder (steps 1; full access), trainer (steps 2; full access)" in out
+    assert "  . orchestrator -> run 1: because run 1" in out
+    assert "  . step 1 verdict -- pass: pass it is" in out
+    assert "step 2 waits for your go (/go)" in out
+    assert "1. [pass] Data (builder, 1 attempts" in out, "/steps"
+    assert "Step 2 passed: all done." in out and "Done: every step passed" in out
+    assert "(no jobs)" in out and "0.00 GPU-hours used (no limit)" in out
+    assert "No job or step 2 with jobs." in out
+    saved = json.loads((run / "execute.json").read_text())
+    assert saved["roles"]["runner"]["provider"] == "fake" and saved["execute"]["poll_seconds"] == 0.05
+
+
+def test_execute_refuses_a_run_that_is_not_approved(tmp_path, capsys):
+    from research_agent import state as S
+
+    S.Store(tmp_path).write(S.new())
+    with pytest.raises(SystemExit):
+        cli.main(["execute", "--run", str(tmp_path), "--role", "all=fake"])
+    assert "the hypotheses is not approved" in capsys.readouterr().err

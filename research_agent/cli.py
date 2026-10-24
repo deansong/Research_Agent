@@ -21,6 +21,10 @@ import research_backend as RB
 from research_agent import state as S
 from research_agent.bootstrap import config, nodes, views
 from research_agent.bootstrap.session import Bootstrap
+from research_agent.execute import config as exec_config
+from research_agent.execute import jobs as exec_jobs
+from research_agent.execute import nodes as exec_nodes
+from research_agent.execute.session import Execution
 
 RUNS_ROOT = Path.home() / "research_runs"
 
@@ -59,8 +63,24 @@ def main(argv: list[str] | None = None) -> int:
     boot.add_argument("--trace", action="store_true",
                       help="print every model call's full input and output, and what the "
                            "model does in between (implies --progress)")
+    exe = sub.add_parser("execute", help="carry out the approved plan with the approved "
+                                         "design's nodes (starts, or carries on)")
+    exe.add_argument("--run", required=True, help="the run folder its bootstrap made")
+    exe.add_argument("--role", action="append", default=[], metavar="ROLE=PROVIDER[:MODEL[:EFFORT]]",
+                     help="which model a role uses: " + ", ".join(exec_config.ROLES)
+                          + " (all=... sets every one); the discussor is the bootstrap's")
+    exe.add_argument("--wall-hours", type=float, help="stop after this many hours (0: no limit)")
+    exe.add_argument("--gpu-hours", type=float, help="stop after this many GPU-hours (0: no limit)")
+    exe.add_argument("--confirm", choices=exec_config.CONFIRM,
+                     help="which steps wait for your go: gated (the plan's), all, none")
+    exe.add_argument("--progress", action="store_true",
+                     help="print what each model does while it works: commands, files")
+    exe.add_argument("--trace", action="store_true",
+                     help="print every model call's full input and output (implies --progress)")
     args = parser.parse_args(argv)
 
+    if args.command == "execute":
+        return _execute(parser, args)
     if args.resume:
         folder = Path(args.resume).expanduser()
         if not (folder / "checkpoint.sqlite").exists():
@@ -219,6 +239,191 @@ def _show_turn(boot: Bootstrap, turn) -> None:
               f"Keep talking to change it, or /exit.")
     if turn.outcome == "exit":
         print(f"Finished. The run is in {boot.run.folder}.")
+
+
+# ---- the execution stage ---------------------------------------------------------------------
+
+EXEC_HELP = """\
+Commands:
+  /steps                 the step table: status, attempts, GPU-hours, last verdict
+  /go                    let the step waiting for you start
+  /stop                  stop the execution: running jobs and steps
+  /jobs                  every job: state, GPUs, hours
+  /logs <job or step>    the last lines of a job's log (a step: its jobs')
+  /budget                hours and GPU-hours used, and the limits
+  /state, /show <section> ...   the research state, as in the bootstrap
+  /sessions              every model call of this run
+  /retry                 carry on from where it stopped (a failed call, Ctrl-C)
+  /usage                 the providers' usage limits
+  /trace on|off          print every model call's input and output
+  /help                  this
+  /exit                  leave (jobs keep running; carry on with execute --run)
+Anything else is said to the discussor."""
+
+#: Execution commands that only show things, allowed while a failed step waits.
+EXEC_READ_ONLY = READ_ONLY + ("/steps", "/jobs", "/logs", "/budget")
+
+
+def _execute(parser, args) -> int:
+    folder = Path(args.run).expanduser()
+    if not (folder / "state" / "research.json").exists():
+        parser.error(f"{folder} is not a run folder (no state/research.json).")
+    limits = {"wall_hours": args.wall_hours, "gpu_hours": args.gpu_hours,
+              "confirm": args.confirm}
+    try:
+        cfg = exec_config.load(folder, roles=args.role, limits=limits)
+        discussor = config.load(folder).roles["discussor"]
+        run = exec_nodes.ExecRun.from_config(folder, cfg, discussor, progress=args.progress,
+                                             trace=args.trace)
+        ex = Execution(run)
+    except ValueError as exc:
+        parser.error(str(exc))
+    exec_config.save(folder, cfg)
+    return _converse_exec(ex, cfg)
+
+
+def _converse_exec(ex: Execution, cfg) -> int:
+    folder = ex.run.folder
+    resume_hint = f"Carry on with:  python -m research_agent execute --run {folder}"
+    print(f"Run: {folder}")
+    print("  saved as it goes: state/research.md, work/ (the code, a git repository), "
+          "artifacts/step_NN/, jobs/ (records and logs), rb/sessions/")
+    print(f"Discussor={ex.run.roles['discussor']} (the bootstrap's conversation)\n{cfg.describe()}")
+    print("Nodes: " + ", ".join(f"{name} (steps {', '.join(n['steps'])}; "
+                                f"{exec_nodes.access_for(n)} access)"
+                                for name, n in ex.design.owners.items()))
+    _warn_signed_out(ex)
+    print("Type /help for commands.\n")
+    failed = False
+
+    def advance(action) -> bool:
+        nonlocal failed
+        try:
+            turn = action()
+        except RB.BackendCancelled:
+            raise KeyboardInterrupt from None
+        except RB.BackendError as exc:
+            failed = True
+            print(f"\n! {exc}\n  Nothing is lost: /retry carries on; /exit leaves.")
+            return True
+        failed = False
+        if turn is None:
+            return True
+        _show_exec_turn(ex, turn)
+        return turn.waiting
+
+    try:
+        if not ex.started:
+            going = advance(lambda: ex.start(on_step=_show_exec_step))
+        elif ex.waiting_for_user:
+            last = ex.last_turn
+            going = advance(lambda: last)
+        else:
+            print("Carrying on from where it stopped...")
+            going = advance(lambda: ex.resume(on_step=_show_exec_step))
+        while going:
+            try:
+                text = input("you> ").strip()
+            except EOFError:
+                print(f"\nStopped. {resume_hint}")
+                return 0
+            if not text:
+                continue
+            command = text.split()[0] if text.startswith("/") else ""
+            if command == "/retry":
+                going = advance(lambda: ex.resume(on_step=_show_exec_step)) if failed \
+                    else (print("Nothing to retry.") or True)
+            elif failed and command not in EXEC_READ_ONLY + ("/exit",):
+                print("The last step failed: /retry it first (or /exit).")
+            elif command:
+                going = advance(lambda: _exec_command(ex, text))
+            else:
+                going = advance(lambda: ex.answer(text, on_step=_show_exec_step))
+        return 0
+    except KeyboardInterrupt:
+        print(f"\nStopped; running jobs go on. {resume_hint}")
+        return 130
+    finally:
+        ex.close()
+
+
+def _exec_command(ex: Execution, text: str):
+    name, *words = text[1:].split()
+    folder = ex.run.folder
+    if name == "help":
+        print(EXEC_HELP)
+    elif name == "steps":
+        print(S.render(ex.research, ["execution"]) or "(no steps yet)")
+    elif name == "go":
+        if not ex.awaiting:
+            print("No step is waiting for your go.")
+        else:
+            return ex.answer("", go=True, on_step=_show_exec_step)
+    elif name == "stop":
+        return ex.answer("", stop=True, on_step=_show_exec_step)
+    elif name == "jobs":
+        print("\n".join(exec_jobs.describe(j) for j in exec_jobs.records(folder)) or "(no jobs)")
+    elif name == "logs":
+        if not words:
+            print("/logs <job id or step id>")
+        else:
+            found = [j for j in [exec_jobs.get(folder, words[0])] if j] \
+                or exec_jobs.records(folder, words[0])
+            for job in found:
+                print(f"---- {exec_jobs.describe(job)}\n{exec_jobs.tail(job, 40)}")
+            if not found:
+                print(f"No job or step {words[0]} with jobs.")
+    elif name == "budget":
+        from research_agent.execute.graph import budget
+
+        print(budget(ex.run, ex.research)[0])
+    elif name in ("state", "show", "sessions", "usage", "trace"):
+        return _command(ex, text)
+    elif name == "exit":
+        return ex.exit()
+    else:
+        print(f"No command /{name}. /help lists them.")
+    return None
+
+
+def _show_exec_step(node: str, update: dict) -> None:
+    """One line per piece of work, as it finishes."""
+    d = update.get("decision") or {}
+    if node == "orchestrator":
+        if d.get("action") not in (None, "ask_user"):
+            print(f"  . orchestrator -> {d['action']} {d.get('step', '')}".rstrip()
+                  + f": {_short(d.get('reason', ''))}", flush=True)
+    elif node == "validator" or (node not in ("discussor", "human", "wait") and update.get("last")):
+        print(f"  . {_short(update.get('last', '').splitlines()[0] if update.get('last') else '', 160)}",
+              flush=True)
+    elif node not in ("discussor", "human", "wait"):
+        owner = node.removeprefix("node_")
+        for sid, r in exec_nodes.records(update.get("research") or {}).items():
+            if r.get("owner") == owner and r["status"] in ("waiting", "validating"):
+                print(f"  . step {sid} ({owner}): {r['status']} -- {_short(r['summary'], 140)}",
+                      flush=True)
+
+
+def _show_exec_turn(ex: Execution, turn) -> None:
+    if turn.reply:
+        print()
+        for paragraph in turn.reply.split("\n"):
+            print(textwrap.fill(paragraph, 100) if paragraph.strip() else "")
+        print()
+    st = ex.research
+    counts: dict[str, int] = {}
+    for r in exec_nodes.records(st).values():
+        counts[r["status"]] = counts.get(r["status"], 0) + 1
+    gpu = exec_jobs.gpu_hours(ex.run.folder)
+    line = (f"[{(st.get('status') or {}).get('phase') or 'executing'} | "
+            + ", ".join(f"{n} {s}" for s, n in counts.items()) + f" | {gpu:.2f} GPU-h")
+    if ex.awaiting:
+        line += f" | step {ex.awaiting} waits for your go (/go)"
+    print(line + "]")
+    if turn.outcome == "done":
+        print(f"\nDone: every step passed or was skipped. Results: {ex.run.folder / 'artifacts'}")
+    if turn.outcome == "exit":
+        print(f"Left. The run is in {ex.run.folder}; running jobs go on.")
 
 
 def _warn_signed_out(boot: Bootstrap) -> None:

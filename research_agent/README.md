@@ -1,4 +1,4 @@
-# research_agent: the bootstrap stage
+# research_agent: the bootstrap and execution stages
 
 Turns an idea into an approved research design: a goal, constraints, evidence
 with checked sources, hypotheses, a rubric, an evaluation protocol, a plan, and
@@ -158,11 +158,88 @@ To read any call afterwards:
 `RB.list_sessions(home="<run>/rb")` and
 `RB(session="planner-002", home="<run>/rb").history()`.
 
+# The execution stage
+
+Once the design is approved, the execution stage carries out the plan with
+the design's nodes:
+
+```
+python -m research_agent execute --run ~/research_runs/<run> --gpu-hours 140 --wall-hours 24
+```
+
+The same command starts it and carries it on.
+
+The design is not turned into code. Code reads it, checks it again, and
+builds the graph from it: one graph node per step owner, plus fixed nodes.
+
+| node | from the design | session | does |
+| --- | --- | --- | --- |
+| **discussor** | -- (the bootstrap's) | the bootstrap's conversation, continued | the only one who talks to you: what happened, verdicts, asks for your go |
+| **orchestrator** | its `orchestrator` node's instructions and skills | new for each decision | picks the next move from those code allows |
+| **step owners** | each `worker`, `runner`, `writer` node: its instructions, skills, steps | one per attempt (`step05-a1`), continued when its jobs finish | writes the code in `work/`, launches jobs, writes `artifacts/step_05/` |
+| **wait** | -- (code only) | none | polls the step's jobs and counts their GPU-hours |
+| **validator** | its `validator` node | new for each verdict, read-only | checks the step's files against its check and rubric items |
+
+```
+orchestrator --run/retry 5--> owner of 5 --done--> validator --> orchestrator
+                                         --launched--> wait --jobs finished--> owner of 5 (same session)
+             --skip 5--> orchestrator (artifacts/step_05/SKIPPED.md says why)
+             --ask_user / a gated step / stop / done--> discussor --> you
+```
+
+Code holds what a model cannot change:
+- **Order.** A step runs only once the steps it depends on have passed or been skipped.
+- **Attempts.** A failed step is retried at most `max_attempts` times in all (default 3). Each retry starts a new owner session and passes it the validator's verdict.
+- **Your go.** A step the plan gates waits for you (`/go`, or tell the discussor). `--confirm all` makes every step wait; `--confirm none` makes none wait.
+- **Passing.** Only the validator's verdict passes a step. Before the validator looks, code checks that every file the owner lists exists, and that every job it names was launched for that step.
+- **Budget.** The `--wall-hours` and `--gpu-hours` limits are measured from the job records. Going over stops the jobs and the step, and asks you what to do. Raise the limit in `execute.json` and resume to go on.
+- **Frozen design.** The goal, hypotheses, rubric, protocol, plan and design do not change here. A changed plan goes back through the bootstrap and its approvals.
+
+Long jobs. An owner launches anything long through the jobs helper, which picks free GPUs and runs the command detached:
+
+```
+python research_agent/execute/jobs.py --run RUN launch --step 5 --gpus 2 --name seed17 -- python train.py
+python research_agent/execute/jobs.py --run RUN status
+```
+
+The graph waits on the job records, without calling a model. Ctrl-C leaves the jobs running; `execute --run` picks them up again by pid.
+
+Access. A `write` owner runs commands on the GPUs and writes outside its workspace, so it gets research_backend's `full` access. Claude Code's `write` cannot run commands without asking. The validator is `read_only`.
+
+| role | default (`research_agent/execute/config.toml`) |
+| --- | --- |
+| orchestrator | codex |
+| worker, runner, writer | claude_code, opus (idle timeout 20 min) |
+| validator | codex |
+
+Commands:
+
+| command | what |
+| --- | --- |
+| `/steps` | the step table: status, attempts, GPU-hours, last verdict |
+| `/go` | let the step waiting for you start |
+| `/stop` | stop the running jobs and steps |
+| `/jobs`, `/logs <job or step>` | the jobs, and the end of their logs |
+| `/budget` | hours and GPU-hours used, and the limits |
+| `/state`, `/show`, `/sessions`, `/usage`, `/trace`, `/retry`, `/exit` | as in the bootstrap |
+
+The run folder gains:
+
+```
+    execute.json         the execution's models and limits (edit, then resume)
+    work/                the code: a git repository, committed after every owner turn
+    artifacts/step_NN/   each step's outputs: what the validator checks
+    jobs/                one record, log and exit code per job
+```
+
+`state/research.json` gains an `execution` section: one record per step, holding its owner, status, attempts, sessions, artifacts, jobs, GPU-hours and verdict.
+
 ## The code
 
 ```
 research_agent/
     state.py            the research state, its operations, rendering, history
+    run.py              one run's model calls: briefs, schemas, checks, retries
     cli.py              the command line
     bootstrap/
         config.toml     the defaults: models and skills
@@ -174,4 +251,14 @@ research_agent/
         verify.py       checking arXiv sources
         graph.py        the LangGraph graph, gates and limits
         session.py      start, answer, approve, retry, resume
+    execute/
+        config.toml     the defaults: models and limits
+        config.py       reading config.toml, <run>/execute.json and the flags
+        schemas.py      what each node answers with
+        prompts.py      each role's standing instructions
+        views.py        each node's brief
+        nodes.py        the design read as nodes; the orchestrator, owner, validator, discussor
+        jobs.py         background jobs on free GPUs (also a plain script)
+        graph.py        the LangGraph graph built from the design
+        session.py      start, answer, go, stop, resume
 ```

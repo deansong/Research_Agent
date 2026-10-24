@@ -14,7 +14,8 @@ CONCEPT: LangGraph, as the bootstrap, in the same checkpoint file under its
                                                          --failed/blocked--> orchestrator
                           --skip S--> orchestrator (the terminal record written)
                           --ask_user / a gated step / stop / done / limit--> discussor -> human
-    human --> discussor --(go, or a request)--> orchestrator, else --> human; END on /exit
+    human --> discussor --(go, or a request)--> orchestrator, else --> human
+          --> orchestrator on /go; END on /exit
 """
 
 from __future__ import annotations
@@ -141,9 +142,14 @@ def build(run: nodes.ExecRun, design: nodes.Design, checkpointer=None):
             return {"outcome": "exit", "_to": END}
         st, text = state["research"], answer.get("text", "")
         awaiting, nudged, outcome = state.get("awaiting", ""), False, state.get("outcome", "")
+        if answer.get("go") and awaiting and not text:
+            # /go is a command, not a conversation: the work goes on, and the
+            # discussor sees the go in the step table next time it speaks.
+            st = commit(st, [nodes.record_op(st, awaiting, go=True)], "user")
+            return {"research": st, "awaiting": "", "decisions": 0, "outcome": "",
+                    "_to": "orchestrator"}
         if answer.get("go") and awaiting:
             st = commit(st, [nodes.record_op(st, awaiting, go=True)], "user")
-            text = text or f"(I said go for step {awaiting}.)"
             awaiting, nudged = "", True
         if answer.get("stop"):
             st = stop_all(st, "the user stopped the execution")
@@ -311,7 +317,7 @@ def build(run: nodes.ExecRun, design: nodes.Design, checkpointer=None):
     graph.add_edge(START, "orchestrator")
     graph.add_conditional_edges("orchestrator", _route, ["discussor", "orchestrator", *owners])
     graph.add_conditional_edges("discussor", _route, ["orchestrator", "human"])
-    graph.add_conditional_edges("human", _route, ["discussor", END])
+    graph.add_conditional_edges("human", _route, ["discussor", "orchestrator", END])
     for name in owners:
         graph.add_conditional_edges(name, _route, ["wait", "validator", "orchestrator"])
     graph.add_conditional_edges("wait", _route, ["discussor", *owners])
