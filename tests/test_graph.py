@@ -260,3 +260,16 @@ def test_the_discussor_is_told_to_research_a_new_idea_first():
 
     assert "A NEW IDEA goes to research first" in DISCUSSOR
     assert "Do not answer the research question from" in DISCUSSOR
+
+
+def test_research_starts_open_from_the_newest_evidence():
+    from datetime import date
+
+    from research_agent.bootstrap import prompts, views
+
+    assert "Never add methods, models or datasets the user did not name" in prompts.DISCUSSOR
+    assert "The first research on a topic is a landscape scan" in prompts.ORCHESTRATOR
+    assert "suggestions, not limits" in prompts.RESEARCHER
+    today = f"Today is {date.today().isoformat()}."
+    assert views.researcher(S.new(), task="t").startswith(today)
+    assert views.orchestrator(S.new(), requests=[]).startswith(today)

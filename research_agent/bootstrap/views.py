@@ -22,6 +22,13 @@ def approvals_line(st: dict) -> str:
     return " | ".join(parts)
 
 
+def _today() -> str:
+    """So "recent" means something to a model whose knowledge has a cut-off."""
+    from datetime import date
+
+    return date.today().isoformat()
+
+
 def _block(title: str, text: str) -> str:
     return f"=== {title} ===\n{text.strip() or '(nothing yet)'}"
 
@@ -59,7 +66,8 @@ def _latest_results(st: dict, seen: dict) -> str:
 
 
 def orchestrator(st: dict, *, requests: list[dict], last: str = "") -> str:
-    parts = [_block("THE RESEARCH STATE", S.render(st, brief=True)),
+    parts = [f"Today is {_today()}.",
+             _block("THE RESEARCH STATE", S.render(st, brief=True)),
              _block("APPROVALS", approvals_line(st))]
     if requests:
         parts.append(_block("REQUESTS FROM THE DISCUSSOR", "\n".join(
@@ -76,6 +84,7 @@ def researcher(st: dict, *, task: str) -> str:
                  if q.get("for") == "research" and q.get("status") == "open"]
     hypotheses = S.render(st, ["hypotheses"], brief=True)
     return "\n\n".join([
+        f"Today is {_today()}.",
         _block("YOUR TASK", task),
         _block("THE QUESTIONS -- answer each in `answers` by its id",
                "\n".join(f"- {q['id']} {q['text']}" for q in questions)),

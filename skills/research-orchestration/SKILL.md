@@ -21,7 +21,9 @@ Go down this list and take the first that applies:
 3. **Research would change the design**: research, with precise questions.
    Only when the answer could change a hypothesis, the rubric, the protocol
    or the plan. Never ask again what the evidence already answers. Stop when
-   another round would only add confirmation.
+   another round would only add confirmation. The first round on a topic is a
+   landscape scan -- the current state of the art, what leads recent
+   benchmarks -- not a survey of approaches someone already assumed.
 4. **Hypotheses, rubric and protocol** are missing or fail the readiness
    check below: hypothesize, naming exactly what fails. Ready but not
    approved: ask_user to approve them.
