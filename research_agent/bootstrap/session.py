@@ -68,6 +68,10 @@ class Bootstrap:
     def answer(self, text: str = "", *, approve=(), on_step=None) -> Turn:
         return self._drive(Command(resume={"text": text, "approve": list(approve)}), on_step)
 
+    def retry(self, on_step=None) -> Turn:
+        """Run again the step that failed (the checkpoint stops just before it)."""
+        return self._drive(None, on_step)
+
     def exit(self) -> Turn:
         return self._drive(Command(resume={"exit": True}), None)
 
