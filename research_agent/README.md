@@ -24,6 +24,13 @@ It records what you settled in the research state, and passes work on as
 clean requests. Every other node starts fresh, with a brief built from the
 state, so nothing stale or chatty reaches it.
 
+The discussor decides whether its answer goes back to you -- it answered a
+question, or asked one -- or on to the team, with a request or your approval.
+A new idea goes to research first: the discussor says what will be looked
+into, and explains once the evidence is in, unless the idea is too unclear to
+research. When it is passing on the orchestrator's message it always answers
+you, so the two cannot loop.
+
 The orchestrator decides what the team does next. Code holds the gates:
 - **planning** needs the hypotheses, rubric and protocol approved;
 - **designing** needs the plan approved;

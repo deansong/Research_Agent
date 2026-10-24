@@ -183,6 +183,8 @@ def _ids(st: dict, section: str) -> set[str]:
 class DiscussorTurn(Outcome):
     reply: str = ""
     requests: list[dict] = field(default_factory=list)
+    hand_to: str = "user"
+    """Who the discussor says acts next: "user" or "orchestrator"."""
 
 
 def discussor(run: Run, st: dict, *, seen: dict, user: str = "", note: str = "") -> DiscussorTurn:
@@ -193,6 +195,9 @@ def discussor(run: Run, st: dict, *, seen: dict, user: str = "", note: str = "")
                     if a.id not in open_ids]
         problems += [f"approve: there is no {s} yet" for s in out.approve
                      if not S.version(st, s)]
+        if out.hand_to == "orchestrator" and not (out.requests or out.approve):
+            problems.append('hand_to is "orchestrator" but there is no request or approval '
+                            'for the team to act on: add the request, or hand to "user"')
         return problems
 
     out, session = run.call("discussor", brief=views.discussor_turn(st, seen, user=user, note=note),
@@ -212,7 +217,8 @@ def discussor(run: Run, st: dict, *, seen: dict, user: str = "", note: str = "")
              "value": {"status": "answered", "answer": a.answer}} for a in out.answers]
     ops += [{"op": "approve", "section": s} for s in dict.fromkeys(out.approve)]
     return DiscussorTurn(ops=ops, summary=out.reply[:200], session=session, data=out,
-                         reply=out.reply, requests=[r.model_dump() for r in out.requests])
+                         reply=out.reply, requests=[r.model_dump() for r in out.requests],
+                         hand_to=out.hand_to)
 
 
 # ---- orchestrator ---------------------------------------------------------------------------

@@ -80,6 +80,12 @@ class Request(BaseModel):
 class DiscussorOutput(BaseModel):
     reply: str
     """What you say to the user now."""
+    hand_to: Literal["user", "orchestrator"] = "user"
+    """Who acts next. "user": you answered or asked something, and the user
+    replies. "orchestrator": the team has work -- what is in `requests`, or
+    what the user's approval unlocks."""
+    reason: str = ""
+    """Why, in a few words."""
     goal: GoalIn = Field(default_factory=GoalIn)
     constraints: ConstraintsIn = Field(default_factory=ConstraintsIn)
     decisions: list[DecisionIn] = Field(default_factory=list, max_length=10)

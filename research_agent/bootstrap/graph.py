@@ -10,8 +10,8 @@ CONCEPT: LangGraph. The graph state carries the research state (also mirrored
        the discussor last saw. The user is an interrupt; the checkpoint
        (<run>/checkpoint.sqlite) is what makes a run resumable.
 
-    START -> discussor --(the user asked for work, or approved)--> orchestrator
-                       --(otherwise)----------------> human (the user answers)
+    START -> discussor --(it hands the user's request or approval on)--> orchestrator
+                       --(it answered, or asked)------------------------> human
     orchestrator --research--> researcher --> orchestrator
                  --hypothesize/plan--> planner --> orchestrator
                  --design--> designer --> orchestrator
@@ -93,10 +93,11 @@ def build(run: nodes.Run, checkpointer=None):
                                user=state.get("user", ""), note=state.get("note", ""))
         st = commit(st, turn.ops, "discussor")
         spoke = bool(state.get("user"))
-        # The user asked for work, or approved something (which lets the
-        # work move on): the orchestrator decides. Otherwise keep talking.
-        approved = state.get("approved") or any(op["op"] == "approve" for op in turn.ops)
-        go = spoke and bool(turn.requests or approved)
+        # The discussor decides who acts next. Code holds two guards: passing
+        # on the orchestrator's message (the user did not just speak), it
+        # always answers the user, so the two cannot loop; and an /approve
+        # always lets the work move on.
+        go = spoke and (turn.hand_to == "orchestrator" or bool(state.get("approved")))
         return {"research": st, "seen": dict(st.get("versions") or {}), "approved": False,
                 "pending": list(state.get("pending") or []) + turn.requests,
                 "reply": turn.reply, "user": "", "note": "",

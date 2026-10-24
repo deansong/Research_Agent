@@ -27,6 +27,9 @@ def run(tmp_path):
 
 
 def say(reply, *requests, approve=(), **fields):
+    """A discussor answer. It hands to the orchestrator when it has a request
+    or an approval for it, unless `hand_to` says otherwise."""
+    fields.setdefault("hand_to", "orchestrator" if requests or approve else "user")
     return {"reply": reply, "approve": list(approve),
             "requests": [{"kind": k, "detail": d} for k, d in requests], **fields}
 
@@ -212,3 +215,48 @@ def test_asking_for_a_change_after_ready_reopens_the_work(run, script):
     turn = boot.answer("Please use two runners instead")
     assert turn.reply == "Revised; approve?"
     assert len(script.prompts("OrchestratorOutput")) == 1, "a request reopens the work"
+
+
+def test_the_discussor_answers_a_clarifying_question_itself(run, script):
+    script.add("DiscussorOutput",
+               say("Researching first.", ("research", "survey methods")),
+               say("Here is what the team found. Questions?"),
+               say("F_s is the set-level F-score, see E3.", reason="a clarification"))
+    script.add("OrchestratorOutput", decide("research", questions=["q"]),
+               decide("ask_user", "Anything to clarify?"))
+    script.add("ResearcherOutput", FINDINGS)
+    boot = Bootstrap(run)
+    boot.start("open-vocabulary emotion classification")
+    turn = boot.answer("What does F_s mean?")
+    assert turn.reply == "F_s is the set-level F-score, see E3."
+    assert len(script.prompts("OrchestratorOutput")) == 2, "the team was not called again"
+
+
+def test_a_request_can_wait_while_the_discussor_asks_first(run, script):
+    script.add("DiscussorOutput",
+               say("Which modality, text or video?", ("research", "survey OV-MER"),
+                   hand_to="user"),
+               say("Text it is; researching.", ("research", "text only")),
+               say("ok?"))
+    script.add("OrchestratorOutput", decide("ask_user", "ok?"))
+    boot = Bootstrap(run)
+    boot.start("open-vocabulary emotion classification")
+    assert not script.prompts("OrchestratorOutput"), "held until the user answers"
+    boot.answer("text")
+    brief = script.prompts("OrchestratorOutput")[0]
+    assert "- [research] survey OV-MER" in brief and "- [research] text only" in brief
+
+
+def test_handing_over_with_nothing_to_hand_is_sent_back(run, script):
+    script.add("DiscussorOutput", say("ok", hand_to="orchestrator"), say("What data?"))
+    turn = Bootstrap(run).start("idea")
+    assert turn.reply == "What data?"
+    retry = script.prompts("DiscussorOutput")[1]
+    assert 'hand_to is "orchestrator" but there is no request or approval' in retry
+
+
+def test_the_discussor_is_told_to_research_a_new_idea_first():
+    from research_agent.bootstrap.prompts import DISCUSSOR
+
+    assert "A NEW IDEA goes to research first" in DISCUSSOR
+    assert "Do not answer the research question from" in DISCUSSOR
