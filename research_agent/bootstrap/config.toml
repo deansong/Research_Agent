@@ -1,0 +1,54 @@
+# The bootstrap's configuration: which model each role runs on, and which
+# skills each node is given.
+#
+# This file holds the defaults. A run copies what it starts with into
+# <run>/config.json -- edit that to change one run (it is read again on
+# --resume) -- and the command line overrides both for one start:
+#     --role planner=codex:gpt-5.6-sol:high
+#     --skills planner_plan=experiment-design,statistical-power
+#     --skills-dir ~/my_skills
+
+
+[skills]
+# Where the skills are: a folder of <name>/SKILL.md. A relative path is from
+# the repository root (the folder that holds research_agent/).
+dir = "skills"
+
+# What each node is given:
+#   "none"               no skills
+#   "auto"               the name, description and path of every skill; the
+#                        model reads the ones its task needs
+#   ["a", "b"]           those skills, in full
+# The planner has two jobs, so two entries. The designer gets the list of all
+# skills in its brief anyway, to choose skills for the execution nodes.
+discussor = "auto"
+orchestrator = "none"
+researcher = ["research"]
+planner_hypothesize = ["hypothesis-generation", "experiment-design", "statistical-power"]
+planner_plan = ["experiment-design"]
+designer = "none"
+
+
+# Which provider and model each role runs on. `model` is an id from
+# RB.list_models(provider); leave it out for the provider's default.
+# `effort` is a level from RB.list_efforts(provider) -- not for antigravity,
+# whose model ids carry the level themselves (gemini-3.8-flash-high).
+# `options` go to the provider: timeout, max_seconds, ...
+
+[roles.discussor]
+provider = "claude_code"
+model = "opus"
+
+[roles.orchestrator]
+provider = "codex"
+
+[roles.researcher]
+provider = "antigravity"
+model = "gemini-3.8-flash-high"
+
+[roles.planner]
+provider = "codex"
+effort = "high"
+
+[roles.designer]
+provider = "codex"

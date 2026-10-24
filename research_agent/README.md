@@ -80,25 +80,52 @@ team does, and a status line:
 Ctrl-C stops a run, and `--resume <run>` carries on. A step is saved in
 `checkpoint.sqlite` as soon as it finishes.
 
-## Which model does what
+## Configuration: models and skills
+
+`research_agent/bootstrap/config.toml` holds the defaults, with comments:
+
+```toml
+[skills]
+dir = "skills"                      # a folder of <name>/SKILL.md, from the repository root
+discussor = "auto"                  # shown every skill; reads the ones it needs
+orchestrator = "none"
+researcher = ["research"]           # given these in full
+planner_hypothesize = ["hypothesis-generation", "experiment-design", "statistical-power"]
+planner_plan = ["experiment-design"]
+designer = "none"                   # sees the skills catalogue anyway, to choose for the execution nodes
+
+[roles.researcher]
+provider = "antigravity"
+model = "gemini-3.8-flash-high"     # antigravity's ids carry the effort level
+```
 
 | role | default |
 | --- | --- |
 | discussor | claude_code, opus |
 | orchestrator | codex |
-| researcher | antigravity, given the `research` skill |
-| planner | codex, high effort, given experiment-design skills |
+| researcher | antigravity, gemini-3.8-flash-high |
+| planner | codex, high effort |
 | designer | codex |
 
-To change them, pass `--role planner=codex:gpt-5.6-sol:high` (or
-`all=claude_code:sonnet`), or edit `<run>/config.json`. A run keeps the roles
-it started with.
+A run copies what it starts with into `<run>/config.json`. Edit that file to
+change one run; it is read again on `--resume`. For one start, the command
+line overrides both:
+
+```
+--role planner=codex:gpt-5.6-sol:high      provider[:model[:effort]]; all=... for every role
+--skills planner_plan=experiment-design,statistical-power
+--skills discussor=none                    none, auto, or skill names
+--skills-dir ~/my_skills
+```
+
+Names are checked when a run starts: an unknown role, node or skill, or a
+missing skills folder, stops it with what is wrong.
 
 ## A run's folder
 
 ```
 ~/research_runs/<date>-<idea>/
-    config.json          the roles
+    config.json          the models and skills this run uses
     state/               research.json, research.md, history/
     rb/sessions/         every model call: discussor (one), orchestrator-001, ...
     research/            the researcher's working folder
@@ -114,9 +141,10 @@ To read any call afterwards:
 ```
 research_agent/
     state.py            the research state, its operations, rendering, history
-    config.py           roles: provider, model, effort
     cli.py              the command line
     bootstrap/
+        config.toml     the defaults: models and skills
+        config.py       reading config.toml, <run>/config.json and the flags
         schemas.py      what each node answers with
         prompts.py      each role's standing instructions
         views.py        each node's brief, built from the state

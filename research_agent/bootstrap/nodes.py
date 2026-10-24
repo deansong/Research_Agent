@@ -21,21 +21,11 @@ import research_backend as RB
 
 from research_agent import state as S
 from research_agent.bootstrap import prompts, schemas, verify, views
-from research_agent.config import RoleConfig
+from research_agent.bootstrap import config
+from research_agent.bootstrap.config import RoleConfig
 
-#: The repository's skills folder, beside the package.
-SKILLS_DIR = Path(__file__).resolve().parents[2] / "skills"
 #: Answer attempts per call: the first, and two with the problems fed back.
 ATTEMPTS = 3
-#: Skills each role is given ("auto": the model is shown them all).
-ROLE_SKILLS = {
-    "discussor": "auto",
-    "orchestrator": None,
-    "researcher": ["research"],
-    "planner_hypothesize": ["hypothesis-generation", "experiment-design", "statistical-power"],
-    "planner_plan": ["experiment-design"],
-    "designer": None,
-}
 DISCUSSOR_SESSION = "discussor"
 
 
@@ -46,13 +36,26 @@ class NodeFailed(RB.BackendError):
 @dataclass
 class Run:
     """One bootstrap run: its folder, which provider each role uses, and
-    where the skills are."""
+    which skills each node gets (bootstrap/config.toml unless given)."""
 
     folder: Path
     roles: dict[str, RoleConfig]
-    skills_dir: Path | None = SKILLS_DIR
+    skills_dir: Path | None = None
+    skills: dict | None = None
+    """Per node (config.NODES): None, "auto" or a list of skill names."""
     progress: bool = False
     """Print what each model does while it works."""
+
+    def __post_init__(self):
+        if self.skills is None or self.skills_dir is None:
+            base = config.defaults()
+            self.skills = base.skills if self.skills is None else self.skills
+            self.skills_dir = base.skills_dir if self.skills_dir is None else self.skills_dir
+
+    @classmethod
+    def from_config(cls, folder: Path, cfg: "config.BootstrapConfig", *, progress=False) -> "Run":
+        return cls(folder, cfg.roles, skills_dir=cfg.skills_dir, skills=cfg.skills,
+                   progress=progress)
 
     @property
     def rb_home(self) -> Path:
@@ -64,7 +67,7 @@ class Run:
              check: Callable[[object], list[str]] | None = None):
         """One node call: (answer, session id). Retries with the problems."""
         cfg = self.roles[role]
-        chosen = ROLE_SKILLS.get(skills_key or role)
+        chosen = (self.skills or {}).get(skills_key or role)
         skills_dir = self.skills_dir if self.skills_dir and self.skills_dir.is_dir() else None
         rb = RB(cfg.provider, cfg.model, effort=cfg.effort,
                 instructions=prompts.INSTRUCTIONS[role], access=access,
@@ -91,7 +94,8 @@ class Run:
         taken = len(list(folder.glob(f"{role}-*"))) if folder.is_dir() else 0
         return f"{role}-{taken + 1:03d}"
 
-    def skills(self) -> list[tuple[str, str]]:
+    def catalogue(self) -> list[tuple[str, str]]:
+        """Every skill in the folder: (name, description)."""
         if not (self.skills_dir and self.skills_dir.is_dir()):
             return []
         return [(s.name, s.description) for s in RB.list_skills(self.skills_dir)]
@@ -293,7 +297,7 @@ def plan(run: Run, st: dict, *, task: str) -> Outcome:
 def design(run: Run, st: dict, *, task: str) -> Outcome:
     steps = [s["id"] for s in (st.get("plan") or {}).get("steps") or []]
     rubric = _ids(st, "rubric")
-    catalogue = run.skills()
+    catalogue = run.catalogue()
     known_skills = {name for name, _ in catalogue}
 
     def check(out: schemas.DesignOutput) -> list[str]:

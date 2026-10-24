@@ -17,7 +17,7 @@ import pytest
 from research_agent import state as S
 from research_agent.bootstrap import graph, nodes
 from research_agent.bootstrap.session import Bootstrap
-from research_agent.config import ROLES, RoleConfig
+from research_agent.bootstrap.config import ROLES, RoleConfig
 from tests.scripted import script  # noqa: F401 -- fixture
 
 

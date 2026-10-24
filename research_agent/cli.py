@@ -18,8 +18,8 @@ from pathlib import Path
 
 import research_backend as RB
 
-from research_agent import config, state as S
-from research_agent.bootstrap import nodes, views
+from research_agent import state as S
+from research_agent.bootstrap import config, nodes, views
 from research_agent.bootstrap.session import Bootstrap
 
 RUNS_ROOT = Path.home() / "research_runs"
@@ -49,6 +49,10 @@ def main(argv: list[str] | None = None) -> int:
     boot.add_argument("--role", action="append", default=[], metavar="ROLE=PROVIDER[:MODEL[:EFFORT]]",
                       help="which model a role uses, e.g. planner=codex:gpt-5.6-sol:high "
                            "(all=... sets every role)")
+    boot.add_argument("--skills", action="append", default=[], metavar="NODE=none|auto|SKILL,SKILL",
+                      help="which skills a node gets, e.g. planner_plan=experiment-design,"
+                           "statistical-power; nodes: " + ", ".join(config.NODES))
+    boot.add_argument("--skills-dir", metavar="FOLDER", help="the skills folder to use")
     boot.add_argument("--progress", action="store_true",
                       help="print what each model does while it works")
     args = parser.parse_args(argv)
@@ -62,12 +66,12 @@ def main(argv: list[str] | None = None) -> int:
     else:
         parser.error("give an idea, or --resume <run>.")
     try:
-        roles = config.load(folder, args.role)
+        cfg = config.load(folder, roles=args.role, skills=args.skills, skills_dir=args.skills_dir)
     except ValueError as exc:
         parser.error(str(exc))
     folder.mkdir(parents=True, exist_ok=True)
-    config.save(folder, roles)
-    return _converse(Bootstrap(nodes.Run(folder, roles, progress=args.progress)),
+    config.save(folder, cfg)
+    return _converse(Bootstrap(nodes.Run.from_config(folder, cfg, progress=args.progress)),
                      args.idea if not args.resume else None)
 
 
@@ -75,7 +79,8 @@ def _converse(boot: Bootstrap, idea: str | None) -> int:
     folder = boot.run.folder
     resume_hint = f"Carry on with:  python -m research_agent bootstrap --resume {folder}"
     print(f"Run: {folder}")
-    print("Roles: " + ", ".join(f"{r}={c}" for r, c in boot.run.roles.items()))
+    run = boot.run
+    print(config.BootstrapConfig(run.roles, run.skills or {}, run.skills_dir).describe())
     _warn_signed_out(boot)
     print("Type /help for commands.\n")
     failed = False

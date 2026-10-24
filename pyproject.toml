@@ -17,3 +17,6 @@ codex = ["openai-codex"]
 
 [tool.setuptools.packages.find]
 include = ["research_backend*", "research_agent*"]
+
+[tool.setuptools.package-data]
+research_agent = ["bootstrap/config.toml"]
