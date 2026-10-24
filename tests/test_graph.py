@@ -75,8 +75,7 @@ def test_a_whole_bootstrap_from_idea_to_an_approved_design(run, script):
                decide("plan"),
                decide("ask_user", "Approve the plan?"),
                decide("design"),
-               decide("ask_user", "Approve the design?"),
-               decide("ready", note_for_discussor="All approved."))
+               decide("ask_user", "Approve the design?"))
     steps = []
     boot = Bootstrap(run)
     turn = boot.start("I want to study LoRA rank on small data",
@@ -114,7 +113,10 @@ def test_a_whole_bootstrap_from_idea_to_an_approved_design(run, script):
     assert "## Design (approved)" in (folder / "state" / "research.md").read_text()
     assert len(list((folder / "state" / "history").glob("*.json"))) > 10
     sessions = sorted(p.name for p in (folder / "rb" / "sessions").iterdir())
-    assert sessions[:2] == ["designer-001", "discussor"] and "orchestrator-008" in sessions
+    assert sessions[:2] == ["designer-001", "discussor"] and sessions[-1] == "researcher-001"
+    assert "orchestrator-007" in sessions and "orchestrator-008" not in sessions, \
+        "with the design approved, no model is asked whether to finish"
+    assert st["status"]["phase"] == "ready"
     boot.close()
 
 
@@ -194,3 +196,19 @@ def test_an_approval_alone_lets_the_work_move_on(run, script):
     assert len([c for c in script.calls if c["schema"] == "OrchestratorOutput"]) == 4
     told = [c for c in script.calls if c["schema"] == "DiscussorOutput"][2]["prompt"]
     assert "(I approved: hypotheses, rubric, protocol.)" in told
+
+
+def test_asking_for_a_change_after_ready_reopens_the_work(run, script):
+    st, _ = S.apply(S.new(), [{"op": "set", "section": "design", "value": {"summary": "d"}}],
+                    by="x")
+    st, _ = S.apply(st, [{"op": "approve", "section": "design"}], by="user")
+    S.Store(run.folder).write(st)
+    script.add("DiscussorOutput", say("Done already.", approve=[]),
+               say("I'll ask the designer.", ("revise_design", "Use two runners")),
+               say("Revised; approve?"))
+    script.add("OrchestratorOutput", decide("ask_user", "Approve the revised design?"))
+    boot = Bootstrap(run)
+    boot.start("hello")                         # just talking: no work starts
+    turn = boot.answer("Please use two runners instead")
+    assert turn.reply == "Revised; approve?"
+    assert len(script.prompts("OrchestratorOutput")) == 1, "a request reopens the work"

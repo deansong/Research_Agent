@@ -27,7 +27,8 @@ state, so nothing stale or chatty reaches it.
 The orchestrator decides what the team does next. Code holds the gates:
 - **planning** needs the hypotheses, rubric and protocol approved;
 - **designing** needs the plan approved;
-- **finishing** needs the design approved.
+- **finishing** happens once the design is approved: questions about carrying
+  the plan out are left for the execution stage. Asking for a change reopens the work.
 
 The team stops to ask you after 6 steps without hearing from you.
 

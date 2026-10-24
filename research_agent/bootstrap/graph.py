@@ -106,6 +106,18 @@ def build(run: nodes.Run, checkpointer=None):
 
     def orchestrator(state: BootstrapState) -> dict:
         st = state["research"]
+        if S.approved(st, "design") and not state.get("pending"):
+            # Done, whatever a model might still want to look into: seen in a
+            # real run, an orchestrator with everything approved went on to
+            # ask about sign-offs and research licences -- the execution
+            # stage's work. Asking for a change still reopens the bootstrap.
+            st = commit(st, [{"op": "merge", "section": "status", "value": {
+                "phase": "ready", "next": "execution"}}], "orchestrator")
+            note = ("Everything is approved: the bootstrap is done. Tell the user, and that "
+                    "anything about carrying the plan out is for the execution stage.")
+            return {"research": st, "note": note, "pending": [], "outcome": "ready",
+                    "decision": {"action": "ready", "task": note, "questions": [],
+                                 "reason": "the design is approved and nothing new was asked"}}
         if state.get("steps", 0) >= MAX_STEPS:
             note = (f"The team has taken {MAX_STEPS} steps since the user last spoke. "
                     f"Tell the user where things stand and ask how to continue.")

@@ -51,7 +51,10 @@ Decide the ONE next action:
                approved.
   ask_user     the discussor asks the user something you need: a decision, a
                constraint, an approval. Put the question in `task`.
-  ready        the design is approved and nothing is open.
+  ready        the design is approved. The bootstrap ends there: questions about
+               carrying the plan out (sign-offs, licences, environments, running
+               any step) belong to the execution stage -- record them as open
+               questions; do not research or ask them now.
 
 Rules:
 - Follow the discussor's requests unless the state shows they cannot be done
