@@ -265,6 +265,37 @@ def plan(run: Run, st: dict, *, task: str) -> Outcome:
 # ---- designer ---------------------------------------------------------------------------------
 
 
+def design_problems(design: dict, *, steps: list[str], rubric: set[str],
+                    skills: set[str]) -> list[str]:
+    """What is wrong with a design, in words: names, one orchestrator, one
+    read-only validator, every plan step owned by exactly one node, skills
+    and rubric ids that exist. The execution stage checks it again."""
+    nodes = design.get("nodes") or []
+    names = [n["name"] for n in nodes]
+    problems = [f"node names must be unique: {names}"] if len(set(names)) != len(names) else []
+    problems += [f"{n} is not lower_snake_case" for n in names
+                 if not n.replace("_", "").isalnum() or n != n.lower() or not n[:1].isalpha()]
+    for role in ("orchestrator", "validator"):
+        count = sum(n["role"] == role for n in nodes)
+        if count != 1:
+            problems.append(f"there must be exactly one {role} node, not {count}")
+    problems += [f"the validator {n['name']} must be read_only" for n in nodes
+                 if n["role"] == "validator" and n.get("access") != "read_only"]
+    owners: dict[str, list[str]] = {}
+    for n in nodes:
+        for s in n.get("steps") or []:
+            owners.setdefault(s, []).append(n["name"])
+    problems += [f"plan step {s} has no node" for s in steps if s not in owners]
+    problems += [f"plan step {s} has several nodes: {', '.join(o)}"
+                 for s, o in owners.items() if len(o) > 1]
+    problems += [f"{s} is not a plan step" for s in owners if s not in steps]
+    problems += [f"{n['name']}: no skill called {k}" for n in nodes for k in n.get("skills") or []
+                 if skills and k not in skills]
+    problems += [f"{n['name']}: {r} is not a rubric id" for n in nodes
+                 for r in n.get("validated_by") or [] if r not in rubric]
+    return problems
+
+
 def design(run: Run, st: dict, *, task: str) -> Outcome:
     steps = [s["id"] for s in (st.get("plan") or {}).get("steps") or []]
     rubric = _ids(st, "rubric")
@@ -272,29 +303,8 @@ def design(run: Run, st: dict, *, task: str) -> Outcome:
     known_skills = {name for name, _ in catalogue}
 
     def check(out: schemas.DesignOutput) -> list[str]:
-        names = [n.name for n in out.nodes]
-        problems = [f"node names must be unique: {names}"] if len(set(names)) != len(names) else []
-        problems += [f"{n} is not lower_snake_case" for n in names
-                     if not n.replace("_", "").isalnum() or n != n.lower() or not n[:1].isalpha()]
-        for role in ("orchestrator", "validator"):
-            count = sum(n.role == role for n in out.nodes)
-            if count != 1:
-                problems.append(f"there must be exactly one {role} node, not {count}")
-        problems += [f"the validator {n.name} must be read_only" for n in out.nodes
-                     if n.role == "validator" and n.access != "read_only"]
-        owners: dict[str, list[str]] = {}
-        for n in out.nodes:
-            for s in n.steps:
-                owners.setdefault(s, []).append(n.name)
-        problems += [f"plan step {s} has no node" for s in steps if s not in owners]
-        problems += [f"plan step {s} has several nodes: {', '.join(o)}"
-                     for s, o in owners.items() if len(o) > 1]
-        problems += [f"{s} is not a plan step" for s in owners if s not in steps]
-        problems += [f"{n.name}: no skill called {k}" for n in out.nodes for k in n.skills
-                     if known_skills and k not in known_skills]
-        problems += [f"{n.name}: {r} is not a rubric id" for n in out.nodes
-                     for r in n.validated_by if r not in rubric]
-        return problems
+        return design_problems(out.model_dump(), steps=steps, rubric=rubric,
+                               skills=known_skills)
 
     out, session = run.call("designer", brief=views.designer(st, task=task, skills=catalogue),
                             schema=schemas.DesignOutput, check=check)

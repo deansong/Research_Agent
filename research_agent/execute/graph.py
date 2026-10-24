@@ -1,0 +1,324 @@
+"""
+WHAT:  The execution graph, built from the approved design: the discussor and
+       the user, the orchestrator, one node per step owner in the design, a
+       `wait` node for running jobs, and the validator.
+WHY:   The orchestrator LLM chooses what runs next; code holds what it may
+       choose (dependencies passed, attempts left, the user's go before a
+       gated step, the budget), and only the validator's verdict passes a
+       step.
+CONCEPT: LangGraph, as the bootstrap, in the same checkpoint file under its
+       own thread.
+
+    START -> orchestrator --run/retry S--> <owner of S> --done-->     validator -> orchestrator
+                                                         --launched--> wait --jobs done--> <owner of S>
+                                                         --failed/blocked--> orchestrator
+                          --skip S--> orchestrator (the terminal record written)
+                          --ask_user / a gated step / stop / done / limit--> discussor -> human
+    human --> discussor --(go, or a request)--> orchestrator, else --> human; END on /exit
+"""
+
+from __future__ import annotations
+
+import time
+from datetime import datetime, timezone
+from typing import Any
+
+from langgraph.graph import END, START, StateGraph
+from langgraph.types import interrupt
+from typing_extensions import TypedDict
+
+import research_backend as RB
+
+from research_agent import state as S
+from research_agent.execute import jobs, nodes
+
+
+class ExecState(TypedDict, total=False):
+    research: dict
+    seen: dict
+    """The section versions the discussor last saw."""
+    pending: list
+    """Requests from the discussor, waiting for the orchestrator."""
+    decision: dict
+    last: str
+    """What the last piece of work did -- for the orchestrator."""
+    user: str
+    note: str
+    reply: str
+    decisions: int
+    """Orchestrator decisions since the user last spoke."""
+    awaiting: str
+    """The step waiting for the user's go."""
+    step: str
+    """The step being worked on."""
+    report: dict
+    """Its owner's last report."""
+    wake: list
+    """Job ids its owner is woken about."""
+    nudged: bool
+    """The user said go or stop with this message."""
+    outcome: str
+    """"" while working; "done", "stopped" or "exit"."""
+
+
+class _Routed(ExecState, total=False):
+    _to: str
+
+
+def budget(run: nodes.ExecRun, st: dict) -> tuple[str, str]:
+    """(what is used and left, why it is over -- "" if it is not). The limits
+    are the configuration's now, so raising them and resuming goes on."""
+    started = (st.get("execution") or {}).get("started")
+    hours = ((datetime.now(timezone.utc) - datetime.fromisoformat(started)).total_seconds() / 3600
+             if started else 0.0)
+    gpu = jobs.gpu_hours(run.folder)
+    parts, over = [], ""
+    for used, limit, label in ((hours, run.limits.wall_hours, "wall hours"),
+                               (gpu, run.limits.gpu_hours, "GPU-hours")):
+        parts.append(f"{used:.2f} {label} used" + (f" of {limit:g} ({limit - used:.2f} left)"
+                                                   if limit else " (no limit)"))
+        if limit and used >= limit and not over:
+            over = f"the limit of {limit:g} {label} is used up ({used:.2f})"
+    running = [j for j in jobs.records(run.folder) if jobs.status(j)["state"] == "running"]
+    if running:
+        parts.append(f"{len(running)} jobs running")
+    return "; ".join(parts), over
+
+
+def build(run: nodes.ExecRun, design: nodes.Design, checkpointer=None):
+    store = S.Store(run.folder)
+    limits = run.limits
+
+    def commit(st: dict, ops: list[dict], by: str) -> dict:
+        if not ops:
+            return st
+        new, changed = S.apply(st, ops, by=by)
+        store.write(new, by=by, ops=ops, changed=changed)
+        return new
+
+    def stop_all(st: dict, why: str) -> dict:
+        """Stop the jobs and every step under way."""
+        for job in jobs.records(run.folder):
+            jobs.kill(run.folder, job["id"])
+        for sid, r in nodes.records(st).items():
+            if r["status"] in ("running", "waiting", "validating"):
+                st = commit(st, [nodes.record_op(st, sid, status="stopped",
+                                                 problems=r.get("problems", []) + [why])], "execution")
+        return commit(st, [{"op": "merge", "section": "status", "value": {
+            "phase": "stopped", "next": "the user decides"}}], "execution")
+
+    # ---- the discussor and the user -------------------------------------------------
+
+    def discussor(state: ExecState) -> dict:
+        st = state["research"]
+        turn = nodes.discussor(run, st, seen=state.get("seen") or {}, user=state.get("user", ""),
+                               note=state.get("note", ""), awaiting=state.get("awaiting", ""))
+        st = commit(st, turn.ops, "discussor")
+        spoke = bool(state.get("user"))
+        awaiting, outcome = state.get("awaiting", ""), state.get("outcome", "")
+        if spoke and turn.go and awaiting:
+            st = commit(st, [nodes.record_op(st, awaiting, go=True)], "user")
+            awaiting = ""
+        if spoke and turn.stop:
+            st = stop_all(st, "the user stopped the execution")
+            outcome = "stopped"
+        # As in the bootstrap: passing on the orchestrator's message, it
+        # answers the user; a go or a request moves the work on.
+        go = spoke and not turn.stop and (turn.hand_to == "orchestrator" or turn.go
+                                          or bool(state.get("nudged")))
+        return {"research": st, "seen": dict(st.get("versions") or {}), "reply": turn.reply,
+                "pending": list(state.get("pending") or []) + turn.requests, "user": "",
+                "note": "", "nudged": False, "awaiting": awaiting, "outcome": outcome,
+                "decisions": 0 if spoke else state.get("decisions", 0),
+                "_to": "orchestrator" if go else "human"}
+
+    def human(state: ExecState) -> dict:
+        answer: Any = interrupt({"reply": state.get("reply", ""),
+                                 "outcome": state.get("outcome", "")})
+        if isinstance(answer, str):
+            answer = {"text": answer}
+        if answer.get("exit"):
+            return {"outcome": "exit", "_to": END}
+        st, text = state["research"], answer.get("text", "")
+        awaiting, nudged, outcome = state.get("awaiting", ""), False, state.get("outcome", "")
+        if answer.get("go") and awaiting:
+            st = commit(st, [nodes.record_op(st, awaiting, go=True)], "user")
+            text = text or f"(I said go for step {awaiting}.)"
+            awaiting, nudged = "", True
+        if answer.get("stop"):
+            st = stop_all(st, "the user stopped the execution")
+            text, outcome = text or "(I stopped the execution.)", "stopped"
+        return {"research": st, "user": text, "awaiting": awaiting, "nudged": nudged,
+                "outcome": outcome, "_to": "discussor"}
+
+    # ---- the orchestrator -------------------------------------------------------------
+
+    def orchestrator(state: ExecState) -> dict:
+        st = state["research"]
+        used, over = budget(run, st)
+        if over:
+            st = stop_all(st, f"stopped: {over}")
+            note = (f"Execution stopped: {over}. Running jobs were stopped. Tell the user "
+                    f"where things stand; raising the limit (execute.json) and resuming "
+                    f"lets it go on.")
+            return {"research": st, "note": note, "outcome": "stopped", "_to": "discussor",
+                    "decision": {"action": "stop", "step": "", "reason": over}}
+        if state.get("decisions", 0) >= limits.max_decisions:
+            note = (f"The team has made {limits.max_decisions} decisions since the user last "
+                    f"spoke. Tell the user where things stand and ask how to continue.")
+            return {"note": note, "_to": "discussor",
+                    "decision": {"action": "ask_user", "step": "", "reason": "the limit"}}
+        out = nodes.orchestrator(run, st, design, budget=used, requests=state.get("pending") or [],
+                                 last=state.get("last", ""))
+        st = commit(st, out.ops, "orchestrator")
+        d = out.data
+        decision = {"action": d.action, "step": d.step, "reason": d.reason, "task": d.task}
+        base = {"research": st, "decision": decision, "pending": [], "outcome": "",
+                "decisions": state.get("decisions", 0) + 1}
+        note = d.note_for_discussor
+        if d.action in ("run", "retry"):
+            step = nodes.plan_step(st, d.step)
+            rec = nodes.records(st)[d.step]
+            if needs_go(step) and not rec.get("go"):
+                note = (f"Step {d.step} is next ({d.reason}). It waits for the user's go: say "
+                        f"what it will do and cost, and ask. {note}").strip()
+                return {**base, "awaiting": d.step, "note": note, "_to": "discussor"}
+            attempt = rec.get("attempts", 0) + 1
+            st = commit(st, [nodes.record_op(
+                st, d.step, status="running", attempts=attempt, started=nodes._now(),
+                problems=rec.get("problems", []) if d.action == "retry" else [],
+                sessions=rec.get("sessions", []) + [nodes._session(d.step, attempt)])], "execution")
+            return {**base, "research": st, "step": d.step, "wake": [], "report": {},
+                    "_to": design.owner_of[d.step]}
+        if d.action == "skip":
+            folder = run.artifacts(d.step)
+            folder.mkdir(parents=True, exist_ok=True)
+            (folder / "SKIPPED.md").write_text(
+                f"# Step {d.step} skipped\n\n{d.task}\n\nDecided by the orchestrator, "
+                f"{nodes._now()}: {d.reason}\n")
+            st = commit(st, [nodes.record_op(st, d.step, status="skipped", finished=nodes._now(),
+                                             summary=f"skipped: {d.task}"[:1500],
+                                             artifacts=["SKIPPED.md"])], "execution")
+            return {**base, "research": st, "last": f"step {d.step} skipped: {d.task}",
+                    "_to": "orchestrator"}
+        if d.action == "done":
+            st = commit(st, [{"op": "merge", "section": "status", "value": {
+                "phase": "done", "next": "the paper"}}], "execution")
+            note = note or "Every step has passed or been skipped: the execution is done."
+            return {**base, "research": st, "note": note, "outcome": "done", "_to": "discussor"}
+        if d.action == "stop":
+            st = stop_all(st, f"stopped by the orchestrator: {d.task}")
+            return {**base, "research": st, "note": f"The orchestrator stopped the execution: "
+                                                    f"{d.task} {note}".strip(),
+                    "outcome": "stopped", "_to": "discussor"}
+        return {**base, "note": note or d.task, "_to": "discussor"}    # ask_user
+
+    def needs_go(step: dict) -> bool:
+        return nodes.needs_go(step, limits.confirm)
+
+    # ---- a step's owner, the jobs, the validator ---------------------------------------
+
+    def owner(name: str):
+        node = design.owners[name]
+
+        def run_it(state: ExecState) -> dict:
+            st, sid = state["research"], state["step"]
+            step = nodes.plan_step(st, sid)
+            try:
+                out = nodes.owner(run, st, node=node, step=step, wake=state.get("wake") or None,
+                                  task=(state.get("decision") or {}).get("task", ""))
+            except RB.BackendCancelled:
+                raise
+            except RB.BackendError as exc:
+                why = f"{node['name']} failed: {str(exc)[:600]}"
+                st = commit(st, [nodes.record_op(st, sid, status="fail", problems=[why])],
+                            "execution")
+                return {"research": st, "last": f"step {sid}: {why}", "_to": "orchestrator"}
+            st = commit(st, out.ops, node["name"])
+            rep = out.data
+            rec = nodes.records(st)[sid]
+            fields = {"summary": rep.summary[:1500], "jobs": list(dict.fromkeys(
+                rec.get("jobs", []) + list(rep.jobs)))}
+            if rep.artifacts:
+                fields["artifacts"] = list(rep.artifacts)
+            if rep.state == "launched":
+                st = commit(st, [nodes.record_op(st, sid, status="waiting", **fields)], "execution")
+                return {"research": st, "wake": list(rep.jobs), "_to": "wait"}
+            if rep.state == "done":
+                st = commit(st, [nodes.record_op(st, sid, status="validating", **fields)],
+                            "execution")
+                return {"research": st, "report": rep.model_dump(), "wake": [],
+                        "_to": "validator"}
+            problems = list(rep.problems) + [f"question for the user: {q}"
+                                             for q in rep.questions_for_user]
+            st = commit(st, [nodes.record_op(st, sid, status="fail", problems=problems[:20],
+                                             **fields)], "execution")
+            return {"research": st, "wake": [], "_to": "orchestrator",
+                    "last": f"step {sid}: its owner reports {rep.state}: {rep.summary}"
+                            + "".join(f"\n- {p}" for p in problems)}
+        return run_it
+
+    def wait(state: ExecState) -> dict:
+        st, sid, ids = state["research"], state["step"], list(state.get("wake") or [])
+        if not run.quiet:
+            print(f"  . step {sid}: waiting on jobs {', '.join(ids)} (Ctrl-C leaves them "
+                  f"running; --resume picks them up)", flush=True)
+        while True:
+            found = [jobs.get(run.folder, i) for i in ids]
+            if not any(j and jobs.status(j)["state"] == "running" for j in found):
+                break
+            _, over = budget(run, st)
+            if over:
+                st = stop_all(st, f"stopped: {over}")
+                note = (f"Execution stopped while step {sid} was running: {over}. Its jobs were "
+                        f"stopped. Tell the user; raising the limit and resuming lets it go on.")
+                return {"research": st, "note": note, "outcome": "stopped", "_to": "discussor"}
+            time.sleep(limits.poll_seconds)
+        st = commit(st, [nodes.record_op(st, sid, gpu_hours=round(jobs.gpu_hours(run.folder, sid),
+                                                                  3))], "execution")
+        return {"research": st, "_to": design.owner_of[sid]}
+
+    def validator(state: ExecState) -> dict:
+        st, sid = state["research"], state["step"]
+        node = design.owners[design.owner_of[sid]]
+        try:
+            out = nodes.validator(run, st, design, node=node, step=nodes.plan_step(st, sid),
+                                  report=state.get("report") or {})
+        except RB.BackendCancelled:
+            raise
+        except RB.BackendError as exc:
+            why = f"the validator could not give a verdict: {str(exc)[:600]}"
+            st = commit(st, [nodes.record_op(st, sid, status="fail", problems=[why])], "execution")
+            return {"research": st, "last": f"step {sid}: {why}", "_to": "orchestrator"}
+        st = commit(st, out.ops, design.validator["name"])
+        st = commit(st, [nodes.record_op(st, sid, gpu_hours=round(
+            jobs.gpu_hours(run.folder, sid), 3))], "execution")
+        rec = nodes.records(st)[sid]
+        last = f"step {sid} verdict -- {rec['verdict']}" + "".join(
+            f"\n- {p}" for p in rec.get("problems") or [])
+        return {"research": st, "last": last, "_to": "orchestrator"}
+
+    graph = StateGraph(_Routed)
+    graph.add_node("discussor", discussor)
+    graph.add_node("human", human)
+    graph.add_node("orchestrator", orchestrator)
+    for name in design.owners:
+        graph.add_node(name, owner(name))
+    graph.add_node("wait", wait)
+    graph.add_node("validator", validator)
+
+    owners = list(design.owners)
+    graph.add_edge(START, "orchestrator")
+    graph.add_conditional_edges("orchestrator", _route, ["discussor", "orchestrator", *owners])
+    graph.add_conditional_edges("discussor", _route, ["orchestrator", "human"])
+    graph.add_conditional_edges("human", _route, ["discussor", END])
+    for name in owners:
+        graph.add_conditional_edges(name, _route, ["wait", "validator", "orchestrator"])
+    graph.add_conditional_edges("wait", _route, ["discussor", *owners])
+    graph.add_edge("validator", "orchestrator")
+    return graph.compile(checkpointer=checkpointer)
+
+
+def _route(state: _Routed) -> str:
+    return state["_to"]
+
