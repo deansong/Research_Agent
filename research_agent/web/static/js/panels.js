@@ -92,8 +92,9 @@ export class HistoryPanel {
 // ---- The right column -----------------------------------------------------------------
 
 export class Inspector {
-  constructor({ onError }) {
+  constructor({ onError, onNode }) {
     this.onError = onError;
+    this.onNode = onNode;
     this.facts = document.getElementById("run-facts");
     this.live = document.getElementById("calls-live");
     this.sessionsList = document.getElementById("sessions-list");
@@ -133,7 +134,9 @@ export class Inspector {
       const row = el("div", { class: "call running" },
         el("span", { class: "spinner" }), el("b", { text: e.label }), el("span", { class: "dim small", text: ` ${e.model}` }),
         e.session ? el("a", { href: "#", class: "small", text: ` ${e.session}`, onclick: (ev) => { ev.preventDefault(); this.openSession(e.session); } }) : null,
-        e.attempt > 1 ? pill(`attempt ${e.attempt}`, "warn") : null);
+        e.attempt > 1 ? pill(`attempt ${e.attempt}`, "warn") : null,
+        e.node ? el("a", { href: "#", class: "small live-link", text: " live \u2197", title: `Watch ${e.node} work, in its own window`,
+          onclick: (ev) => { ev.preventDefault(); this.onNode && this.onNode(e.node); } }) : null);
       this.calls.set(e.label, row);
       this.live.prepend(row);
     } else {

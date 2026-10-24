@@ -17,6 +17,14 @@ class Script:
     name = "fake"
     max_access = Access.FULL
 
+    on_progress = None
+    """Set by research_backend for a call that wants live progress."""
+
+    def report(self, snapshot: dict) -> None:
+        """What a real backend does about once a second while it works."""
+        if self.on_progress is not None:
+            self.on_progress(snapshot)
+
     def __init__(self):
         self.answers: dict[str, list] = {}
         self.calls: list[dict] = []

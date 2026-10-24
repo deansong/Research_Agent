@@ -12,8 +12,10 @@ CONCEPT: A call is a new session named <role>-NNN unless it names one; naming
 
 from __future__ import annotations
 
+import json
 import threading
 import time
+from datetime import datetime, timezone
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Callable
@@ -98,14 +100,22 @@ class Run:
         for attempt in range(1, ATTEMPTS + 1):
             self._announce(label, cfg, rb, attempt, prompt, chosen if skills_dir else None)
             started = time.monotonic()
+            live = None
+            if self.listener:
+                info = {"label": label, "session": rb.session_id, "attempt": attempt,
+                        "model": str(cfg)}
+                live = lambda snapshot, info=info: self._tell("live", {**info, "snapshot": snapshot})  # noqa: E731
             try:
                 # Tracing shows the work as it happens too, not only its ends.
-                reply = rb.send(prompt, schema=schema, progress=self.progress or self.trace)
+                reply = rb.send(prompt, schema=schema, progress=self.progress or self.trace,
+                                on_progress=live)
                 problems = check(reply.data) if check else []
             except RB.BackendOutputError as exc:
                 problems = [str(exc)[:2000]]
                 reply = None
-            self._report(label, reply, problems, time.monotonic() - started)
+            self._keep(label, rb, attempt, reply, problems, time.monotonic() - started)
+            self._report(label, reply, problems, time.monotonic() - started,
+                         session=rb.session_id, attempt=attempt)
             if not problems:
                 return reply.data, rb.session_id
             if attempt == ATTEMPTS:
@@ -113,6 +123,23 @@ class Run:
                                  f"Last problems:\n" + "\n".join(f"- {p}" for p in problems))
             prompt = ("Your answer could not be used:\n" + "\n".join(f"- {p}" for p in problems)
                       + "\n\nAnswer the same task again, fixing these.")
+
+    def _keep(self, label, rb, attempt, reply, problems, seconds) -> None:
+        """What the model did in this call, every event of it, in
+        <run>/activity/<session>.jsonl -- research_backend's session keeps
+        only the input and the answer. For looking back at a node's work."""
+        record = {"session": rb.session_id, "turn": len(rb.session.turns), "label": label,
+                  "attempt": attempt, "seconds": round(seconds, 1), "problems": problems,
+                  "at": datetime.now(timezone.utc).isoformat(timespec="seconds"),
+                  "events": list(reply.events) if reply is not None else [],
+                  "reply": (reply.text if reply is not None else "")[:20000]}
+        try:
+            folder = self.folder / "activity"
+            folder.mkdir(parents=True, exist_ok=True)
+            with open(folder / f"{rb.session_id}.jsonl", "a", encoding="utf-8") as out:
+                out.write(json.dumps(record, ensure_ascii=False, default=str) + "\n")
+        except OSError:
+            pass                        # a record that cannot be kept must not stop the work
 
     def next_name(self, role: str) -> str:
         folder = self.rb_home / "sessions"
@@ -145,9 +172,10 @@ class Run:
             sent = f"[+ skills, sent in front of the first message: {_skills_word(skills)}]\n\n" + sent
         print(box(f"{label}: INPUT", sent))
 
-    def _report(self, label, reply, problems, seconds) -> None:
+    def _report(self, label, reply, problems, seconds, *, session="", attempt=1) -> None:
         tokens = reply.tokens if reply is not None else None
         self._tell("call", {"state": "problems" if problems else "end", "label": label,
+                            "session": session, "attempt": attempt,
                             "seconds": round(seconds, 1), "problems": [p[:300] for p in problems[:4]],
                             "tokens": {"input": tokens.input_tokens, "output": tokens.output_tokens}
                             if tokens else None})

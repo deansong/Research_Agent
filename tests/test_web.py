@@ -215,3 +215,45 @@ def test_pause_then_carry_on(web, script):
     d = settle(web, "p")
     assert d["waiting"] and d["transcript"][-1]["text"] == "Here it is."
     assert web.post("/api/runs/p/resume").status_code == 400
+
+
+def test_a_node_s_work_live_and_afterwards(web, script):
+    """Click a graph node: its window shows the call under way -- the events
+    and what is being written -- and every finished call, events and all."""
+    reported, seen = threading.Event(), threading.Event()
+
+    def research(prompt):
+        script.report({"events": [
+            {"kind": "command", "phase": "started", "command": "research_tools.py search lora", "at": 1.0},
+            {"kind": "command", "phase": "completed", "command": "research_tools.py search lora",
+             "exit_code": 0, "output": "12 papers", "at": 3.5},
+            {"kind": "reasoning", "phase": "completed", "summary": ["Comparing ranks"], "at": 4.0}],
+            "elapsed": 5.0, "idle": 1.0, "counts": {"command": 1},
+            "live": {"message": '{"summary": "found'}, "last": "message: found"})
+        reported.set()
+        assert seen.wait(10)
+        return FINDINGS
+
+    script.add("DiscussorOutput", say("Researching.", ("research", "survey")), say("Done."))
+    script.add("ResearcherOutput", research)
+    script.add("OrchestratorOutput", decide("research", questions=["q"]), decide("ask_user", "ok?"))
+    web.post("/api/runs", json={"idea": "LoRA rank", "name": "n"})
+    assert reported.wait(10)
+    live = web.get("/api/runs/n/live", params={"node": "researcher"}).json()["running"]
+    assert len(live) == 1 and live[0]["session"] == "researcher-001" and live[0]["node"] == "researcher"
+    assert [e["kind"] for e in live[0]["events"]] == ["command", "command", "reasoning"]
+    assert live[0]["live"] == {"message": '{"summary": "found'} and live[0]["events_total"] == 3
+    assert web.get("/api/runs/n/live", params={"node": "planner"}).json()["running"] == []
+    seen.set()
+    settle(web, "n")
+    assert web.get("/api/runs/n/live").json()["running"] == [], "nothing runs any more"
+    calls = web.get("/api/runs/n/activity", params={"node": "researcher"}).json()["calls"]
+    assert len(calls) == 1 and calls[0]["session"] == "researcher-001" and calls[0]["turn"] == 1
+    orch = web.get("/api/runs/n/activity", params={"node": "orchestrator"}).json()["calls"]
+    assert [c["session"] for c in orch] == ["orchestrator-002", "orchestrator-001"], "newest first"
+    disc = web.get("/api/runs/n/activity", params={"node": "discussor"}).json()["calls"]
+    assert disc and all(c["node"] == "discussor" for c in disc)
+    page = web.get("/node/n/researcher")
+    assert page.status_code == 200 and "node live view" in page.text
+    events = web.get("/api/runs/n/events?follow=false").text
+    assert '"node": "researcher"' in events, "call events say which node"

@@ -15,10 +15,20 @@ const app = { runId: null, detail: null, unsubscribe: null, tab: "state", side: 
 
 const chat = new Chat({ onSend: send });
 const stateView = new StateView($("state-view"), { onSession: (sid) => inspector.openSession(sid), onError: problem });
-const graph = new GraphPanel($("graph-canvas"), $("graph-legend"));
+const graph = new GraphPanel($("graph-canvas"), $("graph-legend"), (node, kind) => openNode(node, kind));
 const files = new FilesPanel($("files-list"), $("files-view"), problem);
 const historyPanel = new HistoryPanel($("history-list"), $("history-view"), problem);
-const inspector = new Inspector({ onError: problem });
+const inspector = new Inspector({ onError: problem, onNode: (node) => openNode(node) });
+
+// A node's live stream, in its own window: what its model is doing now, and
+// every earlier call of it.
+export function openNode(node, kind) {
+  if (!app.runId) return;
+  if (kind === "human") { $("composer-input").focus(); return; }
+  if (node === "wait") { document.querySelector('#inspector-tabs .tab[data-tab="jobs"]').click(); return; }
+  window.open(`/node/${encodeURIComponent(app.runId)}/${encodeURIComponent(node)}`,
+    `node-${app.runId}-${node}`, "width=1100,height=900");
+}
 
 function problem(err) {
   chat.line(`! ${err.message || err}`, "error");

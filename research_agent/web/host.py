@@ -19,6 +19,7 @@ from __future__ import annotations
 import json
 import re
 import threading
+import time
 import traceback
 from pathlib import Path
 from typing import Callable
@@ -37,6 +38,8 @@ from research_agent.web.events import EventBus
 
 #: How often the watcher looks at the research state file, in seconds.
 WATCH_SECONDS = 0.5
+#: The newest events of a running call that the live view is sent.
+LIVE_EVENTS = 300
 
 
 class Busy(RuntimeError):
@@ -63,6 +66,9 @@ class RunHost:
         """The model call under way, in words -- for asides and the UI."""
         self._status: dict = {}
         self._versions: dict = {}
+        self.live: dict[str, dict] = {}
+        """Session -> the call running in it: label, node, model, when it
+        started, and the newest snapshot of what the model is doing."""
         self.stage = "execution" if (self.folder / "execute.json").exists() else "bootstrap"
         self.session = self._open_execution() if self.stage == "execution" else self._open_bootstrap()
         self._refresh_status()
@@ -299,12 +305,40 @@ class RunHost:
         self.status_event()
 
     def _feed(self, kind: str, data: dict) -> None:
+        if kind == "live":
+            call = self.live.get(data.get("session") or "")
+            if call is not None:
+                call["snapshot"], call["updated"] = data.get("snapshot") or {}, time.time()
+            return
         if kind == "call":
+            session = data.get("session") or ""
             if data.get("state") == "start":
                 self.current = f"{data['label']} ({data['model']})"
-            self.bus.emit("call", **data)
+                self.live[session] = {"label": data["label"], "node": node_of(data["label"]),
+                                      "session": session, "attempt": data.get("attempt", 1),
+                                      "model": data.get("model", ""), "started": time.time(),
+                                      "updated": time.time(), "snapshot": {}}
+            else:
+                self.live.pop(session, None)
+            self.bus.emit("call", **data, node=node_of(data.get("label", "")))
         else:
             self.bus.emit("note", **data)
+
+    def running(self, node: str = "") -> list[dict]:
+        """The calls under way (of one graph node), with their newest
+        snapshot: the last events and the tails of what is being written."""
+        out = []
+        for call in list(self.live.values()):
+            if node and call["node"] != node:
+                continue
+            snap = call.get("snapshot") or {}
+            events = snap.get("events") or []
+            out.append({**{k: v for k, v in call.items() if k != "snapshot"},
+                        "elapsed": round(time.time() - call["started"], 1),
+                        "idle": snap.get("idle"), "counts": snap.get("counts") or {},
+                        "events_total": len(events), "events": events[-LIVE_EVENTS:],
+                        "live": snap.get("live") or {}, "last": snap.get("last", "")})
+        return out
 
     # ---- the research state, watched --------------------------------------------------
 
@@ -337,6 +371,39 @@ class RunHost:
 
 
 # ---- reading a run from its folder ------------------------------------------------------
+
+
+def node_of(label: str) -> str:
+    """The graph node a call belongs to, from its label: "researcher",
+    "planner hypothesize", "step 5 (trainer)", "validate step 5",
+    "discussor (aside)", "reviewer"."""
+    owner = re.fullmatch(r"step \S+ \((.+)\)", label or "")
+    if owner:
+        return owner.group(1)
+    if (label or "").startswith("validate"):
+        return "validator"
+    return (label or "").split(" ")[0]
+
+
+def activity(folder: Path, node: str = "", limit: int = 30) -> list[dict]:
+    """The calls a node made, newest first, every event of each -- from
+    <run>/activity/<session>.jsonl."""
+    out = []
+    for path in (Path(folder) / "activity").glob("*.jsonl"):
+        try:
+            lines = path.read_text(encoding="utf-8").splitlines()
+        except OSError:
+            continue
+        for line in lines:
+            try:
+                rec = json.loads(line)
+            except ValueError:
+                continue
+            rec["node"] = node_of(rec.get("label", ""))
+            if not node or rec["node"] == node:
+                out.append(rec)
+    out.sort(key=lambda r: r.get("at") or "", reverse=True)
+    return out[:limit]
 
 
 def _summary(node: str, update: dict) -> str:

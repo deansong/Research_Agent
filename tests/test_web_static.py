@@ -21,7 +21,7 @@ STATIC = Path(__file__).resolve().parents[1] / "research_agent" / "web" / "stati
 JS = STATIC / "js"
 #: Which page each script runs on (ids are looked up there).
 PAGES = {"app.js": "index.html", "chat.js": "index.html", "panels.js": "index.html",
-         "statewin.js": "state.html"}
+         "statewin.js": "state.html", "node.js": "node.html"}
 
 
 class _Page(HTMLParser):
@@ -74,7 +74,7 @@ def test_every_id_a_script_looks_up_is_on_its_page():
 
 
 def test_what_the_pages_load_is_there():
-    for page in ("index.html", "state.html"):
+    for page in ("index.html", "state.html", "node.html"):
         for ref in _page(page).refs:
             assert (STATIC / ref.lstrip("/")).exists(), f"{page} loads {ref}, which is missing"
 

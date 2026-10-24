@@ -1,0 +1,35 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Node Live View</title>
+  <link rel="stylesheet" href="/css/app.css">
+</head>
+<body class="node-window">
+  <header class="topbar">
+    <div class="brand"><span class="dot"></span>node live view</div>
+    <div class="run-bar">
+      <span id="node-name" class="mono">-</span>
+      <span id="node-state" class="pill">-</span>
+      <span id="run-name" class="dim small mono"></span>
+    </div>
+    <div class="topbar-actions">
+      <label class="follow" title="Show each new call of this node as it starts"><input id="follow" type="checkbox" checked> follow</label>
+      <span id="live-dot" class="live-dot" title="updating"></span>
+    </div>
+  </header>
+  <main class="node-page">
+    <aside class="node-calls">
+      <h2>Calls</h2>
+      <div id="call-list" class="calls"></div>
+    </aside>
+    <section class="node-stream">
+      <div id="call-head" class="call-head"></div>
+      <div id="stream" class="stream"><div class="empty">Waiting for this node's first call...</div></div>
+      <div id="tails" class="tails"></div>
+    </section>
+  </main>
+  <script type="module" src="/js/node.js"></script>
+</body>
+</html>

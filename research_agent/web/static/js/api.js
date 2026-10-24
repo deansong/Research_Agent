@@ -50,6 +50,8 @@ export const api = {
   files: (id) => request("GET", `${run(id)}/files`),
   file: (id, path) => request("GET", `${run(id)}/file?path=${encodeURIComponent(path)}`),
   jobs: (id) => request("GET", `${run(id)}/jobs`),
+  live: (id, node) => request("GET", `${run(id)}/live?node=${encodeURIComponent(node || "")}`),
+  activity: (id, node) => request("GET", `${run(id)}/activity?node=${encodeURIComponent(node || "")}`),
   jobLog: (id, job) => request("GET", `${run(id)}/jobs/${encodeURIComponent(job)}/log`),
 };
 

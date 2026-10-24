@@ -80,6 +80,32 @@ What it shows:
 window and live from the same event stream. Keep it next to the chat, or on
 another screen.
 
+### Each node's work, live, in its own window
+
+Click a node in the **Graph** tab, or **live ↗** next to a call in **Model
+calls**. The node opens in its own window at `/node/<run>/<node>`: every call
+it makes, while it makes it. That is what you watch when you are debugging.
+
+- **The call under way**, refreshed every second:
+  - each command it runs, with the end of its output;
+  - each tool or web search it uses, and each file it changes;
+  - its reasoning, and how long ago it last did anything;
+  - the text it is writing right now (its answer, its reasoning, a command's
+    output).
+- **Its earlier calls**, newest first: every event, what it was sent (the
+  brief) and what it answered. These come from `<run>/activity/<session>.jsonl`.
+  The agent writes one line there per call, in the terminal too, because a
+  research_backend session keeps only the input and the answer.
+- **follow** (on by default) switches to each new call of the node as it starts.
+
+Nodes and their calls: the bootstrap's discussor (asides too), orchestrator,
+researcher, planner (both jobs) and designer; in the execution, each step
+owner (all its steps and attempts), the validator and the reviewer. **wait**
+opens the Jobs tab, and **you** goes back to the chat.
+
+The live feed comes from research_backend's `send(on_progress=)`: every
+provider reports what its model is doing about once a second.
+
 ### The rest
 
 | where | what |
@@ -104,7 +130,7 @@ Deep links: `/?tab=graph&side=jobs#<run>` opens a run with those tabs showing.
 | `static/js/state.js` | the research state view, shared by the tab and the window |
 | `static/js/chat.js`, `md.js` | the conversation; Markdown that is escaped first |
 | `static/js/panels.js`, `graph.js` | files, history, run facts, model calls, jobs; the cytoscape graph |
-| `static/js/app.js`, `statewin.js` | the main page; the state window |
+| `static/js/app.js`, `statewin.js`, `node.js` | the main page; the state window; a node's live window |
 
 - **The run's stage** follows its folder: the bootstrap until `execute.json`
   exists, then the execution.
@@ -128,7 +154,10 @@ Deep links: `/?tab=graph&side=jobs#<run>` opens a run with those tabs showing.
 | GET | `/api/runs/{id}/state`, `/history`, `/history/{n}` | the research state and its changes |
 | GET | `/api/runs/{id}/graph`, `/sessions`, `/sessions/{sid}`, `/files`, `/file?path=`, `/jobs`, `/jobs/{job}/log` | |
 | GET | `/api/runs/{id}/events?after_seq=` | the event stream |
+| GET | `/api/runs/{id}/live?node=` | the calls under way (of one node): their newest events and what is being written |
+| GET | `/api/runs/{id}/activity?node=` | a node's finished calls, newest first, every event |
 | GET | `/state/{id}` | the research state window |
+| GET | `/node/{id}/{node}` | a node's live window |
 
 Errors are `{"detail": {"code", "message"}}`, with status 400, 404 or 409
 (409: the run is busy).

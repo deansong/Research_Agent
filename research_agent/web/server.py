@@ -266,13 +266,23 @@ def create_app(runs_root: Path = RUNS_ROOT, *, roles=(), watch: bool = True) -> 
         return {k: rec.get(k) for k in ("id", "provider", "model", "effort", "access", "skills",
                                         "instructions", "turns", "workdir")}
 
+    @app.get("/api/runs/{run_id}/live")
+    def live(run_id: str, node: str = ""):
+        """The calls under way -- of one graph node, or all -- as they are now."""
+        return {"node": node, "running": host_of(run_id).running(node)}
+
+    @app.get("/api/runs/{run_id}/activity")
+    def node_activity(run_id: str, node: str = "", limit: int = 30):
+        """A node's finished calls, newest first, with every event."""
+        return {"node": node, "calls": H.activity(folder_of(run_id), node, max(1, min(limit, 200)))}
+
     @app.get("/api/runs/{run_id}/files")
     def files(run_id: str):
         folder = folder_of(run_id)
         out = []
         for path in sorted(folder.rglob("*")):
             rel = path.relative_to(folder)
-            if not path.is_file() or rel.parts[0] in ("rb", "__pycache__") \
+            if not path.is_file() or rel.parts[0] in ("rb", "activity", "__pycache__") \
                     or ".git" in rel.parts or rel.name.startswith(".") \
                     or rel.name.startswith("checkpoint.sqlite") or rel.suffix in (".lock", ".tmp"):
                 continue
@@ -343,6 +353,11 @@ def create_app(runs_root: Path = RUNS_ROOT, *, roles=(), watch: bool = True) -> 
                                           "X-Accel-Buffering": "no"})
 
     # ---- the page ---------------------------------------------------------------------
+
+    @app.get("/node/{run_id}/{node}")
+    def node_window(run_id: str, node: str):
+        folder_of(run_id)
+        return FileResponse(STATIC / "node.html", headers={"Cache-Control": "no-store"})
 
     @app.get("/state/{run_id}")
     def state_window(run_id: str):

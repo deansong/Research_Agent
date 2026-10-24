@@ -18,6 +18,7 @@ const STYLE = [
     label: "data(text)", color: "#dce3ee", "font-size": 12, "font-family": "ui-monospace, Menlo, monospace",
     "text-wrap": "wrap", "text-valign": "center", "text-halign": "center",
   } },
+  { selector: "node:active", style: { "overlay-opacity": 0.12, "overlay-color": "#35d6c4" } },
   { selector: "node.active", style: { "border-width": 4, "border-color": "#35d6c4", "background-color": "#123a37" } },
   { selector: "edge", style: {
     width: 1.4, "curve-style": "bezier", "line-color": "#4a5a78", "target-arrow-color": "#4a5a78",
@@ -27,7 +28,8 @@ const STYLE = [
 ];
 
 export class GraphPanel {
-  constructor(container, legend) {
+  constructor(container, legend, onSelect) {
+    this.onSelect = onSelect;      // a node was clicked: its id
     this.container = container;
     this.legend = legend;
     this.cy = null;
@@ -51,6 +53,7 @@ export class GraphPanel {
       layout: { name: "dagre", rankDir: "TB", nodeSep: 40, rankSep: 55, fit: true, padding: 24 },
       autoungrabify: true, wheelSensitivity: 0.2 });
     if (this.active) this.highlight(this.active);
+    this.cy.on("tap", "node", (e) => this.onSelect && this.onSelect(e.target.id(), e.target.data("kind")));
     clear(this.legend).append(...Object.entries(KIND)
       .filter(([k]) => view.nodes.some((n) => n.kind === k))
       .map(([k, c]) => el("span", { class: "swatch" }, el("i", { style: `border-color:${c}` }), k)));
