@@ -136,9 +136,12 @@ def usage(provider: str | None = None):
     Quota. Without a provider, every provider's."""
     from research_backend.limits import usage_all, usage_of
 
+    from research_backend.limits import READERS
+
     if provider is not None:
         return usage_of(provider)
-    return Listing(usage_all(_real()))
+    # Only the providers that report limits (a Strata server has none).
+    return Listing(usage_all([p for p in _real() if p in READERS]))
 
 
 def status(provider: str | None = None):

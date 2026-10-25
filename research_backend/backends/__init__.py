@@ -6,6 +6,8 @@ WHY:   Everything above this folder talks to a provider through the same
        a turn is the Codex SDK, a `claude` subprocess or an `agy` subprocess.
 
     codex         the openai-codex SDK (Codex app-server)
+    codex_strata  the same, with Codex's `strata` profile: the Strata model
+    strata        the Strata server's Responses API directly: text only
     claude_code   the `claude` CLI, one subprocess per turn
     antigravity   the `agy` CLI, one subprocess per turn
     api           a plain chat API -- registered, not written yet
@@ -23,6 +25,8 @@ from research_backend.base import BackendUnavailable
 #: provider name -> "module:Class". Adding a provider is a module and a line here.
 PROVIDERS: dict[str, str] = {
     "codex": "research_backend.backends.codex:CodexBackend",
+    "codex_strata": "research_backend.backends.codex:CodexStrataBackend",
+    "strata": "research_backend.backends.responses:StrataBackend",
     "claude_code": "research_backend.backends.claude_code:ClaudeCodeBackend",
     "antigravity": "research_backend.backends.antigravity:AntigravityBackend",
     "api": "research_backend.backends.api:ApiBackend",
@@ -44,33 +48,38 @@ def load(provider: str, registry: dict[str, str] | None = None):
     return getattr(importlib.import_module(module_path), class_name)
 
 
-# ---- the one Codex client a process needs ----------------------------------
+# ---- the Codex clients a process needs -------------------------------------
 
-_codex = None
+#: Codex providers -> the Codex profile their client starts with.
+CODEX_PROFILES: dict[str, str | None] = {"codex": None, "codex_strata": "strata"}
+
+_codex: dict[str | None, tuple] = {}
 _codex_lock = threading.Lock()
+_registered = False
 
 
-def codex_client():
+def codex_client(profile: str | None = None):
     """A Codex client, opened on first use and shared by every Codex backend
-    this process makes. Closed when the process exits."""
-    global _codex
+    this process makes on the same profile. Closed when the process exits."""
+    global _registered
     with _codex_lock:
-        if _codex is None:
+        if profile not in _codex:
             from research_backend.backends.codex import open_client
 
-            context = open_client()
-            _codex = (context, context.__enter__())
-            atexit.register(close_codex_client)
-        return _codex[1]
+            context = open_client(profile)
+            _codex[profile] = (context, context.__enter__())
+            if not _registered:
+                _registered = True
+                atexit.register(close_codex_client)
+        return _codex[profile][1]
 
 
 def close_codex_client() -> None:
-    global _codex
     with _codex_lock:
-        if _codex is not None:
-            context, _ = _codex
-            _codex = None
-            context.__exit__(None, None, None)
+        opened = list(_codex.values())
+        _codex.clear()
+    for context, _ in opened:
+        context.__exit__(None, None, None)
 
 
 def make(provider: str, model: str | None = None, **options):
@@ -80,6 +89,6 @@ def make(provider: str, model: str | None = None, **options):
     executable, ... -- see each provider's __init__.
     """
     cls = load(provider)
-    if provider == "codex":
-        return cls(codex_client(), model=model, **options)
+    if provider in CODEX_PROFILES:
+        return cls(codex_client(CODEX_PROFILES[provider]), model=model, **options)
     return cls(model=model, **options)

@@ -14,6 +14,9 @@ How each one answers, measured:
     claude_code   (nothing)              the `claude` CLI has no command that
                                          lists models, so this is the aliases
                                          its --help documents plus full ids
+    codex_strata  the `strata` profile   the model the profile names
+    strata        GET <base_url>/models  the Strata server's models, with
+                                         "strata" (its alias) first
     fake          (nothing)              one placeholder
 
 Never raises. A provider that cannot answer comes back with an empty list and
@@ -176,6 +179,23 @@ def _claude_code() -> ModelList:
     return ModelList("claude_code", CLAUDE_MODELS, source=note)
 
 
+def _codex_strata() -> ModelList:
+    from research_backend.backends.codex import profile_model
+
+    model = profile_model("strata") or "strata"
+    return ModelList("codex_strata", (ModelInfo(model, f"{model} (Codex profile 'strata')",
+                                                default=True),),
+                     source="$CODEX_HOME/strata.config.toml")
+
+
+def _strata() -> ModelList:
+    from research_backend.backends.responses import list_models as served
+
+    models = tuple(ModelInfo(id=i, label=label, default=n == 0)
+                   for n, (i, label) in enumerate(served()))
+    return ModelList("strata", models, source="the Strata server (GET /models)")
+
+
 def _fake() -> ModelList:
     return ModelList("fake", (ModelInfo("fake", "canned answers, no model"),),
                      source="built in")
@@ -185,6 +205,8 @@ _LISTERS = {
     "codex": _codex,
     "antigravity": _antigravity,
     "claude_code": _claude_code,
+    "codex_strata": _codex_strata,
+    "strata": _strata,
     "fake": _fake,
 }
 
@@ -258,6 +280,8 @@ CONTEXT_WINDOWS: dict[str, tuple[tuple[str, int], ...]] = {
     "antigravity": (("gemini", 1_000_000), ("claude", 200_000), ("opus", 200_000),
                     ("sonnet", 200_000), ("gpt", 272_000), ("", 200_000)),
     "codex": (("", 272_000),),
+    "codex_strata": (("", 131_072),),
+    "strata": (("", 131_072),),
     "fake": (("", 200_000),),
 }
 

@@ -53,7 +53,8 @@ CODEX_LIMITS = {
 
 
 def test_the_providers_are_the_ones_you_can_send_to():
-    assert RB.list_providers() == ["antigravity", "claude_code", "codex", "fake"]
+    assert RB.list_providers() == ["antigravity", "claude_code", "codex", "codex_strata",
+                                   "fake", "strata"]
     assert RB().list_providers() == RB.list_providers()
 
 

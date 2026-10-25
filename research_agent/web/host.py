@@ -431,6 +431,10 @@ class RunHost:
 
         if provider not in RB.list_providers():
             raise ValueError(f"No provider {provider!r}; they are {', '.join(RB.list_providers())}.")
+        if role in FILE_ROLES.get(group, ()) and not _reaches_files(provider):
+            raise ValueError(f"{provider} has no files or commands, and the {role} needs them; "
+                             f"give it to a provider that has (codex_strata runs the same "
+                             f"model with Codex's tools).")
         if group == "bootstrap":
             if role not in boot_config.ROLES:
                 raise ValueError(f"No bootstrap role {role!r}; they are {', '.join(boot_config.ROLES)}.")
@@ -670,3 +674,16 @@ def run_summary(folder: Path, hosts: dict) -> dict | None:
             "stage": stage_of(st),
             "updated": path.stat().st_mtime, "open": host is not None,
             "busy": bool(host and host.busy)}
+
+
+#: Roles that read or change files, or run commands: a provider without them
+#: (strata, a plain Responses API) cannot be one of them.
+FILE_ROLES = {"bootstrap": ("researcher",),
+              "execution": ("worker", "runner", "writer", "validator", "reviewer")}
+
+
+def _reaches_files(provider: str) -> bool:
+    from research_backend.backends import load
+    from research_backend.base import Access
+
+    return load(provider).max_access != Access.NONE

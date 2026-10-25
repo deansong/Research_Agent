@@ -7,7 +7,7 @@ continue by id, from any script, at any time.
 ```python
 import research_backend as RB
 
-RB.list_providers()          # ['antigravity', 'claude_code', 'codex', 'fake']
+RB.list_providers()          # ['antigravity', 'claude_code', 'codex', 'codex_strata', 'fake', 'strata']
 RB.list_models("codex")      # the models codex accepts, and each one's effort levels
 RB.list_efforts("codex")     # ['low', 'medium', 'high', 'xhigh', 'max', 'ultra']
 RB.list_skills("skills")     # the skills in a folder of <name>/SKILL.md
@@ -60,7 +60,7 @@ want open at once.
 
 | argument | meaning | default |
 | --- | --- | --- |
-| `provider` | `"codex"`, `"claude_code"`, `"antigravity"` or `"fake"` | none yet: `set_provider()` later |
+| `provider` | `"codex"`, `"codex_strata"`, `"strata"`, `"claude_code"`, `"antigravity"` or `"fake"` | none yet: `set_provider()` later |
 | `model` | an id from `list_models()` | the provider's default |
 | `effort` | how hard the model thinks: a level from `list_efforts()` | the model's default |
 | `skills` | which skills the model gets: `None`, `"auto"`, or a list of names (see Skills) | `None` |
@@ -187,6 +187,7 @@ the provider's own, so they differ:
 | codex | per model, e.g. `gpt-5.6-sol`: low, medium, high, xhigh, max, ultra (default medium) | the app-server's model list, so `RB.list_models("codex")` shows each model's |
 | claude_code | low, medium, high, xhigh, max | `claude --effort` |
 | antigravity | low, medium, high, xhigh, max | `agy --effort` |
+| strata | none, minimal, low, medium, high | the Responses API's `reasoning.effort` |
 
 A level the model does not have is refused when you set it, naming the ones
 it has. Leaving it out, or `set_effort(None)`, uses the model's default. It is
@@ -286,7 +287,28 @@ else a per-model table in `catalog.py`.
 | codex | the app-server's `model/list` | the app-server's `account/rateLimits/read` | the Codex thread id |
 | claude_code | a built-in list (`claude` cannot list them) | the last `rate_limit_event` seen during a turn | `claude --resume <id>` |
 | antigravity | `agy models` | `agy -p /quota` | `agy --conversation <id>` |
+| codex_strata | the model the `strata` profile names | none | the Codex thread id |
+| strata | the server's `GET /models`, with `strata` first | none | the conversation is resent each turn, from `~/.research_backend/responses_threads/<thread>.json` |
 | fake | one placeholder | made up | an echo that counts its turns |
+
+### The two Strata providers
+
+Both run the Strata model, a Qwen model served at
+`http://143.167.8.120:21435/v1` with the Responses API. Its key is read from
+`STRATA_API_KEY` in the environment, and is never stored by research_backend.
+
+- **`codex_strata`** is Codex with its `strata` profile,
+  `$CODEX_HOME/strata.config.toml`. It has Codex's tools, sandbox and access
+  levels, so it can serve any role, files and commands included. The profile
+  is read here and passed as `--config` overrides (its model settings and its
+  `[model_providers.*]` tables): `codex --profile` exists only in newer Codex
+  binaries, and the app-server the SDK starts takes no profile. It gets a
+  Codex client of its own.
+- **`strata`** talks to the server directly: no agent, no files, no tools
+  (`max_access` is `none`), so a call that asks for `read_only` or more is
+  refused. It suits the roles that only think about text. A schema is sent as
+  a strict `json_schema` format; the reply streams, so `on_progress` sees it
+  being written. `STRATA_BASE_URL` points it at another server.
 
 None of `list_models`, `usage` and `status` raise. A provider that cannot answer
 comes back with `error` saying why.
@@ -307,7 +329,8 @@ research_backend/
     base.py           what every backend implements, Access, Usage, the errors
     home.py           ~/.research_backend
     backends/         one module per provider; make() builds one by name
-        codex.py  claude_code.py  antigravity.py  api.py (not written yet)  fake.py
+        codex.py  claude_code.py  antigravity.py  responses.py (strata)
+        api.py (not written yet)  fake.py
         _cli.py       what the two CLI-driven backends share
         _progress.py  turning provider events into readable lines
         _schema.py    the strict JSON schema the providers need

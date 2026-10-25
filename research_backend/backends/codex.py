@@ -755,22 +755,98 @@ def _to_usage(usage) -> Usage | None:
 # ---------------------------------------------------------------------------
 
 @contextlib.contextmanager
-def open_client():
+def open_client(profile: str | None = None):
     """Open a Codex client for the life of a session.
 
     One client is shared by every role configured to use Codex; see
     build_backends() in agent/backends/__init__.py, which caches backend
-    instances by (provider, model, options).
+    instances by (provider, model, options). A `profile` gets a client of
+    its own, started with that profile's settings (see profile_overrides).
     """
     path = codex_bin()
-    if path is None:
+    overrides = profile_overrides(profile) if profile else ()
+    if path is None and not overrides:
         with Codex() as client:
             yield client
         return
     from openai_codex import CodexConfig
 
-    with Codex(CodexConfig(codex_bin=path)) as client:
+    with Codex(CodexConfig(codex_bin=path, config_overrides=overrides)) as client:
         yield client
+
+
+#: The parts of a profile that say which model to run and where: the
+#: top-level settings (model, model_provider, model_context_window, ...) and
+#: the [model_providers.*] tables. Its [tui], [features], [apps] are the
+#: interactive CLI's and stay as the base config has them.
+_PROFILE_TABLES = ("model_providers",)
+
+
+def profile_overrides(profile: str) -> tuple[str, ...]:
+    """`$CODEX_HOME/<profile>.config.toml` as `--config key=value` overrides.
+
+    `codex --profile NAME` layers that file over the base config, but only
+    newer Codex binaries have it (0.163 does, 0.153 does not), and the
+    app-server the SDK starts takes no profile. `--config` overrides work on
+    every version, so the file is read here and passed that way. The API key
+    is not in the file: its provider names an `env_key`, which the Codex
+    process reads from the environment it inherits."""
+    import os
+    import tomllib
+    from pathlib import Path
+
+    home = Path(os.environ.get("CODEX_HOME") or Path.home() / ".codex")
+    path = home / f"{profile}.config.toml"
+    if not path.is_file():
+        raise BackendError(f"No Codex profile '{profile}': {path} does not exist.")
+    data = tomllib.loads(path.read_text(encoding="utf-8"))
+    out: list[str] = []
+    for key, value in data.items():
+        if isinstance(value, dict):
+            if key in _PROFILE_TABLES:
+                out += [f"{key}.{k}={_toml(v)}" for k, v in _flatten(value)]
+        else:
+            out.append(f"{key}={_toml(value)}")
+    return tuple(out)
+
+
+def profile_model(profile: str) -> str | None:
+    """The model a profile names, if it names one."""
+    for item in profile_overrides(profile):
+        key, _, value = item.partition("=")
+        if key == "model":
+            import json
+
+            return json.loads(value) if value.startswith('"') else value
+    return None
+
+
+def _flatten(table: dict, prefix: str = ""):
+    for key, value in table.items():
+        dotted = f"{prefix}{_toml_key(key)}"
+        if isinstance(value, dict):
+            yield from _flatten(value, dotted + ".")
+        else:
+            yield dotted, value
+
+
+def _toml_key(key: str) -> str:
+    import re
+
+    return key if re.fullmatch(r"[A-Za-z0-9_-]+", key) else _toml(key)
+
+
+def _toml(value) -> str:
+    """A value as TOML, the way `--config` parses it."""
+    import json
+
+    if isinstance(value, bool):
+        return "true" if value else "false"
+    if isinstance(value, (int, float)):
+        return repr(value)
+    if isinstance(value, (list, tuple)):
+        return "[" + ", ".join(_toml(v) for v in value) + "]"
+    return json.dumps(str(value), ensure_ascii=False)
 
 
 def codex_bin() -> str | None:
@@ -850,3 +926,14 @@ def _heartbeat(elapsed: float, idle: float, total: int,
         trimmed = last[:88] + ("\u2026" if len(last) > 88 else "")
         line += f"\n      last: {trimmed}"
     return line
+
+
+class CodexStrataBackend(CodexBackend):
+    """Codex -- its tools, sandbox and threads -- on the Strata model: the
+    `strata` profile in $CODEX_HOME/strata.config.toml, which points Codex at
+    the Strata server (a Responses API) and names its key's variable,
+    STRATA_API_KEY. Unlike the plain `strata` provider, it can serve any
+    role, files and commands included."""
+
+    name = "codex_strata"
+    profile = "strata"

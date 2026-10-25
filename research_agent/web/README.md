@@ -146,6 +146,12 @@ role's model.
   providers again" refreshes them. Codex lists models by client version, so
   research_backend runs the newest Codex there is: `$RESEARCH_BACKEND_CODEX_BIN`,
   else the `codex` on PATH when it is newer than the Python SDK's bundled one.
+- **Providers without files.** `strata` (the Strata server's API) has no
+  files or commands, so the page refuses it for the roles that need them:
+  the researcher, and the execution's worker, runner, writer, validator and
+  reviewer. `codex_strata` runs the same model through Codex, with its
+  tools, and can be any role. Both read the key from `STRATA_API_KEY`, which
+  must be set where the server runs.
 - **Moving the discussor to another provider** (Claude Code to Codex) cannot
   continue its conversation, because a provider cannot resume another
   provider's thread. Instead:
