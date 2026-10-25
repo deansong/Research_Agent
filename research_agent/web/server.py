@@ -88,6 +88,8 @@ class SetModel(BaseModel):
     provider: str
     model: str = ""
     effort: str = ""
+    backup: list[str] | None = None
+    """Backups in order, "provider[:model[:effort]]"; None keeps them."""
     model_config = {"extra": "forbid"}
 
 
@@ -264,7 +266,7 @@ def create_app(runs_root: Path = RUNS_ROOT, *, roles=(), watch: bool = True) -> 
     def set_model(run_id: str, body: SetModel):
         host = host_of(run_id)
         return act(lambda: host.set_model(body.group, body.role, body.provider, body.model,
-                                          body.effort))
+                                          body.effort, body.backup))
 
     @app.get("/api/runs/{run_id}/state")
     def get_state(run_id: str):

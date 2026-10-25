@@ -144,6 +144,24 @@ line overrides both:
 Names are checked when a run starts: an unknown role, node or skill, or a
 missing skills folder, stops it with what is wrong.
 
+### Backups
+
+A role can name backups, for when its model runs out of credits or cannot be
+reached:
+
+```toml
+[roles.discussor]
+provider = "codex"
+backup = ["codex_strata:strata", "claude_code:sonnet"]
+```
+
+The call moves to the next backup at once, and the model is benched until its
+limit resets: the time the provider names, else an hour. The last backup waits
+for credits as usual. A conversation moved to a backup, such as the
+discussor's, is handed over: the new model gets the recent conversation and
+the whole state. In the web UI, each role's backups are under it in the Run
+tab.
+
 ## A run's folder
 
 ```

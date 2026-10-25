@@ -146,6 +146,13 @@ role's model.
   providers again" refreshes them. Codex lists models by client version, so
   research_backend runs the newest Codex there is: `$RESEARCH_BACKEND_CODEX_BIN`,
   else the `codex` on PATH when it is newer than the Python SDK's bundled one.
+- **Backups.** Under each role, **backup** lists what it moves to, in order,
+  when its model is out of credits or cannot be reached
+  (`codex_strata, claude_code:sonnet`). The call moves on at once, and the
+  model is benched until its limit resets: the time the provider names, else
+  an hour. While a role runs on a backup, its row says **on backup: ...**, and
+  the chat notes the switch. The last backup waits for credits as usual. A
+  role with no backup waits up to a day for its credits, as before.
 - **Providers without files.** `strata` (the Strata server's API) has no
   files or commands, so the page refuses it for the roles that need them:
   the researcher, and the execution's worker, runner, writer, validator and
@@ -210,7 +217,7 @@ Deep links: `/?tab=graph&side=jobs#<run>` opens a run with those tabs showing.
 | POST | `/api/runs/{id}/break` | `{step, when: before\|after, on}` |
 | POST | `/api/runs/{id}/execute` | `{wall_hours, gpu_hours, confirm}` |
 | GET | `/api/runs/{id}/state`, `/history`, `/history/{n}` | the research state and its changes |
-| GET, PUT | `/api/runs/{id}/models` | each role's provider, model and effort; `{group, role, provider, model, effort}` changes one |
+| GET, PUT | `/api/runs/{id}/models` | each role's provider, model, effort, backups and what it runs on now; `{group, role, provider, model, effort, backup}` changes one (`backup` left out keeps them) |
 | GET | `/api/runs/{id}/skills` | the skills folder's skills: name and description |
 | GET, PUT | `/api/runs/{id}/nodes/{node}`, `/nodes/{node}/skills` | a node's settings; `{key, mode: none\|auto\|chosen\|design, skills}` chooses its skills |
 | GET | `/api/providers` | each provider's models and effort levels (cached ten minutes) |

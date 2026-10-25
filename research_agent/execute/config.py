@@ -19,7 +19,7 @@ import tomllib
 from dataclasses import asdict, dataclass, field, replace
 from pathlib import Path
 
-from research_agent.bootstrap.config import REPOSITORY, RoleConfig
+from research_agent.bootstrap.config import REPOSITORY, RoleConfig, backup_problems, role_fields
 
 #: Roles the execution stage runs. Step owners are worker, runner and writer,
 #: by the role the design gives them.
@@ -94,6 +94,7 @@ def check(cfg: ExecConfig) -> list[str]:
     problems = [f"no role {r!r} (the roles are {', '.join(ROLES)})" for r in cfg.roles
                 if r not in ROLES]
     problems += [f"role {r!r} is not configured" for r in ROLES if r not in cfg.roles]
+    problems += backup_problems(cfg.roles)
     if cfg.confirm not in CONFIRM:
         problems.append(f"confirm is {cfg.confirm!r}; it is one of {', '.join(CONFIRM)}")
     if cfg.max_attempts < 1:
@@ -119,7 +120,7 @@ def _merge(cfg: ExecConfig, data: dict, *, base: Path) -> ExecConfig:
     roles = dict(cfg.roles)
     for role, spec in (data.get("roles") or {}).items():
         known = roles.get(role)
-        fields = {k: v for k, v in spec.items() if k in ("provider", "model", "effort", "options")}
+        fields = role_fields(spec)
         roles[role] = replace(known, **fields) if known else RoleConfig(**fields)
     skills_dir = cfg.skills_dir
     folder = (data.get("skills") or {}).get("dir", ...)

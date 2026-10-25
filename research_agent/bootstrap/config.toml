@@ -34,6 +34,14 @@ designer = "none"
 # `effort` is a level from RB.list_efforts(provider) -- not for antigravity,
 # whose model ids carry the level themselves (gemini-3.8-flash-high).
 # `options` go to the provider: timeout, max_seconds, ...
+# `backup` is what the role moves to, in order, when its model is out of
+# credits or cannot be reached: "provider[:model[:effort]]" each. The call
+# moves on at once (the model does not wait for its credits) and the model is
+# benched until its limit resets -- the time the provider names, else an
+# hour. The last one waits for credits as usual. A conversation (the
+# discussor's) moved to a backup is handed over, as when you change its
+# provider. Without `backup`, a model out of credits waits up to a day.
+#     backup = ["codex_strata:strata", "claude_code:sonnet"]
 
 [roles.discussor]
 provider = "codex"

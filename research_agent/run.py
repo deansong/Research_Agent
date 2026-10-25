@@ -28,6 +28,13 @@ ATTEMPTS = 3
 #: Skills for a call: look them up in Run.skills by role (or skills_key).
 BY_ROLE = object()
 
+#: How long a model out of credits (or unreachable) is benched when the
+#: provider does not say when its limit resets.
+BENCH_SECONDS = 3600.0
+
+#: Turns of a conversation a backup taking it over is given.
+HANDOVER_TURNS = 8
+
 
 class NodeFailed(RB.BackendError):
     """A node could not give a usable answer within its attempts."""
@@ -59,6 +66,9 @@ class Run:
         # One discussor turn at a time: the graph's, and the user's asides
         # while the graph works, share one conversation.
         self.discussor_lock = threading.Lock()
+        #: Models out of credits or unreachable -> until when (epoch seconds):
+        #: their roles' calls go to the backups meanwhile.
+        self.benched: dict[str, float] = {}
 
     def say(self, text: str) -> None:
         """A line about the work (not a model call): printed, and passed on."""
@@ -80,18 +90,94 @@ class Run:
     def call(self, role: str, *, brief: str, schema, skills_key: str | None = None,
              skills=BY_ROLE, instructions: str | None = None, access: str | None = None,
              workdir: Path | None = None, session: str | None = None, label: str = "",
-             check: Callable[[object], list[str]] | None = None):
+             check: Callable[[object], list[str]] | None = None,
+             takeover: Callable[[], str] | None = None):
         """One node call: (answer, session id). Retries with the problems.
 
         `session` names the session: an existing one is continued (and given
-        these instructions from now on), a new one is started."""
-        cfg = self.roles[role]
+        these instructions from now on), a new one is started.
+
+        When the role's model is out of credits or cannot be reached, the
+        call moves to the role's backups in order (RoleConfig.backup), and
+        the model stays benched until its limit resets. A named conversation
+        moved that way starts afresh on the backup with `takeover()` -- or,
+        without one, the old session's recent turns -- before the brief."""
+        label = label or (skills_key or role).replace("_", " ")
+        chain = self._chain(self.roles[role])
+        for n, cfg in enumerate(chain):
+            final = n == len(chain) - 1
+            sent = brief
+            if n and session and self._moved(session, cfg.provider) is not None:
+                sent = takeover() if takeover else self._handover(session) + "\n\n" + brief
+            try:
+                return self._call_on(cfg, role, final=final, brief=sent, schema=schema,
+                                     skills_key=skills_key, skills=skills,
+                                     instructions=instructions, access=access, workdir=workdir,
+                                     session=session, label=label, check=check)
+            except (RB.BackendOutOfCredits, RB.BackendUnavailable) as exc:
+                if final:
+                    raise
+                until = self._bench(cfg, exc)
+                self.say(f"  ! {label}: {cfg} {_why(exc)}; {chain[n + 1]} takes over "
+                         f"(until {until})")
+
+    def current(self, role: str):
+        """The model a role's next call runs on: the first of it and its
+        backups that is not benched."""
+        return self._chain(self.roles[role])[0]
+
+    def _chain(self, cfg) -> list:
+        """The role's model, then its backups, without the benched ones (the
+        last is always kept: with nothing else left, it waits for credits)."""
+        backups = cfg.backups() if hasattr(cfg, "backups") else []
+        if not backups:
+            return [cfg]
+        everything = [cfg, *backups]
+        now = time.time()
+        free = [c for c in everything if self.benched.get(str(c), 0) <= now]
+        return free or everything[-1:]
+
+    def _bench(self, cfg, exc) -> str:
+        """Bench a model until its limit resets (as the provider says), else
+        for BENCH_SECONDS. Returns when, as a clock time."""
+        from research_backend import quota
+
+        delay = quota.reset_delay(str(exc)) if isinstance(exc, RB.BackendOutOfCredits) else None
+        delay = delay + 60 if delay is not None else BENCH_SECONDS
+        self.benched[str(cfg)] = time.time() + delay
+        return quota.until(delay)
+
+    def _handover(self, session: str) -> str:
+        """For a conversation moved to another provider: its recent turns."""
+        from research_backend import conversation
+
+        try:
+            old = conversation.open_session(session, home=self.rb_home)
+        except Exception:  # noqa: BLE001 - nothing to hand over
+            return ""
+        turns = old.turns[-HANDOVER_TURNS:]
+        if not turns:
+            return ""
+        lines = [f"[sent] {(t.get('prompt') or '')[-2000:]}\n[you answered] "
+                 f"{(t.get('reply') or '')[:2000]}" for t in turns]
+        return ("=== YOU TAKE OVER THIS CONVERSATION ===\n"
+                "Until now another model held it and could not go on. Its last "
+                f"{len(turns)} turns:\n\n" + "\n\n".join(lines)
+                + "\n\n=== NOW ===")
+
+    def _call_on(self, cfg, role: str, *, final: bool, brief: str, schema, skills_key,
+                 skills, instructions, access, workdir, session, label, check):
+        """The call on one model: up to ATTEMPTS answers."""
         chosen = (self.skills or {}).get(skills_key or role) if skills is BY_ROLE else skills
         skills_dir = self.skills_dir if self.skills_dir and Path(self.skills_dir).is_dir() else None
         standing = self.instructions.get(role, "") if instructions is None else instructions
+        options = dict(cfg.options)
+        if not final:
+            # A backup waits: this model does not wait for its credits.
+            options["credit_wait_hours"] = 0
         rb = RB(cfg.provider, cfg.model, effort=cfg.effort, instructions=standing,
                 access=access, workdir=str(workdir or self.folder), home=self.rb_home,
-                skills=chosen if skills_dir else None, skills_dir=skills_dir, **cfg.options)
+                skills=chosen if skills_dir else None, skills_dir=skills_dir, **options)
         if session:
             self._retire_if_moved(session, cfg.provider)
         rb.new_session(session or self.next_name(role), exist_ok=bool(session))
@@ -106,7 +192,6 @@ class Run:
             # A continued conversation (the discussor's) keeps its skills
             # unless they were changed since: then it gets the new ones.
             rb.set_skills(chosen or None)
-        label = label or (skills_key or role).replace("_", " ")
         prompt = brief
         for attempt in range(1, ATTEMPTS + 1):
             self._announce(label, cfg, rb, attempt, prompt, chosen if skills_dir else None)
@@ -124,6 +209,10 @@ class Run:
             except RB.BackendOutputError as exc:
                 problems = [str(exc)[:2000]]
                 reply = None
+            except (RB.BackendOutOfCredits, RB.BackendUnavailable) as exc:
+                self._report(label, None, [f"{cfg}: {_why(exc)}"], time.monotonic() - started,
+                             session=rb.session_id, attempt=attempt)
+                raise
             self._keep(label, rb, attempt, reply, problems, time.monotonic() - started)
             self._report(label, reply, problems, time.monotonic() - started,
                          session=rb.session_id, attempt=attempt)
@@ -153,9 +242,10 @@ class Run:
             pass                        # a record that cannot be kept must not stop the work
 
     def takes_over(self, session: str, role: str) -> bool:
-        """The named conversation is on another provider than the role's now
-        (its model was changed): the next call starts it afresh."""
-        return self._moved(session, self.roles[role].provider) is not None
+        """The named conversation is on another provider than the one the
+        role's next call runs on (its model was changed, or it moved to a
+        backup or back): the next call starts it afresh."""
+        return self._moved(session, self.current(role).provider) is not None
 
     def _moved(self, session: str, provider: str):
         from research_backend import conversation
@@ -231,6 +321,12 @@ def box(title: str, text: str) -> str:
     """A titled block of text for the terminal."""
     rule = "-" * max(10, 78 - len(title))
     return f"\n---- {title} {rule}\n{(text or '').rstrip()}\n{'-' * 84}\n"
+
+
+def _why(exc: BaseException) -> str:
+    if isinstance(exc, RB.BackendOutOfCredits):
+        return "is out of credits or over its usage limit"
+    return f"cannot be used ({str(exc).splitlines()[0][:160] if str(exc) else type(exc).__name__})"
 
 
 def _skills_word(skills) -> str:

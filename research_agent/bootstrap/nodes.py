@@ -91,13 +91,17 @@ def discussor(run: Run, st: dict, *, seen: dict, user: str = "", note: str = "")
         return problems
 
     brief = views.discussor_turn(st, seen, user=user, note=note)
+
+    def takeover() -> str:
+        # A new provider: the conversation so far, and the whole state.
+        return chat.handover(run.folder) + "\n\n" + views.discussor_turn(st, {}, user=user,
+                                                                          note=note)
     if run.takes_over(DISCUSSOR_SESSION, "discussor"):
-        brief = chat.handover(run.folder) + "\n\n" + views.discussor_turn(st, {}, user=user,
-                                                                             note=note)
+        brief = takeover()
     with run.discussor_lock:
         out, session = run.call("discussor", brief=brief,
                                 schema=schemas.DiscussorOutput, session=DISCUSSOR_SESSION,
-                                check=check)
+                                check=check, takeover=takeover)
     ops: list[dict] = []
     goal = {k: v for k, v in out.goal.model_dump().items() if v}
     if goal:
@@ -120,13 +124,15 @@ def discussor(run: Run, st: dict, *, seen: dict, user: str = "", note: str = "")
 def aside(run: Run, st: dict, *, user: str, activity: str = "") -> schemas.BootstrapAside:
     """The user writes while the team works: the discussor answers in its own
     conversation; requests and decisions go to the inbox for the graph."""
-    brief = views.aside(st, user=user, activity=activity)
+    plain = views.aside(st, user=user, activity=activity)
+    brief = plain
     if run.takes_over(DISCUSSOR_SESSION, "discussor"):
-        brief = chat.handover(run.folder) + "\n\n" + brief
+        brief = chat.handover(run.folder) + "\n\n" + plain
     with run.discussor_lock:
         out, _ = run.call("discussor", brief=brief,
                           schema=schemas.BootstrapAside, session=DISCUSSOR_SESSION,
-                          label="discussor (aside)")
+                          label="discussor (aside)",
+                          takeover=lambda: chat.handover(run.folder) + "\n\n" + plain)
     for r in out.requests:
         inbox.post(run.folder, "request", text=r.detail, request_kind=r.kind)
     for d in out.decisions:

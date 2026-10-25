@@ -38,9 +38,34 @@ class RoleConfig:
     model: str | None = None
     effort: str | None = None
     options: dict = field(default_factory=dict)
+    backup: tuple[str, ...] = ()
+    """What the role moves to, in order, when this model is out of credits
+    or cannot be reached: "provider[:model[:effort]]" each (see run.py)."""
 
     def __str__(self) -> str:
         return ":".join(x for x in (self.provider, self.model or "", self.effort or "") if x)
+
+    def backups(self) -> list["RoleConfig"]:
+        """The backups as RoleConfigs (options: none of the main model's)."""
+        return [spec_of(text) for text in self.backup]
+
+
+def spec_of(text: str) -> RoleConfig:
+    """'codex:gpt-6-sol:high' -> RoleConfig."""
+    provider, model, effort = (str(text).strip().split(":") + ["", ""])[:3]
+    if not provider.strip():
+        raise ValueError(f"{text!r} names no provider; write provider[:model[:effort]].")
+    return RoleConfig(provider.strip(), model.strip() or None, effort.strip() or None)
+
+
+def role_fields(spec: dict) -> dict:
+    """The RoleConfig fields of a role as a config file has it."""
+    fields = {k: v for k, v in spec.items() if k in ("provider", "model", "effort", "options",
+                                                    "backup")}
+    if "backup" in fields:
+        backup = fields["backup"] or ()
+        fields["backup"] = tuple([backup] if isinstance(backup, str) else backup)
+    return fields
 
 
 @dataclass(frozen=True)
@@ -59,7 +84,8 @@ class BootstrapConfig:
         # Every field, empty ones too: a role given without a model must not
         # get the default's model back when the file is read again.
         return {"roles": {r: {"provider": c.provider, "model": c.model, "effort": c.effort,
-                              "options": c.options} for r, c in self.roles.items()},
+                              "options": c.options, "backup": list(c.backup)}
+                          for r, c in self.roles.items()},
                 "skills": {"dir": str(self.skills_dir) if self.skills_dir else None,
                            **{n: c if c is not None else "none" for n, c in self.skills.items()}}}
 
@@ -108,6 +134,7 @@ def check(cfg: BootstrapConfig) -> list[str]:
     problems = [f"no role {r!r} (the roles are {', '.join(ROLES)})" for r in cfg.roles
                 if r not in ROLES]
     problems += [f"role {r!r} is not configured" for r in ROLES if r not in cfg.roles]
+    problems += backup_problems(cfg.roles)
     problems += [f"no node {n!r} for skills (they are {', '.join(NODES)})" for n in cfg.skills
                  if n not in NODES]
     chosen = {n: c for n, c in cfg.skills.items() if c is not None}
@@ -121,6 +148,24 @@ def check(cfg: BootstrapConfig) -> list[str]:
             if isinstance(choice, list):
                 problems += [f"{node}: no skill called {s!r} in {cfg.skills_dir}"
                              for s in choice if s not in known]
+    return problems
+
+
+def backup_problems(roles: dict) -> list[str]:
+    """Backups that name no provider research_backend has."""
+    import research_backend as RB
+
+    known = set(RB.list_providers())
+    problems = []
+    for role, c in roles.items():
+        for text in c.backup:
+            try:
+                provider = spec_of(text).provider
+            except ValueError as exc:
+                problems.append(f"{role}: backup {exc}")
+                continue
+            if provider not in known:
+                problems.append(f"{role}: backup {text!r}: no provider {provider!r}")
     return problems
 
 
@@ -160,7 +205,7 @@ def _merge(cfg: BootstrapConfig, data: dict, *, base: Path) -> BootstrapConfig:
     roles = dict(cfg.roles)
     for role, spec in (data.get("roles") or {}).items():
         known = roles.get(role)
-        fields = {k: v for k, v in spec.items() if k in ("provider", "model", "effort", "options")}
+        fields = role_fields(spec)
         roles[role] = replace(known, **fields) if known else RoleConfig(**fields)
     skills = dict(cfg.skills)
     skills_dir = cfg.skills_dir

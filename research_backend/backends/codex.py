@@ -334,7 +334,8 @@ class CodexBackend:
                             f"Still out of credits or over the usage limit after "
                             f"waiting {credits.describe_budget()}. Stopping.\n"
                             f"Your progress is saved -- Start the session again "
-                            f"(or rerun with the same --session) to carry on."
+                            f"(or rerun with the same --session) to carry on.\n"
+                            f"It said: {str(error)[:600]}"
                         ) from None
                     say(self, f"\n    Out of credits or over the usage limit. "
                           f"Waiting {seconds / 60:.0f} min ({why}, at "

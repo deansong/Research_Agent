@@ -37,6 +37,16 @@ reviewer = ["peer-review", "scientific-critical-thinking"]
 # Which provider and model each role runs on, as in the bootstrap. Step owners
 # (worker, runner, writer) write code and run it: Claude Code by default, with
 # a long idle timeout because a command may run for minutes.
+#
+# `backup` is what the role moves to, in order, when its model is out of
+# credits or cannot be reached: "provider[:model[:effort]]" each. The call
+# moves on at once (the model does not wait for its credits) and the model is
+# benched until its limit resets -- the time the provider names, else an
+# hour. The last one waits for credits as usual. A conversation (the
+# discussor's, a step owner's) moved to a backup is handed over, as when you change its
+# provider. Without `backup`, a model out of credits waits up to a day.
+#     backup = ["codex_strata:strata", "claude_code:sonnet"]
+# A step owner's backup must have files and commands (not `strata`).
 
 [roles.orchestrator]
 provider = "codex"

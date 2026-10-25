@@ -302,8 +302,21 @@ def test_the_models_each_role_runs_on_can_be_changed(web, script, monkeypatch):
                                             "effort": "high"})
     assert r.status_code == 200 and json.loads((folder / "execute.json").read_text())[
         "roles"]["runner"] == {"provider": "claude_code", "model": "opus", "effort": "high",
-                               "options": {"timeout": 1200}}
+                               "options": {"timeout": 1200}, "backup": []}
     assert web.get("/api/runs/m").json()["stage"] == "bootstrap", "execute.json starts nothing"
+    # Backups: saved, kept when the model changes, and checked.
+    r = web.put("/api/runs/m/models", json={"group": "bootstrap", "role": "discussor",
+                                            "provider": "codex", "model": "gpt-5.6-sol",
+                                            "backup": ["claude_code:sonnet", " "]})
+    assert r.status_code == 200 and host.session.run.roles["discussor"].backup == (
+        "claude_code:sonnet",)
+    web.put("/api/runs/m/models", json={"group": "bootstrap", "role": "discussor",
+                                        "provider": "codex", "model": ""})
+    shown = web.get("/api/runs/m/models").json()["groups"][0]["roles"]["discussor"]
+    assert shown["backup"] == ["claude_code:sonnet"] and shown["now"] == "codex"
+    assert web.put("/api/runs/m/models", json={"group": "execution", "role": "runner",
+                                               "provider": "codex",
+                                               "backup": ["strata"]}).status_code == 400
     assert web.put("/api/runs/m/models", json={"group": "execution", "role": "chef",
                                                "provider": "codex"}).status_code == 400
     assert web.put("/api/runs/m/models", json={"group": "bootstrap", "role": "planner",

@@ -411,15 +411,20 @@ class RunHost:
         boot = boot_config.load(self.folder)
         exe = exec_config.load(self.folder)
 
-        def show(roles):
-            return {r: {"provider": c.provider, "model": c.model or "", "effort": c.effort or ""}
+        def show(roles, group):
+            # "now": what the role's next call runs on -- a backup while its
+            # model is out of credits.
+            run = self.session.run if self.session and group == self.stage else None
+            return {r: {"provider": c.provider, "model": c.model or "", "effort": c.effort or "",
+                        "backup": list(c.backup),
+                        "now": str(run.current(r)) if run and r in run.roles else str(c)}
                     for r, c in roles.items()}
         return {"stage": self.stage, "groups": [
-            {"name": "bootstrap", "file": "config.json", "roles": show(boot.roles)},
-            {"name": "execution", "file": "execute.json", "roles": show(exe.roles)}]}
+            {"name": "bootstrap", "file": "config.json", "roles": show(boot.roles, "bootstrap")},
+            {"name": "execution", "file": "execute.json", "roles": show(exe.roles, "execution")}]}
 
     def set_model(self, group: str, role: str, provider: str, model: str = "",
-                  effort: str = "") -> dict:
+                  effort: str = "", backup: list[str] | None = None) -> dict:
         """Change one role's provider, model or effort: saved to the run's
         config file, and used from the next call. A discussor moved to another
         provider hands its conversation over (research_agent/chat.py)."""
@@ -427,10 +432,20 @@ class RunHost:
             options = dict(old.options) if old else {}
             if old and old.provider != provider:
                 options = {k: v for k, v in options.items() if k in ("timeout", "max_seconds")}
-            return RoleConfig(provider, model or None, effort or None, options)
+            kept = tuple(old.backup) if old and backup is None else tuple(
+                x.strip() for x in backup or () if x.strip())
+            return RoleConfig(provider, model or None, effort or None, options, kept)
 
         if provider not in RB.list_providers():
             raise ValueError(f"No provider {provider!r}; they are {', '.join(RB.list_providers())}.")
+        for text in backup or ():
+            if text.strip() and boot_config.spec_of(text).provider not in RB.list_providers():
+                raise ValueError(f"Backup {text!r}: no provider "
+                                 f"{boot_config.spec_of(text).provider!r}.")
+            if (text.strip() and role in FILE_ROLES.get(group, ())
+                    and not _reaches_files(boot_config.spec_of(text).provider)):
+                raise ValueError(f"Backup {text!r}: {boot_config.spec_of(text).provider} has no "
+                                 f"files or commands, and the {role} needs them.")
         if role in FILE_ROLES.get(group, ()) and not _reaches_files(provider):
             raise ValueError(f"{provider} has no files or commands, and the {role} needs them; "
                              f"give it to a provider that has (codex_strata runs the same "
@@ -453,7 +468,8 @@ class RunHost:
             raise ValueError("The group is bootstrap or execution.")
         if live:
             self.session.run.roles[role] = spec
-        self.bus.emit("note", text=f"{group} {role} now runs on {spec} (from its next call).")
+        then = f", then {', '.join(spec.backup)}" if spec.backup else ""
+        self.bus.emit("note", text=f"{group} {role} now runs on {spec}{then} (from its next call).")
         self.status_event()
         return {"role": role, "group": group, "now": str(spec)}
 

@@ -231,6 +231,10 @@ table.models select { font: 11.5px var(--sans); color: var(--text); background: 
 table.models select.unknown { border-color: var(--danger); color: var(--danger); }
 table.models td .dim { display: block; max-width: 90px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 table.models td { padding: 3px 4px; }
+table.models tr.backup-row td { padding-top: 0; padding-bottom: 6px; }
+table.models .backup-label { color: var(--text-dim); display: flex; align-items: center; gap: 6px; }
+table.models input.backup { flex: 1; min-width: 0; font: 11.5px var(--mono); color: var(--text);
+  background: var(--bg-input); border: 1px solid var(--line-bright); border-radius: 4px; padding: 2px 5px; }
 .calls { display: flex; flex-direction: column; gap: 4px; }
 .call { display: block; text-decoration: none; color: var(--text); padding: 5px 7px; border-radius: 5px;
   border: 1px solid var(--line); font-size: 12px; }

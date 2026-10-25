@@ -305,13 +305,16 @@ def discussor(run: ExecRun, st: dict, *, seen: dict, user: str = "", note: str =
                 + step_problems(st, out.retry, out.waive))
 
     brief = views.discussor_turn(st, seen, user=user, note=note, awaiting=awaiting)
-    if run.takes_over(DISCUSSOR_SESSION, "discussor"):
+
+    def takeover() -> str:
         # A new provider: the conversation so far, and the whole state.
-        brief = chat.handover(run.folder) + "\n\n" + views.discussor_turn(
+        return chat.handover(run.folder) + "\n\n" + views.discussor_turn(
             st, {}, user=user, note=note, awaiting=awaiting)
+    if run.takes_over(DISCUSSOR_SESSION, "discussor"):
+        brief = takeover()
     with run.discussor_lock:
         out, session = run.call("discussor", brief=brief, schema=schemas.ExecDiscussorOutput,
-                                session=DISCUSSOR_SESSION, check=check)
+                                session=DISCUSSOR_SESSION, check=check, takeover=takeover)
     ops = breakpoint_ops(st, out.breakpoints)
     ops += [{"op": "add", "section": "decisions", "value": {**d.model_dump(), "by": "user"}}
             for d in out.decisions]
@@ -332,12 +335,14 @@ def aside(run: ExecRun, st: dict, *, user: str, activity: str) -> schemas.AsideO
         return breakpoint_problems(st, out.breakpoints) + step_problems(st, out.retry, out.waive)
 
     brief = views.aside(st, user=user, activity=activity, run_dir=str(run.folder))
+    plain = brief
     if run.takes_over(DISCUSSOR_SESSION, "discussor"):
-        brief = chat.handover(run.folder) + "\n\n" + brief
+        brief = chat.handover(run.folder) + "\n\n" + plain
     with run.discussor_lock:
         out, _ = run.call("discussor", brief=brief,
                           schema=schemas.AsideOutput, session=DISCUSSOR_SESSION, check=check,
-                          label="discussor (aside)")
+                          label="discussor (aside)",
+                          takeover=lambda: chat.handover(run.folder) + "\n\n" + plain)
     for b in out.breakpoints:
         inbox.post(run.folder, "breakpoint", step=b.step, when=b.when, on=b.on)
     for r in out.requests:

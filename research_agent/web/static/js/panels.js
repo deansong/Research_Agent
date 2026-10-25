@@ -142,7 +142,7 @@ export class Inspector {
           el("table", { class: "grid small models" }, el("tbody", {},
             Object.entries(group.roles).map(([role, c]) => this.modelRow(group.name, role, c, known))))));
       }
-      box.append(el("p", { class: "hint", text: "Changing the discussor's provider hands its conversation over to a new session: it is given the recent conversation and the whole research state." }),
+      box.append(el("p", { class: "hint", text: "Changing the discussor's provider hands its conversation over to a new session: it is given the recent conversation and the whole research state. A role's backups take over, in order, when its model is out of credits or cannot be reached." }),
         el("a", { href: "#", class: "small", text: "\u21bb ask the providers for their models again", onclick: (e) => {
           e.preventDefault(); this.providers = null; this.refreshNext = true; this.loadModels(); } }));
     } catch (err) { this.onError(err); }
@@ -151,7 +151,7 @@ export class Inspector {
   modelRow(group, role, c, known) {
     const save = async (patch) => {
       try {
-        const now = await api.setModel(this.runId, { group, role, provider: c.provider, model: c.model, effort: c.effort, ...patch });
+        const now = await api.setModel(this.runId, { group, role, provider: c.provider, model: c.model, effort: c.effort, backup: c.backup, ...patch });
         Object.assign(c, patch);
         status.textContent = `\u2713 ${now.now}`;
         if (patch.provider || patch.model !== undefined) this.loadModels();
@@ -162,7 +162,16 @@ export class Inspector {
     const options = (list, value, blank) => [blank !== undefined ? el("option", { value: "", text: blank, selected: !value }) : null,
       ...[...new Set([...(value ? [value] : []), ...list])].map((x) => el("option", { value: x, text: x, selected: x === value }))];
     const status = el("span", { class: "dim small" });
-    return el("tr", {},
+    const main = [c.provider, c.model, c.effort].filter(Boolean).join(":");
+    const onBackup = c.now && c.now !== main;
+    const backupRow = el("tr", { class: "backup-row" }, el("td", { colspan: 4 },
+      el("label", { class: "small backup-label", title: "When this model is out of credits or cannot be reached, its calls move to these, in order, until its limit resets. provider[:model[:effort]], comma-separated." },
+        "backup ",
+        el("input", { type: "text", class: "mono small backup", placeholder: "e.g. codex_strata, claude_code:sonnet",
+          value: (c.backup || []).join(", "),
+          onchange: (e) => save({ backup: e.target.value.split(",").map((x) => x.trim()).filter(Boolean) }) })),
+      onBackup ? el("span", { class: "pill pill-warn small", title: `${main} is out of credits or unreachable`, text: `on backup: ${c.now}` }) : null));
+    return [el("tr", {},
       el("td", {}, el("div", { class: "mono", text: role }), status),
       el("td", {}, el("select", { onchange: (e) => save({ provider: e.target.value, model: "", effort: "" }) },
         options(Object.keys(known).length ? Object.keys(known) : [c.provider], c.provider))),
@@ -172,7 +181,8 @@ export class Inspector {
           ? `${c.provider} does not list ${c.model}: its calls will likely fail` : ""),
         onchange: (e) => save({ model: e.target.value, effort: "" }) },
         options(p.models, c.model, "default"))),
-      el("td", {}, el("select", { onchange: (e) => save({ effort: e.target.value }) }, options(efforts, c.effort, "default"))));
+      el("td", {}, el("select", { onchange: (e) => save({ effort: e.target.value }) }, options(efforts, c.effort, "default")))),
+      backupRow];
   }
 
   // A model call started or ended (from the event stream).
