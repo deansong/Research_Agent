@@ -97,6 +97,11 @@ class Run:
         rb.new_session(session or self.next_name(role), exist_ok=bool(session))
         if rb.session.instructions != standing:
             rb.set_instructions(standing)
+        if session and (rb.session.model, rb.session.effort) != (cfg.model, cfg.effort):
+            # A continued conversation keeps the model it started with unless
+            # the role's model or effort was changed since: then it moves on
+            # (same provider; another provider starts afresh, see above).
+            rb.session.update(model=cfg.model, effort=cfg.effort)
         if skills_dir and session and rb.session.skills != (chosen or None):
             # A continued conversation (the discussor's) keeps its skills
             # unless they were changed since: then it gets the new ones.

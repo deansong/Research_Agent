@@ -325,3 +325,18 @@ def test_moving_the_discussor_to_another_provider_hands_the_conversation_over(ru
     said = [(m["role"], m["text"]) for m in chat.transcript(run.folder)]
     assert said == [("user", "LoRA rank on small data"), ("discussor", "Which dataset?"),
                     ("user", "SST-2 please"), ("discussor", "SST-2, noted.")]
+
+
+def test_changing_the_discussor_s_model_moves_its_conversation_on(run, script):
+    script.add("DiscussorOutput", say("Which dataset?"), say("Noted."))
+    boot = Bootstrap(run)
+    boot.start("LoRA rank")
+    run.roles["discussor"] = RoleConfig("fake", "smaller", "low")      # same provider
+    boot.answer("SST-2")
+    from research_backend import conversation
+
+    session = conversation.open_session("discussor", home=run.rb_home)
+    assert (session.model, session.effort) == ("smaller", "low")
+    calls = [c for c in script.calls if c["schema"] == "DiscussorOutput"]
+    assert calls[1]["thread"] == calls[0]["thread"] or calls[0]["thread"] is None, \
+        "the same conversation, continued"
