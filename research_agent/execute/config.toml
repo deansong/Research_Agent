@@ -42,18 +42,22 @@ reviewer = ["peer-review", "scientific-critical-thinking"]
 provider = "codex"
 
 [roles.worker]
-provider = "claude_code"
-model = "opus"
+#provider = "claude_code"
+#model = "opus"
+#options = { timeout = 1200 }
+provider = "codex"
+model = "gpt-6-sol"
 options = { timeout = 1200 }
 
+
 [roles.runner]
-provider = "claude_code"
-model = "opus"
+provider = "codex"
+model = "gpt-6-sol"
 options = { timeout = 1200 }
 
 [roles.writer]
-provider = "claude_code"
-model = "opus"
+provider = "codex"
+model = "gpt-6-sol"
 options = { timeout = 1200 }
 
 [roles.validator]
