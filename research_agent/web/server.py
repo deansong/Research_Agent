@@ -230,9 +230,14 @@ def create_app(runs_root: Path = RUNS_ROOT, *, roles=(), watch: bool = True) -> 
     # ---- the research state -------------------------------------------------------
 
     @app.get("/api/providers")
-    def providers():
-        """Each provider's models and effort levels, for the pickers (cached)."""
-        return _providers()
+    def providers(refresh: bool = False):
+        """Each provider's models and effort levels, for the pickers (cached
+        ten minutes; refresh=true asks the providers again)."""
+        return _providers(refresh)
+
+    @app.get("/api/runs/{run_id}/nodes/{node}")
+    def node_info(run_id: str, node: str):
+        return act(lambda: host_of(run_id).node_info(node))
 
     @app.get("/api/runs/{run_id}/models")
     def models(run_id: str):
@@ -471,14 +476,14 @@ def _graph(st: dict, stage: str) -> dict:
 _PROVIDERS: dict = {"at": 0.0, "value": None}
 
 
-def _providers() -> list[dict]:
+def _providers(refresh: bool = False) -> list[dict]:
     """research_backend's providers with their models and efforts, asked at
     most every ten minutes (Codex's list is a call to its app server)."""
     import time
 
     import research_backend as RB
 
-    if _PROVIDERS["value"] is not None and time.time() - _PROVIDERS["at"] < 600:
+    if not refresh and _PROVIDERS["value"] is not None and time.time() - _PROVIDERS["at"] < 600:
         return _PROVIDERS["value"]
     out = []
     for name in RB.list_providers():
@@ -487,7 +492,7 @@ def _providers() -> list[dict]:
         entry = {"provider": name, "models": [], "efforts": [], "model_efforts": {},
                  "default": "", "error": ""}
         try:
-            listed = list(RB.list_models(name))
+            listed = list(RB.list_models(name, refresh=refresh))
             entry["models"] = [m.id for m in listed]
             # Codex's levels differ by model (one has no "ultra").
             entry["model_efforts"] = {m.id: list(m.efforts) for m in listed if m.efforts}

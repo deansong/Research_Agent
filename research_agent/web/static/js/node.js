@@ -13,12 +13,12 @@ const node = parts[2];
 const LIVE_MS = 1000;
 const PAST_MS = 5000;
 
-const view = { running: [], past: [], selected: null, sent: new Map(), pastAt: 0, lastRunning: "" };
+const view = { running: [], past: [], selected: null, sent: new Map(), pastAt: 0, lastRunning: "", open: {} };
 
 // ---- what an event looks like --------------------------------------------------------
 
 const MARK = { command: "$", tool: "*", file_change: "~", reasoning: "·", message: ">",
-  web_search: "?", plan: "=", error: "!" };
+  web_search: "?", plan: "=", error: "!", answer: "\u2713", turn: "\u2500" };
 
 // The events worth a row: a command once (its start, completed with its
 // output), the newest reasoning, files, messages, searches, errors.
@@ -47,8 +47,12 @@ export function rows(events) {
       const text = e.summary.join("\n");
       if (last && last.kind === "reasoning" && text.startsWith(last.text.slice(0, 40))) last.text = text;
       else out.push({ kind, text, at: e.at });
-    } else if (kind === "message" && e.phase !== "started" && !e.is_final_json && e.text) {
-      out.push({ kind, text: e.text, at: e.at });
+    } else if (kind === "message" && e.phase !== "started" && e.text) {
+      const final = e.is_final_json === true || e.is_final_json === "True";
+      out.push(final ? { kind: "answer", text: "answered (its structured answer is below)", at: e.at }
+        : { kind, text: e.text, at: e.at });
+    } else if (kind === "turn_started" || kind === "turn_completed") {
+      out.push({ kind: "turn", text: kind === "turn_started" ? "turn started" : "turn ended", at: e.at });
     } else if (kind === "web_search" && e.phase !== "started") {
       out.push({ kind, text: `searched: ${e.query || ""}`, at: e.at });
     } else if (kind === "plan" && e.text) {
@@ -120,6 +124,41 @@ function current() {
   return pool.find((c) => key(c, state === "run") === view.selected) || null;
 }
 
+async function sessionOf(sid) {
+  try {
+    if (!view.sent.has(sid)) view.sent.set(sid, await api.session(runId, sid));
+    return view.sent.get(sid);
+  } catch { return null; }
+}
+
+// What the node is: its role, the model it runs on, skills, access, steps,
+// and its standing instructions and part of the design.
+async function drawNode() {
+  const box = clear($("node-info"));
+  try {
+    const n = await api.nodeInfo(runId, node);
+    const r = n.runs_on || {};
+    box.append(...[el("h2", { text: "Node" }),
+      el("dl", { class: "facts small" },
+        [["Role", `${n.role}${n.group ? ` (${n.group})` : ""}`],
+          ["Runs on", `${r.provider}${r.model ? " \u00b7 " + r.model : ""}`],
+          ["Effort", r.effort], ["Access", n.access], ["Steps", (n.steps || []).join(", ")],
+          ["Skills", (n.skills || []).join(", ")]]
+          .filter(([, v]) => v).flatMap(([k, v]) => [el("dt", { text: k }), el("dd", { text: v })])),
+      n.design ? el("details", { class: "fold" }, el("summary", { text: "Its part of the design" }),
+        el("pre", { class: "pre small", text: n.design })) : null,
+      n.instructions ? el("details", { class: "fold" }, el("summary", { text: "Its standing instructions" }),
+        el("pre", { class: "pre small", text: n.instructions })) : null,
+      el("p", { class: "hint", text: "Change the model in the main page's Run tab." })].filter(Boolean));
+  } catch (err) {
+    box.append(el("div", { class: "dim small", text: err.message }));
+  }
+}
+
+function section(title, body, open, cls) {
+  return el("details", { class: `call-section ${cls || ""}`, open }, el("summary", { text: title }), body);
+}
+
 async function drawSelected() {
   const c = current();
   const stream = $("stream");
@@ -130,37 +169,50 @@ async function drawSelected() {
     return;
   }
   const running = view.selected.startsWith("run:");
+  const s = await sessionOf(c.session);
   head.append(...[el("b", { text: c.label }), " ", el("span", { class: "mono small dim", text: `${c.session}${c.model ? " · " + c.model : ""}` }), " ",
     running ? pill(`working ${Math.round(c.elapsed)}s${c.idle != null ? ` · quiet ${Math.round(c.idle)}s` : ""}`, "live")
       : pill(`${c.seconds}s`, (c.problems || []).length ? "bad" : "ok"),
     running && c.events_total > c.events.length ? el("span", { class: "dim small", text: ` showing the last ${c.events.length} of ${c.events_total} events` }) : null]
     .filter((x) => x !== null));
   const pinned = stream.scrollHeight - stream.scrollTop - stream.clientHeight < 60;
+  const open = view.open;                     // which sections the user opened or closed
+  const keep = (name, dflt) => (name in open ? open[name] : dflt);
+  // What it ran with -- from its session.
+  const settings = s ? el("div", { class: "settings mono small" },
+    `${s.provider}${s.model ? ":" + s.model : " (default model)"}${s.effort ? " \u00b7 effort " + s.effort : ""}`
+    + ` \u00b7 ${s.access} access${s.skills ? ` \u00b7 skills: ${Array.isArray(s.skills) ? s.skills.join(", ") : s.skills}` : ""}`
+    + ` \u00b7 works in ${s.workdir || "-"}`) : null;
+  // What it was sent: the message of the call under way, or of this turn.
+  const turn = !running && s ? (s.turns || []).find((t) => String(t.turn) === String(c.turn)) : null;
+  const sent = running ? c.prompt || "" : (turn && turn.prompt) || "";
   const items = rows(c.events).map(row);
-  clear(stream).append(...(items.length ? items : [el("div", { class: "empty", text: running ? "Started; nothing reported yet." : "No events were recorded for this call." })]));
-  if (running) {
-    for (const [name, text] of Object.entries(c.live || {})) {
-      if (text && text.trim()) tails.append(el("div", { class: "tail" }, el("div", { class: "tail-head", text: `writing: ${name}` }), el("pre", { text: tail(text, 30) })));
-    }
-  } else {
-    if ((c.problems || []).length) stream.append(el("div", { class: "tx tx-error" }, el("span", { class: "tx-mark", text: "!" }), el("div", { class: "tx-body", text: `answer not usable: ${c.problems.join("; ")}` })));
-    stream.append(await sentAndAnswer(c));
-  }
-  if (pinned || running) stream.scrollTop = stream.scrollHeight;
-}
-
-async function sentAndAnswer(c) {
-  let turn = null;
-  try {
-    if (!view.sent.has(c.session)) view.sent.set(c.session, await api.session(runId, c.session));
-    turn = (view.sent.get(c.session).turns || []).find((t) => String(t.turn) === String(c.turn));
-  } catch { /* the session may be gone */ }
   let answer = c.reply || "";
   try { answer = JSON.stringify(JSON.parse(answer), null, 2); } catch { /* text */ }
-  return el("div", { class: "exchange" },
-    turn ? el("details", { class: "fold" }, el("summary", { text: `What it was sent (${(turn.prompt || "").length.toLocaleString()} characters)` }),
-      el("pre", { class: "pre small", text: turn.prompt || "" })) : null,
-    el("details", { class: "fold", open: true }, el("summary", { text: "What it answered" }), el("pre", { class: "pre small reply", text: answer })));
+  clear(stream).append(...[
+    settings,
+    section(`Sent to the model (${sent.length.toLocaleString()} characters)`,
+      el("pre", { class: "pre small sent", text: sent || "(not known: the call may predate this view)" }),
+      keep("sent", true), "sent-section"),
+    section(`What it did (${items.length} of ${c.events_total ?? (c.events || []).length} events shown; bookkeeping left out)`,
+      el("div", { class: "tx-list" }, items.length ? items : el("div", { class: "empty", text: running ? "Started; nothing reported yet." : "No events were recorded for this call." })),
+      keep("did", true), "did-section"),
+    !running && (c.problems || []).length ? el("div", { class: "tx tx-error" }, el("span", { class: "tx-mark", text: "!" }),
+      el("div", { class: "tx-body", text: `answer not usable: ${c.problems.join("; ")}` })) : null,
+    !running ? section("Its answer", el("pre", { class: "pre small reply", text: answer || "(none)" }), keep("answer", true), "answer-section") : null,
+    s && s.instructions ? section("Its standing instructions (sent with every message)",
+      el("pre", { class: "pre small", text: s.instructions }), keep("instructions", false), "instructions-section") : null,
+  ].filter(Boolean));
+  for (const [name, cls] of [["sent", "sent-section"], ["did", "did-section"], ["answer", "answer-section"], ["instructions", "instructions-section"]]) {
+    const d = stream.querySelector(`.${cls}`);
+    if (d) d.addEventListener("toggle", () => { view.open[name] = d.open; });
+  }
+  if (running) {
+    for (const [name, text] of Object.entries(c.live || {})) {
+      if (text && text.trim()) tails.append(el("div", { class: "tail" }, el("div", { class: "tail-head", text: `writing now: ${name}` }), el("pre", { text: tail(text, 30) })));
+    }
+  }
+  if (pinned && running) stream.scrollTop = stream.scrollHeight;
 }
 
 // ---- keeping it live -------------------------------------------------------------------------
@@ -203,5 +255,6 @@ async function pollPast(force) {
 $("node-name").textContent = node;
 $("run-name").textContent = runId;
 document.title = `${node} — ${runId}`;
+drawNode();
 pollLive().then(drawSelected);
 setInterval(pollLive, LIVE_MS);

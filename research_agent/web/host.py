@@ -256,6 +256,65 @@ class RunHost:
             self.bus.emit("note", text="Execution started.")
             self._run(lambda on: self.session.start(on_step=on))
 
+    # ---- one node: what it is and runs on -----------------------------------------------
+
+    def node_info(self, node: str) -> dict:
+        """A graph node's role, the model it runs on, its skills and access,
+        its standing instructions, and (execution) its part of the design."""
+        from research_agent.bootstrap import prompts as boot_prompts
+        from research_agent.execute import prompts as exec_prompts
+
+        st = S.Store(self.folder).read()
+        boot, exe = boot_config.load(self.folder), exec_config.load(self.folder)
+        out = {"node": node, "stage": self.stage, "role": "", "group": "", "steps": [],
+               "skills": [], "access": "", "design": "", "instructions": "", "runs_on": {}}
+
+        def runs_on(cfg):
+            return {"provider": cfg.provider, "model": cfg.model or "(the provider's default)",
+                    "effort": cfg.effort or "(default)", "options": cfg.options}
+
+        def skills_word(choice):
+            return [] if choice is None else [choice] if isinstance(choice, str) else list(choice)
+
+        if node == "discussor":
+            out.update(role="discussor", group="bootstrap", runs_on=runs_on(boot.roles["discussor"]),
+                       skills=skills_word(boot.skills.get("discussor")),
+                       instructions=(exec_prompts if self.stage == "execution"
+                                     else boot_prompts).INSTRUCTIONS["discussor"])
+            return out
+        if self.stage == "bootstrap" and node in boot_config.ROLES:
+            keys = ["planner_hypothesize", "planner_plan"] if node == "planner" else [node]
+            out.update(role=node, group="bootstrap", runs_on=runs_on(boot.roles[node]),
+                       skills=[s for k in keys for s in skills_word(boot.skills.get(k))],
+                       instructions=boot_prompts.INSTRUCTIONS[node],
+                       access="write" if node == "researcher" else "read_only")
+            return out
+        design = st.get("design") or {}
+        by_role = {n["role"]: n for n in design.get("nodes") or []}
+        found = None
+        if node in ("orchestrator", "validator"):
+            found = by_role.get(node)
+            role = node
+        elif node == "reviewer":
+            out.update(role="reviewer", group="execution", runs_on=runs_on(exe.roles["reviewer"]),
+                       skills=list(exe.reviewer_skills), access="read_only",
+                       instructions=exec_prompts.INSTRUCTIONS["reviewer"])
+            return out
+        else:
+            found = next((n for n in design.get("nodes") or []
+                          if n["name"] == node or f"node_{n['name']}" == node), None)
+            role = "worker" if found and found["role"] == "orchestrator" else (found or {}).get("role", "")
+        if found is None or role not in exe.roles:
+            raise ValueError(f"No node {node!r} in this run's graph.")
+        access = ("read_only" if role in ("orchestrator", "validator") and role == found["role"]
+                  else exec_nodes.access_for(found))
+        out.update(role=role, group="execution", runs_on=runs_on(exe.roles[role]),
+                   steps=list(found.get("steps") or []) if role != "orchestrator" else [],
+                   skills=list(found.get("skills") or []), access=access,
+                   design=f"{found['name']} ({found['role']}): {found.get('instructions', '')}",
+                   instructions=exec_prompts.INSTRUCTIONS[role])
+        return out
+
     # ---- which model each role runs on ------------------------------------------------
 
     def models(self) -> dict:
@@ -390,12 +449,13 @@ class RunHost:
             return
         if kind == "call":
             session = data.get("session") or ""
+            prompt = data.pop("prompt", "")       # kept here, not sent down the stream
             if data.get("state") == "start":
                 self.current = f"{data['label']} ({data['model']})"
                 self.live[session] = {"label": data["label"], "node": node_of(data["label"]),
                                       "session": session, "attempt": data.get("attempt", 1),
                                       "model": data.get("model", ""), "started": time.time(),
-                                      "updated": time.time(), "snapshot": {}}
+                                      "updated": time.time(), "snapshot": {}, "prompt": prompt}
             else:
                 self.live.pop(session, None)
             self.bus.emit("call", **data, node=node_of(data.get("label", "")))

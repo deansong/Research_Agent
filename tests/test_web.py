@@ -307,7 +307,7 @@ def test_the_models_each_role_runs_on_can_be_changed(web, script, monkeypatch):
                                                "provider": "codex"}).status_code == 400
     assert web.put("/api/runs/m/models", json={"group": "bootstrap", "role": "planner",
                                                "provider": "gpt"}).status_code == 400
-    monkeypatch.setattr(server, "_providers", lambda: [{"provider": "codex", "models": ["m1"],
+    monkeypatch.setattr(server, "_providers", lambda refresh=False: [{"provider": "codex", "models": ["m1"],
                                                         "efforts": ["high"], "error": ""}])
     assert web.get("/api/providers").json()[0]["models"] == ["m1"]
 
@@ -339,3 +339,36 @@ def test_a_failed_step_can_be_moved_on_from_the_page(web, script):
     settle(web, "s")
     rec = {x["id"]: x for x in S.Store(folder).read()["execution"]["steps"]}
     assert rec["1"]["status"] == "pass" and rec["1"]["attempts"] == 4 and rec["1"]["extra_attempts"] == 1
+
+
+def test_a_node_s_settings_and_what_a_running_call_is_sent(web, script):
+    folder = web.root / "ni"
+    S.Store(folder).write(approved_state())
+    web.get("/api/runs/ni")
+    info = web.get("/api/runs/ni/nodes/planner").json()
+    assert info["role"] == "planner" and info["runs_on"]["provider"] == "fake"
+    assert "You are the PLANNER" in info["instructions"]
+    trainer = web.get("/api/runs/ni/nodes/trainer").json()   # from the design's preview
+    assert trainer["role"] == "runner" and trainer["steps"] == ["2"] and trainer["access"] == "full"
+    assert "Train with seeds 17 and 29." in trainer["design"]
+    assert web.get("/api/runs/ni/nodes/nobody").status_code == 400
+
+    started = threading.Event()
+    seen = threading.Event()
+
+    def asked(prompt):
+        started.set()
+        assert seen.wait(10)
+        return say("Hello.")
+
+    script.add("DiscussorOutput", asked)
+    web.post("/api/runs/ni/message", json={"text": "What is the plan?"})
+    assert started.wait(10)
+    running = web.get("/api/runs/ni/live", params={"node": "discussor"}).json()["running"]
+    assert "=== THE USER SAYS ===\nWhat is the plan?" in running[0]["prompt"]
+    seen.set()
+    settle(web, "ni")
+    events = web.get("/api/runs/ni/events?follow=false").text
+    assert "THE USER SAYS" not in events, "prompts are not sent down the event stream"
+    disc = web.get("/api/runs/ni/nodes/discussor").json()
+    assert disc["role"] == "discussor" and disc["group"] == "bootstrap"

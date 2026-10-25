@@ -181,7 +181,7 @@ class Run:
 
     def _announce(self, label, cfg, rb, attempt, prompt, skills) -> None:
         self._tell("call", {"state": "start", "label": label, "model": str(cfg),
-                            "session": rb.session_id, "attempt": attempt})
+                            "session": rb.session_id, "attempt": attempt, "prompt": prompt})
         if self.quiet:
             return
         again = f", attempt {attempt}" if attempt > 1 else ""

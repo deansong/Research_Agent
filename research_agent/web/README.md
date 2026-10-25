@@ -100,6 +100,13 @@ it makes, while it makes it. That is what you watch when you are debugging.
   The agent writes one line there per call, in the terminal too, because a
   research_backend session keeps only the input and the answer.
 - **follow** (on by default) switches to each new call of the node as it starts.
+- **The node**, top left: its role, the model it runs on (provider, model,
+  effort), its access, steps and skills, its standing instructions, and its
+  part of the design.
+- **Each call:** the settings it ran with; **Sent to the model**, the exact
+  message, which for a call under way is the one being sent now; **What it
+  did**; **Its answer**; and the standing instructions sent with every
+  message.
 
 Nodes and their calls: the bootstrap's discussor (asides too), orchestrator,
 researcher, planner (both jobs) and designer; in the execution, each step
@@ -123,6 +130,10 @@ role's model.
   set before the execution starts, and writing `execute.json` starts nothing.
 - **Unlisted models:** a model the provider does not list is shown in red,
   because its calls would likely fail.
+- **Refreshing the list:** the lists are cached for ten minutes; "ask the
+  providers again" refreshes them. Codex lists models by client version, so
+  research_backend runs the newest Codex there is: `$RESEARCH_BACKEND_CODEX_BIN`,
+  else the `codex` on PATH when it is newer than the Python SDK's bundled one.
 - **Moving the discussor to another provider** (Claude Code to Codex) cannot
   continue its conversation, because a provider cannot resume another
   provider's thread. Instead:

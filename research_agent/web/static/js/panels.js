@@ -130,7 +130,8 @@ export class Inspector {
     if (!this.runId) return;
     const box = document.getElementById("models-editor");
     try {
-      const [m, providers] = await Promise.all([api.models(this.runId), this.providers ||= api.providers()]);
+      const [m, providers] = await Promise.all([api.models(this.runId), this.providers ||= api.providers(this.refreshNext)]);
+      this.refreshNext = false;
       const known = Object.fromEntries(providers.map((p) => [p.provider, p]));
       clear(box);
       for (const group of m.groups) {
@@ -141,7 +142,9 @@ export class Inspector {
           el("table", { class: "grid small models" }, el("tbody", {},
             Object.entries(group.roles).map(([role, c]) => this.modelRow(group.name, role, c, known))))));
       }
-      box.append(el("p", { class: "hint", text: "Changing the discussor's provider hands its conversation over to a new session: it is given the recent conversation and the whole research state." }));
+      box.append(el("p", { class: "hint", text: "Changing the discussor's provider hands its conversation over to a new session: it is given the recent conversation and the whole research state." }),
+        el("a", { href: "#", class: "small", text: "\u21bb ask the providers for their models again", onclick: (e) => {
+          e.preventDefault(); this.providers = null; this.refreshNext = true; this.loadModels(); } }));
     } catch (err) { this.onError(err); }
   }
 
