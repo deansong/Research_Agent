@@ -142,9 +142,9 @@ async function drawNode() {
       el("dl", { class: "facts small" },
         [["Role", `${n.role}${n.group ? ` (${n.group})` : ""}`],
           ["Runs on", `${r.provider}${r.model ? " \u00b7 " + r.model : ""}`],
-          ["Effort", r.effort], ["Access", n.access], ["Steps", (n.steps || []).join(", ")],
-          ["Skills", (n.skills || []).join(", ")]]
+          ["Effort", r.effort], ["Access", n.access], ["Steps", (n.steps || []).join(", ")]]
           .filter(([, v]) => v).flatMap(([k, v]) => [el("dt", { text: k }), el("dd", { text: v })])),
+      await skillsBox(n),
       n.design ? el("details", { class: "fold" }, el("summary", { text: "Its part of the design" }),
         el("pre", { class: "pre small", text: n.design })) : null,
       n.instructions ? el("details", { class: "fold" }, el("summary", { text: "Its standing instructions" }),
@@ -153,6 +153,59 @@ async function drawNode() {
   } catch (err) {
     box.append(el("div", { class: "dim small", text: err.message }));
   }
+}
+
+// The node's skills: which are given, and choosing them. A slot per place a
+// choice is kept (the planner has one per job).
+let catalogue = null;
+
+async function skillsBox(n) {
+  if (!(n.slots || []).length) return null;
+  catalogue ||= (await api.skills(runId).catch(() => ({ skills: [] }))).skills;
+  const describe = Object.fromEntries(catalogue.map((s) => [s.name, s.description]));
+  return el("div", { class: "skills-box" }, el("h2", { text: "Skills" }),
+    n.slots.map((slot) => skillSlot(slot, describe, n.slots.length > 1)));
+}
+
+function clip(text, n) {
+  return text.length > n ? text.slice(0, n).replace(/\s+\S*$/, "") + "..." : text;
+}
+
+function skillSlot(slot, describe, labelled) {
+  const status = el("span", { class: "dim small" });
+  const modes = [["none", "none"], ["auto", "auto: every skill listed, the model reads what it needs"],
+    ["chosen", "chosen skills"]];
+  if (slot.group === "execution") modes.push(["design", "the design's"]);
+  const mode = el("select", { class: "skill-mode" }, modes.map(([v, t]) => el("option", {
+    value: v, text: t, selected: v === (slot.group === "execution" && slot.from_design ? "design" : slot.mode) })));
+  const chosen = new Set(slot.skills);
+  const list = el("div", { class: "skill-list" }, catalogue.map((s) => el("label", { class: "skill", title: s.description },
+    el("input", { type: "checkbox", value: s.name, checked: chosen.has(s.name) }),
+    el("span", { class: "mono", text: s.name }), el("small", { class: "dim", text: ` ${s.description.slice(0, 90)}${s.description.length > 90 ? "..." : ""}` }))));
+  const showList = () => { list.hidden = mode.value !== "chosen"; };
+  mode.addEventListener("change", showList);
+  showList();
+  const given = slot.mode === "chosen" ? slot.skills : [];
+  return el("div", { class: "skill-slot" },
+    labelled ? el("div", { class: "small", text: slot.label }) : null,
+    el("div", { class: "small" },
+      slot.mode === "none" ? "No skills." : slot.mode === "auto" ? "Every skill's name and description; the model reads those it needs."
+        : null,
+      given.length ? el("ul", { class: "given" }, given.map((s) => el("li", { title: describe[s] || "" },
+        el("span", { class: "mono", text: s }),
+        el("span", { class: "dim", text: describe[s] ? ` \u2014 ${clip(describe[s], 100)}` : " (not in the skills folder)" })))) : null,
+      slot.from_design ? el("div", { class: "dim", text: "From the approved design." }) : null),
+    el("details", { class: "fold" }, el("summary", { text: "Change" }),
+      mode, list,
+      el("div", {}, el("button", { class: "btn small primary", text: "Save", onclick: async () => {
+        const skills = [...list.querySelectorAll("input:checked")].map((i) => i.value);
+        try {
+          await api.setSkills(runId, node, { key: slot.key, mode: mode.value, skills });
+          status.textContent = " \u2713 saved: used from its next call";
+          drawNode();
+        } catch (err) { status.textContent = ` ! ${err.message}`; }
+      } }), status)),
+    el("div", { class: "hint", text: `kept in ${slot.file}` }));
 }
 
 function section(title, body, open, cls) {

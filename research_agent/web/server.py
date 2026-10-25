@@ -75,6 +75,13 @@ class StepAction(BaseModel):
     model_config = {"extra": "forbid"}
 
 
+class SetSkills(BaseModel):
+    key: str
+    mode: str
+    skills: list[str] = []
+    model_config = {"extra": "forbid"}
+
+
 class SetModel(BaseModel):
     group: str
     role: str
@@ -238,6 +245,16 @@ def create_app(runs_root: Path = RUNS_ROOT, *, roles=(), watch: bool = True) -> 
     @app.get("/api/runs/{run_id}/nodes/{node}")
     def node_info(run_id: str, node: str):
         return act(lambda: host_of(run_id).node_info(node))
+
+    @app.get("/api/runs/{run_id}/skills")
+    def skills_catalogue(run_id: str):
+        """The skills in the run's skills folder: name and description."""
+        return {"skills": act(host_of(run_id).catalogue)}
+
+    @app.put("/api/runs/{run_id}/nodes/{node}/skills")
+    def set_node_skills(run_id: str, node: str, body: SetSkills):
+        host = host_of(run_id)
+        return act(lambda: host.set_skills(node, body.key, body.mode, body.skills))
 
     @app.get("/api/runs/{run_id}/models")
     def models(run_id: str):

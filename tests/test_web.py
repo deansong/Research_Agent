@@ -22,6 +22,7 @@ from tests.scripted import script  # noqa: F401 -- fixture
 from tests.test_execute_graph import REVIEW, approved_state, done_writing, verdict
 from tests.test_execute_graph import decide as move, say as tell
 from tests.test_graph import FINDINGS, decide, say
+from dataclasses import replace
 
 
 @pytest.fixture
@@ -372,3 +373,43 @@ def test_a_node_s_settings_and_what_a_running_call_is_sent(web, script):
     assert "THE USER SAYS" not in events, "prompts are not sent down the event stream"
     disc = web.get("/api/runs/ni/nodes/discussor").json()
     assert disc["role"] == "discussor" and disc["group"] == "bootstrap"
+
+
+def test_a_node_s_skills_can_be_chosen(web, script, tmp_path):
+    folder = web.root / "sk"
+    S.Store(folder).write(approved_state())
+    names = {s["name"] for s in web.get("/api/runs/sk/skills").json()["skills"]}
+    assert {"research", "peer-review", "experiment-design"} <= names
+    planner = web.get("/api/runs/sk/nodes/planner").json()["slots"]
+    assert [s["key"] for s in planner] == ["planner_hypothesize", "planner_plan"]
+    r = web.put("/api/runs/sk/nodes/planner/skills", json={"key": "planner_plan", "mode": "chosen",
+                                                           "skills": ["experiment-design", "statistical-power"]})
+    assert r.status_code == 200 and r.json()["skills"] == ["experiment-design", "statistical-power"]
+    saved = json.loads((folder / "config.json").read_text())["skills"]
+    assert saved["planner_plan"] == ["experiment-design", "statistical-power"]
+    host = web.app_.state.hosts["sk"]
+    assert host.session.run.skills["planner_plan"] == ["experiment-design", "statistical-power"]
+    assert web.put("/api/runs/sk/nodes/planner/skills", json={"key": "planner_plan", "mode": "chosen",
+                                                              "skills": ["nope"]}).status_code == 400
+    assert web.put("/api/runs/sk/nodes/discussor/skills",
+                   json={"key": "discussor", "mode": "none"}).json()["mode"] == "none"
+    # An execution node: the design's skills, or the user's choice over them.
+    trainer = web.get("/api/runs/sk/nodes/trainer").json()["slots"][0]
+    assert trainer["from_design"] and trainer["group"] == "execution"
+    r = web.put("/api/runs/sk/nodes/trainer/skills", json={"key": "trainer", "mode": "auto"})
+    assert r.json()["mode"] == "auto" and not r.json()["from_design"]
+    assert json.loads((folder / "execute.json").read_text())["skills"]["nodes"] == {"trainer": "auto"}
+    r = web.put("/api/runs/sk/nodes/trainer/skills", json={"key": "trainer", "mode": "design"})
+    assert r.json()["from_design"]
+
+
+def test_an_execution_node_s_skills_override_the_design(tmp_path):
+    from research_agent.execute import config as exec_config, nodes as exec_nodes
+    from research_agent.bootstrap.config import RoleConfig as RC
+
+    cfg = replace(exec_config.defaults(), node_skills={"trainer": ["peft"], "validator": None})
+    run = exec_nodes.ExecRun(tmp_path, {r: RC("fake") for r in exec_config.ROLES}, skills_dir=cfg.skills_dir,
+                             skills={}, limits=cfg)
+    assert exec_nodes.skills_for(run, {"name": "trainer", "skills": ["transformers"]}) == ["peft"]
+    assert exec_nodes.skills_for(run, {"name": "checker", "skills": ["peft"]}, "validator") is None
+    assert exec_nodes.skills_for(run, {"name": "builder", "skills": ["peft", "nope"]}) == ["peft"]

@@ -38,6 +38,9 @@ RESERVED = {"discussor", "orchestrator", "validator", "wait", "human"}
 SETTLED = {"pass", "skipped"}
 
 
+_KEEP = object()
+
+
 @dataclass
 class ExecRun(run_base.Run):
     """One run's execution: the bootstrap's run folder, with the execution
@@ -53,9 +56,17 @@ class ExecRun(run_base.Run):
 
     @classmethod
     def from_config(cls, folder: Path, cfg: config.ExecConfig, discussor: RoleConfig, *,
-                    progress=False, trace=False) -> "ExecRun":
+                    progress=False, trace=False, discussor_skills=_KEEP) -> "ExecRun":
+        if discussor_skills is _KEEP:
+            from research_agent.bootstrap import config as boot_config
+
+            try:
+                discussor_skills = boot_config.load(folder).skills.get("discussor")
+            except ValueError:
+                discussor_skills = None
         return cls(folder, {**cfg.roles, "discussor": discussor}, skills_dir=cfg.skills_dir,
-                   skills={}, progress=progress, trace=trace, limits=cfg)
+                   skills={"discussor": discussor_skills}, progress=progress, trace=trace,
+                   limits=cfg)
 
     @property
     def work(self) -> Path:
@@ -119,11 +130,20 @@ def graph_name(name: str) -> str:
     return f"node_{name}" if name in RESERVED else name
 
 
-def skills_for(run: ExecRun, node: dict) -> list[str] | None:
-    """The design's skills for a node that are in the folder (None: none)."""
+_DESIGN = object()
+
+
+def skills_for(run: ExecRun, node: dict, key: str = ""):
+    """A node's skills: the user's choice for it (execute.json "nodes", by
+    graph node), else the design's -- None, "auto", or the names that are in
+    the folder."""
+    choice = (run.limits.node_skills or {}).get(key or graph_name(node["name"]), _DESIGN)
+    if choice is _DESIGN:
+        choice = list(node.get("skills") or [])
+    if choice is None or choice == "auto":
+        return choice if run.known_skills() else None
     known = run.known_skills()
-    chosen = [s for s in node.get("skills") or [] if s in known]
-    return chosen or None
+    return [s for s in choice if s in known] or None
 
 
 def access_for(node: dict) -> str:
@@ -357,7 +377,8 @@ def orchestrator(run: ExecRun, st: dict, design: Design, *, budget: str, request
         st, design_part=design.orchestrator.get("instructions", ""),
         moves=describe_moves(moves, st, limit), budget=budget, requests=requests, last=last)
     out, session = run.call("orchestrator", brief=brief, schema=schemas.ExecDecision,
-                            skills=skills_for(run, design.orchestrator), check=check)
+                            skills=skills_for(run, design.orchestrator, "orchestrator"),
+                            check=check)
     ops = [{"op": "merge", "section": "status", "value": {"summary": out.summary,
                                                           "next": f"{out.action} {out.step}".strip()}}]
     ops += [{"op": "add", "section": "open_questions", "value": q.model_dump(by_alias=True)}
@@ -474,7 +495,8 @@ def validator(run: ExecRun, st: dict, design: Design, *, node: dict, step: dict,
                             step=step, report=report, paths=run.paths(step["id"]))
     attempt = rec.get("attempts", 1) or 1
     out, session = run.call("validator", brief=brief, schema=schemas.Verdict,
-                            skills=skills_for(run, design.validator), access="read_only",
+                            skills=skills_for(run, design.validator, "validator"),
+                            access="read_only",
                             workdir=run.folder, label=f"validate step {step['id']}",
                             session=run.next_name(f"validate{_session(step['id'], attempt)[4:]}"),
                             check=check)
@@ -503,8 +525,9 @@ def reviewer(run: ExecRun, st: dict) -> Outcome:
     (reviews) and as <run>/reviews/V<n>.md, for the next run."""
     out, session = run.call("reviewer", brief=views.reviewer(st, run_dir=str(run.folder)),
                             schema=schemas.ReviewOutput, access="read_only", workdir=run.folder,
-                            skills=[s for s in run.limits.reviewer_skills
-                                    if s in run.known_skills()] or None,
+                            skills=skills_for(run, {"name": "reviewer",
+                                                    "skills": list(run.limits.reviewer_skills)},
+                                              "reviewer"),
                             label="reviewer")
     review_id = f"V{len(st.get('reviews') or []) + 1}"
     folder = run.folder / "reviews"

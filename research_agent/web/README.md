@@ -103,6 +103,18 @@ it makes, while it makes it. That is what you watch when you are debugging.
 - **The node**, top left: its role, the model it runs on (provider, model,
   effort), its access, steps and skills, its standing instructions, and its
   part of the design.
+- **Its skills**, each with its description, and **Change** to choose them:
+  - none;
+  - auto: the model sees every skill's name and description, and reads the
+    ones it needs;
+  - chosen skills, from the folder's list;
+  - for an execution node, the design's skills again.
+
+  Bootstrap nodes keep the choice in `config.json`; the planner has one per
+  job. Execution nodes keep it in `execute.json` under `skills.nodes`, over
+  the approved design. A change applies from the node's next call, and a
+  conversation already under way, such as the discussor's, gets the new
+  skills with its next message.
 - **Each call:** the settings it ran with; **Sent to the model**, the exact
   message, which for a call under way is the one being sent now; **What it
   did**; **Its answer**; and the standing instructions sent with every
@@ -193,6 +205,8 @@ Deep links: `/?tab=graph&side=jobs#<run>` opens a run with those tabs showing.
 | POST | `/api/runs/{id}/execute` | `{wall_hours, gpu_hours, confirm}` |
 | GET | `/api/runs/{id}/state`, `/history`, `/history/{n}` | the research state and its changes |
 | GET, PUT | `/api/runs/{id}/models` | each role's provider, model and effort; `{group, role, provider, model, effort}` changes one |
+| GET | `/api/runs/{id}/skills` | the skills folder's skills: name and description |
+| GET, PUT | `/api/runs/{id}/nodes/{node}`, `/nodes/{node}/skills` | a node's settings; `{key, mode: none\|auto\|chosen\|design, skills}` chooses its skills |
 | GET | `/api/providers` | each provider's models and effort levels (cached ten minutes) |
 | GET | `/api/runs/{id}/graph`, `/sessions`, `/sessions/{sid}`, `/files`, `/file?path=`, `/jobs`, `/jobs/{job}/log` | |
 | GET | `/api/runs/{id}/events?after_seq=` | the event stream |

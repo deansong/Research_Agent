@@ -16,7 +16,7 @@ from __future__ import annotations
 
 import json
 import tomllib
-from dataclasses import asdict, dataclass, replace
+from dataclasses import asdict, dataclass, field, replace
 from pathlib import Path
 
 from research_agent.bootstrap.config import REPOSITORY, RoleConfig
@@ -36,6 +36,8 @@ class ExecConfig:
     roles: dict[str, RoleConfig]
     skills_dir: Path | None
     reviewer_skills: tuple = ("peer-review", "scientific-critical-thinking")
+    node_skills: dict = field(default_factory=dict)
+    """Graph node -> its skills, over the design's: None, "auto" or names."""
     confirm: str = "gated"
     max_attempts: int = 3
     wall_hours: float = 0.0
@@ -53,7 +55,9 @@ class ExecConfig:
         # get the default's model back when the file is read again.
         return {"roles": {r: asdict(c) for r, c in self.roles.items()},
                 "skills": {"dir": str(self.skills_dir) if self.skills_dir else None,
-                           "reviewer": list(self.reviewer_skills)},
+                           "reviewer": list(self.reviewer_skills),
+                           "nodes": {n: c if c is not None else "none"
+                                     for n, c in self.node_skills.items()}},
                 "execute": {k: getattr(self, k) for k in LIMITS}}
 
 
@@ -122,6 +126,15 @@ def _merge(cfg: ExecConfig, data: dict, *, base: Path) -> ExecConfig:
     if folder is not ...:
         skills_dir = (base / Path(folder).expanduser()).resolve() if folder else None
     reviewer = (data.get("skills") or {}).get("reviewer", cfg.reviewer_skills)
+    nodes = {**cfg.node_skills, **{n: _choice(c) for n, c in
+                                   ((data.get("skills") or {}).get("nodes") or {}).items()}}
     limits = {k: v for k, v in (data.get("execute") or {}).items() if k in LIMITS}
     return replace(cfg, roles=roles, skills_dir=skills_dir,
-                   reviewer_skills=tuple(reviewer or ()), **limits)
+                   reviewer_skills=tuple(reviewer or ()), node_skills=nodes, **limits)
+
+
+def _choice(value):
+    """"none" / "auto" / a list of names, as kept in execute.json."""
+    if value in (None, "", "none", [], ()):
+        return None
+    return "auto" if value == "auto" else [value] if isinstance(value, str) else list(value)

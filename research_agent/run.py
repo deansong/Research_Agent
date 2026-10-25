@@ -97,6 +97,10 @@ class Run:
         rb.new_session(session or self.next_name(role), exist_ok=bool(session))
         if rb.session.instructions != standing:
             rb.set_instructions(standing)
+        if skills_dir and session and rb.session.skills != (chosen or None):
+            # A continued conversation (the discussor's) keeps its skills
+            # unless they were changed since: then it gets the new ones.
+            rb.set_skills(chosen or None)
         label = label or (skills_key or role).replace("_", " ")
         prompt = brief
         for attempt in range(1, ATTEMPTS + 1):

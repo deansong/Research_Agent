@@ -276,6 +276,7 @@ class RunHost:
         def skills_word(choice):
             return [] if choice is None else [choice] if isinstance(choice, str) else list(choice)
 
+        out["slots"] = self.skill_slots(node, boot, exe, st)
         if node == "discussor":
             out.update(role="discussor", group="bootstrap", runs_on=runs_on(boot.roles["discussor"]),
                        skills=skills_word(boot.skills.get("discussor")),
@@ -314,6 +315,93 @@ class RunHost:
                    design=f"{found['name']} ({found['role']}): {found.get('instructions', '')}",
                    instructions=exec_prompts.INSTRUCTIONS[role])
         return out
+
+    # ---- which skills a node is given ---------------------------------------------------
+
+    def skill_slots(self, node: str, boot=None, exe=None, st=None) -> list[dict]:
+        """Where a node's skills are chosen: one slot, or two for the planner
+        (one per job). Each: key, label, the file it is kept in, the choice now
+        ({mode: none|auto|chosen, skills}) and whether it is the design's."""
+        boot = boot or boot_config.load(self.folder)
+        exe = exe or exec_config.load(self.folder)
+        st = st or S.Store(self.folder).read()
+
+        def mode(choice):
+            if choice is None:
+                return {"mode": "none", "skills": []}
+            if choice == "auto":
+                return {"mode": "auto", "skills": []}
+            return {"mode": "chosen", "skills": list(choice)}
+
+        if node == "discussor" or (self.stage == "bootstrap" and node in boot_config.ROLES):
+            keys = (["planner_hypothesize", "planner_plan"] if node == "planner" else [node])
+            return [{"key": k, "label": k.replace("_", " "), "group": "bootstrap",
+                     "file": "config.json", **mode(boot.skills.get(k)), "from_design": False}
+                    for k in keys]
+        design = st.get("design") or {}
+        if node == "reviewer":
+            base = list(exe.reviewer_skills)
+        elif node in ("orchestrator", "validator"):
+            base = next((list(n.get("skills") or []) for n in design.get("nodes") or []
+                         if n["role"] == node), [])
+        else:
+            base = next((list(n.get("skills") or []) for n in design.get("nodes") or []
+                         if n["name"] == node or f"node_{n['name']}" == node), None)
+            if base is None:
+                return []
+        chosen = exe.node_skills.get(node, "design")
+        now = mode(base if chosen == "design" else chosen)
+        return [{"key": node, "label": node, "group": "execution", "file": "execute.json",
+                 **now, "from_design": chosen == "design", "design_skills": base}]
+
+    def catalogue(self) -> list[dict]:
+        folder = self.session.run.skills_dir
+        if not (folder and Path(folder).is_dir()):
+            return []
+        return [{"name": s.name, "description": s.description}
+                for s in RB.list_skills(folder)]
+
+    def set_skills(self, node: str, key: str, mode: str, skills: list[str]) -> dict:
+        """Choose a node's skills: none, auto (every skill's name and
+        description; the model reads what it needs) or the chosen ones.
+        mode "design" puts an execution node back on the design's. Used from
+        the node's next call -- a conversation under way gets them with its
+        next message."""
+        slot = next((s for s in self.skill_slots(node) if s["key"] == key), None)
+        if slot is None:
+            raise ValueError(f"No skills to choose for {node!r} ({key!r}).")
+        known = {s["name"] for s in self.catalogue()}
+        unknown = [s for s in skills if s not in known]
+        if unknown:
+            raise ValueError(f"No skill called {', '.join(unknown)} in the skills folder.")
+        if mode not in ("none", "auto", "chosen", "design"):
+            raise ValueError("The mode is none, auto, chosen or design.")
+        if mode == "chosen" and not skills:
+            raise ValueError("Choose at least one skill, or pick none.")
+        choice = None if mode == "none" else "auto" if mode == "auto" else list(skills)
+        if slot["group"] == "bootstrap":
+            if mode == "design":
+                raise ValueError("Bootstrap nodes have no design to go back to.")
+            cfg = boot_config.load(self.folder)
+            cfg = replace(cfg, skills={**cfg.skills, key: choice})
+            boot_config.save(self.folder, cfg)
+            if self.stage == "bootstrap" or key == "discussor":
+                self.session.run.skills = {**(self.session.run.skills or {}), key: choice}
+        else:
+            cfg = exec_config.load(self.folder)
+            nodes = dict(cfg.node_skills)
+            if mode == "design":
+                nodes.pop(key, None)
+            else:
+                nodes[key] = choice
+            cfg = replace(cfg, node_skills=nodes)
+            exec_config.save(self.folder, cfg)
+            if self.stage == "execution":
+                self.session.run.limits = replace(self.session.run.limits, node_skills=nodes)
+        word = {"none": "no skills", "auto": "auto (every skill listed)",
+                "design": "the design's skills"}.get(mode, ", ".join(skills))
+        self.bus.emit("note", text=f"{node} ({slot['label']}) now gets {word} (from its next call).")
+        return next(s for s in self.skill_slots(node) if s["key"] == key)
 
     # ---- which model each role runs on ------------------------------------------------
 
