@@ -762,8 +762,56 @@ def open_client():
     build_backends() in agent/backends/__init__.py, which caches backend
     instances by (provider, model, options).
     """
-    with Codex() as client:
+    path = codex_bin()
+    if path is None:
+        with Codex() as client:
+            yield client
+        return
+    from openai_codex import CodexConfig
+
+    with Codex(CodexConfig(codex_bin=path)) as client:
         yield client
+
+
+def codex_bin() -> str | None:
+    """The Codex binary to run: $RESEARCH_BACKEND_CODEX_BIN if set; else the
+    `codex` on PATH when it is newer than the one bundled with the Python SDK;
+    else None (the bundled one).
+
+    Measured: Codex's server offers models by client version. The SDK's
+    bundled 0.147 listed only gpt-5.6-*, while the 0.153 CLI on PATH, on the
+    same login, listed gpt-6-* too -- so an old bundled binary silently hides
+    the newest models."""
+    import os
+    import shutil
+
+    chosen = os.environ.get("RESEARCH_BACKEND_CODEX_BIN")
+    if chosen:
+        return chosen
+    found = shutil.which("codex")
+    if not found:
+        return None
+    try:
+        from codex_cli_bin import bundled_codex_path
+
+        bundled = _binary_version(str(bundled_codex_path()))
+    except Exception:  # noqa: BLE001 - no bundled binary: use the one there is
+        return found
+    return found if _binary_version(found) > bundled else None
+
+
+def _binary_version(path: str) -> tuple[int, ...]:
+    """`codex --version` -> (0, 153, 4); () when it cannot be read."""
+    import re
+    import subprocess
+
+    try:
+        out = subprocess.run([path, "--version"], capture_output=True, text=True,
+                             timeout=20).stdout
+    except (OSError, subprocess.SubprocessError):
+        return ()
+    match = re.search(r"(\d+)\.(\d+)\.(\d+)", out)
+    return tuple(int(x) for x in match.groups()) if match else ()
 
 
 def _heartbeat(elapsed: float, idle: float, total: int,

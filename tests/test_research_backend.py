@@ -720,3 +720,23 @@ def test_on_progress_reaches_the_turn_running_on_its_own_thread(tmp_path, monkey
     rb = RB("fake", home=tmp_path)
     rb.new_session("quiet")
     assert rb.send("no hook").text, "no callback: nothing breaks"
+
+
+def test_the_newest_codex_binary_is_used(monkeypatch, tmp_path):
+    """The SDK's bundled Codex can be older than the CLI on PATH, and Codex
+    offers models by client version: the newer one is run."""
+    from research_backend.backends import codex as C
+
+    monkeypatch.delenv("RESEARCH_BACKEND_CODEX_BIN", raising=False)
+    versions = {"/bundled/codex": (0, 147, 0), "/path/codex": (0, 153, 4)}
+    monkeypatch.setattr(C, "_binary_version", lambda p: versions[p])
+    monkeypatch.setattr("shutil.which", lambda name: "/path/codex")
+    import types
+    import sys
+    monkeypatch.setitem(sys.modules, "codex_cli_bin",
+                        types.SimpleNamespace(bundled_codex_path=lambda: "/bundled/codex"))
+    assert C.codex_bin() == "/path/codex"
+    versions["/path/codex"] = (0, 140, 0)
+    assert C.codex_bin() is None, "an older one on PATH: the bundled one"
+    monkeypatch.setenv("RESEARCH_BACKEND_CODEX_BIN", "/my/codex")
+    assert C.codex_bin() == "/my/codex"
