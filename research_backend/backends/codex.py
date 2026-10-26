@@ -272,8 +272,10 @@ class CodexBackend:
             # An OUTPUT error, not a generic one, so the planner and designer
             # repair loops catch it -- the same type the CLI backends raise
             # for the same situation.
-            raise BackendOutputError(
+            err = BackendOutputError(
                 "Codex finished the turn but returned no final response.")
+            err.events = events
+            raise err
 
         # model_validate_json is the second half of the guarantee: even with a
         # schema, we never hand unvalidated data to a node.
@@ -290,10 +292,14 @@ class CodexBackend:
         except ValidationError as exc:
             from research_backend.backends._progress import _clip
 
-            raise BackendOutputError(
+            err = BackendOutputError(
                 f"Codex replied with something that does not match the "
                 f"schema.\n\n{exc}\n\nWhat it sent:\n"
-                f"{_clip(result.final_response)}") from None
+                f"{_clip(result.final_response)}")
+            # What the model did before it, for whoever looks back at the
+            # turn: a bad final answer after five minutes of work.
+            err.events = events
+            raise err from None
 
         return StructuredRun(
             data=data,

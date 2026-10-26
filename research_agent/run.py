@@ -208,6 +208,7 @@ class Run:
         for attempt in range(1, ATTEMPTS + 1):
             self._announce(label, cfg, rb, attempt, prompt, chosen if skills_dir else None)
             started = time.monotonic()
+            failed_events: list = []
             live = None
             if self.listener:
                 info = {"label": label, "session": rb.session_id, "attempt": attempt,
@@ -221,6 +222,7 @@ class Run:
             except RB.BackendOutputError as exc:
                 problems = [str(exc)[:2000]]
                 reply = None
+                failed_events = list(getattr(exc, "events", None) or [])
             except (RB.BackendOutOfCredits, RB.BackendUnavailable, RB.BackendBusy) as exc:
                 self._report(label, None, [f"{cfg}: {_why(exc)}"], time.monotonic() - started,
                              session=rb.session_id, attempt=attempt)
@@ -231,7 +233,8 @@ class Run:
                 self._report(label, None, [f"{type(exc).__name__}: {str(exc)[:200]}"],
                              time.monotonic() - started, session=rb.session_id, attempt=attempt)
                 raise
-            self._keep(label, rb, attempt, reply, problems, time.monotonic() - started)
+            self._keep(label, rb, attempt, reply, problems, time.monotonic() - started,
+                       events=failed_events if reply is None else None)
             self._report(label, reply, problems, time.monotonic() - started,
                          session=rb.session_id, attempt=attempt)
             if not problems:
@@ -240,16 +243,16 @@ class Run:
                 raise NodeFailed(f"{role} gave no usable answer in {ATTEMPTS} attempts. "
                                  f"Last problems:\n" + "\n".join(f"- {p}" for p in problems))
             prompt = ("Your answer could not be used:\n" + "\n".join(f"- {p}" for p in problems)
-                      + "\n\nAnswer the same task again, fixing these.")
+                      + "\n\nAnswer the same task again, fixing these." + _shape_hint(schema, problems))
 
-    def _keep(self, label, rb, attempt, reply, problems, seconds) -> None:
+    def _keep(self, label, rb, attempt, reply, problems, seconds, events=None) -> None:
         """What the model did in this call, every event of it, in
         <run>/activity/<session>.jsonl -- research_backend's session keeps
         only the input and the answer. For looking back at a node's work."""
         record = {"session": rb.session_id, "turn": len(rb.session.turns), "label": label,
                   "attempt": attempt, "seconds": round(seconds, 1), "problems": problems,
                   "at": datetime.now(timezone.utc).isoformat(timespec="seconds"),
-                  "events": list(reply.events) if reply is not None else [],
+                  "events": list(reply.events) if reply is not None else list(events or []),
                   "reply": (reply.text if reply is not None else "")[:20000]}
         try:
             folder = self.folder / "activity"
@@ -339,6 +342,19 @@ def box(title: str, text: str) -> str:
     """A titled block of text for the terminal."""
     rule = "-" * max(10, 78 - len(title))
     return f"\n---- {title} {rule}\n{(text or '').rstrip()}\n{'-' * 84}\n"
+
+
+def _shape_hint(schema, problems: list[str]) -> str:
+    """When the answer missed the schema: what the answer must be. Measured: a
+    small model ending a long agentic turn with a search query as text
+    ({"q": "..."}), which ends the turn as if it were the answer."""
+    if not any("does not match the schema" in p or "no final response" in p for p in problems):
+        return ""
+    fields = list(getattr(schema, "model_fields", {}) or {})
+    shape = f" with the fields {', '.join(fields)}" if fields else ""
+    return ("\n\nYour final message must be ONLY one JSON object" + shape + ". Any other "
+            "message -- a search query, a tool's arguments, a note to yourself -- ends your turn "
+            "and is not an answer: run tools as tools (commands), and finish with the object.")
 
 
 def _why(exc: BaseException) -> str:

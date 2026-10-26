@@ -178,3 +178,25 @@ def test_the_web_page_hears_of_the_wait(tmp_path):
     assert ("note", {"text": "planner hypothesize: Out of credits. Waiting 30 min."}) in seen
     assert "waiting: Out of credits" in h.current
     assert h.running("planner")[0]["notice"].startswith("Out of credits")
+
+
+def test_an_answer_off_the_schema_is_retried_with_its_shape(tmp_path, monkeypatch):
+    class Lost(Model):
+        def run_structured(self, *, thread_id, prompt, output_model, **_):
+            self.calls.append({"thread": thread_id, "prompt": prompt})
+            if len(self.calls) == 1:
+                err = RB.BackendOutputError('Codex replied with something that does not match the '
+                                            'schema.\n\nWhat it sent:\n{"q": "a search"}')
+                err.events = [{"kind": "command", "phase": "completed", "command": "search x"}]
+                raise err
+            return StructuredRun(data=output_model.model_validate({"answer": "ok"}),
+                                 thread_id="t", is_new_thread=False, usage=Usage(), events=[])
+
+    lost = Lost("codex")
+    monkeypatch.setattr("research_backend.conversation._backend", lambda *a, **k: lost)
+    run = Run(tmp_path, roles={"orchestrator": RoleConfig("codex")}, quiet=True)
+    assert run.call("orchestrator", brief="go", schema=Out)[0].answer == "ok"
+    retry = lost.calls[1]["prompt"]
+    assert "ONLY one JSON object with the fields answer" in retry and "search query" in retry
+    kept = [json.loads(line) for line in (tmp_path / "activity").glob("*.jsonl").__next__().open()]
+    assert kept[0]["events"][0]["command"] == "search x", "what it did before the bad answer"
