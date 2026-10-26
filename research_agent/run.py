@@ -225,6 +225,12 @@ class Run:
                 self._report(label, None, [f"{cfg}: {_why(exc)}"], time.monotonic() - started,
                              session=rb.session_id, attempt=attempt)
                 raise
+            except BaseException as exc:
+                # Paused, stopped, or failed: the call has ended either way,
+                # and whoever shows calls under way must hear it.
+                self._report(label, None, [f"{type(exc).__name__}: {str(exc)[:200]}"],
+                             time.monotonic() - started, session=rb.session_id, attempt=attempt)
+                raise
             self._keep(label, rb, attempt, reply, problems, time.monotonic() - started)
             self._report(label, reply, problems, time.monotonic() - started,
                          session=rb.session_id, attempt=attempt)

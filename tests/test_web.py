@@ -513,3 +513,56 @@ def test_autopilot_from_the_page_to_the_end(web, script):
     assert "autopilot" in kinds
     assert autopilot.load(folder).decisions == 2
     assert web.put("/api/runs/auto/autopilot", json={"on": False}).json()["on"] is False
+
+
+def test_a_run_set_up_before_it_starts(web, script):
+    r = web.post("/api/runs", json={"idea": "Few-shot selection by search", "name": "held",
+                                    "start": False})
+    d = r.json()
+    assert r.status_code == 200 and d["held_idea"] == "Few-shot selection by search"
+    assert not d["started"] and not d["busy"] and script.calls == [], "no model is called yet"
+    assert web.put("/api/runs/held/models", json={"group": "bootstrap", "role": "discussor",
+                                                  "provider": "fake"}).status_code == 200
+    script.add("DiscussorOutput", say("Interesting. What data?"))
+    assert web.post("/api/runs/held/start").status_code == 200
+    d = settle(web, "held")
+    assert d["waiting"] and not d["held_idea"]
+    assert "Few-shot selection by search" in script.calls[0]["prompt"]
+    assert web.post("/api/runs/held/start").status_code == 400, "started already"
+
+
+def test_a_new_model_takes_over_a_call_that_waits(web, script, monkeypatch):
+    from research_backend.backends._progress import notice, wait_or_cancel
+
+    class Broke:
+        name, max_access, on_progress = "codex", script.max_access, None
+
+        def run_structured(self, **kw):
+            notice(self, "Out of credits. Waiting 30 min.", until=time.time() + 1800)
+            wait_or_cancel(1800, None, None)
+            raise AssertionError("the wait should have ended")
+
+    broke = Broke()
+    monkeypatch.setattr("research_backend.conversation._backend",
+                        lambda provider, *a, **k: broke if provider == "claude_code" else script)
+    web.post("/api/runs", json={"idea": "an idea", "name": "sw", "start": False})
+    web.put("/api/runs/sw/models", json={"group": "bootstrap", "role": "discussor",
+                                         "provider": "claude_code"})
+    script.add("DiscussorOutput", say("Hello from the new model."))
+    web.post("/api/runs/sw/start")
+    end = time.time() + 5
+    while time.time() < end and not any(c.get("notice") for c in
+                                        web.get("/api/runs/sw/live").json()["running"]):
+        time.sleep(0.05)
+    assert web.get("/api/runs/sw/live").json()["running"][0]["notice"].startswith("Out of credits")
+    # The user picks a model with credits: the wait ends, and the run goes on with it.
+    web.put("/api/runs/sw/models", json={"group": "bootstrap", "role": "discussor",
+                                         "provider": "fake"})
+    end = time.time() + 10
+    while time.time() < end:
+        d = web.get("/api/runs/sw").json()
+        if d["waiting"] and not d["busy"]:
+            break
+        time.sleep(0.05)
+    assert d["waiting"] and d["transcript"][-1]["text"] == "Hello from the new model."
+    assert web.get("/api/runs/sw/live").json()["running"] == [], "no stale call left"

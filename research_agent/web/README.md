@@ -41,6 +41,18 @@ Then open http://localhost:8421.
 +------------------+-------------------------------------------------+--------------------+
 ```
 
+### Setting a run up before it starts
+
+**New run** has **Set up first** ticked: the run is created with your idea
+(kept in `<run>/idea.txt`), and nothing calls a model until you press **Start
+the run** over the composer. Meanwhile choose each role's model and backups
+(Run tab), each node's skills and the researcher's literature sources (the
+node windows, from the Graph tab), and Autopilot. Untick it to start at once.
+
+A role's model changed while one of its calls waits (out of credits, a full
+model) takes over at once: the wait ends and the run carries on with the new
+model, by itself.
+
 ### The discussor is always there
 
 The composer is never disabled. What a message does depends on the moment:
@@ -277,7 +289,8 @@ Deep links: `/?tab=graph&side=jobs#<run>` opens a run with those tabs showing.
 | method | path | what |
 | --- | --- | --- |
 | GET | `/api/runs` | the runs in the runs folder |
-| POST | `/api/runs` | `{idea}` or `{start_from}` (a reviewed run), optional `name`: start a run |
+| POST | `/api/runs` | `{idea}` or `{start_from}` (a reviewed run), optional `name`; `start: false` creates it without starting |
+| POST | `/api/runs/{id}/start` | start a run created with `start: false`, from its idea |
 | GET | `/api/runs/{id}` | its status and chat history |
 | POST | `/api/runs/{id}/message` | `{text}`: an answer, an aside, or the idea (the reply says which) |
 | POST | `/api/runs/{id}/approve` | `{sections}` |

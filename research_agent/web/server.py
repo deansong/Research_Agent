@@ -48,6 +48,9 @@ class NewRun(BaseModel):
     start_from: str = ""
     """A run id (in the runs folder) or a folder: start the next run from it."""
     name: str = ""
+    start: bool = True
+    """False: create the run with its idea, and wait for Start -- so models,
+    backups, skills and sources can be set first."""
     model_config = {"extra": "forbid"}
 
 
@@ -183,7 +186,10 @@ def create_app(runs_root: Path = RUNS_ROOT, *, roles=(), watch: bool = True) -> 
                 raise _bad(409, "exists", f"{folder} exists already.")
             S.Store(folder).write(S.new())
         host = host_of(folder.name)
-        act(lambda: host.message(idea))
+        if body.start:
+            act(lambda: host.message(idea))
+        else:
+            host.hold(idea)
         return host.detail()
 
     @app.get("/api/runs/{run_id}")
@@ -226,6 +232,12 @@ def create_app(runs_root: Path = RUNS_ROOT, *, roles=(), watch: bool = True) -> 
     @app.post("/api/runs/{run_id}/pause")
     def pause(run_id: str):
         return {"ok": True, "as": act(host_of(run_id).pause)}
+
+    @app.post("/api/runs/{run_id}/start")
+    def start(run_id: str):
+        """Start a run created with start=false, from its idea."""
+        act(host_of(run_id).start_held)
+        return {"ok": True}
 
     @app.post("/api/runs/{run_id}/resume")
     def resume(run_id: str):

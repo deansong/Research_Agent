@@ -49,6 +49,7 @@ async function openRun(id) {
   window.history.replaceState(null, "", `#${encodeURIComponent(id)}`);
   chat.reset();
   chat.history(d.transcript || []);
+  if (d.held_idea) chat.line(`Your idea, not sent yet: "${d.held_idea}". Choose the models, backups, skills and sources, then press Start the run.`, "note");
   stateView.setRun(id);
   stateView.load();
   inspector.setRun(id);
@@ -126,6 +127,10 @@ function renderActions(d) {
     buttons.push({ label: what, kind: "primary", onclick: () => act(() => api.go(d.id)) });
   }
   if (d.stopped_midway && !d.busy) buttons.push({ label: "Carry on", onclick: () => act(() => api.resume(d.id)) });
+  if (d.held_idea && !d.started && !d.busy) {
+    buttons.push({ label: "Start the run", kind: "primary", title: d.held_idea, onclick: () => act(() => api.start(d.id)) });
+    buttons.push({ label: "Models and backups", onclick: () => document.querySelector('#inspector-tabs .tab[data-tab="run"]').click() });
+  }
   if (d.can_execute) buttons.push({ label: "Start execution", kind: "primary", onclick: () => $("dialog-execute").showModal() });
   chat.setActions(buttons);
 }
@@ -232,7 +237,8 @@ function wireDialogs() {
   $("new-cancel").addEventListener("click", () => $("dialog-new").close());
   $("form-new").addEventListener("submit", async (e) => {
     e.preventDefault();
-    const body = { idea: $("new-idea").value.trim(), start_from: $("new-from").value, name: $("new-name").value.trim() };
+    const body = { idea: $("new-idea").value.trim(), start_from: $("new-from").value, name: $("new-name").value.trim(),
+      start: !$("new-hold").checked };
     if (!body.idea && !body.start_from) { $("new-error").textContent = "Give your idea, or a run to start from."; return; }
     try {
       const d = await api.newRun(body);

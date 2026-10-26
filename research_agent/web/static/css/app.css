@@ -262,6 +262,7 @@ dialog label { display: flex; flex-direction: column; gap: 4px; margin-bottom: 1
 dialog input, dialog textarea, dialog select { font: 13px var(--sans); color: var(--text); background: var(--bg-input);
   border: 1px solid var(--line-bright); border-radius: 6px; padding: 6px 8px; }
 .dialog-actions { display: flex; justify-content: flex-end; gap: 8px; margin-top: 8px; }
+dialog label.check { flex-direction: row; align-items: center; gap: 8px; color: var(--text); }
 .dialog-head { display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px; }
 .form-error { color: var(--danger); min-height: 1em; margin: 0; }
 .run-list { display: flex; flex-direction: column; gap: 6px; max-height: 60vh; overflow-y: auto; }

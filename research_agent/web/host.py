@@ -65,6 +65,9 @@ class RunHost:
         self._lock = threading.RLock()
         self._worker: threading.Thread | None = None
         self._pause = threading.Event()
+        self._switching = ""
+        """Set when a role's model changed while its call waited: the run is
+        paused to end the wait, and carries on by itself."""
         self._asides = 0
         self.error = ""
         self.current = ""
@@ -117,6 +120,7 @@ class RunHost:
                 "can_execute": self.stage == "bootstrap" and S.approved(st, "design")
                 and not self.busy,
                 "autopilot": vars(autopilot.load(self.folder)),
+                "held_idea": self.held_idea if not self._status.get("started") else "",
                 **self._status}
 
     def _refresh_status(self) -> None:
@@ -133,6 +137,34 @@ class RunHost:
 
     # ---- what the user does -----------------------------------------------------------
 
+    # ---- a run set up before it starts ------------------------------------------------
+
+    IDEA_FILE = "idea.txt"
+
+    @property
+    def held_idea(self) -> str:
+        """The idea of a run created but not started yet ("" otherwise)."""
+        path = self.folder / self.IDEA_FILE
+        try:
+            return path.read_text(encoding="utf-8").strip() if path.exists() else ""
+        except OSError:
+            return ""
+
+    def hold(self, idea: str) -> None:
+        """Create the run without starting it: nothing calls a model until
+        Start, so the models, backups, skills and sources can be set first."""
+        (self.folder / self.IDEA_FILE).write_text(idea.strip() + "\n", encoding="utf-8")
+        self.bus.emit("note", text="The run is set up but not started. Choose the models and "
+                                   "backups (Run tab), skills and sources (each node's window), "
+                                   "then press Start.")
+        self.status_event()
+
+    def start_held(self) -> None:
+        idea = self.held_idea
+        if not idea:
+            raise ValueError("This run has no idea waiting to start.")
+        self.message(idea)
+
     def message(self, text: str) -> str:
         """The user says something: an answer, an aside, or the idea that
         starts the run. Returns which."""
@@ -141,6 +173,7 @@ class RunHost:
             raise ValueError("Say something.")
         with self._lock:
             if self.stage == "bootstrap" and not self._status.get("started") and not self.busy:
+                (self.folder / self.IDEA_FILE).unlink(missing_ok=True)
                 self.bus.emit("chat", role="user", text=text, kind="answer")
                 self._run(lambda on: self.session.start(text, on_step=on))
                 return "start"
@@ -252,6 +285,13 @@ class RunHost:
         if on:
             self._autopilot_go_on()
         return self.autopilot_settings()
+
+    def _carry_on(self, why: str) -> None:
+        try:
+            self.resume()
+            self.bus.emit("note", text=f"Carrying on: {why}.")
+        except (ValueError, Busy) as exc:
+            self.bus.emit("note", text=f"Could not carry on by itself ({exc}): press Carry on.")
 
     def _autopilot_go_on(self) -> None:
         """Autopilot was ticked, or a stage just ended: if the run is waiting
@@ -560,6 +600,15 @@ class RunHost:
             raise ValueError("The group is bootstrap or execution.")
         if live:
             self.session.run.roles[role] = spec
+            if self.busy and any(c.get("notice") for c in self.live.values()):
+                # A call is waiting (out of credits, a full model): the new
+                # model takes over now, not after the wait.
+                self._switching = f"{role} now runs on {spec}"
+                self._pause.set()
+                self.bus.emit("note", text=f"{group} {role} now runs on {spec}: ending the wait, "
+                                           f"then carrying on with it.")
+                self.status_event()
+                return {"role": role, "group": group, "now": str(spec)}
         then = f", then {', '.join(spec.backup)}" if spec.backup else ""
         self.bus.emit("note", text=f"{group} {role} now runs on {spec}{then} (from its next call).")
         self.status_event()
@@ -585,8 +634,9 @@ class RunHost:
             except _Paused:
                 self.bus.emit("note", text="Paused. Carry on when you are ready.")
             except RB.BackendCancelled:
-                self.bus.emit("note", text="Paused while waiting. Change the role's model or "
-                                           "give it a backup (Run tab), then Carry on.")
+                if not self._switching:
+                    self.bus.emit("note", text="Paused while waiting. Change the role's model "
+                                               "or give it a backup (Run tab), then Carry on.")
             except RB.BackendError as exc:
                 self.error = str(exc)
                 self.bus.emit("error", message=str(exc)[:3000])
@@ -600,7 +650,14 @@ class RunHost:
                 finally:
                     self.current = ""
                     self.status_event()
-                if autopilot.load(self.folder).on and not self._pause.is_set():
+                if self._switching:
+                    # A role's model changed while its call waited: carry on
+                    # with the new one, once this thread has ended.
+                    me, why = threading.current_thread(), self._switching
+                    self._switching = ""
+                    threading.Thread(target=lambda: (me.join(), self._carry_on(why)),
+                                     daemon=True).start()
+                elif autopilot.load(self.folder).on and not self._pause.is_set():
                     # The bootstrap is done: the autopilot starts the
                     # execution, once this thread has ended.
                     me = threading.current_thread()
