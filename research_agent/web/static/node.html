@@ -8,28 +8,35 @@
 </head>
 <body class="node-window">
   <header class="topbar">
-    <div class="brand"><span class="dot"></span>node live view</div>
+    <div class="brand"><span class="dot"></span>node</div>
     <div class="run-bar">
-      <span id="node-name" class="mono">-</span>
+      <span id="node-name" class="mono node-title">-</span>
+      <span id="node-model" class="mono small dim"></span>
       <span id="node-state" class="pill">-</span>
       <span id="run-name" class="dim small mono"></span>
     </div>
     <div class="topbar-actions">
       <label class="follow" title="Show each new call of this node as it starts"><input id="follow" type="checkbox" checked> follow</label>
+      <button id="node-settings" class="btn small" title="The node's model, skills, instructions and design">&#9881; Node</button>
       <span id="live-dot" class="live-dot" title="updating"></span>
     </div>
   </header>
   <main class="node-page">
     <aside class="node-calls">
-      <div id="node-info" class="node-info"></div>
-      <h2>Calls</h2>
+      <div id="call-filter" class="call-filter"></div>
       <div id="call-list" class="calls"></div>
+      <div class="hint keys">j / k: next / previous call</div>
     </aside>
     <section class="node-stream">
       <div id="call-head" class="call-head"></div>
+      <nav id="call-tabs" class="call-tabs"></nav>
       <div id="stream" class="stream"><div class="empty">Waiting for this node's first call...</div></div>
       <div id="tails" class="tails"></div>
     </section>
+    <aside id="node-drawer" class="node-drawer" hidden>
+      <div class="drawer-head"><h2>The node</h2><button id="drawer-close" class="btn small icon" title="Close">&times;</button></div>
+      <div id="node-info" class="node-info"></div>
+    </aside>
   </main>
   <script type="module" src="/js/node.js"></script>
 </body>

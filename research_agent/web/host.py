@@ -636,9 +636,10 @@ def node_of(label: str) -> str:
     return (label or "").split(" ")[0]
 
 
-def activity(folder: Path, node: str = "", limit: int = 30) -> list[dict]:
+def activity(folder: Path, node: str = "", limit: int = 40) -> list[dict]:
     """The calls a node made, newest first, every event of each -- from
-    <run>/activity/<session>.jsonl."""
+    <run>/activity/<session>.jsonl -- with a line on what went in and what
+    came out (`said`, `outcome`, `to`), and the tokens, for the call list."""
     out = []
     for path in (Path(folder) / "activity").glob("*.jsonl"):
         try:
@@ -654,7 +655,85 @@ def activity(folder: Path, node: str = "", limit: int = 30) -> list[dict]:
             if not node or rec["node"] == node:
                 out.append(rec)
     out.sort(key=lambda r: r.get("at") or "", reverse=True)
-    return out[:limit]
+    out = out[:limit]
+    turns: dict[str, list] = {}
+    for rec in out:
+        sid = rec.get("session") or ""
+        if sid not in turns:
+            try:
+                turns[sid] = json.loads((Path(folder) / "rb" / "sessions" / sid / "session.json")
+                                        .read_text()).get("turns") or []
+            except (OSError, ValueError):
+                turns[sid] = []
+        turn = next((t for t in turns[sid] if t.get("turn") == rec.get("turn")), {})
+        # The session has the whole answer; the activity line keeps 20,000 characters.
+        rec.update(previews(turn.get("prompt") or "", turn.get("reply") or rec.get("reply") or ""),
+                   tokens=turn.get("tokens"))
+        if rec.get("problems"):
+            rec["outcome"] = _line("not usable: " + "; ".join(rec["problems"]))
+        elif not rec["outcome"] and turn.get("error"):
+            rec["outcome"] = _line("failed: " + turn["error"])
+    return out
+
+
+_SECTION = re.compile(r"^=== (.+?) ===$", re.M)
+
+
+def sections(prompt: str) -> list[tuple[str, str]]:
+    """A brief's `=== TITLE ===` sections: (title, text); text before the
+    first is titled ""."""
+    found = list(_SECTION.finditer(prompt))
+    out = [("", prompt[:found[0].start()].strip())] if found else [("", prompt.strip())]
+    for i, m in enumerate(found):
+        end = found[i + 1].start() if i + 1 < len(found) else len(prompt)
+        out.append((m.group(1), prompt[m.end():end].strip()))
+    return [(t, x) for t, x in out if t or x]
+
+
+def _line(text: str, n: int = 160) -> str:
+    flat = " ".join(str(text or "").split())
+    return flat if len(flat) <= n else flat[:n - 1].rstrip() + "…"
+
+
+def previews(prompt: str, reply: str) -> dict:
+    """What went in and what came out of one call, a line each, and where
+    it handed to: for a list of calls that tells them apart."""
+    said = ""
+    if prompt.startswith("Your answer could not be used:"):
+        said = "retry: " + prompt.split("\n", 2)[1].lstrip("- ") if "\n" in prompt else "retry"
+    else:
+        parts = dict(sections(prompt))
+        aside = any(t.startswith("AN ASIDE") for t in parts)
+        for title in ("THE USER SAYS", "THE LAST PIECE OF WORK", "TASK", "YOUR TASK", "THE STEP",
+                      "NOW"):
+            if parts.get(title):
+                said = ("you (aside): " if aside else "you: " if title == "THE USER SAYS"
+                        else "") + parts[title]
+                break
+        else:
+            said = next((x for t, x in sections(prompt) if x), "")
+    try:
+        data = json.loads(reply)
+    except ValueError:
+        data = None
+    to, outcome = "", ""
+    if isinstance(data, dict):
+        if data.get("reply"):
+            outcome, to = data["reply"], data.get("hand_to") or ""
+        elif data.get("action"):
+            to = data["action"] + (f" {data['step']}" if data.get("step") else "")
+            outcome = data.get("reason") or data.get("task") or ""
+        elif data.get("verdict"):
+            to, outcome = data["verdict"], data.get("summary") or data.get("reason") or ""
+        elif data.get("state") and data.get("summary"):
+            to, outcome = data["state"], data["summary"]
+        else:
+            outcome = next((v for v in data.values() if isinstance(v, str) and v.strip()), "") \
+                or ", ".join(f"{len(v)} {k.replace('_', ' ')}" for k, v in data.items()
+                             if isinstance(v, list) and v)
+    else:
+        outcome = reply
+    return {"said": _line(said), "outcome": _line(outcome), "to": _line(to, 40)}
 
 
 def _summary(node: str, update: dict) -> str:

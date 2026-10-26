@@ -259,8 +259,11 @@ def test_a_node_s_work_live_and_afterwards(web, script):
     assert [c["session"] for c in orch] == ["orchestrator-002", "orchestrator-001"], "newest first"
     disc = web.get("/api/runs/n/activity", params={"node": "discussor"}).json()["calls"]
     assert disc and all(c["node"] == "discussor" for c in disc)
+    # A line on what went in and what came out of each call, for the list.
+    assert all(c["said"] for c in disc) and disc[-1]["to"] in ("user", "orchestrator")
+    assert orch[0]["to"] and orch[0]["tokens"]["input_tokens"] == 1000
     page = web.get("/node/n/researcher")
-    assert page.status_code == 200 and "node live view" in page.text
+    assert page.status_code == 200 and 'id="call-tabs"' in page.text
     events = web.get("/api/runs/n/events?follow=false").text
     assert '"node": "researcher"' in events, "call events say which node"
 
@@ -426,3 +429,19 @@ def test_an_execution_node_s_skills_override_the_design(tmp_path):
     assert exec_nodes.skills_for(run, {"name": "trainer", "skills": ["transformers"]}) == ["peft"]
     assert exec_nodes.skills_for(run, {"name": "checker", "skills": ["peft"]}, "validator") is None
     assert exec_nodes.skills_for(run, {"name": "builder", "skills": ["peft", "nope"]}) == ["peft"]
+
+
+def test_a_call_in_a_line_what_went_in_and_what_came_out():
+    from research_agent.web.host import previews, sections
+
+    brief = "=== THE USER SAYS ===\nyes, go\n\n=== APPROVALS ===\nplan: v2"
+    assert sections(brief) == [("THE USER SAYS", "yes, go"), ("APPROVALS", "plan: v2")]
+    assert previews(brief, json.dumps({"reply": "On it.", "hand_to": "orchestrator"})) == {
+        "said": "you: yes, go", "outcome": "On it.", "to": "orchestrator"}
+    aside = "=== AN ASIDE -- the team is working ===\n...\n=== THE USER SAYS ===\nwhy H2?"
+    assert previews(aside, "{}")["said"] == "you (aside): why H2?"
+    done = previews("=== THE LAST PIECE OF WORK ===\nplanner wrote H1-H3",
+                    json.dumps({"action": "run", "step": "4", "reason": "deps pass"}))
+    assert done == {"said": "planner wrote H1-H3", "outcome": "deps pass", "to": "run 4"}
+    assert previews("Your answer could not be used:\n- no task\n\nAgain.", "x")["said"] == "retry: no task"
+    assert previews("plan it", json.dumps({"summary": "", "hypotheses": [1, 2]}))["outcome"] == "2 hypotheses"

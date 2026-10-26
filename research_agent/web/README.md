@@ -89,21 +89,44 @@ Click a node in the **Graph** tab, or **live ↗** next to a call in **Model
 calls**. The node opens in its own window at `/node/<run>/<node>`: every call
 it makes, while it makes it. That is what you watch when you are debugging.
 
-- **The call under way**, refreshed every second:
-  - each command it runs, with the end of its output;
-  - each tool or web search it uses, and each file it changes;
-  - its reasoning, and how long ago it last did anything;
-  - the text it is writing right now (its answer, its reasoning, a command's
-    output).
-- **Its earlier calls**, newest first: every event, what it was sent (the
-  brief) and what it answered. These come from `<run>/activity/<session>.jsonl`.
-  The agent writes one line there per call, in the terminal too, because a
-  research_backend session keeps only the input and the answer.
-- **follow** (on by default) switches to each new call of the node as it starts.
-- **The node**, top left: its role, the model it runs on (provider, model,
-  effort), its access, steps and skills, its standing instructions, and its
-  part of the design.
-- **Its skills**, each with its description, and **Change** to choose them:
+```
+┌ discussor  codex · read_only   IDLE                         [x] follow  [⚙ Node] ┐
+├─────────────────────────────┬──────────────────────────────────────────────────────┤
+│ (all) asides  problems      │ ANSWERED discussor · Today 10:35 · 14.9s · 285k in   │
+│ TODAY                       │ Summary  Input  Activity  Output  Raw                │
+│ ✓ 10:35 14.9s 285k → orch.  │ YOU SAID   yes                                       │
+│   you: yes                  │ IT ANSWERED                                          │
+│   The team will prepare…    │   Reply     The team will prepare a small batch…     │
+│ YESTERDAY                   │   Hands to  ORCHESTRATOR                             │
+│ ✓ 22:35  8.8s 285k → user   │   Why       The user approved…                       │
+│ ⚠ 21:55  9.9s RETRY 2       │ IT ALSO GAVE  decisions: 1   requests: 1             │
+└─────────────────────────────┴──────────────────────────────────────────────────────┘
+```
+
+- **The calls**, on the left, newest first and grouped by day. Each is a line
+  or three: whether it answered (✓) or its answer could not be used (⚠),
+  the time, how long, the tokens it read, where it handed to (`→ user`,
+  `→ run 4`, `→ pass`), what went in (your words, or its task) and what came
+  out (its reply, or its reason). Asides and retries are marked. Filter to
+  **asides** or **problems**; **j** / **k** move through the list.
+- **The call under way** is pinned on top, with what it is writing now.
+  **follow** (on by default) switches to each new call as it starts.
+- **The chosen call**, in tabs:
+  - **Summary:** what you said or what it was asked; what it answered, field
+    by field (reply, hands to, action, verdict, why, task, ...); and what
+    else it gave (decisions, requests, ...), each a link into Output.
+  - **Input:** the exact message it was sent, split at its `=== SECTION ===`
+    headers, with an index; long sections start folded.
+  - **Activity:** each command it ran, with the end of its output; each
+    tool, web search and file change; its reasoning.
+  - **Output:** its answer as a tree, empty fields left out.
+  - **Raw:** the settings it ran with, its answer as JSON, and its standing
+    instructions.
+  - For a call under way: **Live** (what it does, refreshed every second, and
+    the text it is writing), **Input** and **Raw**.
+- **⚙ Node** opens a drawer with the node's role, model, access, steps, its
+  standing instructions and its part of the design, and its **skills**, each
+  with its description, and **Change** to choose them:
   - none;
   - auto: the model sees every skill's name and description, and reads the
     ones it needs;
@@ -115,18 +138,18 @@ it makes, while it makes it. That is what you watch when you are debugging.
   the approved design. A change applies from the node's next call, and a
   conversation already under way, such as the discussor's, gets the new
   skills with its next message.
-- **Each call:** the settings it ran with; **Sent to the model**, the exact
-  message, which for a call under way is the one being sent now; **What it
-  did**; **Its answer**; and the standing instructions sent with every
-  message.
+- **Links:** `?tab=input` opens a tab, `?drawer=1` the drawer.
+
+Finished calls come from `<run>/activity/<session>.jsonl` (every event of each
+call; the agent writes it in the terminal too) and the sessions' turns (what
+was sent and the whole answer). The live feed comes from research_backend's
+`send(on_progress=)`: every provider reports what its model is doing about
+once a second.
 
 Nodes and their calls: the bootstrap's discussor (asides too), orchestrator,
 researcher, planner (both jobs) and designer; in the execution, each step
 owner (all its steps and attempts), the validator and the reviewer. **wait**
 opens the Jobs tab, and **you** goes back to the chat.
-
-The live feed comes from research_backend's `send(on_progress=)`: every
-provider reports what its model is doing about once a second.
 
 ### Which model each role runs on
 
@@ -224,7 +247,7 @@ Deep links: `/?tab=graph&side=jobs#<run>` opens a run with those tabs showing.
 | GET | `/api/runs/{id}/graph`, `/sessions`, `/sessions/{sid}`, `/files`, `/file?path=`, `/jobs`, `/jobs/{job}/log` | |
 | GET | `/api/runs/{id}/events?after_seq=` | the event stream |
 | GET | `/api/runs/{id}/live?node=` | the calls under way (of one node): their newest events and what is being written |
-| GET | `/api/runs/{id}/activity?node=` | a node's finished calls, newest first, every event |
+| GET | `/api/runs/{id}/activity?node=` | a node's finished calls, newest first: every event, a line on what went in and came out (`said`, `outcome`, `to`), and the tokens |
 | GET | `/state/{id}` | the research state window |
 | GET | `/node/{id}/{node}` | a node's live window |
 

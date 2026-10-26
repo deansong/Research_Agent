@@ -1,10 +1,12 @@
-// One graph node's model calls, live (/node/<run>/<node>): what the model is
-// doing right now -- the commands it runs and their output, files it changes,
-// its reasoning, what it is writing -- and every earlier call of the node,
-// with what it was sent and what it answered.
+// One graph node's model calls (/node/<run>/<node>): on the left, every call
+// in a line or three -- what went in, what came out, where it handed to --
+// with the call under way pinned on top; on the right, the chosen call in
+// tabs: a summary, the brief it was sent (by section), what it did, its
+// answer as a tree, and the raw JSON. The node's settings are in a drawer.
 
 import { api } from "./api.js";
-import { el, clear, pill, when } from "./dom.js";
+import { el, clear, pill } from "./dom.js";
+import { markdown } from "./md.js";
 
 const $ = (id) => document.getElementById(id);
 const parts = location.pathname.split("/").filter(Boolean).map(decodeURIComponent);
@@ -13,12 +15,14 @@ const node = parts[2];
 const LIVE_MS = 1000;
 const PAST_MS = 5000;
 
-const view = { running: [], past: [], selected: null, sent: new Map(), pastAt: 0, lastRunning: "", open: {} };
+const query = new URLSearchParams(location.search);
+const view = { running: [], past: [], selected: null, sent: new Map(), pastAt: 0, lastRunning: "",
+  tab: query.get("tab") || "summary", filter: "all", redraw: false };
 
 // ---- what an event looks like --------------------------------------------------------
 
 const MARK = { command: "$", tool: "*", file_change: "~", reasoning: "·", message: ">",
-  web_search: "?", plan: "=", error: "!", answer: "\u2713", turn: "\u2500" };
+  web_search: "?", plan: "=", error: "!", answer: "✓", turn: "─" };
 
 // The events worth a row: a command once (its start, completed with its
 // output), the newest reasoning, files, messages, searches, errors.
@@ -49,7 +53,7 @@ export function rows(events) {
       else out.push({ kind, text, at: e.at });
     } else if (kind === "message" && e.phase !== "started" && e.text) {
       const final = e.is_final_json === true || e.is_final_json === "True";
-      out.push(final ? { kind: "answer", text: "answered (its structured answer is below)", at: e.at }
+      out.push(final ? { kind: "answer", text: "answered (see Summary and Output)", at: e.at }
         : { kind, text: e.text, at: e.at });
     } else if (kind === "turn_started" || kind === "turn_completed") {
       out.push({ kind: "turn", text: kind === "turn_started" ? "turn started" : "turn ended", at: e.at });
@@ -85,30 +89,139 @@ function tail(text, lines) {
   return (all.length > lines ? `... ${all.length - lines} more lines\n` : "") + all.slice(-lines).join("\n");
 }
 
-// ---- drawing --------------------------------------------------------------------------
+// ---- a brief and an answer, read ------------------------------------------------------
 
-function drawList() {
-  const list = clear($("call-list"));
-  for (const c of view.running) {
-    list.append(callRow(c, true));
+// A brief's "=== TITLE ===" sections: [title, text]; text before the first is "".
+export function sections(prompt) {
+  const out = [];
+  const re = /^=== (.+?) ===$/gm;
+  let last = { title: "", start: 0 };
+  let m;
+  while ((m = re.exec(prompt || ""))) {
+    out.push([last.title, prompt.slice(last.start, m.index).trim()]);
+    last = { title: m[1], start: m.index + m[0].length };
   }
-  for (const c of view.past) list.append(callRow(c, false));
-  if (!view.running.length && !view.past.length) list.append(el("div", { class: "empty", text: "No calls yet." }));
+  out.push([last.title, (prompt || "").slice(last.start).trim()]);
+  return out.filter(([t, x]) => t || x);
+}
+
+function parsed(text) {
+  try { const d = JSON.parse(text); return d && typeof d === "object" ? d : null; } catch { return null; }
+}
+
+const isEmpty = (v) => v === null || v === undefined || v === "" || (Array.isArray(v) && !v.length)
+  || (typeof v === "object" && !Array.isArray(v) && Object.values(v).every(isEmpty));
+
+function oneLine(text, n) {
+  const flat = String(text || "").replace(/\s+/g, " ").trim();
+  return flat.length > n ? flat.slice(0, n - 1) + "…" : flat;
+}
+
+function kTokens(n) {
+  return n >= 1000 ? `${(n / 1000).toFixed(n >= 100000 ? 0 : 1)}k` : String(n || 0);
+}
+
+function clock(at) {
+  const d = new Date(at);
+  return isNaN(d) ? "" : d.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
+}
+
+function day(at) {
+  const d = new Date(at);
+  if (isNaN(d)) return "";
+  const today = new Date();
+  const yesterday = new Date(Date.now() - 86400000);
+  if (d.toDateString() === today.toDateString()) return "Today";
+  if (d.toDateString() === yesterday.toDateString()) return "Yesterday";
+  return d.toLocaleDateString([], { weekday: "short", month: "short", day: "numeric" });
+}
+
+// ---- the list of calls -----------------------------------------------------------------
+
+const FILTERS = [["all", "all"], ["asides", "asides"], ["problems", "problems"]];
+
+function shown(c) {
+  if (view.filter === "asides") return /\(aside\)/.test(c.label || "");
+  if (view.filter === "problems") return (c.problems || []).length || c.attempt > 1;
+  return true;
 }
 
 function key(c, running) {
   return running ? `run:${c.session}` : `done:${c.session}:${c.turn}:${c.attempt}`;
 }
 
-function callRow(c, running) {
-  const k = key(c, running);
-  return el("a", {
-    href: "#", class: `call ${running ? "running" : (c.problems || []).length ? "bad" : "done"} ${view.selected === k ? "selected" : ""}`,
-    onclick: (e) => { e.preventDefault(); $("follow").checked = running; select(k); },
-  }, running ? el("span", { class: "spinner" }) : null,
-  el("b", { text: c.label }),
-  el("div", { class: "dim small", text: running ? `${c.session} · working ${Math.round(c.elapsed)}s · ${c.events_total} events`
-    : `${c.session} · ${when(c.at)} · ${c.seconds}s${c.attempt > 1 ? ` · attempt ${c.attempt}` : ""}` }));
+function drawFilter() {
+  clear($("call-filter")).append(...FILTERS.map(([f, text]) => el("button", {
+    class: `chip ${view.filter === f ? "on" : ""}`, text,
+    onclick: () => { view.filter = f; drawFilter(); drawList(); } })));
+}
+
+function drawList() {
+  const list = clear($("call-list"));
+  for (const c of view.running) list.append(liveRow(c));
+  let lastDay = null;
+  const past = view.past.filter(shown);
+  for (const c of past) {
+    const d = day(c.at);
+    if (d !== lastDay) { list.append(el("div", { class: "day", text: d })); lastDay = d; }
+    list.append(callRow(c));
+  }
+  if (!view.running.length && !past.length) {
+    list.append(el("div", { class: "empty", text: view.past.length ? "No calls match." : "No calls yet." }));
+  }
+  const sel = list.querySelector(".crow.selected");
+  if (sel && view.scrollList) { sel.scrollIntoView({ block: "nearest" }); view.scrollList = false; }
+}
+
+function pick(k, running) {
+  $("follow").checked = !!running;
+  view.scrollList = true;
+  select(k);
+}
+
+function liveRow(c) {
+  const k = key(c, true);
+  return el("a", { href: "#", class: `crow running ${view.selected === k ? "selected" : ""}`,
+    onclick: (e) => { e.preventDefault(); pick(k, true); } },
+  el("div", { class: "l1" }, el("span", { class: "spinner" }), el("b", { text: "now" }),
+    el("span", { class: "dim", text: ` working ${Math.round(c.elapsed)}s` }),
+    c.attempt > 1 ? pill(`attempt ${c.attempt}`, "warn") : null,
+    /\(aside\)/.test(c.label) ? pill("aside", "human") : null),
+  el("div", { class: "l2", text: oneLine(saidOf(c.prompt || ""), 110) }),
+  c.last ? el("div", { class: "l3 dim", text: oneLine(c.last, 110) }) : null);
+}
+
+function callRow(c) {
+  const k = key(c, false);
+  const bad = (c.problems || []).length;
+  const tokens = c.tokens ? `${kTokens(c.tokens.input_tokens)} in · ${kTokens(c.tokens.output_tokens)} out` : "";
+  return el("a", { href: "#", class: `crow ${bad ? "bad" : ""} ${view.selected === k ? "selected" : ""}`,
+    title: `${c.label} · ${c.session}${tokens ? " · " + tokens : ""}`,
+    onclick: (e) => { e.preventDefault(); pick(k, false); } },
+  el("div", { class: "l1" },
+    el("span", { class: `mark ${bad ? "bad" : "ok"}`, text: bad ? "⚠" : "✓" }),
+    el("span", { class: "mono", text: clock(c.at) }),
+    el("span", { class: "dim", text: ` ${c.seconds}s` }),
+    tokens ? el("span", { class: "dim", text: ` · ${kTokens(c.tokens.input_tokens)}` }) : null,
+    c.attempt > 1 ? pill(`retry ${c.attempt}`, "warn") : null,
+    /\(aside\)/.test(c.label) ? pill("aside", "human") : null,
+    c.label !== node && !/\(aside\)/.test(c.label) ? el("span", { class: "dim small", text: ` ${c.label}` }) : null,
+    c.to ? el("span", { class: "to", text: `→ ${c.to}` }) : null),
+  c.said ? el("div", { class: "l2", text: c.said }) : null,
+  c.outcome ? el("div", { class: `l3 ${bad ? "bad" : ""}`, text: c.outcome }) : null);
+}
+
+function saidOf(prompt) {
+  if (prompt.startsWith("Your answer could not be used:")) return "retry: " + (prompt.split("\n")[1] || "").replace(/^- /, "");
+  const s = Object.fromEntries(sections(prompt));
+  const aside = Object.keys(s).some((t) => t.startsWith("AN ASIDE"));
+  if (s["THE USER SAYS"]) return `${aside ? "you (aside)" : "you"}: ${s["THE USER SAYS"]}`;
+  for (const t of ["THE LAST PIECE OF WORK", "TASK", "YOUR TASK", "THE STEP", "NOW"]) if (s[t]) return s[t];
+  return (sections(prompt).find(([, x]) => x) || ["", ""])[1];
+}
+
+function visibleKeys() {
+  return [...view.running.map((c) => key(c, true)), ...view.past.filter(shown).map((c) => key(c, false))];
 }
 
 function select(k) {
@@ -124,32 +237,204 @@ function current() {
   return pool.find((c) => key(c, state === "run") === view.selected) || null;
 }
 
-async function sessionOf(sid) {
+// A session's settings and turns; fetched again when it lacks the turn wanted.
+async function sessionOf(sid, turn) {
   try {
-    if (!view.sent.has(sid)) view.sent.set(sid, await api.session(runId, sid));
+    const have = view.sent.get(sid);
+    if (!have || (turn != null && !(have.turns || []).some((t) => String(t.turn) === String(turn)))) {
+      view.sent.set(sid, await api.session(runId, sid));
+    }
     return view.sent.get(sid);
   } catch { return null; }
 }
 
-// What the node is: its role, the model it runs on, skills, access, steps,
-// and its standing instructions and part of the design.
+// ---- the chosen call -------------------------------------------------------------------
+
+const TABS_PAST = [["summary", "Summary"], ["input", "Input"], ["activity", "Activity"], ["output", "Output"], ["raw", "Raw"]];
+const TABS_LIVE = [["live", "Live"], ["input", "Input"], ["raw", "Raw"]];
+
+// The fields of an answer that say what it decided, in the order they are read.
+const HEADLINE = [["reply", "Reply"], ["hand_to", "Hands to"], ["action", "Action"], ["step", "Step"],
+  ["verdict", "Verdict"], ["state", "State"], ["reason", "Why"], ["task", "Task"], ["summary", "Summary"],
+  ["next", "Next"], ["note_for_discussor", "For the discussor"], ["questions_for_user", "For the user"],
+  ["problems", "Problems"]];
+
+async function drawSelected() {
+  const c = current();
+  const stream = $("stream");
+  const head = clear($("call-head"));
+  const tabs = clear($("call-tabs"));
+  clear($("tails"));
+  if (!c) {
+    clear(stream).append(el("div", { class: "empty", text: view.running.length || view.past.length ? "Pick a call." : "Waiting for this node's first call..." }));
+    return;
+  }
+  const running = view.selected.startsWith("run:");
+  const s = await sessionOf(c.session, running ? null : c.turn);
+  const turn = !running && s ? (s.turns || []).find((t) => String(t.turn) === String(c.turn)) : null;
+  const prompt = running ? c.prompt || "" : (turn && turn.prompt) || "";
+  const reply = running ? "" : (turn && turn.reply) || c.reply || "";
+  const data = parsed(reply);
+  const tokens = c.tokens || (turn && turn.tokens);
+
+  head.append(...[
+    running ? pill(`working ${Math.round(c.elapsed)}s${c.idle != null ? ` · quiet ${Math.round(c.idle)}s` : ""}`, "live")
+      : pill((c.problems || []).length ? "not usable" : "answered", (c.problems || []).length ? "bad" : "ok"),
+    el("b", { text: ` ${c.label}` }),
+    el("span", { class: "dim small", text: [running ? "" : `${day(c.at)} ${clock(c.at)}`, running ? "" : `${c.seconds}s`,
+      tokens ? `${kTokens(tokens.input_tokens)} in / ${kTokens(tokens.output_tokens)} out` : "",
+      c.attempt > 1 ? `attempt ${c.attempt}` : "", c.session].filter(Boolean).map((x) => ` · ${x}`).join("") }),
+  ]);
+
+  const list = running ? TABS_LIVE : TABS_PAST;
+  if (!list.some(([t]) => t === view.tab)) view.tab = running ? "live" : "summary";
+  tabs.append(...list.map(([t, text]) => el("button", { class: `tab ${view.tab === t ? "active" : ""}`, text,
+    onclick: () => { view.tab = t; view.top = true; drawSelected(); } })));
+
+  const pinned = stream.scrollHeight - stream.scrollTop - stream.clientHeight < 60;
+  const scroll = stream.scrollTop;
+  let body;
+  if (view.tab === "summary") body = summary(c, prompt, data, reply);
+  else if (view.tab === "input") body = input(prompt);
+  else if (view.tab === "activity") body = activity(c, false);
+  else if (view.tab === "output") body = data ? el("div", { class: "tree" }, tree(data)) : el("pre", { class: "pre small", text: reply || "(none)" });
+  else if (view.tab === "raw") body = raw(s, reply, running);
+  else body = activity(c, true);
+  clear(stream).append(body);
+  if (view.top) { stream.scrollTop = 0; view.top = false; }
+  else if (running && view.tab === "live" && pinned) stream.scrollTop = stream.scrollHeight;
+  else stream.scrollTop = scroll;
+
+  if (running && view.tab === "live") {
+    for (const [name, text] of Object.entries(c.live || {})) {
+      if (text && text.trim()) $("tails").append(el("div", { class: "tail" }, el("div", { class: "tail-head", text: `writing now: ${name}` }), el("pre", { text: tail(text, 30) })));
+    }
+  }
+}
+
+function summary(c, prompt, data, reply) {
+  const out = [];
+  if ((c.problems || []).length) {
+    out.push(el("div", { class: "callout bad" }, el("b", { text: "Its answer could not be used" }),
+      el("ul", {}, c.problems.map((p) => el("li", { text: p })))));
+  }
+  const s = Object.fromEntries(sections(prompt));
+  const said = s["THE USER SAYS"];
+  out.push(el("div", { class: "sum-block" }, el("h2", { text: said ? "You said" : "Asked to" }),
+    said ? el("blockquote", { class: "said", text: said })
+      : el("div", { class: "said-task", text: oneLine(saidOf(prompt), 600) || "(not known)" }),
+    el("a", { href: "#", class: "small", text: `the whole brief: ${prompt.length.toLocaleString()} characters, ${sections(prompt).length} sections →`,
+      onclick: (e) => { e.preventDefault(); view.tab = "input"; view.top = true; drawSelected(); } })));
+  if (!data) {
+    out.push(el("div", { class: "sum-block" }, el("h2", { text: "It answered" }),
+      el("div", { class: "msg-text", html: markdown(reply || "(nothing)") })));
+    return el("div", { class: "summary" }, out);
+  }
+  const facts = [];
+  for (const [k, label] of HEADLINE) {
+    const v = data[k];
+    if (isEmpty(v)) continue;
+    let shownValue;
+    if (k === "reply") shownValue = el("div", { class: "msg-text", html: markdown(String(v)) });
+    else if (Array.isArray(v)) shownValue = el("ul", { class: "plain" }, v.map((x) => el("li", { text: typeof x === "string" ? x : JSON.stringify(x) })));
+    else if (["hand_to", "action", "verdict", "state"].includes(k)) shownValue = pill(String(v), v === "pass" || v === "done" ? "ok" : v === "fail" || v === "failed" ? "bad" : "live");
+    else shownValue = el("div", { class: "pre", text: String(v) });
+    facts.push(el("dt", { text: label }), el("dd", {}, shownValue));
+  }
+  out.push(el("div", { class: "sum-block" }, el("h2", { text: "It answered" }),
+    facts.length ? el("dl", { class: "sum-facts" }, facts) : el("div", { class: "dim", text: "(see Output)" })));
+  // What else it recorded: the lists and objects with something in them.
+  const headline = new Set(HEADLINE.map(([k]) => k));
+  const more = Object.entries(data).filter(([k, v]) => !headline.has(k) && !isEmpty(v) && typeof v === "object");
+  if (more.length) {
+    out.push(el("div", { class: "sum-block" }, el("h2", { text: "It also gave" }),
+      el("div", { class: "chips" }, more.map(([k, v]) => el("a", { href: "#", class: "chip on",
+        text: Array.isArray(v) ? `${k.replace(/_/g, " ")}: ${v.length}`
+          : `${k.replace(/_/g, " ")}: ${Object.keys(v).filter((x) => !isEmpty(v[x])).join(", ")}`,
+        onclick: (e) => { e.preventDefault(); view.tab = "output"; view.top = true; view.focus = k; drawSelected(); } })))));
+  }
+  return el("div", { class: "summary" }, out);
+}
+
+function input(prompt) {
+  if (!prompt) return el("div", { class: "empty", text: "Not known: the call may predate this view." });
+  const secs = sections(prompt);
+  const id = (i) => `sec-${i}`;
+  return el("div", { class: "brief" },
+    el("div", { class: "sec-index" },
+      el("span", { class: "dim small", text: `${prompt.length.toLocaleString()} characters · ` }),
+      secs.map(([t], i) => el("a", { href: "#", class: "chip", text: t || "(start)",
+        onclick: (e) => { e.preventDefault(); const d = document.getElementById(id(i)); d.open = true; d.scrollIntoView({ block: "start" }); } })),
+      el("a", { href: "#", class: "small", text: " collapse all", onclick: (e) => {
+        e.preventDefault(); document.querySelectorAll(".brief details").forEach((d) => { d.open = false; }); } })),
+    secs.map(([t, text], i) => el("details", { class: "call-section", id: id(i), open: text.length < 6000 },
+      el("summary", {}, el("b", { text: t || "(start)" }), el("span", { class: "dim small", text: `  ${text.length.toLocaleString()} characters` })),
+      el("pre", { class: "pre small sent", text }))));
+}
+
+function activity(c, running) {
+  const items = rows(c.events).map(row);
+  return el("div", {},
+    el("div", { class: "dim small", text: `${items.length} of ${c.events_total ?? (c.events || []).length} events shown; bookkeeping left out` }),
+    el("div", { class: "tx-list" }, items.length ? items
+      : el("div", { class: "empty", text: running ? "Started; nothing reported yet." : "No events were recorded for this call." })));
+}
+
+// An answer as a tree: empty fields left out; lists of records as cards.
+function tree(v, k) {
+  if (Array.isArray(v)) {
+    if (v.every((x) => typeof x !== "object" || x === null)) return el("ul", { class: "plain" }, v.map((x) => el("li", { text: String(x) })));
+    return el("div", { class: "cards" }, v.map((x, i) => el("div", { class: "card" },
+      el("div", { class: "card-head dim small", text: x && (x.id || x.what || x.title) ? String(x.id || x.what || x.title).slice(0, 80) : `#${i + 1}` }),
+      tree(x))));
+  }
+  if (v && typeof v === "object") {
+    const entries = Object.entries(v).filter(([, x]) => !isEmpty(x));
+    if (!entries.length) return el("span", { class: "dim", text: "(empty)" });
+    return el("dl", { class: "tree-dl" }, entries.flatMap(([name, x]) => {
+      const dt = el("dt", { text: name.replace(/_/g, " ") });
+      if (k === undefined && view.focus === name) { dt.classList.add("focus"); setTimeout(() => dt.scrollIntoView({ block: "start" }), 0); }
+      return [dt, el("dd", {}, tree(x, name))];
+    }));
+  }
+  return el("div", { class: "pre", text: String(v) });
+}
+
+function raw(s, reply, running) {
+  let pretty = reply;
+  try { pretty = JSON.stringify(JSON.parse(reply), null, 2); } catch { /* text */ }
+  return el("div", {},
+    s ? el("div", { class: "settings mono small" },
+      `${s.provider}${s.model ? ":" + s.model : " (default model)"}${s.effort ? " · effort " + s.effort : ""}`
+      + ` · ${s.access} access${s.skills ? ` · skills: ${Array.isArray(s.skills) ? s.skills.join(", ") : s.skills}` : ""}`
+      + ` · works in ${s.workdir || "-"}`) : null,
+    running ? null : el("details", { class: "call-section", open: true }, el("summary", { text: "Its answer, as sent back" }),
+      el("pre", { class: "pre small reply", text: pretty || "(none)" })),
+    s && s.instructions ? el("details", { class: "call-section" }, el("summary", { text: "Its standing instructions (sent with every message)" }),
+      el("pre", { class: "pre small", text: s.instructions })) : null);
+}
+
+// ---- the node, in a drawer ---------------------------------------------------------------
+
 async function drawNode() {
   const box = clear($("node-info"));
   try {
     const n = await api.nodeInfo(runId, node);
     const r = n.runs_on || {};
-    box.append(...[el("h2", { text: "Node" }),
+    $("node-model").textContent = [`${r.provider || ""}${r.model && !r.model.startsWith("(") ? ":" + r.model : ""}`,
+      r.effort && !r.effort.startsWith("(") ? `effort ${r.effort}` : "", n.access].filter(Boolean).join(" · ");
+    box.append(...[
       el("dl", { class: "facts small" },
         [["Role", `${n.role}${n.group ? ` (${n.group})` : ""}`],
-          ["Runs on", `${r.provider}${r.model ? " \u00b7 " + r.model : ""}`],
+          ["Runs on", `${r.provider}${r.model ? " · " + r.model : ""}`],
           ["Effort", r.effort], ["Access", n.access], ["Steps", (n.steps || []).join(", ")]]
           .filter(([, v]) => v).flatMap(([k, v]) => [el("dt", { text: k }), el("dd", { text: v })])),
+      el("p", { class: "hint", text: "Change the model and its backups in the main page's Run tab." }),
       await skillsBox(n),
       n.design ? el("details", { class: "fold" }, el("summary", { text: "Its part of the design" }),
         el("pre", { class: "pre small", text: n.design })) : null,
       n.instructions ? el("details", { class: "fold" }, el("summary", { text: "Its standing instructions" }),
-        el("pre", { class: "pre small", text: n.instructions })) : null,
-      el("p", { class: "hint", text: "Change the model in the main page's Run tab." })].filter(Boolean));
+        el("pre", { class: "pre small", text: n.instructions })) : null].filter(Boolean));
   } catch (err) {
     box.append(el("div", { class: "dim small", text: err.message }));
   }
@@ -193,7 +478,7 @@ function skillSlot(slot, describe, labelled) {
         : null,
       given.length ? el("ul", { class: "given" }, given.map((s) => el("li", { title: describe[s] || "" },
         el("span", { class: "mono", text: s }),
-        el("span", { class: "dim", text: describe[s] ? ` \u2014 ${clip(describe[s], 100)}` : " (not in the skills folder)" })))) : null,
+        el("span", { class: "dim", text: describe[s] ? ` — ${clip(describe[s], 100)}` : " (not in the skills folder)" })))) : null,
       slot.from_design ? el("div", { class: "dim", text: "From the approved design." }) : null),
     el("details", { class: "fold" }, el("summary", { text: "Change" }),
       mode, list,
@@ -201,71 +486,16 @@ function skillSlot(slot, describe, labelled) {
         const skills = [...list.querySelectorAll("input:checked")].map((i) => i.value);
         try {
           await api.setSkills(runId, node, { key: slot.key, mode: mode.value, skills });
-          status.textContent = " \u2713 saved: used from its next call";
+          status.textContent = " ✓ saved: used from its next call";
           drawNode();
         } catch (err) { status.textContent = ` ! ${err.message}`; }
       } }), status)),
     el("div", { class: "hint", text: `kept in ${slot.file}` }));
 }
 
-function section(title, body, open, cls) {
-  return el("details", { class: `call-section ${cls || ""}`, open }, el("summary", { text: title }), body);
-}
-
-async function drawSelected() {
-  const c = current();
-  const stream = $("stream");
-  const tails = clear($("tails"));
-  const head = clear($("call-head"));
-  if (!c) {
-    clear(stream).append(el("div", { class: "empty", text: view.running.length || view.past.length ? "Pick a call." : "Waiting for this node's first call..." }));
-    return;
-  }
-  const running = view.selected.startsWith("run:");
-  const s = await sessionOf(c.session);
-  head.append(...[el("b", { text: c.label }), " ", el("span", { class: "mono small dim", text: `${c.session}${c.model ? " · " + c.model : ""}` }), " ",
-    running ? pill(`working ${Math.round(c.elapsed)}s${c.idle != null ? ` · quiet ${Math.round(c.idle)}s` : ""}`, "live")
-      : pill(`${c.seconds}s`, (c.problems || []).length ? "bad" : "ok"),
-    running && c.events_total > c.events.length ? el("span", { class: "dim small", text: ` showing the last ${c.events.length} of ${c.events_total} events` }) : null]
-    .filter((x) => x !== null));
-  const pinned = stream.scrollHeight - stream.scrollTop - stream.clientHeight < 60;
-  const open = view.open;                     // which sections the user opened or closed
-  const keep = (name, dflt) => (name in open ? open[name] : dflt);
-  // What it ran with -- from its session.
-  const settings = s ? el("div", { class: "settings mono small" },
-    `${s.provider}${s.model ? ":" + s.model : " (default model)"}${s.effort ? " \u00b7 effort " + s.effort : ""}`
-    + ` \u00b7 ${s.access} access${s.skills ? ` \u00b7 skills: ${Array.isArray(s.skills) ? s.skills.join(", ") : s.skills}` : ""}`
-    + ` \u00b7 works in ${s.workdir || "-"}`) : null;
-  // What it was sent: the message of the call under way, or of this turn.
-  const turn = !running && s ? (s.turns || []).find((t) => String(t.turn) === String(c.turn)) : null;
-  const sent = running ? c.prompt || "" : (turn && turn.prompt) || "";
-  const items = rows(c.events).map(row);
-  let answer = c.reply || "";
-  try { answer = JSON.stringify(JSON.parse(answer), null, 2); } catch { /* text */ }
-  clear(stream).append(...[
-    settings,
-    section(`Sent to the model (${sent.length.toLocaleString()} characters)`,
-      el("pre", { class: "pre small sent", text: sent || "(not known: the call may predate this view)" }),
-      keep("sent", true), "sent-section"),
-    section(`What it did (${items.length} of ${c.events_total ?? (c.events || []).length} events shown; bookkeeping left out)`,
-      el("div", { class: "tx-list" }, items.length ? items : el("div", { class: "empty", text: running ? "Started; nothing reported yet." : "No events were recorded for this call." })),
-      keep("did", true), "did-section"),
-    !running && (c.problems || []).length ? el("div", { class: "tx tx-error" }, el("span", { class: "tx-mark", text: "!" }),
-      el("div", { class: "tx-body", text: `answer not usable: ${c.problems.join("; ")}` })) : null,
-    !running ? section("Its answer", el("pre", { class: "pre small reply", text: answer || "(none)" }), keep("answer", true), "answer-section") : null,
-    s && s.instructions ? section("Its standing instructions (sent with every message)",
-      el("pre", { class: "pre small", text: s.instructions }), keep("instructions", false), "instructions-section") : null,
-  ].filter(Boolean));
-  for (const [name, cls] of [["sent", "sent-section"], ["did", "did-section"], ["answer", "answer-section"], ["instructions", "instructions-section"]]) {
-    const d = stream.querySelector(`.${cls}`);
-    if (d) d.addEventListener("toggle", () => { view.open[name] = d.open; });
-  }
-  if (running) {
-    for (const [name, text] of Object.entries(c.live || {})) {
-      if (text && text.trim()) tails.append(el("div", { class: "tail" }, el("div", { class: "tail-head", text: `writing now: ${name}` }), el("pre", { text: tail(text, 30) })));
-    }
-  }
-  if (pinned && running) stream.scrollTop = stream.scrollHeight;
+function drawer(open) {
+  $("node-drawer").hidden = !open;
+  $("node-settings").classList.toggle("on", open);
 }
 
 // ---- keeping it live -------------------------------------------------------------------------
@@ -283,15 +513,21 @@ async function pollLive() {
     $("node-state").className = `pill ${running.length ? "pill-live" : ""}`;
     if (running.length && $("follow").checked && !(view.selected || "").startsWith("run:" + running[0].session)) {
       view.selected = key(running[0], true);
+      view.redraw = true;
     }
     if (ended || Date.now() - view.pastAt > PAST_MS) await pollPast(ended);
     if (view.selected && !current() && view.selected.startsWith("run:") && view.past.length) {
       view.selected = key(view.past[0], false);       // it just finished: show how it ended
+      view.redraw = true;
     }
-    if (!view.selected && view.past.length) view.selected = key(view.past[0], false);
+    if (!view.selected && view.past.length) { view.selected = key(view.past[0], false); view.redraw = true; }
     drawList();
     const c = current();
-    if (c && (view.selected.startsWith("run:") || view.redraw)) { view.redraw = false; await drawSelected(); }
+    // A call under way is redrawn every second only where it changes: Live.
+    if (c && ((view.selected.startsWith("run:") && view.tab === "live") || view.redraw)) {
+      view.redraw = false;
+      await drawSelected();
+    }
   } catch {
     $("live-dot").classList.remove("on");
   }
@@ -305,9 +541,24 @@ async function pollPast(force) {
   if (force || before !== view.past.map((c) => key(c, false)).join(",")) view.redraw = true;
 }
 
+document.addEventListener("keydown", (e) => {
+  if (e.target.closest("input, select, textarea")) return;
+  if (e.key === "Escape") { drawer(false); return; }
+  if (e.key !== "j" && e.key !== "k") return;
+  const keys = visibleKeys();
+  if (!keys.length) return;
+  const at = keys.indexOf(view.selected);
+  const next = keys[Math.max(0, Math.min(keys.length - 1, at < 0 ? 0 : at + (e.key === "j" ? 1 : -1)))];
+  pick(next, next.startsWith("run:"));
+});
+
+$("node-settings").addEventListener("click", () => drawer($("node-drawer").hidden));
+$("drawer-close").addEventListener("click", () => drawer(false));
 $("node-name").textContent = node;
 $("run-name").textContent = runId;
 document.title = `${node} — ${runId}`;
+drawFilter();
 drawNode();
+if (query.get("drawer")) drawer(true);
 pollLive().then(drawSelected);
 setInterval(pollLive, LIVE_MS);
