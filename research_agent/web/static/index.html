@@ -20,6 +20,9 @@
       <span id="run-activity" class="activity"></span>
     </div>
     <div class="topbar-actions">
+      <label id="autopilot-toggle" class="autopilot-toggle" hidden
+        title="Autopilot: the discussor decides for you wherever the run would wait, and starts the execution itself. Hands back after its limit of decisions in a row.">
+        <input id="autopilot" type="checkbox"> Autopilot <span id="autopilot-state" class="dim small"></span></label>
       <button id="btn-resume" class="btn" hidden title="Carry on after a failure or a pause">Carry on</button>
       <button id="btn-pause" class="btn" hidden title="Stop after the current step">Pause</button>
       <button id="btn-execute" class="btn primary" hidden title="Carry out the approved design">Start execution</button>
@@ -150,6 +153,21 @@
       <div class="dialog-actions">
         <button id="exec-cancel" class="btn" type="button">Cancel</button>
         <button id="exec-ok" class="btn primary" type="submit">Start</button>
+      </div>
+    </form>
+  </dialog>
+
+  <dialog id="dialog-autopilot">
+    <form id="form-autopilot" method="dialog">
+      <h2>Autopilot</h2>
+      <p class="hint">The discussor decides for you wherever the run would wait for you: answers, approvals, the go for gated steps, retries. When the design is approved it starts the execution itself. Nobody is there to stop it, so the execution's limits must be set now; it can never raise them. Untick to take over again; asides still work.</p>
+      <label>Decisions in a row before it hands back to you<input id="ap-max" type="number" min="1" step="1" value="20"></label>
+      <label>Wall-hour limit for the execution<input id="ap-wall" type="number" min="0.5" step="0.5" value="24"></label>
+      <label>GPU-hour limit for the execution<input id="ap-gpu" type="number" min="1" step="1" value="50"></label>
+      <p id="ap-error" class="form-error"></p>
+      <div class="dialog-actions">
+        <button id="ap-cancel" class="btn" type="button">Cancel</button>
+        <button id="ap-ok" class="btn primary" type="submit">Turn on</button>
       </div>
     </form>
   </dialog>

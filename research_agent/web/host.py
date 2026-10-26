@@ -30,7 +30,7 @@ from typing import Callable
 
 import research_backend as RB
 
-from research_agent import chat, inbox
+from research_agent import autopilot, chat, inbox
 from research_agent import state as S
 from research_agent.bootstrap import config as boot_config
 from research_agent.bootstrap.config import RoleConfig
@@ -116,6 +116,7 @@ class RunHost:
                 "error": self.error, "roles": roles,
                 "can_execute": self.stage == "bootstrap" and S.approved(st, "design")
                 and not self.busy,
+                "autopilot": vars(autopilot.load(self.folder)),
                 **self._status}
 
     def _refresh_status(self) -> None:
@@ -208,6 +209,67 @@ class RunHost:
                 raise ValueError("The run is not stopped midway: say something instead.")
             go_on = self.session.retry if self.stage == "bootstrap" else self.session.resume
             self._run(lambda on: go_on(on_step=on))
+
+    # ---- autopilot ----------------------------------------------------------------------
+
+    def autopilot_settings(self) -> dict:
+        exe = exec_config.load(self.folder)
+        return {**vars(autopilot.load(self.folder)), "wall_hours": exe.wall_hours,
+                "gpu_hours": exe.gpu_hours}
+
+    def set_autopilot(self, on: bool, *, max_decisions: int | None = None,
+                      wall_hours: float | None = None, gpu_hours: float | None = None) -> dict:
+        """Tick or untick Autopilot. On, it needs the execution's limits --
+        wall-clock and GPU hours -- set beforehand: nobody is there to stop
+        it. Applies at the run's next stop; a run waiting now goes on."""
+        exe = exec_config.load(self.folder)
+        wall = exe.wall_hours if wall_hours is None else float(wall_hours)
+        gpu = exe.gpu_hours if gpu_hours is None else float(gpu_hours)
+        if on and (wall <= 0 or gpu <= 0):
+            raise ValueError("Autopilot runs unattended: set the execution's limits first -- "
+                             "wall-clock hours and GPU-hours, both above 0.")
+        if (wall, gpu) != (exe.wall_hours, exe.gpu_hours):
+            if wall < 0 or gpu < 0:
+                raise ValueError("The limits cannot be negative.")
+            exe = replace(exe, wall_hours=wall, gpu_hours=gpu)
+            exec_config.save(self.folder, exe)
+            if self.stage == "execution":
+                self.session.run.limits = replace(self.session.run.limits, wall_hours=wall,
+                                                  gpu_hours=gpu)
+        s = autopilot.load(self.folder)
+        s.on = bool(on)
+        if max_decisions is not None:
+            if int(max_decisions) < 1:
+                raise ValueError("max_decisions is at least 1.")
+            s.max_decisions = int(max_decisions)
+        if on:
+            s.streak, s.handed_back = 0, ""
+        autopilot.save(self.folder, s)
+        self.bus.emit("note", text=(f"Autopilot on: it decides for you, up to {s.max_decisions} "
+                                    f"decisions in a row; limits {wall:g} h, {gpu:g} GPU-h."
+                                    if on else "Autopilot off: the run waits for you again."))
+        self.status_event()
+        if on:
+            self._autopilot_go_on()
+        return self.autopilot_settings()
+
+    def _autopilot_go_on(self) -> None:
+        """Autopilot was ticked, or a stage just ended: if the run is waiting
+        for the user, let the autopilot answer now; if the bootstrap is done,
+        start the execution."""
+        with self._lock:
+            s = autopilot.load(self.folder)
+            if self.busy or not s.on or s.handed_back or s.streak >= s.max_decisions:
+                return              # off, or it handed back: the user answers
+            if self.stage == "bootstrap" and self._status.get("outcome") == "ready":
+                try:
+                    self.execute()
+                except ValueError as exc:
+                    self.bus.emit("note", text=f"Autopilot cannot start the execution: {exc}")
+                return
+            if self._status.get("waiting") and not self._status.get("outcome"):
+                # Resumed with no words: the waiting step asks the autopilot.
+                self._run(lambda on: self.session.answer("", on_step=on))
 
     def breakpoint(self, step: str, when: str, on: bool) -> None:
         if self.stage != "execution":
@@ -538,12 +600,21 @@ class RunHost:
                 finally:
                     self.current = ""
                     self.status_event()
+                if autopilot.load(self.folder).on and not self._pause.is_set():
+                    # The bootstrap is done: the autopilot starts the
+                    # execution, once this thread has ended.
+                    me = threading.current_thread()
+                    threading.Thread(target=lambda: (me.join(), self._autopilot_go_on()),
+                                     daemon=True).start()
 
         self._worker = threading.Thread(target=work, daemon=True, name=f"run-{self.id}")
         self._worker.start()
         self.status_event()
 
     def _on_step(self, node: str, update: dict) -> None:
+        if node == "human" and str(update.get("user", "")).startswith(autopilot.MARK):
+            self.bus.emit("chat", role="user", text=update["user"], kind="autopilot")
+            return
         if node == "discussor" and update.get("reply"):
             self.bus.emit("chat", role="discussor", text=update["reply"], kind="answer")
         else:

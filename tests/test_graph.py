@@ -340,3 +340,76 @@ def test_changing_the_discussor_s_model_moves_its_conversation_on(run, script):
     calls = [c for c in script.calls if c["schema"] == "DiscussorOutput"]
     assert calls[1]["thread"] == calls[0]["thread"] or calls[0]["thread"] is None, \
         "the same conversation, continued"
+
+
+def _autopilot(folder, **fields):
+    from research_agent import autopilot
+
+    folder.mkdir(parents=True, exist_ok=True)
+    autopilot.save(folder, autopilot.Settings(on=True, **fields))
+
+
+def AUTO(answer, approve=(), **fields):
+    return {"answer": answer, "why": "the user wants it done", "approve": list(approve), **fields}
+
+
+def test_autopilot_takes_a_bootstrap_to_an_approved_design_alone(run, script):
+    from research_agent import autopilot
+
+    _autopilot(run.folder)
+    script.add("DiscussorOutput",
+               say("Let me look into it.", ("research", "Find LoRA rank baselines")),
+               say("Here are H1, R1 and the protocol. Approve?"),
+               say("Planning now.", ("proceed", "Write the plan")),
+               say("The plan has 2 steps. Approve?"),
+               say("Designing.", ("proceed", "Design it")),
+               say("Design ready. Approve?"),
+               say("All approved."),
+               say("Bootstrap complete."))
+    script.add("ResearcherOutput", FINDINGS)
+    script.add("HypothesizeOutput", HYPO)
+    script.add("PlanOutput", PLAN)
+    script.add("DesignOutput", DESIGN)
+    script.add("OrchestratorOutput",
+               decide("research", questions=["LoRA rank results?"]), decide("hypothesize"),
+               decide("ask_user", "Approve?"), decide("plan"), decide("ask_user", "Approve the plan?"),
+               decide("design"), decide("ask_user", "Approve the design?"))
+    script.add("AutopilotOutput",
+               AUTO("Approved, plan it.", ["hypotheses", "rubric", "protocol"]),
+               AUTO("The plan is fine.", ["plan"]),
+               AUTO("Approve the design.", ["design"]))
+    boot = Bootstrap(run)
+    turn = boot.start("I want to study LoRA rank on small data")
+    assert turn.outcome == "ready", "nobody answered: the autopilot did, three times"
+    st = boot.research
+    assert all(S.approved(st, s) for s in S.APPROVABLE)
+    assert [d["by"] for d in st["decisions"]].count("autopilot") == 3
+    said = [p for p in script.prompts("DiscussorOutput") if "[autopilot]" in p]
+    assert len(said) == 3 and "[autopilot] Approved, plan it." in said[0]
+    auto = [c for c in script.calls if c["schema"] == "AutopilotOutput"]
+    assert "THE DISCUSSOR ASKS THE USER" in auto[0]["prompt"]
+    assert "Here are H1, R1 and the protocol. Approve?" in auto[0]["prompt"]
+    assert auto[0]["thread"] is None and auto[1]["thread"] and auto[2]["thread"] == auto[1]["thread"], \
+        "the autopilot keeps one conversation of its own"
+    assert autopilot.load(run.folder).streak == 3
+    boot.close()
+
+
+def test_autopilot_hands_back_after_its_limit(run, script):
+    from research_agent import autopilot
+
+    _autopilot(run.folder, max_decisions=1)
+    script.add("DiscussorOutput", say("Approve H1?"), say("Thanks. Anything else?"),
+               say("Noted. Shall I go on?"), say("Going on."))
+    script.add("AutopilotOutput", AUTO("Yes, but keep it small."), AUTO("Yes."))
+    boot = Bootstrap(run)
+    turn = boot.start("idea")
+    assert turn.waiting and turn.reply == "Thanks. Anything else?", "the second stop is the user's"
+    assert "handed back to you after 1 decisions" in autopilot.load(run.folder).handed_back
+    # The user answers: the count starts again, and the autopilot answers the
+    # next stop -- then hands back once more.
+    turn = boot.answer("Carry on.")
+    assert turn.waiting and turn.reply == "Going on."
+    assert len([c for c in script.calls if c["schema"] == "AutopilotOutput"]) == 2
+    assert autopilot.load(run.folder).streak == 1 and autopilot.load(run.folder).handed_back
+    boot.close()

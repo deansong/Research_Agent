@@ -29,7 +29,7 @@ from typing_extensions import TypedDict
 
 import research_backend as RB
 
-from research_agent import inbox
+from research_agent import autopilot, inbox
 from research_agent import state as S
 from research_agent.bootstrap import nodes
 
@@ -192,13 +192,19 @@ def build(run: nodes.Run, checkpointer=None):
         return run_it
 
     def human(state: BootstrapState) -> dict:
-        answer: Any = interrupt({"reply": state.get("reply", ""),
-                                 "outcome": state.get("outcome", "")})
-        if isinstance(answer, str):
-            answer = {"text": answer}
+        st = state["research"]
+        answer = autopilot_answer(state, st) if not state.get("outcome") else None
+        if answer is None:
+            answer = interrupt({"reply": state.get("reply", ""),
+                                "outcome": state.get("outcome", "")})
+            if isinstance(answer, str):
+                answer = {"text": answer}
+            if answer.get("text") or answer.get("approve"):
+                autopilot.user_answered(run.folder)
+        else:
+            st = commit(st, answer.pop("ops"), "autopilot")
         if answer.get("exit"):
             return {"outcome": "exit", "_to": END}
-        st = state["research"]
         approve = [{"op": "approve", "section": s} for s in answer.get("approve") or []]
         if approve:
             st = commit(st, approve, "user")
@@ -206,6 +212,18 @@ def build(run: nodes.Run, checkpointer=None):
         if approve and not text:
             text = f"(I approved: {', '.join(answer['approve'])}.)"
         return {"research": st, "user": text, "approved": bool(approve), "_to": "discussor"}
+
+    def autopilot_answer(state: BootstrapState, st: dict) -> dict | None:
+        """The user's answer by the autopilot, when it is on (None: ask the
+        user). A note when it has just handed back."""
+        answer, note = autopilot.should_answer(run.folder)
+        if note:
+            run.say(note)
+        if not answer:
+            return None
+        out = autopilot.decide(run, st, stage="bootstrap", reply=state.get("reply", ""))
+        autopilot.counted(run.folder)
+        return {**autopilot.answer_for(out), "ops": [autopilot.decision_op(out)]}
 
     graph = StateGraph(_Routed)
     graph.add_node("discussor", discussor)

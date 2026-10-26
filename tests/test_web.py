@@ -461,3 +461,55 @@ def test_the_researchers_sources_can_be_chosen(web, monkeypatch):
     assert json.loads((folder / ".research_sources").read_text()) == {"sources": ["openalex", "pubmed"]}
     assert web.put("/api/runs/src/research", json={"sources": []}).status_code == 400
     assert web.put("/api/runs/src/research", json={"sources": ["bing"]}).status_code == 400
+
+
+def test_autopilot_from_the_page_to_the_end(web, script):
+    from research_agent import autopilot
+
+    folder = web.root / "auto"
+    st = approved_state()
+    st["approvals"] = {k: v for k, v in st["approvals"].items() if k != "design"}
+    S.Store(folder).write(st)
+    script.add("DiscussorOutput", say("The design is ready. Approve?"), say("Approved. Done."))
+    script.add("OrchestratorOutput", decide("ask_user", "Approve the design?"))
+    web.post("/api/runs/auto/message", json={"text": "hello"})
+    d = settle(web, "auto")
+    assert d["waiting"] and not d["autopilot"]["on"]
+
+    # Unattended means its limits are set first.
+    r = web.put("/api/runs/auto/autopilot", json={"on": True, "wall_hours": 0, "gpu_hours": 0})
+    assert r.status_code == 400 and "limits" in r.json()["detail"]["message"]
+
+    def answer(stage):
+        def it(prompt):
+            return {"answer": "Approve the design." if stage == "boot" else "Go.",
+                    "why": "it is what the user asked for", "approve": ["design"] if stage == "boot"
+                    else [], "go": stage == "exec"}
+        return it
+    script.add("AutopilotOutput", answer("boot"), answer("exec"))
+    script.add("ExecDecision", move("run", "1"), move("run", "2"), move("run", "2"), move("done"))
+    script.add("StepReport", done_writing(_Folder(folder), "1"), done_writing(_Folder(folder), "2"))
+    script.add("Verdict", verdict(), verdict())
+    script.add("ReviewOutput", REVIEW)
+    script.add("ExecDiscussorOutput", tell("Step 2 waits for your go."), tell("Going ahead."),
+               tell("All done; 5/10."))
+    r = web.put("/api/runs/auto/autopilot", json={"on": True, "max_decisions": 5,
+                                                   "wall_hours": 2, "gpu_hours": 10})
+    assert r.status_code == 200 and r.json()["on"] and r.json()["gpu_hours"] == 10
+    # It answers the waiting run, approves, and starts the execution itself.
+    end = time.time() + 15
+    while time.time() < end:
+        d = web.get("/api/runs/auto").json()
+        if d["stage"] == "execution" and d["outcome"] == "done" and not d["busy"]:
+            break
+        time.sleep(0.05)
+    assert d["stage"] == "execution" and d["outcome"] == "done", d
+    st = S.Store(folder).read()
+    assert S.approved(st, "design")
+    assert [x["by"] for x in st["decisions"]].count("autopilot") == 2
+    exe = json.loads((folder / "execute.json").read_text())["execute"]
+    assert (exe["wall_hours"], exe["gpu_hours"]) == (2, 10), "the limits it runs under"
+    kinds = [m["kind"] for m in d["transcript"] if m["role"] == "user"]
+    assert "autopilot" in kinds
+    assert autopilot.load(folder).decisions == 2
+    assert web.put("/api/runs/auto/autopilot", json={"on": False}).json()["on"] is False

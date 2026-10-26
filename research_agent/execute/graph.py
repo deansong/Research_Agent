@@ -33,7 +33,7 @@ from typing_extensions import TypedDict
 import research_backend as RB
 
 from research_agent import state as S
-from research_agent import inbox
+from research_agent import autopilot, inbox
 from research_agent.execute import jobs, nodes
 
 
@@ -181,13 +181,20 @@ def build(run: nodes.ExecRun, design: nodes.Design, checkpointer=None):
                 "_to": "orchestrator" if go else "human"}
 
     def human(state: ExecState) -> dict:
-        answer: Any = interrupt({"reply": state.get("reply", ""),
-                                 "outcome": state.get("outcome", "")})
-        if isinstance(answer, str):
-            answer = {"text": answer}
+        st = state["research"]
+        answer = autopilot_answer(state, st) if not state.get("outcome") else None
+        if answer is None:
+            answer = interrupt({"reply": state.get("reply", ""),
+                                "outcome": state.get("outcome", "")})
+            if isinstance(answer, str):
+                answer = {"text": answer}
+            if answer.get("text") or answer.get("go") or answer.get("stop"):
+                autopilot.user_answered(run.folder)
+        else:
+            st = commit(st, answer.pop("ops"), "autopilot")
         if answer.get("exit"):
             return {"outcome": "exit", "_to": END}
-        st, text = state["research"], answer.get("text", "")
+        text = answer.get("text", "")
         awaiting, nudged, outcome = state.get("awaiting", ""), False, state.get("outcome", "")
         if answer.get("work") and not text:
             # The page changed something the team should act on (another
@@ -207,6 +214,19 @@ def build(run: nodes.ExecRun, design: nodes.Design, checkpointer=None):
             text, outcome = text or "(I stopped the execution.)", "stopped"
         return {"research": st, "user": text, "awaiting": awaiting, "nudged": nudged,
                 "outcome": outcome, "_to": "discussor"}
+
+    def autopilot_answer(state: ExecState, st: dict) -> dict | None:
+        """The user's answer by the autopilot, when it is on (None: ask the
+        user)."""
+        answer, note = autopilot.should_answer(run.folder)
+        if note:
+            run.say(note)
+        if not answer:
+            return None
+        out = autopilot.decide(run, st, stage="execution", reply=state.get("reply", ""),
+                               awaiting=state.get("awaiting", ""))
+        autopilot.counted(run.folder)
+        return {**autopilot.answer_for(out), "ops": [autopilot.decision_op(out)]}
 
     # ---- the orchestrator -------------------------------------------------------------
 

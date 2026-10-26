@@ -56,6 +56,32 @@ Asides and answers are one conversation, the discussor's research_backend
 session. The chat history is read from that session, so a run driven from the
 terminal shows its whole conversation here too.
 
+### Autopilot: the run decides for you
+
+Tick **Autopilot** in the top bar to let the run go on without you. Wherever
+it would wait for your answer, the discussor answers as your stand-in: the
+discussor's role and model, in a conversation of its own (`autopilot`),
+which starts from the recent chat and sees the whole research state at every
+decision.
+
+- **What it decides:** approvals, the go for gated steps, retrying or passing
+  a failed step, stopping. Its answer goes the same way yours would, shows in
+  the chat as **autopilot, for you**, and is recorded in Decisions as the
+  autopilot's, with its reason.
+- **The whole study:** once the design is approved, it starts the execution
+  itself.
+- **Limits first:** ticking it asks for the execution's wall-clock and
+  GPU-hour limits (both above 0), saved in `execute.json`. It can never
+  raise them; when one is reached, it stops.
+- **Hands back:** after N decisions in a row (20 by default; you choose) it
+  stops answering and waits for you; your answer starts the count again.
+- **Taking over:** untick it, and the run waits for you at its next stop.
+  Asides and Pause work as always. A run already waiting goes on as soon as
+  you tick it.
+
+Settings: `<run>/autopilot.json`. API: `GET/PUT /api/runs/{id}/autopilot`
+with `{on, max_decisions, wall_hours, gpu_hours}`.
+
 ### The research state has its own tab and window
 
 The **Research state** tab draws every section of `state/research.json`, as
@@ -261,6 +287,7 @@ Deep links: `/?tab=graph&side=jobs#<run>` opens a run with those tabs showing.
 | GET | `/api/runs/{id}/state`, `/history`, `/history/{n}` | the research state and its changes |
 | GET, PUT | `/api/runs/{id}/models` | each role's provider, model, effort, backups and what it runs on now; `{group, role, provider, model, effort, backup}` changes one (`backup` left out keeps them) |
 | GET | `/api/runs/{id}/skills` | the skills folder's skills: name and description |
+| GET, PUT | `/api/runs/{id}/autopilot` | `{on, max_decisions, wall_hours, gpu_hours}`: the run decides for you (limits required) |
 | GET, PUT | `/api/runs/{id}/research` | the literature sources the research may search, and which have keys; `{sources}` chooses them |
 | GET, PUT | `/api/runs/{id}/nodes/{node}`, `/nodes/{node}/skills` | a node's settings; `{key, mode: none\|auto\|chosen\|design, skills}` chooses its skills |
 | GET | `/api/providers` | each provider's models and effort levels (cached ten minutes) |

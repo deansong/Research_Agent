@@ -102,6 +102,12 @@ function renderDetail(d) {
   stateView.setControls({ stage: d.stage, canApprove: !!(d.waiting && !d.busy), awaiting: d.awaiting || "",
     canExecute: !!d.can_execute });
   $("btn-execute").classList.toggle("pulse", !!d.can_execute);
+  const ap = d.autopilot || {};
+  $("autopilot-toggle").hidden = false;
+  $("autopilot").checked = !!ap.on;
+  $("autopilot-state").textContent = !ap.on ? "" : ap.handed_back ? "(handed back to you)"
+    : `(${ap.streak || 0}/${ap.max_decisions} in a row)`;
+  $("autopilot-toggle").classList.toggle("on", !!ap.on);
   inspector.showFacts(d);
   renderActions(d);
 }
@@ -280,3 +286,34 @@ for (const [nav, name] of [["canvas-tabs", params.get("tab")], ["inspector-tabs"
 }
 const start = decodeURIComponent(location.hash.slice(1));
 if (start) openRun(start); else showOpen();
+
+// ---- autopilot -----------------------------------------------------------------------
+
+$("autopilot").addEventListener("change", async (e) => {
+  if (!app.runId) return;
+  if (!e.target.checked) {
+    try { await api.setAutopilot(app.runId, { on: false }); } catch (err) { problem(err); e.target.checked = true; }
+    return;
+  }
+  e.target.checked = false;                 // on only once the limits are confirmed
+  $("ap-error").textContent = "";
+  try {
+    const now = await api.autopilot(app.runId);
+    $("ap-max").value = now.max_decisions || 20;
+    if (now.wall_hours > 0) $("ap-wall").value = now.wall_hours;
+    if (now.gpu_hours > 0) $("ap-gpu").value = now.gpu_hours;
+  } catch (err) { problem(err); return; }
+  $("dialog-autopilot").showModal();
+});
+
+$("ap-cancel").addEventListener("click", () => $("dialog-autopilot").close());
+
+$("form-autopilot").addEventListener("submit", async (e) => {
+  e.preventDefault();
+  try {
+    await api.setAutopilot(app.runId, { on: true, max_decisions: Number($("ap-max").value),
+      wall_hours: Number($("ap-wall").value), gpu_hours: Number($("ap-gpu").value) });
+    $("autopilot").checked = true;
+    $("dialog-autopilot").close();
+  } catch (err) { $("ap-error").textContent = err.message; }
+});

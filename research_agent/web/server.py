@@ -82,6 +82,14 @@ class SetSkills(BaseModel):
     model_config = {"extra": "forbid"}
 
 
+class Autopilot(BaseModel):
+    on: bool
+    max_decisions: int | None = None
+    wall_hours: float | None = None
+    gpu_hours: float | None = None
+    model_config = {"extra": "forbid"}
+
+
 class Sources(BaseModel):
     sources: list[str]
     model_config = {"extra": "forbid"}
@@ -262,6 +270,17 @@ def create_app(runs_root: Path = RUNS_ROOT, *, roles=(), watch: bool = True) -> 
     def set_node_skills(run_id: str, node: str, body: SetSkills):
         host = host_of(run_id)
         return act(lambda: host.set_skills(node, body.key, body.mode, body.skills))
+
+    @app.get("/api/runs/{run_id}/autopilot")
+    def get_autopilot(run_id: str):
+        """Autopilot: on or off, decisions in a row allowed, the limits."""
+        return act(host_of(run_id).autopilot_settings)
+
+    @app.put("/api/runs/{run_id}/autopilot")
+    def put_autopilot(run_id: str, body: Autopilot):
+        host = host_of(run_id)
+        return act(lambda: host.set_autopilot(body.on, max_decisions=body.max_decisions,
+                                              wall_hours=body.wall_hours, gpu_hours=body.gpu_hours))
 
     @app.get("/api/runs/{run_id}/research")
     def research(run_id: str):

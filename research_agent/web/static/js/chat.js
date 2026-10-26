@@ -46,8 +46,10 @@ export class Chat {
   message(role, text, kind, noted) {
     this.empty.hidden = true;
     const human = role === "user";
-    const node = el("div", { class: `msg ${human ? "human" : "agent"} ${kind === "aside" ? "aside" : ""}` },
-      el("div", { class: "msg-role" }, human ? "you" : "discussor",
+    const auto = kind === "autopilot" || (human && /^\[autopilot\]/.test(text || ""));
+    if (auto) text = String(text).replace(/^\[autopilot\]\s*/, "");
+    const node = el("div", { class: `msg ${human ? "human" : "agent"} ${kind === "aside" ? "aside" : ""} ${auto ? "autopilot" : ""}` },
+      el("div", { class: "msg-role" }, auto ? "autopilot, for you" : human ? "you" : "discussor",
         kind === "aside" ? el("span", { class: "aside-tag", text: "aside" }) : null),
       el("div", { class: "msg-text", html: human ? markdown(text).replace(/^<p>|<\/p>$/g, "") : markdown(text) }),
       (noted || []).length ? el("div", { class: "noted", text: `for the team's next step: ${noted.join("; ")}` }) : null);

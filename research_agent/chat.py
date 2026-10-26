@@ -53,8 +53,10 @@ def transcript(folder: Path) -> list[dict]:
             aside = "=== AN ASIDE" in prompt
             user = _USER.search(prompt)
             if user and not prompt.startswith("Your answer could not be used"):
-                out.append({"role": "user", "text": user.group(1).strip(), "at": turn.get("at"),
-                            "kind": "aside" if aside else "answer"})
+                said = user.group(1).strip()
+                out.append({"role": "user", "text": said, "at": turn.get("at"),
+                            "kind": "aside" if aside else "autopilot"
+                            if said.startswith("[autopilot]") else "answer"})
             if turn.get("error") or retried:
                 continue
             try:
