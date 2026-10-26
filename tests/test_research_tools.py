@@ -46,6 +46,7 @@ def test_search_merges_sources_and_says_which_failed(tools, monkeypatch):
 
     def broken(*a, **k):
         raise SystemExit("https://x.org/q: HTTP 429 -- rate limited")
+    monkeypatch.setenv("SEMANTIC_SCHOLAR_API_KEY", "k")
     monkeypatch.setitem(tools.SOURCES, "openalex", lambda q, n, since=None: one)
     monkeypatch.setitem(tools.SOURCES, "pubmed", lambda q, n, since=None: [])
     monkeypatch.setitem(tools.SOURCES, "europepmc", broken)
@@ -75,3 +76,21 @@ def test_sources_checked_by_doi_pmid_or_arxiv():
     assert verify.paper_id("https://pubmed.ncbi.nlm.nih.gov/40418571/") == "PMID:40418571"
     assert verify.paper_id("arXiv 2106.09685v2") == "2106.09685"
     assert verify.paper_id("huggingface.co/datasets/imdb") is None
+
+
+def test_keyed_sources_are_asked_only_with_their_keys(tools, monkeypatch):
+    monkeypatch.delenv("SEMANTIC_SCHOLAR_API_KEY", raising=False)
+    monkeypatch.delenv("S2_API_KEY", raising=False)
+    monkeypatch.delenv("SERPAPI_API_KEY", raising=False)
+    assert tools.default_sources() == ("openalex",)
+    asked = []
+    monkeypatch.setitem(tools.SOURCES, "openalex", lambda q, n, since=None: asked.append("oa") or [])
+    monkeypatch.setattr(tools, "s2", lambda *a, **k: asked.append("s2") or [])
+    rows = tools.search("x", 3, None, ("openalex", "s2", "scholar"))
+    assert asked == ["oa"], "no request without a key"
+    assert rows == [{"note": "not asked -- s2 (no SEMANTIC_SCHOLAR_API_KEY), scholar (no SERPAPI_API_KEY)"}]
+    with pytest.raises(SystemExit, match="SEMANTIC_SCHOLAR_API_KEY"):
+        tools._s2_headers()
+    monkeypatch.setenv("SEMANTIC_SCHOLAR_API_KEY", "k")
+    monkeypatch.setenv("SERPAPI_API_KEY", "k")
+    assert tools.default_sources() == ("openalex", "s2", "scholar")

@@ -23,7 +23,7 @@ Where each search goes, measured from this machine:
                       through SerpAPI, with SERPAPI_API_KEY.
 
 Usage:
-    research_tools.py search   "low-rank adaptation"   # OpenAlex + Semantic Scholar, merged
+    research_tools.py search   "low-rank adaptation"   # OpenAlex, + S2 and Scholar with keys
     research_tools.py search   "sepsis prediction" --sources openalex,pubmed --since 2022
     research_tools.py openalex "..."  |  s2 "..."  |  pubmed "..."  |  europepmc "..."
     research_tools.py scholar  "..."                    # Google Scholar via SerpAPI (key)
@@ -195,9 +195,17 @@ def openalex(query: str, limit: int, since: int | None = None) -> list[dict]:
 S2_FIELDS = "title,year,venue,authors,externalIds,citationCount,abstract,openAccessPdf,url"
 
 
+def _s2_key() -> str:
+    return os.environ.get("SEMANTIC_SCHOLAR_API_KEY") or os.environ.get("S2_API_KEY") or ""
+
+
 def _s2_headers() -> dict:
-    key = os.environ.get("SEMANTIC_SCHOLAR_API_KEY") or os.environ.get("S2_API_KEY")
-    return {"x-api-key": key} if key else {}
+    """Semantic Scholar refuses keyless use almost every time (measured: HTTP
+    429), so without a key it is not asked at all."""
+    if not _s2_key():
+        raise SystemExit("Semantic Scholar is not used without a key: set "
+                         "SEMANTIC_SCHOLAR_API_KEY. Use openalex (or search) instead.")
+    return {"x-api-key": _s2_key()}
 
 
 def _from_s2(p: dict, *, full: bool = False) -> dict:
@@ -219,11 +227,12 @@ def _from_s2(p: dict, *, full: bool = False) -> dict:
 
 
 def s2(query: str, limit: int, since: int | None = None, *, patient: bool = True) -> list[dict]:
+    headers = _s2_headers()
     params = {"query": query, "limit": limit, "fields": S2_FIELDS}
     if since:
         params["year"] = f"{since}-"
     found = _json("https://api.semanticscholar.org/graph/v1/paper/search?"
-                  + urllib.parse.urlencode(params), headers=_s2_headers(),
+                  + urllib.parse.urlencode(params), headers=headers,
                   attempts=4 if patient else 2, delay=3.0)
     return [_from_s2(p) for p in found.get("data") or []]
 
@@ -319,14 +328,33 @@ def scholar(query: str, limit: int, since: int | None = None) -> list[dict]:
 
 SOURCES = {"openalex": openalex, "s2": s2, "pubmed": pubmed, "europepmc": europepmc,
            "scholar": scholar}
-DEFAULT_SOURCES = ("openalex", "s2")
+#: Sources that are asked only with a key, and the variable that holds it.
+NEEDS_KEY = {"s2": "SEMANTIC_SCHOLAR_API_KEY", "scholar": "SERPAPI_API_KEY"}
+
+
+def _keyed(name: str) -> bool:
+    """The source can be asked: it needs no key, or its key is set."""
+    if name == "s2":
+        return bool(_s2_key())
+    var = NEEDS_KEY.get(name)
+    return not var or bool(os.environ.get(var))
+
+
+def default_sources() -> tuple[str, ...]:
+    """OpenAlex always; Semantic Scholar and Google Scholar (SerpAPI) when
+    their keys are set."""
+    return ("openalex",) + tuple(s for s in ("s2", "scholar") if _keyed(s))
 
 
 def search(query: str, limit: int, since: int | None = None,
-           sources: tuple[str, ...] = DEFAULT_SOURCES) -> list[dict]:
+           sources: tuple[str, ...] | None = None) -> list[dict]:
     """Every source asked at once; the same paper found twice is one row,
     with its ids put together and `found_in` saying where. A source that
-    cannot answer is said in a last row, not fatal."""
+    cannot answer is said in a last row, not fatal; one that needs a key
+    nobody set is not asked, and said so."""
+    sources = default_sources() if sources is None else sources
+    skipped = [f"{s} (no {NEEDS_KEY[s]})" for s in sources if not _keyed(s)]
+    sources = tuple(s for s in sources if _keyed(s)) or ("openalex",)
     def ask(name):
         try:
             if name == "s2":
@@ -361,6 +389,8 @@ def search(query: str, limit: int, since: int | None = None,
     failed = [f"{name}: {why}" for name, _, why in answers if why]
     if failed:
         merged.append({"note": "not answered -- " + " | ".join(failed)})
+    if skipped:
+        merged.append({"note": "not asked -- " + ", ".join(skipped)})
     return merged
 
 
@@ -516,6 +546,10 @@ def cites(ident: str, limit: int, since: int | None = None) -> list[dict]:
 def _s2_cites(ident: str, kind: str, key: str, title: str, limit: int) -> list[dict]:
     """Semantic Scholar's count, when OpenAlex has no record to trust."""
     s2key = {"arxiv": f"arXiv:{key}", "doi": f"DOI:{key}", "pmid": f"PMID:{key}"}.get(kind, key)
+    if not _s2_key():
+        return [{"id": ident, "title": title,
+                 "note": "OpenAlex has no work with exactly this title; citation count unknown "
+                         "(Semantic Scholar, which might know, needs SEMANTIC_SCHOLAR_API_KEY)"}]
     try:
         p = _json(f"https://api.semanticscholar.org/graph/v1/paper/{urllib.parse.quote(s2key)}"
                   f"?fields=title,citationCount,influentialCitationCount", headers=_s2_headers(),
@@ -581,13 +615,14 @@ def main(argv=None) -> int:
     parser.add_argument("--limit", type=int, default=8)
     parser.add_argument("--since", type=int, help="only work published in or after this year")
     parser.add_argument("--sources", help="for search: a comma list of "
-                                          f"{', '.join(SOURCES)} (default {','.join(DEFAULT_SOURCES)})")
+                                          f"{', '.join(SOURCES)} (default: openalex, and s2 and "
+                                          f"scholar when their keys are set)")
     parser.add_argument("--json", action="store_true")
     args = parser.parse_args(argv)
 
     limit = max(1, min(args.limit, 25))
     if args.command == "search":
-        sources = tuple(s.strip() for s in (args.sources or ",".join(DEFAULT_SOURCES)).split(",")
+        sources = tuple(s.strip() for s in (args.sources or ",".join(default_sources())).split(",")
                         if s.strip())
         unknown = [s for s in sources if s not in SOURCES]
         if unknown:

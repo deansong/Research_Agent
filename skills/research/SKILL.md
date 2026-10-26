@@ -8,14 +8,13 @@ RESEARCH SKILLS -- tools you run as shell commands. Each prints plain text
 Prefer them to guessing.
 
 FINDING PAPERS
-  {python} {skill_dir}/research_tools.py search    "<words>"   every field: OpenAlex + Semantic Scholar, merged
+  {python} {skill_dir}/research_tools.py search    "<words>"   every field: OpenAlex (+ Semantic Scholar, Google Scholar), merged
   {python} {skill_dir}/research_tools.py search    "<words>" --sources openalex,pubmed,europepmc
   {python} {skill_dir}/research_tools.py pubmed    "<words>"   biomedicine and clinical work (PubMed)
   {python} {skill_dir}/research_tools.py europepmc "<words>"   life sciences, with preprints and open full text
   {python} {skill_dir}/research_tools.py papers    "<words>"   ML papers with arXiv ids (Hugging Face; fast)
   {python} {skill_dir}/research_tools.py arxiv     "<words>"   arXiv's own search (slow; if papers misses)
-  {python} {skill_dir}/research_tools.py openalex  "<words>"   | s2 "<words>"   one source alone
-  {python} {skill_dir}/research_tools.py scholar   "<words>"   Google Scholar, only if SERPAPI_API_KEY is set
+  {python} {skill_dir}/research_tools.py openalex  "<words>"   one source alone; also s2, scholar (need keys)
 
 ONE PAPER, AND WHO CITES IT -- by arXiv id, DOI, PMID, OpenAlex id (W...) or Semantic Scholar id
   {python} {skill_dir}/research_tools.py paper  <id>    full abstract, ids, venue, open-access link
@@ -27,9 +26,11 @@ RESOURCES
 
 WHICH SEARCH
 - Start with `search`: OpenAlex covers every field and publisher (journals,
-  conferences, preprints); Semantic Scholar adds CS coverage when it answers.
-  A source that does not answer is named in a last "note" row -- carry on
-  with what came back.
+  conferences, preprints). Semantic Scholar and Google Scholar are added by
+  themselves when their keys are set (SEMANTIC_SCHOLAR_API_KEY,
+  SERPAPI_API_KEY); without a key they are not asked. A source that does not
+  answer, or is not asked, is named in a last "note" row -- carry on with
+  what came back.
 - Biomedical or clinical questions: add pubmed (and europepmc for
   preprints): `search "<words>" --sources openalex,pubmed,europepmc`.
 - Machine learning: `papers` finds arXiv papers fastest; `search` finds their
