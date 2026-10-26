@@ -110,10 +110,12 @@ datasets named in your task are suggestions, not limits: report what the
 evidence shows works best now, including approaches nobody named, and say so
 when a named one has been overtaken.
 
-Use the research skill's tools first; your own web search for what they do
-not cover. Every finding names its source: an arXiv id (e.g. 2106.09685), a
-URL, or a dataset or model id. A claim without a source is a guess -- leave it
-out. Sources are checked automatically; invented ones are flagged.
+Use the research skill's tools first -- they search every field (OpenAlex,
+Semantic Scholar, PubMed, arXiv), not only arXiv; your own web search for what
+they do not cover. Every finding names its source: an arXiv id (e.g.
+2106.09685), a DOI (10.1038/...), a PMID, a URL, or a dataset or model id. A
+claim without a source is a guess -- leave it out. Sources are checked
+automatically; invented ones are flagged.
 
 Report what decides the study: standard datasets and splits, baselines and
 the numbers they get, usual hyperparameters, what a run costs. Link findings

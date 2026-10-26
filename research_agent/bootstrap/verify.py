@@ -1,5 +1,6 @@
 """
-WHAT:  Checking a researcher's sources: does the arXiv paper it cites exist?
+WHAT:  Checking a researcher's sources: does the paper it cites -- by arXiv
+       id, DOI or PMID -- exist?
 WHY:   Models invent references. Evidence carries `verified` -- True, False,
        or None when the source is not something that can be checked here --
        so the plan and the user can tell a citation from a guess.
@@ -17,6 +18,8 @@ from functools import lru_cache
 from pathlib import Path
 
 ARXIV = re.compile(r"(?<![\d.])(\d{4}\.\d{4,5})(?:v\d+)?(?![\d])")
+DOI = re.compile(r"\b(10\.\d{4,9}/[^\s\"<>]+)", re.I)
+PMID = re.compile(r"(?:\bPMID:?\s*|pubmed\.ncbi\.nlm\.nih\.gov/)(\d{5,9})\b", re.I)
 TIMEOUT = 60
 
 
@@ -25,15 +28,30 @@ def arxiv_id(source: str) -> str | None:
     return found.group(1) if found else None
 
 
+def paper_id(source: str) -> str | None:
+    """The id to look a cited paper up by: a DOI (arXiv's own DOIs as their
+    arXiv id), else a PMID, else an arXiv id; None for anything else (a
+    dataset, a model, a plain URL)."""
+    doi = DOI.search(source or "")
+    if doi:
+        bare = doi.group(1).rstrip(".,;)]")
+        arxiv = re.match(r"10\.48550/arxiv\.(\d{4}\.\d{4,5})", bare, re.I)
+        return arxiv.group(1) if arxiv else bare
+    pmid = PMID.search(source or "")
+    if pmid:
+        return f"PMID:{pmid.group(1)}"
+    return arxiv_id(source)
+
+
 def tools_path(skills_dir: Path | None) -> Path | None:
     path = (skills_dir / "research" / "research_tools.py") if skills_dir else None
     return path if path and path.is_file() else None
 
 
 @lru_cache(maxsize=512)
-def _paper(tools: str, arxiv: str) -> bool | None:
+def _paper(tools: str, ident: str) -> bool | None:
     try:
-        done = subprocess.run([sys.executable, tools, "paper", arxiv, "--json"],
+        done = subprocess.run([sys.executable, tools, "paper", ident, "--json"],
                               capture_output=True, text=True, timeout=TIMEOUT)
         found = json.loads(done.stdout or "null")
     except (subprocess.SubprocessError, OSError, ValueError):
@@ -44,10 +62,10 @@ def _paper(tools: str, arxiv: str) -> bool | None:
 
 
 def source(text: str, skills_dir: Path | None) -> bool | None:
-    """True: the arXiv paper exists. False: it does not. None: not an arXiv
-    source, or the check could not run (offline, no tool)."""
-    arxiv = arxiv_id(text)
+    """True: the paper exists. False: it does not. None: not a paper id
+    (arXiv, DOI, PMID), or the check could not run (offline, no tool)."""
+    ident = paper_id(text)
     tools = tools_path(skills_dir)
-    if not arxiv or tools is None:
+    if not ident or tools is None:
         return None
-    return _paper(str(tools), arxiv)
+    return _paper(str(tools), ident)

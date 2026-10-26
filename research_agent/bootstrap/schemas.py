@@ -132,7 +132,7 @@ class OrchestratorOutput(BaseModel):
 class FindingIn(BaseModel):
     claim: str
     source: str
-    """An arXiv id (e.g. 2106.09685), a URL, or a dataset or model id."""
+    """An arXiv id (e.g. 2106.09685), a DOI, a PMID, a URL, or a dataset or model id."""
     bears_on: list[str] = Field(default_factory=list)
 
 

@@ -61,7 +61,7 @@ class Evidence(BaseModel):
     id: str = ""
     claim: str
     source: str
-    """An arXiv id, a URL, or a dataset or model id."""
+    """An arXiv id, a DOI, a PMID, a URL, or a dataset or model id."""
     verified: bool | None = None
     """True or False once code has checked the source; None until then."""
     found_by: str = ""
