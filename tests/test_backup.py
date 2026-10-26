@@ -62,7 +62,7 @@ def test_out_of_credits_moves_to_the_backup_and_stays(tmp_path, models):
     answer, _ = run.call("orchestrator", brief="go", schema=Out)
     assert answer.answer == "claude_code"
     # The model waits for nobody: its backup is there.
-    assert ("codex", {"credit_wait_hours": 0}) in models["options"]
+    assert ("codex", {"credit_wait_hours": 0, "busy_attempts": 1}) in models["options"]
     # Benched until the time it named (two hours), not the default hour.
     assert 7100 < run.benched["codex"] - time.time() < 7400
     assert str(run.current("orchestrator")) == "claude_code:sonnet"
@@ -118,3 +118,17 @@ def test_backups_are_saved_and_checked(tmp_path):
     assert config.load(tmp_path).roles["discussor"].backup == cfg.roles["discussor"].backup
     bad = {"discussor": RoleConfig("codex", backup=("nope:x",))}
     assert config.backup_problems(bad) == ["discussor: backup 'nope:x': no provider 'nope'"]
+
+
+def test_a_model_at_capacity_moves_to_the_backup_for_a_while(tmp_path, models):
+    models["codex"].fails = RB.BackendBusy("Selected model is at capacity. Please try a different model.")
+    run = _run(tmp_path, RoleConfig("codex", backup=("claude_code",)))
+    assert run.call("orchestrator", brief="go", schema=Out)[0].answer == "claude_code"
+    assert 550 < run.benched["codex"] - time.time() < 650, "ten minutes, then the model again"
+
+
+def test_at_capacity_is_a_busy_provider_not_a_failure():
+    from research_backend.backends.codex import classify
+
+    err = classify(RuntimeError("Selected model is at capacity. Please try a different model."))
+    assert isinstance(err, RB.BackendBusy)

@@ -156,7 +156,9 @@ backup = ["codex_strata:strata", "claude_code:sonnet"]
 ```
 
 The call moves to the next backup at once, and the model is benched until its
-limit resets: the time the provider names, else an hour. The last backup waits
+limit resets: the time the provider names, else an hour. A model at capacity
+("Selected model is at capacity", the provider's servers full, not your
+quota) is retried once, then benched for ten minutes. The last backup waits
 for credits as usual. A conversation moved to a backup, such as the
 discussor's, is handed over: the new model gets the recent conversation and
 the whole state. In the web UI, each role's backups are under it in the Run

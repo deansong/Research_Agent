@@ -32,6 +32,9 @@ BY_ROLE = object()
 #: provider does not say when its limit resets.
 BENCH_SECONDS = 3600.0
 
+#: How long a model at capacity (or a busy provider) is benched.
+BUSY_BENCH_SECONDS = 600.0
+
 #: Turns of a conversation a backup taking it over is given.
 HANDOVER_TURNS = 8
 
@@ -114,7 +117,7 @@ class Run:
                                      skills_key=skills_key, skills=skills,
                                      instructions=instructions, access=access, workdir=workdir,
                                      session=session, label=label, check=check)
-            except (RB.BackendOutOfCredits, RB.BackendUnavailable) as exc:
+            except (RB.BackendOutOfCredits, RB.BackendUnavailable, RB.BackendBusy) as exc:
                 if final:
                     raise
                 until = self._bench(cfg, exc)
@@ -143,7 +146,10 @@ class Run:
         from research_backend import quota
 
         delay = quota.reset_delay(str(exc)) if isinstance(exc, RB.BackendOutOfCredits) else None
-        delay = delay + 60 if delay is not None else BENCH_SECONDS
+        if isinstance(exc, RB.BackendBusy):
+            delay = BUSY_BENCH_SECONDS            # full for now; worth trying again soon
+        else:
+            delay = delay + 60 if delay is not None else BENCH_SECONDS
         self.benched[str(cfg)] = time.time() + delay
         return quota.until(delay)
 
@@ -173,8 +179,10 @@ class Run:
         standing = self.instructions.get(role, "") if instructions is None else instructions
         options = dict(cfg.options)
         if not final:
-            # A backup waits: this model does not wait for its credits.
+            # A backup waits: this model does not wait for its credits, and
+            # retries a full or busy provider only once.
             options["credit_wait_hours"] = 0
+            options["busy_attempts"] = 1
         rb = RB(cfg.provider, cfg.model, effort=cfg.effort, instructions=standing,
                 access=access, workdir=str(workdir or self.folder), home=self.rb_home,
                 skills=chosen if skills_dir else None, skills_dir=skills_dir, **options)
@@ -209,7 +217,7 @@ class Run:
             except RB.BackendOutputError as exc:
                 problems = [str(exc)[:2000]]
                 reply = None
-            except (RB.BackendOutOfCredits, RB.BackendUnavailable) as exc:
+            except (RB.BackendOutOfCredits, RB.BackendUnavailable, RB.BackendBusy) as exc:
                 self._report(label, None, [f"{cfg}: {_why(exc)}"], time.monotonic() - started,
                              session=rb.session_id, attempt=attempt)
                 raise
@@ -326,6 +334,8 @@ def box(title: str, text: str) -> str:
 def _why(exc: BaseException) -> str:
     if isinstance(exc, RB.BackendOutOfCredits):
         return "is out of credits or over its usage limit"
+    if isinstance(exc, RB.BackendBusy):
+        return "is at capacity or busy"
     return f"cannot be used ({str(exc).splitlines()[0][:160] if str(exc) else type(exc).__name__})"
 
 

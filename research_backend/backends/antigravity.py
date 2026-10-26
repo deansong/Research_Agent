@@ -115,7 +115,7 @@ _PHASE = {"ACTIVE": "started", "DONE": "completed", "ERROR": "error"}
 #: An ERROR envelope whose `error` says the model was full rather than the
 #: request wrong -- the measured 503 in _why_empty below is the model case.
 #: Retried a few times with backoff by _cli.py.
-_TRANSIENT = ("unavailable", "no capacity", "503", "502", "429",
+_TRANSIENT = ("unavailable", "no capacity", "at capacity", "503", "502", "429",
               "resource_exhausted", "overloaded", "rate limit",
               "deadline_exceeded", "try again")
 

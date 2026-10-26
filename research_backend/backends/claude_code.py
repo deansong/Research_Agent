@@ -72,7 +72,7 @@ _WRITING_TOOLS = "Write,Edit,MultiEdit,NotebookEdit"
 
 #: An is_error envelope whose text says the SERVICE refused, not the request.
 #: Retried a few times with backoff by _cli.py; everything else is final.
-_TRANSIENT = ("overloaded", "529", "503", "502", "rate limit", "rate_limit",
+_TRANSIENT = ("overloaded", "at capacity", "529", "503", "502", "rate limit", "rate_limit",
               "service unavailable", "temporarily unavailable", "try again",
               "api error: 5", "internal server error", "connection error",
               "econnreset", "timed out")

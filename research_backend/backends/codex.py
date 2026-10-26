@@ -38,7 +38,12 @@ from research_backend.base import (
 from research_backend import quota
 
 _OUT_OF_CREDITS = quota.QUOTA_MARKERS
-_BUSY = ("server busy", "overloaded", "rate limit", "429", "try again later")
+_BUSY = ("server busy", "overloaded", "rate limit", "429", "try again later", "at capacity",
+         "no capacity", "try a different model")
+#: Measured: "Selected model is at capacity. Please try a different model."
+#: (gpt-6.1-sol). A full model stays full for minutes, not seconds, so these
+#: are waited out longer than a busy server: 30 s, 1, 2, 4 min.
+_CAPACITY = ("at capacity", "no capacity")
 
 
 def classify(exc: BaseException) -> BaseException:
@@ -352,9 +357,13 @@ class CodexBackend:
                     busy_tries += 1
                     if busy_tries > self.busy_attempts:
                         raise error from None
-                    # Short exponential backoff: 5s, 10s, 20s, 40s.
-                    self._wait("Provider busy", busy_tries, self.busy_attempts,
-                               5.0 * (2 ** (busy_tries - 1)), "")
+                    # Short exponential backoff: 5s, 10s, 20s, 40s -- or, for a
+                    # model at capacity, 30s, 1, 2, 4 min.
+                    full = any(m in str(error).lower() for m in _CAPACITY)
+                    self._wait("The model is at capacity" if full else "Provider busy",
+                               busy_tries, self.busy_attempts,
+                               (30.0 if full else 5.0) * (2 ** (busy_tries - 1)),
+                               "A role with a backup moves to it instead." if full else "")
                     continue
 
                 raise error from None
