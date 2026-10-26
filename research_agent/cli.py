@@ -63,7 +63,7 @@ def main(argv: list[str] | None = None) -> int:
                            "(all=... sets every role)")
     boot.add_argument("--skills", action="append", default=[], metavar="NODE=none|auto|SKILL,SKILL",
                       help="which skills a node gets, e.g. planner_plan=experiment-design,"
-                           "statistical-power; nodes: " + ", ".join(config.NODES))
+                           "ml-statistics; nodes: " + ", ".join(config.NODES))
     boot.add_argument("--skills-dir", metavar="FOLDER", help="the skills folder to use")
     boot.add_argument("--progress", action="store_true",
                       help="print what each model does while it works: commands, files")

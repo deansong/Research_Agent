@@ -5,7 +5,7 @@
 # <run>/config.json -- edit that to change one run (it is read again on
 # --resume) -- and the command line overrides both for one start:
 #     --role planner=codex:gpt-5.6-sol:high
-#     --skills planner_plan=experiment-design,statistical-power
+#     --skills planner_plan=experiment-design,ml-statistics
 #     --skills-dir ~/my_skills
 
 
@@ -24,8 +24,8 @@ dir = "skills"
 discussor = "auto"
 orchestrator = ["research-orchestration"]   # small: it is re-sent with every orchestrator call
 researcher = ["research"]
-planner_hypothesize = ["hypothesis-generation", "experiment-design", "statistical-power"]
-planner_plan = ["experiment-design"]
+planner_hypothesize = ["ml-hypotheses", "experiment-design", "ml-statistics"]
+planner_plan = ["experiment-design", "ml-statistics"]
 designer = "none"
 
 

@@ -3,8 +3,8 @@
 These skill folders were copied unchanged from public collections on
 2026-10-22 (only `__pycache__` was left out). Each folder keeps its licence
 file. `scientific-brainstorming` was added the same way on 2026-10-24. The rest --
-`experiment-design`, `research`, `acl-paper`, `research-orchestration` -- are
-this project's own.
+`experiment-design`, `research`, `acl-paper`, `research-orchestration`,
+`ml-hypotheses`, `ml-statistics` -- are this project's own.
 
 | skill | from | path there | licence | commit |
 | --- | --- | --- | --- | --- |

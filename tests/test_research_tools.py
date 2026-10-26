@@ -115,3 +115,19 @@ def test_the_runs_choice_is_obeyed(tools, monkeypatch, tmp_path):
     assert tools.main(["openalex", "x"]) == 1
     monkeypatch.setenv("RESEARCH_SOURCES", "openalex")
     assert tools.default_sources() == ("openalex",), "the variable wins"
+
+
+def test_ml_power_numbers():
+    spec = importlib.util.spec_from_file_location(
+        "ml_power", TOOL.parents[1] / "ml-statistics" / "ml_power.py")
+    ml = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(ml)
+    # 500 items at 80%, independent errors: ~7 points is the smallest gap seen.
+    assert ml.accuracy(500, 0.8, None, None, 0.05, 0.8)["detectable_gap_points"] == pytest.approx(7.09, abs=0.05)
+    assert ml.accuracy(None, 0.8, 0.02, 0.10, 0.05, 0.8)["test_items_needed"] == 1963
+    assert ml.seeds(0.8, 1.0, None, 0.05, 0.8)["runs_per_system"] == 12
+    w = ml.winrate(130, 200, None, 0.5, 0.05)
+    assert w["beats_coin_flip"] and w["interval"][0] > 0.5
+    assert [r["significant"] for r in ml.holm([0.01, 0.04, 0.03], 0.05)] == [True, False, False]
+    same = ml.bootstrap([1, 0, 1, 1], [1, 0, 1, 1], 200, 0.05, 0)
+    assert same["mean_difference"] == 0

@@ -24,7 +24,8 @@ def test_the_defaults_come_from_config_toml():
     assert cfg.roles["planner"].effort == "high"
     assert cfg.skills["discussor"] == "auto"
     assert cfg.skills["orchestrator"] == ["research-orchestration"]
-    assert cfg.skills["planner_plan"] == ["experiment-design"]
+    assert cfg.skills["planner_plan"] == ["experiment-design", "ml-statistics"]
+    assert cfg.skills["planner_hypothesize"] == ["ml-hypotheses", "experiment-design", "ml-statistics"]
     assert cfg.skills_dir == config.REPOSITORY / "skills"
     assert set(cfg.roles) == set(config.ROLES) and set(cfg.skills) == set(config.NODES)
     assert config.check(cfg) == [], "every default skill exists"

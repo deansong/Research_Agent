@@ -42,6 +42,30 @@ WHICH SEARCH
 Your own web search, if you have one, is for what these do not cover:
 leaderboards, blog posts, library documentation, hardware requirements.
 
+HOW TO SEARCH -- separate searches for separate questions
+1. Landscape: the task's current state of the art -- recent surveys, the
+   benchmarks people report on and the best numbers, the leading methods.
+   Use --since for recency; collect the field's terms and synonyms.
+2. Closest prior work: the idea itself and its near neighbours, under every
+   name it may go by. A novelty search is its own search, not a side effect
+   of the landscape one.
+3. Rivals and contrary results: for each candidate method or explanation,
+   search for failures, null results, critiques, reproductions and known
+   confounds (contamination, leakage, shortcuts, evaluation flaws).
+4. Measurement: how the constructs and metrics were operationalised and
+   validated; the standard datasets, splits and baselines.
+5. Citations both ways: `cites <id>` for who built on a key paper (forward);
+   its reference list for what it built on (backward). Recent is not the
+   same as relevant -- foundational work counts.
+Prefer the primary source: the paper with the method or number, not a survey
+quoting it. Label preprints as preprints. Check the published version of an
+arXiv paper when one exists (`search` finds both).
+
+WHAT YOU SEARCHED IS PART OF THE ANSWER
+Say which sources and queries you used and the date range. "Not found in
+these searches" is not "does not exist": never claim novelty from an empty
+search -- say what was searched and what came closest.
+
 METHOD
 1. Search for each question. Read the abstracts (`paper`) of the few that
    matter; open the full text (`full_text`, `open_access`) only for a number
@@ -52,6 +76,6 @@ METHOD
    checked automatically; invented ones are flagged.
 3. Prefer what decides the experiment: the standard datasets and splits, the
    baselines people compare against and the numbers they get, the usual
-   hyperparameters, what one run costs. Skip history and surveys.
+   hyperparameters, what one run costs.
 4. Stop when the questions are answered. A few precise findings beat many
    loose ones.

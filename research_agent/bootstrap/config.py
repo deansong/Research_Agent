@@ -213,7 +213,7 @@ def parse_role(text: str) -> tuple[str, RoleConfig]:
 
 
 def parse_skills(text: str) -> tuple[str, None | str | list[str]]:
-    """'planner_plan=experiment-design,statistical-power' -> a list;
+    """'planner_plan=experiment-design,ml-statistics' -> a list;
     'discussor=auto'; 'designer=none'."""
     node, sep, spec = text.partition("=")
     node = node.strip()
