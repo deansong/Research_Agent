@@ -93,4 +93,4 @@ def test_keyed_sources_are_asked_only_with_their_keys(tools, monkeypatch):
         tools._s2_headers()
     monkeypatch.setenv("SEMANTIC_SCHOLAR_API_KEY", "k")
     monkeypatch.setenv("SERPAPI_API_KEY", "k")
-    assert tools.default_sources() == ("openalex", "s2", "scholar")
+    assert tools.default_sources() == ("openalex", "s2"), "Scholar costs a credit: by name only"

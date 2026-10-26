@@ -23,7 +23,7 @@ Where each search goes, measured from this machine:
                       through SerpAPI, with SERPAPI_API_KEY.
 
 Usage:
-    research_tools.py search   "low-rank adaptation"   # OpenAlex, + S2 and Scholar with keys
+    research_tools.py search   "low-rank adaptation"   # OpenAlex, + Semantic Scholar with its key
     research_tools.py search   "sepsis prediction" --sources openalex,pubmed --since 2022
     research_tools.py openalex "..."  |  s2 "..."  |  pubmed "..."  |  europepmc "..."
     research_tools.py scholar  "..."                    # Google Scholar via SerpAPI (key)
@@ -341,9 +341,10 @@ def _keyed(name: str) -> bool:
 
 
 def default_sources() -> tuple[str, ...]:
-    """OpenAlex always; Semantic Scholar and Google Scholar (SerpAPI) when
-    their keys are set."""
-    return ("openalex",) + tuple(s for s in ("s2", "scholar") if _keyed(s))
+    """OpenAlex always; Semantic Scholar when its key is set. Google Scholar
+    is never a default: each SerpAPI search spends a paid credit, so it is
+    asked only by name (`scholar`, or --sources ...,scholar)."""
+    return ("openalex",) + (("s2",) if _keyed("s2") else ())
 
 
 def search(query: str, limit: int, since: int | None = None,
@@ -615,8 +616,8 @@ def main(argv=None) -> int:
     parser.add_argument("--limit", type=int, default=8)
     parser.add_argument("--since", type=int, help="only work published in or after this year")
     parser.add_argument("--sources", help="for search: a comma list of "
-                                          f"{', '.join(SOURCES)} (default: openalex, and s2 and "
-                                          f"scholar when their keys are set)")
+                                          f"{', '.join(SOURCES)} (default: openalex, and s2 when "
+                                          f"its key is set; scholar only when named)")
     parser.add_argument("--json", action="store_true")
     args = parser.parse_args(argv)
 
