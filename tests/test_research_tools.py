@@ -94,3 +94,24 @@ def test_keyed_sources_are_asked_only_with_their_keys(tools, monkeypatch):
     monkeypatch.setenv("SEMANTIC_SCHOLAR_API_KEY", "k")
     monkeypatch.setenv("SERPAPI_API_KEY", "k")
     assert tools.default_sources() == ("openalex", "s2"), "Scholar costs a credit: by name only"
+
+
+def test_the_runs_choice_is_obeyed(tools, monkeypatch, tmp_path):
+    from research_agent.bootstrap import config
+
+    monkeypatch.delenv("RESEARCH_SOURCES", raising=False)
+    monkeypatch.setenv("SEMANTIC_SCHOLAR_API_KEY", "k")
+    config.write_sources(tmp_path, ["pubmed", "europepmc"])
+    (tmp_path / "research").mkdir()
+    monkeypatch.chdir(tmp_path / "research")          # the researcher works below the run folder
+    assert tools.chosen() == ["pubmed", "europepmc"]
+    assert tools.default_sources() == ("pubmed", "europepmc")
+    asked = []
+    for name in ("openalex", "pubmed", "europepmc"):
+        monkeypatch.setitem(tools.SOURCES, name, lambda q, n, since=None, name=name: asked.append(name) or [])
+    rows = tools.search("x", 3, None, ("openalex", "pubmed"))
+    assert asked == ["pubmed"], "a source turned off is never asked, even by name"
+    assert rows == [{"note": "not asked -- openalex (turned off for this run)"}]
+    assert tools.main(["openalex", "x"]) == 1
+    monkeypatch.setenv("RESEARCH_SOURCES", "openalex")
+    assert tools.default_sources() == ("openalex",), "the variable wins"

@@ -445,3 +445,19 @@ def test_a_call_in_a_line_what_went_in_and_what_came_out():
     assert done == {"said": "planner wrote H1-H3", "outcome": "deps pass", "to": "run 4"}
     assert previews("Your answer could not be used:\n- no task\n\nAgain.", "x")["said"] == "retry: no task"
     assert previews("plan it", json.dumps({"summary": "", "hypotheses": [1, 2]}))["outcome"] == "2 hypotheses"
+
+
+def test_the_researchers_sources_can_be_chosen(web, monkeypatch):
+    folder = web.root / "src"
+    S.Store(folder).write(S.new())
+    monkeypatch.delenv("SERPAPI_API_KEY", raising=False)
+    r = web.get("/api/runs/src/research").json()
+    assert r["sources"] == ["openalex", "s2"]
+    scholar = next(a for a in r["available"] if a["name"] == "scholar")
+    assert scholar["key"] == "SERPAPI_API_KEY" and scholar["keyed"] is False
+    r = web.put("/api/runs/src/research", json={"sources": ["pubmed", "openalex"]})
+    assert r.status_code == 200 and r.json()["sources"] == ["openalex", "pubmed"]
+    assert json.loads((folder / "config.json").read_text())["research"]["sources"] == ["openalex", "pubmed"]
+    assert json.loads((folder / ".research_sources").read_text()) == {"sources": ["openalex", "pubmed"]}
+    assert web.put("/api/runs/src/research", json={"sources": []}).status_code == 400
+    assert web.put("/api/runs/src/research", json={"sources": ["bing"]}).status_code == 400

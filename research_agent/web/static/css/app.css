@@ -337,6 +337,13 @@ ul.plain { margin: 0; padding-left: 18px; }
   border-left: 1px solid var(--line-bright); box-shadow: -12px 0 30px rgba(0, 0, 0, .45); overflow-y: auto; padding: 12px 14px; z-index: 5; }
 .drawer-head { display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px; }
 #node-settings.on { border-color: var(--accent-dim); color: var(--accent); }
+.sources-box { margin: 10px 0 14px; }
+.sources-box h2 { margin-bottom: 6px; }
+.source { display: flex; align-items: flex-start; gap: 7px; padding: 3px 0; font-size: 12px; cursor: pointer; }
+.source input { margin-top: 3px; }
+.source.off { opacity: .6; cursor: default; }
+.source .pill { margin-left: auto; white-space: nowrap; }
+#node-sources { margin-left: 6px; }
 .stream { flex: 1 1 auto; min-height: 0; overflow-y: auto; padding: 10px 14px; display: flex; flex-direction: column; gap: 4px; }
 .tx { display: grid; grid-template-columns: 18px 1fr auto; gap: 6px; font: 12px/1.5 var(--mono); }
 .tx-mark { color: var(--text-faint); text-align: center; }

@@ -82,6 +82,11 @@ class SetSkills(BaseModel):
     model_config = {"extra": "forbid"}
 
 
+class Sources(BaseModel):
+    sources: list[str]
+    model_config = {"extra": "forbid"}
+
+
 class SetModel(BaseModel):
     group: str
     role: str
@@ -257,6 +262,16 @@ def create_app(runs_root: Path = RUNS_ROOT, *, roles=(), watch: bool = True) -> 
     def set_node_skills(run_id: str, node: str, body: SetSkills):
         host = host_of(run_id)
         return act(lambda: host.set_skills(node, body.key, body.mode, body.skills))
+
+    @app.get("/api/runs/{run_id}/research")
+    def research(run_id: str):
+        """The literature sources the research may search, and which have keys."""
+        return act(host_of(run_id).research_sources)
+
+    @app.put("/api/runs/{run_id}/research")
+    def set_research(run_id: str, body: Sources):
+        host = host_of(run_id)
+        return act(lambda: host.set_research_sources(body.sources))
 
     @app.get("/api/runs/{run_id}/models")
     def models(run_id: str):

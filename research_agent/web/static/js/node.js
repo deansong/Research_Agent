@@ -430,6 +430,7 @@ async function drawNode() {
           ["Effort", r.effort], ["Access", n.access], ["Steps", (n.steps || []).join(", ")]]
           .filter(([, v]) => v).flatMap(([k, v]) => [el("dt", { text: k }), el("dd", { text: v })])),
       el("p", { class: "hint", text: "Change the model and its backups in the main page's Run tab." }),
+      node === "researcher" ? await sourcesBox() : null,
       await skillsBox(n),
       n.design ? el("details", { class: "fold" }, el("summary", { text: "Its part of the design" }),
         el("pre", { class: "pre small", text: n.design })) : null,
@@ -438,6 +439,41 @@ async function drawNode() {
   } catch (err) {
     box.append(el("div", { class: "dim small", text: err.message }));
   }
+}
+
+// The researcher's literature sources: a box each, saved as soon as it is
+// ticked. A source whose key is not set cannot be ticked.
+function showSources(sources) {
+  const chip = $("node-sources");
+  chip.hidden = node !== "researcher";
+  chip.textContent = `sources: ${sources.join(", ") || "none"}`;
+}
+
+async function sourcesBox() {
+  let r;
+  try { r = await api.research(runId); } catch (err) { return el("div", { class: "dim small", text: err.message }); }
+  showSources(r.sources.filter((s) => (r.available.find((a) => a.name === s) || {}).keyed));
+  const picked = new Set(r.sources);
+  const status = el("span", { class: "dim small" });
+  const rows = r.available.map((a) => el("label", { class: `source ${a.keyed ? "" : "off"}`,
+    title: a.keyed ? a.about : `Needs ${a.key} in the environment the server was started from` },
+  el("input", { type: "checkbox", value: a.name, checked: picked.has(a.name), disabled: !a.keyed }),
+  el("span", {}, el("b", { text: a.label }), el("span", { class: "dim", text: ` — ${a.about}` })),
+  a.keyed ? null : el("span", { class: "pill pill-warn", text: `needs ${a.key}` })));
+  const box = el("div", { class: "sources-box" }, el("h2", { text: "Literature sources" }), rows,
+    el("div", { class: "hint", text: `The research skill's search uses the ticked sources; the others are never asked. Applies from the researcher's next search; kept in ${r.file}.` }),
+    status);
+  box.addEventListener("change", async () => {
+    // A chosen source without its key stays chosen (ticked, greyed): it is
+    // used once the key is set.
+    const sources = [...box.querySelectorAll("input:checked")].map((i) => i.value);
+    try {
+      const now = await api.setResearch(runId, sources);
+      status.textContent = " \u2713 saved";
+      showSources(now.sources.filter((s) => (now.available.find((a) => a.name === s) || {}).keyed));
+    } catch (err) { status.textContent = ` ! ${err.message}`; }
+  });
+  return box;
 }
 
 // The node's skills: which are given, and choosing them. A slot per place a
@@ -553,6 +589,7 @@ document.addEventListener("keydown", (e) => {
 });
 
 $("node-settings").addEventListener("click", () => drawer($("node-drawer").hidden));
+$("node-sources").addEventListener("click", (e) => { e.preventDefault(); drawer(true); });
 $("drawer-close").addEventListener("click", () => drawer(false));
 $("node-name").textContent = node;
 $("run-name").textContent = runId;

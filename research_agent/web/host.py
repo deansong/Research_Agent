@@ -19,6 +19,7 @@ CONCEPT: The stage follows the research state: "bootstrap" until the
 from __future__ import annotations
 
 import json
+import os
 import re
 import threading
 import time
@@ -422,6 +423,33 @@ class RunHost:
         return {"stage": self.stage, "groups": [
             {"name": "bootstrap", "file": "config.json", "roles": show(boot.roles, "bootstrap")},
             {"name": "execution", "file": "execute.json", "roles": show(exe.roles, "execution")}]}
+
+    def research_sources(self) -> dict:
+        """The literature sources the research skill may search in this run,
+        and every source there is: what it covers, and whether its key is set
+        (in this server's environment, which the researcher inherits)."""
+        chosen = list(boot_config.load(self.folder).sources)
+        return {"sources": chosen, "file": "config.json", "available": [
+            {"name": name, "label": label, "about": about, "key": key,
+             "keyed": not key or bool(os.environ.get(key)
+                                      or (name == "s2" and os.environ.get("S2_API_KEY")))}
+            for name, label, about, key in boot_config.SOURCES]}
+
+    def set_research_sources(self, sources: list[str]) -> dict:
+        """Choose the sources: saved in config.json and the run folder's
+        .research_sources, so the researcher's next command uses them."""
+        known = [name for name, *_ in boot_config.SOURCES]
+        wanted = [s for s in known if s in set(sources)]
+        unknown = sorted(set(sources) - set(known))
+        if unknown:
+            raise ValueError(f"No source {', '.join(unknown)}; they are {', '.join(known)}.")
+        if not wanted:
+            raise ValueError("Choose at least one source.")
+        cfg = boot_config.load(self.folder)
+        boot_config.save(self.folder, replace(cfg, sources=tuple(wanted)))
+        self.bus.emit("note", text=f"Literature sources for the research: {', '.join(wanted)} "
+                                   f"(from the researcher's next search).")
+        return self.research_sources()
 
     def set_model(self, group: str, role: str, provider: str, model: str = "",
                   effort: str = "", backup: list[str] | None = None) -> dict:

@@ -29,6 +29,15 @@ planner_plan = ["experiment-design"]
 designer = "none"
 
 
+[research]
+# The literature sources the research skill may search: openalex (every
+# field), s2 (Semantic Scholar; needs SEMANTIC_SCHOLAR_API_KEY), pubmed,
+# europepmc, scholar (Google Scholar through SerpAPI; needs SERPAPI_API_KEY,
+# and each search costs a credit). A source not listed is never asked. The
+# researcher node's window in the web UI changes this for one run.
+sources = ["openalex", "s2"]
+
+
 # Which provider and model each role runs on. `model` is an id from
 # RB.list_models(provider); leave it out for the provider's default.
 # `effort` is a level from RB.list_efforts(provider) -- not for antigravity,

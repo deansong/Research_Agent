@@ -73,6 +73,8 @@ class BootstrapConfig:
     roles: dict[str, RoleConfig]
     skills: dict[str, None | str | list[str]]
     skills_dir: Path | None
+    sources: tuple[str, ...] = ("openalex", "s2")
+    """The literature sources the research skill may search (SOURCES)."""
 
     def describe(self) -> str:
         """Two readable lines: roles, then skills."""
@@ -87,7 +89,28 @@ class BootstrapConfig:
                               "options": c.options, "backup": list(c.backup)}
                           for r, c in self.roles.items()},
                 "skills": {"dir": str(self.skills_dir) if self.skills_dir else None,
-                           **{n: c if c is not None else "none" for n, c in self.skills.items()}}}
+                           **{n: c if c is not None else "none" for n, c in self.skills.items()}},
+                "research": {"sources": list(self.sources)}}
+
+
+#: The research skill's literature sources: name, what it is, the key it needs.
+SOURCES = (
+    ("openalex", "OpenAlex", "every field and publisher, ~250M works", ""),
+    ("s2", "Semantic Scholar", "computer science, citation graph", "SEMANTIC_SCHOLAR_API_KEY"),
+    ("pubmed", "PubMed", "biomedicine and clinical work", ""),
+    ("europepmc", "Europe PMC", "life sciences, preprints, open full text", ""),
+    ("scholar", "Google Scholar", "through SerpAPI; each search costs a credit", "SERPAPI_API_KEY"),
+)
+
+#: The file in the run folder the research skill reads the choice from.
+SOURCES_FILE = ".research_sources"
+
+
+def write_sources(run_dir: str | Path, sources) -> None:
+    """Tell the research skill's tool (skills/research/research_tools.py)
+    which sources it may search: it looks for this file from its working
+    folder upwards, so a change applies to the researcher's next command."""
+    (Path(run_dir) / SOURCES_FILE).write_text(json.dumps({"sources": list(sources)}) + "\n")
 
 
 # ---- reading it --------------------------------------------------------------------------
@@ -127,6 +150,7 @@ def load(run_dir: str | Path | None = None, *, roles=(), skills=(), skills_dir=N
 def save(run_dir: str | Path, cfg: BootstrapConfig) -> None:
     """What a run starts with, so --resume runs the same way."""
     (Path(run_dir) / "config.json").write_text(json.dumps(cfg.to_dict(), indent=2) + "\n")
+    write_sources(run_dir, cfg.sources)
 
 
 def check(cfg: BootstrapConfig) -> list[str]:
@@ -135,6 +159,9 @@ def check(cfg: BootstrapConfig) -> list[str]:
                 if r not in ROLES]
     problems += [f"role {r!r} is not configured" for r in ROLES if r not in cfg.roles]
     problems += backup_problems(cfg.roles)
+    known = {name for name, *_ in SOURCES}
+    problems += [f"research: no source {s!r} (they are {', '.join(sorted(known))})"
+                 for s in cfg.sources if s not in known]
     problems += [f"no node {n!r} for skills (they are {', '.join(NODES)})" for n in cfg.skills
                  if n not in NODES]
     chosen = {n: c for n, c in cfg.skills.items() if c is not None}
@@ -214,7 +241,9 @@ def _merge(cfg: BootstrapConfig, data: dict, *, base: Path) -> BootstrapConfig:
             skills_dir = (base / Path(value).expanduser()).resolve() if value else None
         else:
             skills[key] = _choice(value)
-    return BootstrapConfig(roles, skills, skills_dir)
+    sources = (data.get("research") or {}).get("sources")
+    return BootstrapConfig(roles, skills, skills_dir,
+                           tuple(sources) if sources is not None else cfg.sources)
 
 
 def _choice(value) -> None | str | list[str]:

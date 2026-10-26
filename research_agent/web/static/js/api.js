@@ -55,6 +55,8 @@ export const api = {
   nodeInfo: (id, node) => request("GET", `${run(id)}/nodes/${encodeURIComponent(node)}`),
   skills: (id) => request("GET", `${run(id)}/skills`),
   setSkills: (id, node, body) => request("PUT", `${run(id)}/nodes/${encodeURIComponent(node)}/skills`, body),
+  research: (id) => request("GET", `${run(id)}/research`),
+  setResearch: (id, sources) => request("PUT", `${run(id)}/research`, { sources }),
   models: (id) => request("GET", `${run(id)}/models`),
   setModel: (id, body) => request("PUT", `${run(id)}/models`, body),
   live: (id, node) => request("GET", `${run(id)}/live?node=${encodeURIComponent(node || "")}`),

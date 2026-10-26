@@ -340,10 +340,46 @@ def _keyed(name: str) -> bool:
     return not var or bool(os.environ.get(var))
 
 
+#: Where the user's choice of sources for a run is kept: this file in the run
+#: folder (the web UI's research node writes it), found from the working
+#: folder upwards; or $RESEARCH_SOURCES ("openalex,pubmed").
+CHOICE_FILE = ".research_sources"
+
+
+def chosen() -> list[str] | None:
+    """The sources the user allowed, or None when nobody chose."""
+    env = os.environ.get("RESEARCH_SOURCES")
+    if env:
+        return [s.strip() for s in env.split(",") if s.strip()]
+    here = os.path.abspath(os.getcwd())
+    for _ in range(8):
+        path = os.path.join(here, CHOICE_FILE)
+        if os.path.isfile(path):
+            try:
+                with open(path, encoding="utf-8") as f:
+                    found = json.load(f)
+                return [str(s) for s in (found.get("sources") if isinstance(found, dict) else found)]
+            except (OSError, ValueError, TypeError):
+                return None
+        parent = os.path.dirname(here)
+        if parent == here:
+            break
+        here = parent
+    return None
+
+
+def _allowed(name: str) -> bool:
+    picked = chosen()
+    return picked is None or name in picked
+
+
 def default_sources() -> tuple[str, ...]:
-    """OpenAlex always; Semantic Scholar when its key is set. Google Scholar
-    is never a default: each SerpAPI search spends a paid credit, so it is
-    asked only by name (`scholar`, or --sources ...,scholar)."""
+    """The user's choice, when there is one. Otherwise OpenAlex, and Semantic
+    Scholar when its key is set; Google Scholar is then never a default --
+    each SerpAPI search spends a paid credit -- and is asked only by name."""
+    picked = chosen()
+    if picked is not None:
+        return tuple(s for s in picked if s in SOURCES)
     return ("openalex",) + (("s2",) if _keyed("s2") else ())
 
 
@@ -354,8 +390,12 @@ def search(query: str, limit: int, since: int | None = None,
     cannot answer is said in a last row, not fatal; one that needs a key
     nobody set is not asked, and said so."""
     sources = default_sources() if sources is None else sources
-    skipped = [f"{s} (no {NEEDS_KEY[s]})" for s in sources if not _keyed(s)]
-    sources = tuple(s for s in sources if _keyed(s)) or ("openalex",)
+    skipped = [f"{s} (turned off for this run)" for s in sources if not _allowed(s)]
+    skipped += [f"{s} (no {NEEDS_KEY[s]})" for s in sources if _allowed(s) and not _keyed(s)]
+    sources = tuple(s for s in sources if _allowed(s) and _keyed(s))
+    if not sources:
+        return [{"note": "no source to ask -- " + (", ".join(skipped) or "none chosen")
+                 + ". The sources for this run are chosen in the research node (web UI)."}]
     def ask(name):
         try:
             if name == "s2":
@@ -547,7 +587,7 @@ def cites(ident: str, limit: int, since: int | None = None) -> list[dict]:
 def _s2_cites(ident: str, kind: str, key: str, title: str, limit: int) -> list[dict]:
     """Semantic Scholar's count, when OpenAlex has no record to trust."""
     s2key = {"arxiv": f"arXiv:{key}", "doi": f"DOI:{key}", "pmid": f"PMID:{key}"}.get(kind, key)
-    if not _s2_key():
+    if not _s2_key() or not _allowed("s2"):
         return [{"id": ident, "title": title,
                  "note": "OpenAlex has no work with exactly this title; citation count unknown "
                          "(Semantic Scholar, which might know, needs SEMANTIC_SCHOLAR_API_KEY)"}]
@@ -629,6 +669,10 @@ def main(argv=None) -> int:
         if unknown:
             parser.error(f"unknown source(s): {', '.join(unknown)}; they are {', '.join(SOURCES)}")
         rows = search(args.query, limit, args.since, sources)
+    elif args.command in SOURCES and not _allowed(args.command):
+        print(f"{args.command} is turned off for this run (the sources are chosen in the "
+              f"research node); use: search, or {', '.join(default_sources()) or 'none'}.")
+        return 1
     else:
         try:
             rows = COMMANDS[args.command](args.query, limit, args.since)

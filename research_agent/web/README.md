@@ -138,6 +138,18 @@ it makes, while it makes it. That is what you watch when you are debugging.
   the approved design. A change applies from the node's next call, and a
   conversation already under way, such as the discussor's, gets the new
   skills with its next message.
+- **The researcher's literature sources.** In the researcher's window, the
+  top bar shows them (`sources: openalex, s2`), and the drawer has a box for
+  each: OpenAlex, Semantic Scholar, PubMed, Europe PMC and Google Scholar
+  (through SerpAPI, a credit per search). The research skill's `search`
+  uses the ticked ones, and a source left unticked is never asked, even by
+  name. A source whose key is not set in the server's environment
+  (`SEMANTIC_SCHOLAR_API_KEY`, `SERPAPI_API_KEY`) is greyed out; if it was
+  chosen, it stays chosen and is used once the key is there. The choice is
+  kept in `config.json` (`research.sources`) and in the run folder's
+  `.research_sources`, which the tool reads, so it applies from the
+  researcher's next search. Defaults for new runs: `[research]` in
+  `research_agent/bootstrap/config.toml`.
 - **Links:** `?tab=input` opens a tab, `?drawer=1` the drawer.
 
 Finished calls come from `<run>/activity/<session>.jsonl` (every event of each
@@ -242,6 +254,7 @@ Deep links: `/?tab=graph&side=jobs#<run>` opens a run with those tabs showing.
 | GET | `/api/runs/{id}/state`, `/history`, `/history/{n}` | the research state and its changes |
 | GET, PUT | `/api/runs/{id}/models` | each role's provider, model, effort, backups and what it runs on now; `{group, role, provider, model, effort, backup}` changes one (`backup` left out keeps them) |
 | GET | `/api/runs/{id}/skills` | the skills folder's skills: name and description |
+| GET, PUT | `/api/runs/{id}/research` | the literature sources the research may search, and which have keys; `{sources}` chooses them |
 | GET, PUT | `/api/runs/{id}/nodes/{node}`, `/nodes/{node}/skills` | a node's settings; `{key, mode: none\|auto\|chosen\|design, skills}` chooses its skills |
 | GET | `/api/providers` | each provider's models and effort levels (cached ten minutes) |
 | GET | `/api/runs/{id}/graph`, `/sessions`, `/sessions/{sid}`, `/files`, `/file?path=`, `/jobs`, `/jobs/{job}/log` | |
