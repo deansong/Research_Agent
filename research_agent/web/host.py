@@ -88,7 +88,7 @@ class RunHost:
         self.folder.mkdir(parents=True, exist_ok=True)
         boot_config.save(self.folder, cfg)
         run = boot_nodes.Run.from_config(self.folder, cfg)
-        run.quiet, run.listener = True, self._feed
+        run.quiet, run.listener, run.interrupt = True, self._feed, self._pause
         return Bootstrap(run)
 
     def _open_execution(self, limits: dict | None = None, roles=()) -> Execution:
@@ -97,7 +97,7 @@ class RunHost:
         discussor = boot_config.load(self.folder, roles=[r for r in self.roles
                                                          if r.split("=")[0] in ("all", "discussor")])
         run = exec_nodes.ExecRun.from_config(self.folder, cfg, discussor.roles["discussor"])
-        run.quiet, run.listener = True, self._feed
+        run.quiet, run.listener, run.interrupt = True, self._feed, self._pause
         return Execution(run)
 
     # ---- what is there ----------------------------------------------------------------
@@ -194,7 +194,9 @@ class RunHost:
         if not self.busy:
             raise ValueError("Nothing is running.")
         self._pause.set()
-        self.bus.emit("note", text="Pausing after the current step...")
+        waiting = any(c.get("notice") for c in self.live.values())
+        self.bus.emit("note", text="Pausing now: the call was only waiting." if waiting
+                      else "Pausing after the current step...")
         return "pausing"
 
     def resume(self) -> None:
@@ -521,7 +523,8 @@ class RunHost:
             except _Paused:
                 self.bus.emit("note", text="Paused. Carry on when you are ready.")
             except RB.BackendCancelled:
-                self.bus.emit("note", text="Cancelled.")
+                self.bus.emit("note", text="Paused while waiting. Change the role's model or "
+                                           "give it a backup (Run tab), then Carry on.")
             except RB.BackendError as exc:
                 self.error = str(exc)
                 self.bus.emit("error", message=str(exc)[:3000])
@@ -580,8 +583,17 @@ class RunHost:
     def _feed(self, kind: str, data: dict) -> None:
         if kind == "live":
             call = self.live.get(data.get("session") or "")
-            if call is not None:
-                call["snapshot"], call["updated"] = data.get("snapshot") or {}, time.time()
+            snap = data.get("snapshot") or {}
+            if call is not None and snap.get("notice"):
+                # The call is waiting (credits, a full model): say so where
+                # the person looks -- the chat, the status line, the node.
+                call["notice"], call["until"] = snap["notice"], snap.get("until")
+                self.current = f"{call['label']} ({call['model']}) -- waiting: {snap['notice'][:160]}"
+                self.bus.emit("note", text=f"{call['label']}: {snap['notice']}")
+                self.status_event()
+            elif call is not None:
+                call["snapshot"], call["updated"] = snap, time.time()
+                call.pop("notice", None)
             return
         if kind == "call":
             session = data.get("session") or ""

@@ -53,7 +53,7 @@ import time
 from collections import deque
 from typing import Any
 
-from research_backend.backends._progress import (_LiveText, flood_message, poll_seconds,
+from research_backend.backends._progress import (_LiveText, flood_message, notice, poll_seconds,
                                       runaway_message, silent_message,
                                       wait_or_cancel, LIVE_FLUSH_SECONDS)
 from research_backend import quota
@@ -264,12 +264,13 @@ class CliBackend:
                             f"waiting {credits.describe_budget()}. It said:\n\n"
                             f"    {refused[:600]}\n\nYour progress is saved -- "
                             f"Start the session again to carry on.") from None
-                    say(self, f"\n    {self.label} is over its usage limit. Waiting "
-                          f"{seconds / 60:.0f} min ({why}, at {quota.until(seconds)}); "
-                          f"check {credits.tries}, giving up after "
-                          f"{credits.describe_budget()}.\n    It said: "
-                          f"{refused[:300]}\n    Pause or Stop to stop waiting -- "
-                          f"your progress is saved.", flush=True)
+                    notice(self, f"\n    {self.label} is over its usage limit. Waiting "
+                                 f"{seconds / 60:.0f} min ({why}, until "
+                                 f"{quota.until(seconds)}); check {credits.tries}, giving up "
+                                 f"after {credits.describe_budget()}.\n    It said: "
+                                 f"{refused[:300]}\n    Pause stops waiting (give the role a "
+                                 f"backup, then carry on) -- your progress is saved.",
+                           until=time.time() + seconds)
                     wait_or_cancel(seconds, self.cancel, self.pause)
                     continue
 
@@ -285,9 +286,9 @@ class CliBackend:
                         f"not this node failing. Resume the session to try "
                         f"again, or point the role at another model.")
                 seconds = 5.0 * (2 ** (busy_tries - 1))
-                say(self, f"\n    {self.label} is busy ({reason[:120]}). Waiting "
-                      f"{seconds:.0f}s, then retrying ({busy_tries}/"
-                      f"{self.busy_attempts}).", flush=True)
+                notice(self, f"\n    {self.label} is busy ({reason[:120]}). Waiting "
+                             f"{seconds:.0f}s, then retrying ({busy_tries}/"
+                             f"{self.busy_attempts}).", until=time.time() + seconds)
                 wait_or_cancel(seconds, self.cancel, self.pause)
         finally:
             os.unlink(handle.name)

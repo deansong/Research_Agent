@@ -59,6 +59,10 @@ class Run:
     """Print nothing about calls -- not even that one has started."""
     instructions: dict = field(default_factory=dict)
     """Role -> its standing instructions."""
+    interrupt: threading.Event | None = None
+    """Set, it ends a call that is waiting (for credits, for a full model):
+    the web UI's Pause. The call raises BackendCancelled; the run carries on
+    from that node."""
     listener: Callable[[str, dict], None] | None = None
     """Told of every call as it starts and ends, and of notes -- the web UI's
     feed. ("call", {...}) and ("note", {"text": ...})."""
@@ -212,7 +216,7 @@ class Run:
             try:
                 # Tracing shows the work as it happens too, not only its ends.
                 reply = rb.send(prompt, schema=schema, progress=self.progress or self.trace,
-                                on_progress=live)
+                                on_progress=live, interrupt=self.interrupt)
                 problems = check(reply.data) if check else []
             except RB.BackendOutputError as exc:
                 problems = [str(exc)[:2000]]

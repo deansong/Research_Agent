@@ -328,7 +328,7 @@ class ResearchBackend:
     # ---- talking ----------------------------------------------------------------------
 
     def send(self, prompt: str, *, schema=None, progress: bool = False,
-             on_progress=None) -> Reply:
+             on_progress=None, interrupt=None) -> Reply:
         """Send a message in the current session and wait for the answer; with
         no session yet, one is started.
 
@@ -339,11 +339,16 @@ class ResearchBackend:
         progress  print what the model does while it works
         on_progress  called about once a second while the model works, with
                   what it has done so far: {"events", "elapsed", "idle",
-                  "counts", "last", "streamed", "live"} -- for a live view"""
+                  "counts", "last", "streamed", "live"} -- for a live view;
+                  and, while it waits (for credits, for a full model),
+                  {"notice": what it waits for, "until": epoch seconds}
+        interrupt    a threading.Event: set, it ends such a wait at once
+                     (BackendCancelled) -- a UI's Pause"""
         if self._session is None:
             self.new_session()
         return self._session.send(prompt, schema=schema if schema is not None else self._schema,
-                                  progress=progress, on_progress=on_progress)
+                                  progress=progress, on_progress=on_progress,
+                                  interrupt=interrupt)
 
     def history(self, last: int | None = None) -> str:
         """The conversation so far, as text."""

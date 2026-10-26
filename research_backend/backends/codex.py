@@ -14,6 +14,7 @@ import time
 from openai_codex import Codex, Sandbox
 
 from research_backend.backends._progress import (_LiveText, flood_message, headline,
+                                      notice,
                                       poll_seconds, record,
                                       runaway_message, silent_message,
                                       wait_or_cancel, LIVE_FLUSH_SECONDS)
@@ -342,14 +343,14 @@ class CodexBackend:
                             f"(or rerun with the same --session) to carry on.\n"
                             f"It said: {str(error)[:600]}"
                         ) from None
-                    say(self, f"\n    Out of credits or over the usage limit. "
-                          f"Waiting {seconds / 60:.0f} min ({why}, at "
-                          f"{quota.until(seconds)}); check {credits.tries}, "
-                          f"giving up after {credits.describe_budget()}.\n"
-                          f"    It said: {str(error)[:300]}\n"
-                          f"    Add credits and this will continue on its own. "
-                          f"Pause or Stop to stop waiting -- your progress is "
-                          f"saved.", flush=True)
+                    notice(self, f"\n    Out of credits or over the usage limit. "
+                           f"Waiting {seconds / 60:.0f} min ({why}, until "
+                           f"{quota.until(seconds)}); check {credits.tries}, giving up "
+                           f"after {credits.describe_budget()}.\n    It said: "
+                           f"{str(error)[:300]}\n    Add credits and this continues on "
+                           f"its own; Pause stops waiting (give the role a backup, then "
+                           f"carry on) -- your progress is saved.",
+                           until=time.time() + seconds)
                     wait_or_cancel(seconds, self.cancel, self.pause)
                     continue
 
@@ -376,11 +377,9 @@ class CodexBackend:
         so pressing it during a credit wait did nothing for up to twenty
         minutes.
         """
-        say(self, f"\n    {reason}. Waiting {seconds:.0f}s, then retrying "
-              f"({attempt}/{limit}).", flush=True)
-        if advice:
-            say(self, f"    {advice}", flush=True)
-        say(self, "    Ctrl-C to stop -- your progress is saved.", flush=True)
+        notice(self, f"\n    {reason}. Waiting {seconds:.0f}s, then retrying "
+                     f"({attempt}/{limit}).{' ' + advice if advice else ''} Pause stops "
+                     f"waiting -- your progress is saved.", until=time.time() + seconds)
 
         wait_or_cancel(seconds, self.cancel, self.pause)
 

@@ -188,7 +188,8 @@ function liveRow(c) {
     c.attempt > 1 ? pill(`attempt ${c.attempt}`, "warn") : null,
     /\(aside\)/.test(c.label) ? pill("aside", "human") : null),
   el("div", { class: "l2", text: oneLine(saidOf(c.prompt || ""), 110) }),
-  c.last ? el("div", { class: "l3 dim", text: oneLine(c.last, 110) }) : null);
+  c.notice ? el("div", { class: "l3 waiting", text: `\u23f8 ${oneLine(c.notice, 110)}` })
+    : c.last ? el("div", { class: "l3 dim", text: oneLine(c.last, 110) }) : null);
 }
 
 function callRow(c) {
@@ -300,7 +301,7 @@ async function drawSelected() {
   else if (view.tab === "output") body = data ? el("div", { class: "tree" }, tree(data)) : el("pre", { class: "pre small", text: reply || "(none)" });
   else if (view.tab === "raw") body = raw(s, reply, running);
   else body = activity(c, true);
-  clear(stream).append(body);
+  clear(stream).append(...[running && c.notice ? waitingBox(c) : null, body].filter(Boolean));
   if (view.top) { stream.scrollTop = 0; view.top = false; }
   else if (running && view.tab === "live" && pinned) stream.scrollTop = stream.scrollHeight;
   else stream.scrollTop = scroll;
@@ -310,6 +311,15 @@ async function drawSelected() {
       if (text && text.trim()) $("tails").append(el("div", { class: "tail" }, el("div", { class: "tail-head", text: `writing now: ${name}` }), el("pre", { text: tail(text, 30) })));
     }
   }
+}
+
+// A call that is not working but waiting: for credits, or for a full model.
+function waitingBox(c) {
+  const until = c.until ? new Date(c.until * 1000).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }) : "";
+  return el("div", { class: "callout waiting" },
+    el("b", { text: `Waiting${until ? ` until ${until}` : ""} -- not working` }),
+    el("div", { class: "pre", text: c.notice }),
+    el("div", { class: "small", text: "Pause (main page) stops the wait at once; give the role a backup or another model in the Run tab, then Carry on." }));
 }
 
 function summary(c, prompt, data, reply) {

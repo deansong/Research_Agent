@@ -319,6 +319,9 @@ blockquote.said { margin: 0 0 4px; padding: 6px 12px; border-left: 3px solid var
 .sum-facts .msg-text { background: var(--bg-raised); padding: 6px 10px; border-radius: 6px; }
 .callout { border: 1px solid var(--line-bright); border-radius: 7px; padding: 8px 12px; }
 .callout.bad { border-color: #6b2f35; color: var(--danger); }
+.callout.waiting { border-color: #5e5228; color: var(--warn); margin-bottom: 10px; }
+.callout.waiting .pre { color: var(--text); margin: 6px 0; }
+.crow .l3.waiting { color: var(--warn); }
 .callout ul { margin: 4px 0 0; padding-left: 18px; color: var(--text); }
 .chips { display: flex; flex-wrap: wrap; gap: 6px; }
 ul.plain { margin: 0; padding-left: 18px; }

@@ -188,6 +188,13 @@ role's model.
   an hour. While a role runs on a backup, its row says **on backup: ...**, and
   the chat notes the switch. The last backup waits for credits as usual. A
   role with no backup waits up to a day for its credits, as before.
+- **A call that waits.** When a model is out of credits, over its usage
+  limit, at capacity or busy, research_backend waits and retries (for
+  credits, up to a day). The page says so as it happens: a line in the chat
+  ("planner hypothesize: Out of credits or over the usage limit. Waiting 30
+  min, until 20:15 ..."), the status line, and a **Waiting until ...** box in
+  the node's window. **Pause** ends such a wait at once; give the role a
+  backup or another model, then **Carry on**.
 - **Providers without files.** `strata` (the Strata server's API) has no
   files or commands, so the page refuses it for the roles that need them:
   the researcher, and the execution's worker, runner, writer, validator and

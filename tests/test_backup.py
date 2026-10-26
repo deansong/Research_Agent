@@ -132,3 +132,49 @@ def test_at_capacity_is_a_busy_provider_not_a_failure():
 
     err = classify(RuntimeError("Selected model is at capacity. Please try a different model."))
     assert isinstance(err, RB.BackendBusy)
+
+
+class Waiting(Model):
+    """Out of credits: says so, then waits -- as codex.py and _cli.py do."""
+
+    def run_structured(self, **kw):
+        from research_backend.backends._progress import notice, wait_or_cancel
+
+        notice(self, "Out of credits. Waiting 30 min (until 20:15).", until=time.time() + 1800)
+        wait_or_cancel(1800, None, None)
+        raise AssertionError("the wait should have been ended")
+
+
+def test_a_waiting_call_says_so_and_pause_ends_the_wait(tmp_path, monkeypatch):
+    import threading
+
+    backend = Waiting("codex")
+    monkeypatch.setattr("research_backend.conversation._backend", lambda *a, **k: backend)
+    heard = []
+    run = Run(tmp_path, roles={"orchestrator": RoleConfig("codex")}, quiet=True,
+              listener=lambda kind, data: heard.append((kind, data)),
+              interrupt=threading.Event())
+    threading.Timer(0.5, run.interrupt.set).start()
+    started = time.monotonic()
+    with pytest.raises(RB.BackendCancelled, match="Paused"):
+        run.call("orchestrator", brief="go", schema=Out)
+    assert time.monotonic() - started < 5, "Pause ends a half-hour wait at once"
+    notices = [d["snapshot"] for k, d in heard if k == "live" and "notice" in d["snapshot"]]
+    assert notices and notices[0]["notice"].startswith("Out of credits") and notices[0]["until"]
+
+
+def test_the_web_page_hears_of_the_wait(tmp_path):
+    from research_agent.web import host as H
+    from research_agent import state as S
+
+    S.Store(tmp_path / "w").write(S.new())
+    h = H.RunHost(tmp_path / "w", roles=["all=fake"], watch=False)
+    seen = []
+    h.bus.emit = lambda kind, **data: seen.append((kind, data))
+    h._feed("call", {"state": "start", "label": "planner hypothesize", "model": "codex",
+                     "session": "planner-001", "attempt": 1, "prompt": "p"})
+    h._feed("live", {"session": "planner-001", "snapshot": {"notice": "Out of credits. Waiting 30 min.",
+                                                              "until": 1.0}})
+    assert ("note", {"text": "planner hypothesize: Out of credits. Waiting 30 min."}) in seen
+    assert "waiting: Out of credits" in h.current
+    assert h.running("planner")[0]["notice"].startswith("Out of credits")

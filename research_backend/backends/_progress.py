@@ -22,6 +22,7 @@ from __future__ import annotations
 
 import json
 import re
+import threading
 import time
 from typing import Any
 
@@ -639,6 +640,32 @@ def poll_seconds(timeout: float, max_seconds: float, cancel=None) -> float:
     return max(0.02, limit)
 
 
+#: Per thread: the Event that ends a wait for the turn running on this thread
+#: (set by conversation.send(interrupt=...)). Backends are shared between
+#: sessions, so it cannot be an attribute of the backend.
+_signals = threading.local()
+
+
+def interrupt_event():
+    return getattr(_signals, "event", None)
+
+
+def notice(backend, text: str, *, until: float | None = None) -> None:
+    """Something the person waiting must know -- a wait for credits, a full
+    model -- even when the backend is quiet: printed (unless quiet), and passed
+    to the turn's on_progress as {"notice": text, "until": epoch seconds}, so
+    a UI can show it."""
+    from research_backend.base import say
+
+    say(backend, text, flush=True)
+    hook = getattr(backend, "on_progress", None)
+    if hook is not None:
+        try:
+            hook({"notice": " ".join(text.split()), "until": until})
+        except Exception:  # noqa: BLE001 -- telling must never break the wait
+            pass
+
+
 def wait_or_cancel(seconds: float, cancel=None, pause=None) -> None:
     """Sleep for a retry backoff, but give up the moment Stop -- or Pause --
     is pressed.
@@ -655,9 +682,10 @@ def wait_or_cancel(seconds: float, cancel=None, pause=None) -> None:
     from research_backend.base import BackendCancelled
 
     deadline = time.monotonic() + max(0.0, seconds)
-    watched = cancel is not None or pause is not None
+    interrupt = interrupt_event()
+    watched = cancel is not None or pause is not None or interrupt is not None
     while True:
-        for event, verb in ((cancel, "Stopped"), (pause, "Paused")):
+        for event, verb in ((cancel, "Stopped"), (pause, "Paused"), (interrupt, "Paused")):
             if event is not None and event.is_set():
                 raise BackendCancelled(
                     f"{verb} by request while waiting to retry. Everything the "

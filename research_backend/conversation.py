@@ -173,7 +173,7 @@ class Session:
     # ---- talking to it -------------------------------------------------------
 
     def send(self, prompt: str, *, schema=None, progress: bool = False,
-             on_progress=None) -> Reply:
+             on_progress=None, interrupt=None) -> Reply:
         """Send one message and wait for the answer.
 
         `schema` asks for a structured answer: a Pydantic class (the reply's
@@ -212,6 +212,9 @@ class Session:
                 # found per thread: two turns at once each get their own.
                 backend.on_progress = _dispatch_progress
             _progress_hooks.hook = on_progress
+            # A threading.Event that ends a wait (for credits, for a full
+            # model) of this turn: Pause in a UI.
+            _signals.event = interrupt
             try:
                 run = backend.run_structured(
                     thread_id=self.thread_id, repo_path=self.workdir, access=self.access,
@@ -224,6 +227,7 @@ class Session:
                 raise
             finally:
                 _progress_hooks.hook = None
+                _signals.event = None
 
             seconds = round(time.monotonic() - started, 1)
             if schema is None:
@@ -426,6 +430,7 @@ def list_sessions(*, home: str | os.PathLike | None = None) -> list[Session]:
 _backends: dict[tuple, Any] = {}
 _backends_lock = threading.Lock()
 _progress_hooks = threading.local()
+from research_backend.backends._progress import _signals  # noqa: E402
 
 
 def _dispatch_progress(snapshot: dict) -> None:
