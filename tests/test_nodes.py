@@ -215,3 +215,20 @@ def test_the_researcher_is_never_sent_back_for_a_wrong_reference(run, script):
     assert st["evidence"][1]["claim"] == "Novelty: dual encoders now win"
     assert st["evidence"][1]["verified"] is None
     assert out.summary.endswith("(Kept, though filed under unknown ids: H1, Q5.)")
+
+
+def test_rubric_criteria_can_be_retired(run, script):
+    st = _apply(S.new(), nodes.Outcome(ops=[
+        {"op": "add", "section": "evidence", "value": {"claim": "c", "source": "s"}},
+        *[{"op": "add", "section": "rubric", "value": {"criterion": f"old {i}"}} for i in range(3)]]),
+        "x")
+    unknown = {**HYPO, "retire_rubric": ["R9"]}
+    empty = {**HYPO, "rubric": [{"id": "R1", "criterion": " ", "measure": "", "threshold": ""}]}
+    good = {**HYPO, "rubric": [{**HYPO["rubric"][0], "id": "R1"}], "retire_rubric": ["R2", "R3"]}
+    script.add("HypothesizeOutput", unknown, empty, good)
+    out = nodes.hypothesize(run, st, task="retire the stale criteria")
+    assert "retire_rubric names R9, which is not a rubric id (there are: R1, R2, R3)" in script.calls[1]["prompt"]
+    assert "rubric criterion R1 is empty" in script.calls[2]["prompt"]
+    st = _apply(st, out, "planner")
+    assert [(r["id"], r["criterion"]) for r in st["rubric"]] == [("R1", "Effect size")]
+    assert "(retired R2, R3)" in out.summary

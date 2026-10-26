@@ -184,6 +184,10 @@ class HypothesizeOutput(BaseModel):
     summary: str
     hypotheses: list[HypothesisIn] = Field(min_length=1, max_length=8)
     rubric: list[CriterionIn] = Field(min_length=1, max_length=12)
+    retire_rubric: list[str] = Field(default_factory=list, max_length=20)
+    """Ids of rubric criteria that no longer apply (R8, R9): they leave the
+    rubric. The rubric is then what you revised or added plus what you left
+    alone."""
     protocol: ProtocolIn
     risks: list[RiskIn] = Field(default_factory=list, max_length=8)
     assumptions: list[AssumptionIn] = Field(default_factory=list, max_length=8)

@@ -134,7 +134,11 @@ protocol.
   evidence ids it rests on. Revise an existing one by giving its id; mark ones
   that should go as dropped.
 - The rubric says what a good result is: each criterion has a measure and a
-  pass threshold, and applies to hypothesis or step ids.
+  pass threshold, and applies to hypothesis or step ids. Revise one by giving
+  its id; criteria you leave out stay as they are. A criterion that no longer
+  applies (its hypotheses dropped, or superseded) goes in `retire_rubric` by
+  id, and leaves the rubric. Give only what changes -- never the whole
+  package again.
 - The protocol fixes, before any result exists: baselines, metrics, the
   statistical test, seeds or repetitions, and when to stop.
 - Note risks and the assumptions you rely on.

@@ -242,6 +242,14 @@ def hypothesize(run: Run, st: dict, *, task: str) -> Outcome:
                      for h in out.hypotheses for e in h.evidence if e not in evidence]
         problems += [f"hypothesis {h.statement[:40]!r} has no prediction"
                      for h in out.hypotheses if not h.prediction.strip()]
+        problems += [f"rubric criterion {r.id or i + 1} is empty: give its criterion, or "
+                     f"retire it in `retire_rubric`"
+                     for i, r in enumerate(out.rubric) if not r.criterion.strip()]
+        problems += [f"retire_rubric names {x}, which is not a rubric id (there are: "
+                     f"{', '.join(sorted(rubric)) or 'none'})"
+                     for x in out.retire_rubric if x not in rubric]
+        problems += [f"{r.id} is both revised in `rubric` and retired"
+                     for r in out.rubric if r.id and r.id in out.retire_rubric]
         return problems
 
     out, session = run.call("planner", brief=views.planner(st, job="hypothesize", task=task),
@@ -256,11 +264,14 @@ def hypothesize(run: Run, st: dict, *, task: str) -> Outcome:
         value = r.model_dump(exclude={"id"})
         ops.append({"op": "update", "section": "rubric", "id": r.id, "value": value}
                    if r.id in rubric else {"op": "add", "section": "rubric", "value": value})
+    ops += [{"op": "drop", "section": "rubric", "id": x} for x in dict.fromkeys(out.retire_rubric)]
     ops.append({"op": "set", "section": "protocol", "value": out.protocol.model_dump()})
     ops += [{"op": "add", "section": "risks", "value": r.model_dump()} for r in out.risks]
     ops += [{"op": "add", "section": "assumptions", "value": a.model_dump()}
             for a in out.assumptions]
-    summary = (f"{len(out.hypotheses)} hypotheses, {len(out.rubric)} rubric criteria, "
+    retired = (f" (retired {', '.join(dict.fromkeys(out.retire_rubric))})"
+               if out.retire_rubric else "")
+    summary = (f"{len(out.hypotheses)} hypotheses, {len(out.rubric)} rubric criteria{retired}, "
                f"protocol set. {out.summary}")
     ops.append(_result_op("planner", "hypothesize", task, summary, session))
     return Outcome(ops=ops, summary=summary, session=session, data=out)
