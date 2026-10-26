@@ -187,7 +187,7 @@ the provider's own, so they differ:
 | codex | per model, e.g. `gpt-5.6-sol`: low, medium, high, xhigh, max, ultra (default medium) | the app-server's model list, so `RB.list_models("codex")` shows each model's |
 | claude_code | low, medium, high, xhigh, max | `claude --effort` |
 | antigravity | low, medium, high, xhigh, max | `agy --effort` |
-| strata | none, minimal, low, medium, high | the Responses API's `reasoning.effort` |
+| strata, codex_strata | none (thinking off), low, medium, high; default medium (the `strata` profile's `model_reasoning_effort`) | the Responses API's `reasoning.effort`; measured: low ~170, high ~300 reasoning tokens on the same problem |
 
 A level the model does not have is refused when you set it, naming the ones
 it has. Leaving it out, or `set_effort(None)`, uses the model's default. It is

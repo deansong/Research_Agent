@@ -55,7 +55,7 @@ class ResponsesBackend:
     #: Reading files is not something it can do, so a call that names no
     #: access gets NONE (see conversation._access).
     unsupported_access = frozenset({Access.READ_ONLY, Access.WRITE, Access.FULL})
-    efforts: tuple[str, ...] = ("none", "minimal", "low", "medium", "high")
+    efforts: tuple[str, ...] = ("none", "low", "medium", "high")
 
     #: Defaults a named server (a subclass) fills in.
     default_base_url = ""

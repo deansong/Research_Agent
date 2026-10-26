@@ -952,3 +952,7 @@ class CodexStrataBackend(CodexBackend):
 
     name = "codex_strata"
     profile = "strata"
+    #: Measured on the Strata server: none and minimal turn thinking off,
+    #: xhigh and max act as high -- so these four are the ones that differ.
+    #: Unset, the profile's model_reasoning_effort applies (medium).
+    efforts: tuple[str, ...] = ("none", "low", "medium", "high")
