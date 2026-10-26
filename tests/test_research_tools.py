@@ -76,6 +76,7 @@ def test_sources_checked_by_doi_pmid_or_arxiv():
     assert verify.paper_id("https://pubmed.ncbi.nlm.nih.gov/40418571/") == "PMID:40418571"
     assert verify.paper_id("arXiv 2106.09685v2") == "2106.09685"
     assert verify.paper_id("huggingface.co/datasets/imdb") is None
+    assert verify.paper_id("https://aclanthology.org/2024.acl-long.1/") == "2024.acl-long.1"
 
 
 def test_keyed_sources_are_asked_only_with_their_keys(tools, monkeypatch):
@@ -131,3 +132,72 @@ def test_ml_power_numbers():
     assert [r["significant"] for r in ml.holm([0.01, 0.04, 0.03], 0.05)] == [True, False, False]
     same = ml.bootstrap([1, 0, 1, 1], [1, 0, 1, 1], 200, 0.05, 0)
     assert same["mean_difference"] == 0
+
+
+@pytest.fixture(scope="module")
+def venues(tools):
+    import venues as v                    # research_tools put its folder on the path
+    return v
+
+
+def test_bibtex_of_both_styles(venues):
+    text = '''@inproceedings{x-2024-a,
+    title = "Few-Shot {I}n-Context Selection",
+    year = "2024",
+    url = "https://aclanthology.org/2024.acl-long.7/",
+    abstract = "We select {demonstrations} by search; ``quotes'' and a {\\'e}t{\\'e}.",
+}
+@InProceedings{pmlr-v235-abe24a,
+  title = 	 {{I}nfer{C}ept: Efficient <em>Intercept</em>},
+  year = 	 {2024},
+  abstract = 	 {Nested {braces {deep}} stay.}
+}'''
+    a, b = list(venues.parse_bibtex(text))
+    assert a["title"] == "Few-Shot In-Context Selection" and a["year"] == "2024"
+    assert a["abstract"].startswith("We select demonstrations by search")
+    assert b["title"] == "InferCept: Efficient Intercept" and b["abstract"] == "Nested braces deep stay."
+
+
+def test_acl_ids_say_their_venue(venues):
+    assert venues.acl_id_venue("2024.acl-long.12") == ("acl", "long")
+    assert venues.acl_id_venue("2023.findings-emnlp.45") == ("emnlp", "findings")
+    assert venues.acl_id_venue("2024.tacl-1.5") == ("tacl", "1")
+    assert venues.acl_id_venue("P19-1001") == ("acl", "")
+    assert venues.acl_id_venue("D19-1001") == ("emnlp", "")
+
+
+def test_a_topic_must_mostly_match(venues):
+    q = venues.terms("few-shot demonstration selection")
+    assert venues.score(q, "Demonstration Selection for Few-Shot Learning", "") > 0
+    assert venues.score(q, "Machine Translation", "We translate.") == 0
+
+
+def test_where_a_pdf_is(venues):
+    get = lambda url: b""
+    assert venues.pdf_url("2024.acl-long.1", get) == "https://aclanthology.org/2024.acl-long.1.pdf"
+    assert venues.pdf_url("https://aclanthology.org/P19-1001/", get) == "https://aclanthology.org/P19-1001.pdf"
+    assert venues.pdf_url("arXiv:2106.09685", get) == "https://arxiv.org/pdf/2106.09685"
+    assert venues.pdf_url("https://proceedings.mlr.press/v235/abe24a.html", get) == \
+        "https://raw.githubusercontent.com/mlresearch/v235/main/assets/abe24a/abe24a.pdf"
+    assert venues.pdf_url("openreview:abc123", get) == "https://openreview.net/pdf?id=abc123"
+
+
+def test_openreview_keeps_accepted_main_conference_papers(venues, monkeypatch, tmp_path):
+    import json as j
+    monkeypatch.setenv("RESEARCH_TOOLS_CACHE", str(tmp_path))
+    notes = [{"id": i, "content": {k: {"value": v} for k, v in c.items()}} for i, c in [
+        ("a", {"title": "Example Selection for ICL", "abstract": "selection of examples",
+               "venue": "ICLR 2025 Poster", "venueid": "ICLR.cc/2025/Conference",
+               "primary_area": "foundation or frontier models, including LLMs"}),
+        ("b", {"title": "Example Selection Rejected", "abstract": "selection",
+               "venue": "Submitted to ICLR 2025", "venueid": "ICLR.cc/2025/Conference/Rejected_Submission"}),
+        ("c", {"title": "Example Selection at a workshop", "abstract": "selection",
+               "venue": "ME-FoMo @ ICLR 2024 Poster", "venueid": "ICLR.cc/2024/Workshop/ME-FoMo"}),
+        ("d", {"title": "Example Selection in Vision", "abstract": "selection",
+               "venue": "ICLR 2024 Poster", "venueid": "ICLR.cc/2024/Conference",
+               "primary_area": "applications_to_computer_vision"})]]
+    get = lambda url: j.dumps({"notes": notes}).encode()
+    rows = venues.search("example selection", ["iclr"], get=get)
+    assert [r["id"] for r in rows] == ["openreview:a", "openreview:d"]
+    rows = venues.search("example selection", ["iclr"], track="computer vision", get=get)
+    assert [r["id"] for r in rows] == ["openreview:d"], "the track is the primary area"

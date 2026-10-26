@@ -33,6 +33,12 @@ Usage:
     research_tools.py cites    10.1038/s41586-021-03819-2
     research_tools.py datasets "imdb sentiment"        # Hugging Face datasets
     research_tools.py models   "distilbert"            # Hugging Face models
+    research_tools.py venue    "few-shot example selection" --venue acl,emnlp --since 2023
+    research_tools.py venue    "retrieval" --venue acl --kind long,findings --year 2024
+    research_tools.py venue    "in-context learning" --venue iclr,neurips --track "foundation"
+    research_tools.py venue    "classification" --venue aaai --track "natural language" --since 2024
+    research_tools.py tracks   "language" --venue aaai     # a venue's tracks
+    research_tools.py download 2024.acl-long.1 --text      # PDF (+ text) into ./papers
 Add --limit N (default 8), --since YEAR, and --json for machine-readable output.
 """
 
@@ -49,6 +55,8 @@ import urllib.parse
 import urllib.request
 import xml.etree.ElementTree as ET
 from concurrent.futures import ThreadPoolExecutor
+
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))   # venues.py, next to this
 
 AGENT = "codex-langgraph-agent research tools (mailto:none)"
 TIMEOUT = 60
@@ -116,6 +124,7 @@ def _doi(value) -> str:
 # ---- what an id is -----------------------------------------------------------------
 
 ARXIV_ID = re.compile(r"^(?:arxiv:)?(\d{4}\.\d{4,5})(v\d+)?$", re.I)
+ACL_ID = re.compile(r"^(?:https?://aclanthology\.org/)?(\d{4}\.[a-z0-9-]+\.\d+|[A-Z]\d{2}-\d{4})/?$")
 DOI_ID = re.compile(r"^(?:doi:|https?://(?:dx\.)?doi\.org/)?(10\.\d{4,9}/\S+)$", re.I)
 PMID_ID = re.compile(r"^(?:pmid:?\s*|https?://pubmed\.ncbi\.nlm\.nih\.gov/)?(\d{5,9})/?$", re.I)
 OPENALEX_ID = re.compile(r"^(?:https?://openalex\.org/)?(W\d+)$", re.I)
@@ -125,12 +134,12 @@ S2_ID = re.compile(r"^(?:s2:)?([0-9a-f]{40})$", re.I)
 def kind_of(ident: str) -> tuple[str, str]:
     """("arxiv" | "doi" | "pmid" | "openalex" | "s2", the bare id)."""
     ident = ident.strip()
-    for kind, pattern in (("arxiv", ARXIV_ID), ("doi", DOI_ID), ("openalex", OPENALEX_ID),
+    for kind, pattern in (("arxiv", ARXIV_ID), ("acl", ACL_ID), ("doi", DOI_ID), ("openalex", OPENALEX_ID),
                           ("s2", S2_ID), ("pmid", PMID_ID)):
         found = pattern.match(ident)
         if found:
             return kind, found.group(1)
-    raise SystemExit(f"{ident!r} is not an arXiv id, DOI, PMID, OpenAlex id (W...) or "
+    raise SystemExit(f"{ident!r} is not an arXiv id, ACL Anthology id, DOI, PMID, OpenAlex id (W...) or "
                      f"Semantic Scholar id.")
 
 
@@ -511,6 +520,11 @@ def paper(ident: str, limit: int = 1, since: int | None = None) -> list[dict]:
     try:
         if kind == "arxiv":
             return _arxiv_paper(key)
+        if kind == "acl":
+            import venues
+
+            found = venues.acl_paper(key, _get_or_exit)
+            return [found] if found else []
         if kind == "pmid":
             found = _summaries([key])
             if found:
@@ -546,8 +560,9 @@ def cites(ident: str, limit: int, since: int | None = None) -> list[dict]:
     kind, key = kind_of(ident)
     work = None
     try:
-        if kind in ("doi", "pmid", "openalex"):
-            path = {"doi": f"works/doi:{key}", "pmid": f"works/pmid:{key}", "openalex": f"works/{key}"}[kind]
+        if kind in ("doi", "pmid", "openalex", "acl"):
+            path = {"doi": f"works/doi:{key}", "pmid": f"works/pmid:{key}", "openalex": f"works/{key}",
+                    "acl": f"works/doi:10.18653/v1/{key}"}[kind]
             work = _json(_openalex_url(path, {}))
         else:
             found = paper(ident, 1)
@@ -642,9 +657,17 @@ def models(query: str, limit: int, since: int | None = None) -> list[dict]:
     return _hub("models", query, limit, "downloads")
 
 
+def _get_or_exit(url: str) -> bytes:
+    try:
+        return _get(url)
+    except NotFound:
+        raise SystemExit(f"{_safe(url)}: not found (HTTP 404)") from None
+
+
 COMMANDS = {"search": search, "openalex": openalex, "s2": s2, "pubmed": pubmed,
             "europepmc": europepmc, "scholar": scholar, "papers": papers, "arxiv": arxiv,
-            "paper": paper, "cites": cites, "datasets": datasets, "models": models}
+            "paper": paper, "cites": cites, "datasets": datasets, "models": models,
+            "venue": None, "tracks": None, "download": None}
 
 
 def main(argv=None) -> int:
@@ -658,6 +681,16 @@ def main(argv=None) -> int:
     parser.add_argument("--sources", help="for search: a comma list of "
                                           f"{', '.join(SOURCES)} (default: openalex, and s2 when "
                                           f"its key is set; scholar only when named)")
+    parser.add_argument("--venue", default="", help="for venue: a comma list of acl, emnlp, "
+                        "naacl, eacl, coling, aacl, findings, tacl, cl, conll, lrec, workshop, "
+                        "anthology (all of the ACL Anthology), neurips, iclr, icml, aaai")
+    parser.add_argument("--track", default="", help="for venue: the track's words (AAAI "
+                        "tracks; NeurIPS/ICLR primary areas)")
+    parser.add_argument("--year", type=int, help="for venue: this year only")
+    parser.add_argument("--kind", default="", help="for venue, ACL Anthology: long, short, "
+                        "findings, demo, industry, main, srw (comma list)")
+    parser.add_argument("--dir", default="papers", help="for download: the folder (./papers)")
+    parser.add_argument("--text", action="store_true", help="for download: also the text")
     parser.add_argument("--json", action="store_true")
     args = parser.parse_args(argv)
 
@@ -669,6 +702,18 @@ def main(argv=None) -> int:
         if unknown:
             parser.error(f"unknown source(s): {', '.join(unknown)}; they are {', '.join(SOURCES)}")
         rows = search(args.query, limit, args.since, sources)
+    elif args.command in ("venue", "tracks", "download"):
+        import venues
+
+        if args.command == "venue":
+            rows = venues.search(args.query, [v for v in args.venue.split(",") if v.strip()],
+                                 since=args.since, year=args.year, track=args.track,
+                                 kinds=[k.strip() for k in args.kind.split(",") if k.strip()],
+                                 limit=limit, get=_get_or_exit)
+        elif args.command == "tracks":
+            rows = venues.tracks(args.venue or "acl", args.query, _get_or_exit)
+        else:
+            rows = venues.download(args.query, args.dir, args.text, _get_or_exit)
     elif args.command in SOURCES and not _allowed(args.command):
         print(f"{args.command} is turned off for this run (the sources are chosen in the "
               f"research node); use: search, or {', '.join(default_sources()) or 'none'}.")

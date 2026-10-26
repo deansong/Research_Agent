@@ -1,6 +1,6 @@
 ---
 name: research
-description: Look things up in the literature, in every field, and on the Hugging Face Hub: papers from OpenAlex, Semantic Scholar, PubMed, Europe PMC, arXiv and Hugging Face; one paper's abstract and links by arXiv id, DOI or PMID; citation counts and citing works; datasets; models. Every finding with its source.
+description: Look things up in the literature, in every field, and on the Hugging Face Hub: papers from OpenAlex, Semantic Scholar, PubMed, Europe PMC, arXiv and Hugging Face; the papers of a venue -- ACL Anthology (ACL, EMNLP, NAACL, Findings, TACL...), NeurIPS, ICLR, ICML, AAAI -- by topic, year and track; one paper's abstract and links by arXiv id, ACL id, DOI or PMID; downloading a paper's PDF and text; citation counts; datasets; models. Every finding with its source.
 ---
 
 RESEARCH SKILLS -- tools you run as shell commands. Each prints plain text
@@ -19,7 +19,26 @@ FINDING PAPERS
                                                              and each search costs a credit -- use it when the
                                                              others miss something
 
-ONE PAPER, AND WHO CITES IT -- by arXiv id, DOI, PMID, OpenAlex id (W...) or Semantic Scholar id
+THE PAPERS OF A VENUE -- from the venue's own records (first use downloads and caches them)
+  {python} {skill_dir}/research_tools.py venue "<topic>" --venue acl,emnlp,naacl --since 2023
+  {python} {skill_dir}/research_tools.py venue "<topic>" --venue acl --year 2024 --kind long,findings
+  {python} {skill_dir}/research_tools.py venue "<topic>" --venue neurips,iclr --track "<area words>"
+  {python} {skill_dir}/research_tools.py venue "<topic>" --venue icml --since 2024
+  {python} {skill_dir}/research_tools.py venue "<topic>" --venue aaai --track "natural language"
+  {python} {skill_dir}/research_tools.py tracks "<words>" --venue aaai      the tracks there are
+  venues: acl emnlp naacl eacl coling aacl findings tacl cl conll lrec workshop anthology (all of
+  the ACL Anthology), neurips, iclr, icml, aaai. Tracks: AAAI has them; NeurIPS and ICLR give each
+  paper's primary area (2024 on); the ACL Anthology records none -- use --kind (long, short,
+  findings, demo, industry, srw) and put the area's words in the topic.
+  Use it for "what was published at <venue> on <topic>": the venue's own list, accepted papers
+  only, each with its abstract -- then read the promising ones.
+
+READING A PAPER
+  {python} {skill_dir}/research_tools.py download <id> --text   PDF and its text into ./papers
+  <id>: an ACL id (2024.acl-long.1), arXiv id, DOI, PMLR page, or a PDF URL. OpenReview refuses
+  downloads by script: use the paper's arXiv version. Read the .txt for methods and numbers.
+
+ONE PAPER, AND WHO CITES IT -- by arXiv id, ACL id, DOI, PMID, OpenAlex id (W...) or Semantic Scholar id
   {python} {skill_dir}/research_tools.py paper  <id>    full abstract, ids, venue, open-access link
   {python} {skill_dir}/research_tools.py cites  <id>    how often cited, and the most-cited citing works
 
