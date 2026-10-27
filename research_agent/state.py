@@ -442,6 +442,32 @@ def render(state: dict, sections=SECTIONS, *, brief: bool = False) -> str:
     return "\n\n".join(parts)
 
 
+def render_within(state: dict, sections=SECTIONS, budget: int | None = None, *,
+                  brief: bool = False) -> str:
+    """`render`, in at most `budget` characters: as asked when it fits, else
+    one line per item, else section by section until the budget, naming the
+    rest -- the reader finds them in state/research.md."""
+    full = render(state, sections, brief=brief)
+    if budget is None or len(full) <= budget:
+        return full
+    short = render(state, sections, brief=True)
+    if len(short) <= budget:
+        return short
+    parts, left, rest = [], budget, []
+    for section in sections:
+        text = render(state, [section], brief=True)
+        if not text:
+            continue
+        if len(text) <= left and not rest:
+            parts.append(text)
+            left -= len(text) + 2
+        else:
+            rest.append(section)
+    parts.append("(Too long to show here: " + ", ".join(rest) + " -- read them in "
+                 "state/research.md in the run folder.)")
+    return "\n\n".join(parts)
+
+
 def _render(state: dict, section: str, brief: bool) -> str:
     value = state.get(section)
     if section == "goal":

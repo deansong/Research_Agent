@@ -69,15 +69,19 @@ def transcript(folder: Path) -> list[dict]:
     return out
 
 
-def handover(folder: Path) -> str:
-    """For a discussor taking over the conversation: what was said."""
+def handover(folder: Path, budget: int | None = None) -> str:
+    """For a discussor taking over the conversation: what was said -- the
+    latest messages that fit in `budget` characters."""
     said = transcript(folder)[-HANDOVER_MESSAGES:]
-    if not said:
-        return ""
     lines = [f"[{m['role']}{' (aside)' if m['kind'] == 'aside' else ''}] "
              f"{m['text'][:HANDOVER_CHARS]}{'...' if len(m['text']) > HANDOVER_CHARS else ''}"
              for m in said]
+    if budget is not None:
+        while lines and sum(len(x) + 2 for x in lines) > budget:
+            lines.pop(0)
+    if not lines:
+        return ""
     return ("=== YOU TAKE OVER THIS CONVERSATION ===\n"
             "Until now another model was the discussor. Here is the conversation so far "
-            f"(its last {len(said)} messages), and the whole research state follows. Carry on "
+            f"(its last {len(lines)} messages), and the research state follows. Carry on "
             "from it as if you had been there; do not greet the user again.\n\n" + "\n\n".join(lines))

@@ -33,47 +33,73 @@ def _block(title: str, text: str) -> str:
     return f"=== {title} ===\n{text.strip() or '(nothing yet)'}"
 
 
-def discussor_turn(st: dict, seen: dict, *, user: str = "", note: str = "") -> str:
+def discussor_turn(st: dict, seen: dict, *, user: str = "", note: str = "",
+                   budget: int | None = None) -> str:
     """One discussor turn: the user's words (if any), what the team just did,
-    and what changed in the state since the discussor last looked."""
+    and what changed in the state since the discussor last looked -- in at
+    most about `budget` characters (the state is what gives way)."""
     changed = S.changed_since(st, seen)
-    parts = []
+    head, tail = [], []
     if user:
-        parts.append(_block("THE USER SAYS", user))
+        head.append(_block("THE USER SAYS", user))
     if note:
-        parts.append(_block("FROM THE ORCHESTRATOR", note))
-    if not seen:
-        parts.append(_block("THE RESEARCH STATE", S.render(st)))
-    elif changed:
-        parts.append(_block("CHANGED SINCE YOU LAST SPOKE",
-                            S.render(st, [s for s in changed if s != "results"])
-                            + _latest_results(st, seen)))
-    parts.append(_block("APPROVALS", approvals_line(st)))
+        head.append(_block("FROM THE ORCHESTRATOR", note))
+    tail.append(_block("APPROVALS", approvals_line(st)))
     status = st.get("status") or {}
     if status.get("summary"):
-        parts.append(_block("WHERE THINGS STAND", status["summary"]))
-    return "\n\n".join(parts)
+        tail.append(_block("WHERE THINGS STAND", status["summary"]))
+    room = state_room(budget, head + tail)
+    if not seen:
+        head.append(_block("THE RESEARCH STATE", S.render_within(st, budget=room)))
+    elif changed:
+        results = _latest_results(st, seen, None if room is None else room // 4)
+        room = None if room is None else max(room - len(results), MIN_STATE)
+        head.append(_block("CHANGED SINCE YOU LAST SPOKE",
+                           S.render_within(st, [s for s in changed if s != "results"], room)
+                           + results))
+    return "\n\n".join(head + tail)
 
 
-def _latest_results(st: dict, seen: dict) -> str:
-    """The node calls the discussor has not heard about."""
+#: Characters the state keeps in a brief however little room is left.
+MIN_STATE = 4000
+
+
+def clip(text: str, budget: int | None) -> str:
+    """The end of `text` within `budget` characters: the latest lines count most."""
+    if budget is None or len(text) <= budget:
+        return text
+    return "\n(earlier lines left out)\n" + text[-budget:].split("\n", 1)[-1]
+
+
+def state_room(budget: int | None, parts: list[str]) -> int | None:
+    """What is left of `budget` for the research state after `parts`."""
+    if budget is None:
+        return None
+    return max(budget - sum(len(p) + 2 for p in parts) - 100, MIN_STATE)
+
+
+def _latest_results(st: dict, seen: dict, budget: int | None = None) -> str:
+    """The node calls the discussor has not heard about (the latest, when
+    they do not all fit in `budget` characters)."""
     count = S.version(st, "results") - int((seen or {}).get("results", 0))
     recent = (st.get("results") or [])[-count:] if count > 0 else []
     if not recent:
         return ""
-    return "\n\n## Work done\n" + "\n".join(
-        f"- {r['node']}{'/' + r['job'] if r.get('job') else ''}: {r['summary']}" for r in recent)
+    return "\n\n## Work done\n" + clip("\n".join(
+        f"- {r['node']}{'/' + r['job'] if r.get('job') else ''}: {r['summary']}"
+        for r in recent), budget)
 
 
-def aside(st: dict, *, user: str, activity: str) -> str:
+def aside(st: dict, *, user: str, activity: str, budget: int | None = None) -> str:
     """The user writes while the team works."""
+    room = state_room(budget, [user, activity])
     parts = [_block("AN ASIDE -- the team is working; nothing waits for your answer",
                     "Answer from the research state and from what you know, saying "
                     "which is which. Work the user asks for goes in `requests`; the "
                     "orchestrator takes it at its next decision."),
              _block("THE USER SAYS", user),
              _block("WHAT IS HAPPENING NOW", activity or "(the team is working)"),
-             _block("THE RESEARCH STATE", S.render(st, brief=True)),
+             _block("THE RESEARCH STATE", S.render_within(st, budget=room, brief=True)),
              _block("APPROVALS", approvals_line(st))]
     return "\n\n".join(parts)
 

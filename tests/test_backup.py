@@ -222,7 +222,7 @@ class Filling(Model):
 
 
 def test_a_nearly_full_conversation_starts_afresh_handed_over(tmp_path, monkeypatch):
-    model = Filling("codex", used=70_000)
+    model = Filling("codex", used=85_000)
     monkeypatch.setattr("research_backend.conversation._backend", lambda *a, **k: model)
     run = Run(tmp_path, roles={"discussor": RoleConfig("codex")}, quiet=True)
     run.call("discussor", brief="first", schema=Out, session="discussor")
@@ -242,3 +242,29 @@ def test_an_overflow_starts_afresh_and_the_call_goes_on(tmp_path, monkeypatch):
     assert model.calls[2]["thread"] is None and "first brief" in model.calls[2]["prompt"], \
         "without a takeover: the old conversation's turns, then the brief"
     assert model.calls[2]["prompt"].endswith("second brief")
+
+
+def test_a_brief_that_would_not_fit_rolls_the_conversation_first(tmp_path, monkeypatch):
+    model = Filling("codex", used=50_000)
+    monkeypatch.setattr("research_backend.conversation._backend", lambda *a, **k: model)
+    run = Run(tmp_path, roles={"discussor": RoleConfig("codex")}, quiet=True)
+    run.call("discussor", brief="first", schema=Out, session="discussor")
+    run.call("discussor", brief="x" * 160_000, schema=Out, session="discussor",
+             takeover=lambda: "HANDOVER")
+    assert model.calls[1]["thread"] is None, "50k used + a 40k-token brief > 80% of 100k"
+
+
+def test_the_discussor_brief_stays_within_its_budget(tmp_path, monkeypatch):
+    from research_agent import chat, state as S
+    from research_agent.bootstrap import views
+
+    st, _ = S.apply(S.new(), [{"op": "add", "section": "risks",
+                               "value": {"text": f"risk {n} " + "words " * 60}}
+                              for n in range(400)], by="test")
+    full = views.discussor_turn(st, {}, user="hi")
+    small = views.discussor_turn(st, {}, user="hi", budget=20_000)
+    assert len(full) > 100_000 and len(small) < 21_000
+    assert "THE USER SAYS" in small and "state/research.md" in small
+    said = [{"role": "user", "kind": "chat", "text": "message " * 100}] * 50
+    monkeypatch.setattr(chat, "transcript", lambda folder: said)
+    assert len(chat.handover(tmp_path, 5000)) < 5600

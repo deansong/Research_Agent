@@ -38,11 +38,17 @@ BUSY_BENCH_SECONDS = 600.0
 #: Turns of a conversation a backup taking it over is given.
 HANDOVER_TURNS = 8
 
-#: A conversation whose last turn used more than this share of the model's
-#: context window starts afresh, handed over, before it overflows. Measured: a
-#: discussor conversation of 36 turns on a 128k-token model overflowed at
-#: 137k, and stopped the run.
-ROLL_SHARE = 0.6
+#: A conversation whose next prompt -- its last turn plus the new brief --
+#: would use more than this share of the model's context window starts afresh,
+#: handed over, before it overflows. Below it, the provider's own compaction
+#: (Codex's) does the work. Measured: a discussor conversation of 36 turns on a
+#: 128k-token model overflowed at 137k, and stopped the run.
+ROLL_SHARE = 0.8
+
+#: The share of the model's window one brief may take: a single prompt bigger
+#: than the window cannot be compacted or handed over. Measured: discussor
+#: briefs of 160k-380k characters on a 128k-token model.
+BRIEF_SHARE = 0.25
 
 
 class NodeFailed(RB.BackendError):
@@ -122,7 +128,7 @@ class Run:
             sent = brief
             if n and session and self._moved(session, cfg.provider) is not None:
                 sent = takeover() if takeover else self._handover(session) + "\n\n" + brief
-            elif session and self._full(session, cfg):
+            elif session and self._full(session, cfg, brief):
                 sent = self._roll(session, label, cfg, brief, takeover, "is nearly full")
             try:
                 try:
@@ -297,9 +303,17 @@ class Run:
         found = conversation.open_session(session, home=self.rb_home)
         return found if found.provider != provider else None
 
-    def _full(self, session: str, cfg) -> bool:
-        """The conversation's last turn used more than ROLL_SHARE of the
-        model's window: the next one might not fit."""
+    def brief_budget(self, role: str) -> int:
+        """How many characters one brief for `role` may use, on the model its
+        next call runs on."""
+        from research_backend import catalog
+
+        cfg = self.current(role)
+        return catalog.prompt_budget_chars(cfg.provider, cfg.model, share=BRIEF_SHARE)
+
+    def _full(self, session: str, cfg, brief: str = "") -> bool:
+        """The conversation's last turn plus this brief would use more than
+        ROLL_SHARE of the model's window: the next turn might not fit."""
         from research_backend import catalog, conversation
 
         if not conversation.exists(session, home=self.rb_home):
@@ -310,7 +324,7 @@ class Run:
         tokens = next((t.get("tokens") for t in reversed(old.turns) if t.get("tokens")), None) or {}
         used = (tokens.get("input_tokens") or 0) + (tokens.get("output_tokens") or 0)
         window = catalog.context_window(cfg.provider, cfg.model, tokens.get("context_window"))
-        return used > ROLL_SHARE * window
+        return used + len(brief) / catalog.CHARS_PER_TOKEN > ROLL_SHARE * window
 
     def _roll(self, session: str, label: str, cfg, brief: str, takeover, why: str) -> str:
         """Keep the conversation as <session>-<provider>-NNN and start a fresh

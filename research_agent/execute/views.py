@@ -10,7 +10,7 @@ from __future__ import annotations
 from pathlib import Path
 
 from research_agent import state as S
-from research_agent.bootstrap.views import _block, _latest_results, _today
+from research_agent.bootstrap.views import _block, _latest_results, _today, state_room
 from research_agent.execute import jobs as J
 
 
@@ -42,16 +42,14 @@ def rubric_text(st: dict, ids) -> str:
 
 
 def discussor_turn(st: dict, seen: dict, *, user: str = "", note: str = "",
-                   awaiting: str = "") -> str:
+                   awaiting: str = "", budget: int | None = None) -> str:
+    """As the bootstrap's: the state is what gives way to `budget`."""
     changed = [s for s in S.changed_since(st, seen) if s != "results"]
-    parts = []
+    parts, tail = [], []
     if user:
         parts.append(_block("THE USER SAYS", user))
     if note:
         parts.append(_block("FROM THE ORCHESTRATOR", note))
-    if changed or S.version(st, "results") > int((seen or {}).get("results", 0)):
-        parts.append(_block("CHANGED SINCE YOU LAST SPOKE",
-                            S.render(st, changed) + _latest_results(st, seen)))
     if awaiting.startswith("after:"):
         sid = awaiting.split(":", 1)[1]
         parts.append(_block(f"PAUSED AFTER STEP {sid} -- a breakpoint", "Show the user its results; "
@@ -65,18 +63,26 @@ def discussor_turn(st: dict, seen: dict, *, user: str = "", note: str = "",
                             step_text(step) if step else awaiting))
     status = st.get("status") or {}
     if status.get("summary"):
-        parts.append(_block("WHERE THINGS STAND", status["summary"]))
-    return "\n\n".join(parts)
+        tail.append(_block("WHERE THINGS STAND", status["summary"]))
+    if changed or S.version(st, "results") > int((seen or {}).get("results", 0)):
+        room = state_room(budget, parts + tail)
+        results = _latest_results(st, seen, None if room is None else room // 4)
+        room = None if room is None else max(room - len(results), 0)
+        parts.append(_block("CHANGED SINCE YOU LAST SPOKE",
+                            S.render_within(st, changed, room) + results))
+    return "\n\n".join(parts + tail)
 
 
-def aside(st: dict, *, user: str, activity: str, run_dir: str) -> str:
+def aside(st: dict, *, user: str, activity: str, run_dir: str,
+          budget: int | None = None) -> str:
     """The user writes while the team works: what is happening now, from code."""
     parts = [_block("AN ASIDE -- the team is working; nothing waits for your answer",
                     "Answer from the state, the files and what you know, saying which is "
                     "which; record breakpoints, a stop or requests if the user asks for them."),
              _block("THE USER SAYS", user),
              _block("WHAT IS HAPPENING NOW", activity),
-             _block("THE STEP TABLE", S.render(st, ["execution"]))]
+             _block("THE STEP TABLE", S.render_within(st, ["execution"],
+                                                     state_room(budget, [user, activity])))]
     status = st.get("status") or {}
     if status.get("summary"):
         parts.append(_block("WHERE THINGS STAND", status["summary"]))

@@ -154,9 +154,10 @@ def decide(run, st: dict, *, stage: str, reply: str, awaiting: str = "") -> Auto
             problems.append("`go`: no step is waiting for a go")
         return problems
 
+    budget = run.brief_budget("discussor")
     parts = []
     if not conversation.exists(SESSION, home=run.rb_home):
-        said = chat.handover(run.folder)
+        said = chat.handover(run.folder, budget // 3)
         if said:
             parts.append(said.replace("YOU TAKE OVER THIS CONVERSATION",
                                       "THE CONVERSATION WITH THE USER SO FAR"))
@@ -169,7 +170,8 @@ def decide(run, st: dict, *, stage: str, reply: str, awaiting: str = "") -> Auto
     sections = (["goal", "constraints", "decisions", "hypotheses", "rubric", "protocol",
                  "plan", "design", "open_questions", "risks", "status"] if stage == "bootstrap"
                 else ["goal", "constraints", "decisions", "plan", "execution", "status"])
-    parts.append(_block("THE RESEARCH STATE", S.render(st, sections)))
+    parts.append(_block("THE RESEARCH STATE", S.render_within(
+        st, sections, max(budget - sum(len(p) for p in parts), 4000))))
     parts.append(f"Today is {datetime.now(timezone.utc):%Y-%m-%d}. Answer as the user.")
     out, _ = run.call("discussor", brief="\n\n".join(parts), schema=AutopilotOutput,
                       skills=None, instructions=INSTRUCTIONS, session=SESSION,

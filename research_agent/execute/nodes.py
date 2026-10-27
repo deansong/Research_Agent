@@ -304,12 +304,17 @@ def discussor(run: ExecRun, st: dict, *, seen: dict, user: str = "", note: str =
         return (problems + breakpoint_problems(st, out.breakpoints)
                 + step_problems(st, out.retry, out.waive))
 
-    brief = views.discussor_turn(st, seen, user=user, note=note, awaiting=awaiting)
+    budget = run.brief_budget("discussor")
+    brief = views.discussor_turn(st, seen, user=user, note=note, awaiting=awaiting,
+                                 budget=budget)
 
     def takeover() -> str:
-        # A new provider: the conversation so far, and the whole state.
-        return chat.handover(run.folder) + "\n\n" + views.discussor_turn(
-            st, {}, user=user, note=note, awaiting=awaiting)
+        # A new conversation: what was said, and the whole state -- both
+        # within the brief's budget on the model now taking it.
+        room = run.brief_budget("discussor")
+        said = chat.handover(run.folder, room // 3)
+        return said + "\n\n" + views.discussor_turn(st, {}, user=user, note=note,
+                                                     awaiting=awaiting, budget=room - len(said))
     if run.takes_over(DISCUSSOR_SESSION, "discussor"):
         brief = takeover()
     with run.discussor_lock:
@@ -334,15 +339,17 @@ def aside(run: ExecRun, st: dict, *, user: str, activity: str) -> schemas.AsideO
     def check(out: schemas.AsideOutput) -> list[str]:
         return breakpoint_problems(st, out.breakpoints) + step_problems(st, out.retry, out.waive)
 
-    brief = views.aside(st, user=user, activity=activity, run_dir=str(run.folder))
-    plain = brief
-    if run.takes_over(DISCUSSOR_SESSION, "discussor"):
-        brief = chat.handover(run.folder) + "\n\n" + plain
+    budget = run.brief_budget("discussor")
+    plain = views.aside(st, user=user, activity=activity, run_dir=str(run.folder),
+                        budget=budget * 2 // 3)
+
+    def takeover() -> str:
+        return chat.handover(run.folder, run.brief_budget("discussor") // 3) + "\n\n" + plain
+    brief = takeover() if run.takes_over(DISCUSSOR_SESSION, "discussor") else plain
     with run.discussor_lock:
         out, _ = run.call("discussor", brief=brief,
                           schema=schemas.AsideOutput, session=DISCUSSOR_SESSION, check=check,
-                          label="discussor (aside)",
-                          takeover=lambda: chat.handover(run.folder) + "\n\n" + plain)
+                          label="discussor (aside)", takeover=takeover)
     for b in out.breakpoints:
         inbox.post(run.folder, "breakpoint", step=b.step, when=b.when, on=b.on)
     for r in out.requests:
