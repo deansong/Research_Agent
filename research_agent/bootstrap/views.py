@@ -68,8 +68,9 @@ def _latest_results(st: dict, seen: dict) -> str:
 def aside(st: dict, *, user: str, activity: str) -> str:
     """The user writes while the team works."""
     parts = [_block("AN ASIDE -- the team is working; nothing waits for your answer",
-                    "Answer from the research state. Work the user asks for goes in "
-                    "`requests`; the orchestrator takes it at its next decision."),
+                    "Answer from the research state and from what you know, saying "
+                    "which is which. Work the user asks for goes in `requests`; the "
+                    "orchestrator takes it at its next decision."),
              _block("THE USER SAYS", user),
              _block("WHAT IS HAPPENING NOW", activity or "(the team is working)"),
              _block("THE RESEARCH STATE", S.render(st, brief=True)),

@@ -258,11 +258,13 @@ def test_handing_over_with_nothing_to_hand_is_sent_back(run, script):
     assert 'hand_to is "orchestrator" but there is no request or approval' in retry
 
 
-def test_the_discussor_is_told_to_research_a_new_idea_first():
+def test_the_discussor_discusses_and_still_sends_research():
     from research_agent.bootstrap.prompts import DISCUSSOR
 
-    assert "A NEW IDEA goes to research first" in DISCUSSOR
-    assert "Do not answer the research question from" in DISCUSSOR
+    assert "AND send research to the team" in DISCUSSOR
+    assert "When they ask what you think\n  or know, say it" in DISCUSSOR
+    assert "Your knowledge is not evidence" in DISCUSSOR
+    assert "never invent a title" in DISCUSSOR
 
 
 def test_research_starts_open_from_the_newest_evidence():
@@ -270,7 +272,7 @@ def test_research_starts_open_from_the_newest_evidence():
 
     from research_agent.bootstrap import prompts, views
 
-    assert "Never add methods, models or datasets the user did not name" in prompts.DISCUSSOR
+    assert "as candidates, never as limits" in prompts.DISCUSSOR
     assert "The first research on a topic is a landscape scan" in prompts.ORCHESTRATOR
     assert "suggestions, not limits" in prompts.RESEARCHER
     today = f"Today is {date.today().isoformat()}."

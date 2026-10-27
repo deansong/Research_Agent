@@ -72,8 +72,8 @@ def discussor_turn(st: dict, seen: dict, *, user: str = "", note: str = "",
 def aside(st: dict, *, user: str, activity: str, run_dir: str) -> str:
     """The user writes while the team works: what is happening now, from code."""
     parts = [_block("AN ASIDE -- the team is working; nothing waits for your answer",
-                    "Answer from the state and the files; record breakpoints, a stop or "
-                    "requests if the user asks for them."),
+                    "Answer from the state, the files and what you know, saying which is "
+                    "which; record breakpoints, a stop or requests if the user asks for them."),
              _block("THE USER SAYS", user),
              _block("WHAT IS HAPPENING NOW", activity),
              _block("THE STEP TABLE", S.render(st, ["execution"]))]
