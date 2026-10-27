@@ -15,7 +15,7 @@ from typing import Literal
 
 from pydantic import BaseModel, Field
 
-APPROVABLE = Literal["hypotheses", "rubric", "protocol", "plan", "design"]
+APPROVABLE = Literal["design"]
 
 
 # ---- pieces several nodes use --------------------------------------------------------
@@ -71,8 +71,7 @@ class ConstraintsIn(BaseModel):
 
 
 class Request(BaseModel):
-    kind: Literal["research", "revise_hypotheses", "revise_plan", "revise_design",
-                  "proceed", "other"]
+    kind: Literal["research", "revise_design", "proceed", "other"]
     detail: str
     """What the user wants, in your own clean words -- never the chat itself."""
 
@@ -92,7 +91,8 @@ class DiscussorOutput(BaseModel):
     assumptions: list[AssumptionIn] = Field(default_factory=list, max_length=10)
     answers: list[AnswerIn] = Field(default_factory=list, max_length=10)
     approve: list[APPROVABLE] = Field(default_factory=list)
-    """Sections the user has just clearly approved, as they now stand."""
+    """["design"] when the user has just clearly approved the design (its
+    hypotheses, rubric, protocol, steps and nodes) as it now stands."""
     requests: list[Request] = Field(default_factory=list, max_length=6)
     """Work for the orchestrator. Empty: the conversation simply continues."""
 
@@ -110,11 +110,11 @@ class BootstrapAside(BaseModel):
 
 
 class OrchestratorOutput(BaseModel):
-    action: Literal["research", "hypothesize", "plan", "design", "ask_user", "ready"]
+    action: Literal["research", "design", "ask_user", "ready"]
     reason: str
     task: str
-    """For research/hypothesize/plan/design: what that node must do now, with
-    any feedback it must take into account. For ask_user: what to ask."""
+    """For research/design: what that node must do now, with any feedback it
+    must take into account. For ask_user: what to ask."""
     questions: list[str] = Field(default_factory=list, max_length=8)
     """For research: the questions to answer."""
     summary: str
@@ -150,28 +150,26 @@ class ResearcherOutput(BaseModel):
     unanswered: list[str] = Field(default_factory=list, max_length=10)
 
 
-# ---- planner: hypotheses, rubric, protocol -------------------------------------------------
+# ---- designer: the whole design -------------------------------------------------------
 
 
 class HypothesisIn(BaseModel):
-    id: str = ""
-    """An existing id (H2) to revise it; anything else is a new one."""
-    plain: str = ""
-    """One or two plain sentences any researcher in the field understands at
-    once: what you expect and why it matters. No symbols, no jargon."""
+    id: str
+    """H1, H2, ...: an existing id keeps (and revises) that hypothesis."""
+    plain: str
+    """One or two plain sentences: what you expect and why it matters."""
     statement: str
     prediction: str
     rationale: str = ""
     evidence: list[str] = Field(default_factory=list)
-    status: Literal["proposed", "selected", "dropped"] = "proposed"
 
 
 class CriterionIn(BaseModel):
-    id: str = ""
+    id: str
+    """R1, R2, ...: steps and nodes refer to it."""
     criterion: str
     measure: str
     threshold: str
-    weight: float = 1.0
     applies_to: list[str] = Field(default_factory=list)
 
 
@@ -181,22 +179,6 @@ class ProtocolIn(BaseModel):
     statistics: str = ""
     seeds: str = ""
     stop_criteria: str = ""
-
-
-class HypothesizeOutput(BaseModel):
-    summary: str
-    hypotheses: list[HypothesisIn] = Field(min_length=1, max_length=8)
-    rubric: list[CriterionIn] = Field(min_length=1, max_length=12)
-    retire_rubric: list[str] = Field(default_factory=list, max_length=20)
-    """Ids of rubric criteria that no longer apply (R8, R9): they leave the
-    rubric. The rubric is then what you revised or added plus what you left
-    alone."""
-    protocol: ProtocolIn
-    risks: list[RiskIn] = Field(default_factory=list, max_length=8)
-    assumptions: list[AssumptionIn] = Field(default_factory=list, max_length=8)
-
-
-# ---- planner: the plan ---------------------------------------------------------------------
 
 
 class StepIn(BaseModel):
@@ -211,15 +193,6 @@ class StepIn(BaseModel):
     cost: str = ""
 
 
-class PlanOutput(BaseModel):
-    summary: str
-    steps: list[StepIn] = Field(min_length=1, max_length=10)
-    risks: list[RiskIn] = Field(default_factory=list, max_length=8)
-
-
-# ---- designer ------------------------------------------------------------------------------
-
-
 class DesignNodeIn(BaseModel):
     name: str
     """lower_snake_case, unique."""
@@ -232,6 +205,13 @@ class DesignNodeIn(BaseModel):
 
 
 class DesignOutput(BaseModel):
+    """The whole design, every time: what is left out goes."""
+
     summary: str
+    hypotheses: list[HypothesisIn] = Field(default_factory=list, max_length=8)
+    rubric: list[CriterionIn] = Field(min_length=1, max_length=12)
+    protocol: ProtocolIn
+    steps: list[StepIn] = Field(min_length=1, max_length=12)
     nodes: list[DesignNodeIn] = Field(min_length=2, max_length=16)
+    risks: list[RiskIn] = Field(default_factory=list, max_length=8)
     notes: str = ""

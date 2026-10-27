@@ -4,8 +4,8 @@
 # This file holds the defaults. A run copies what it starts with into
 # <run>/config.json -- edit that to change one run (it is read again on
 # --resume) -- and the command line overrides both for one start:
-#     --role planner=codex:gpt-5.6-sol:high
-#     --skills planner_plan=experiment-design,ml-statistics
+#     --role designer=codex:gpt-5.6-sol:high
+#     --skills designer=experiment-design,ml-statistics
 #     --skills-dir ~/my_skills
 
 
@@ -19,14 +19,13 @@ dir = "skills"
 #   "auto"               the name, description and path of every skill; the
 #                        model reads the ones its task needs
 #   ["a", "b"]           those skills, in full
-# The planner has two jobs, so two entries. The designer gets the list of all
-# skills in its brief anyway, to choose skills for the execution nodes.
+# The designer writes the whole design (hypotheses to nodes); "auto" lets it
+# read the skills its study needs -- ml-hypotheses, experiment-design,
+# ml-statistics -- and its brief lists them all to choose skills for nodes.
 discussor = "auto"
 orchestrator = ["research-orchestration"]   # small: it is re-sent with every orchestrator call
 researcher = ["research"]
-planner_hypothesize = ["ml-hypotheses", "experiment-design", "ml-statistics"]
-planner_plan = ["experiment-design", "ml-statistics"]
-designer = "none"
+designer = "auto"
 
 
 [research]
@@ -62,9 +61,6 @@ provider = "codex"
 provider = "antigravity"
 model = "gemini-3.8-flash-high"
 
-[roles.planner]
-provider = "codex"
-effort = "high"
-
 [roles.designer]
 provider = "codex"
+effort = "high"

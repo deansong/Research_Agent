@@ -255,7 +255,7 @@ def test_a_design_that_cannot_be_run_is_refused(tmp_path):
     st, _ = S.apply(st, [{"op": "merge", "section": "plan", "value": {"summary": "changed"}}],
                     by="x")
     S.Store(folder).write(st)
-    with pytest.raises(ValueError, match="the plan is not approved"):
+    with pytest.raises(ValueError, match="the design is not approved"):
         Execution(run)
 
 
@@ -482,10 +482,9 @@ def test_the_rules_for_research_use_and_the_user_s_decisions():
     from research_agent.bootstrap import prompts as boot
     from research_agent.execute import prompts as exe
 
-    for text in (exe.OWNER, exe.VALIDATOR):
-        assert "a missing license is never a reason to fail or block" in text
-        assert "stand over the plan" in text
-    assert "never make a license a pass" in boot.PLANNER
+    for text in (exe.OWNER, exe.VALIDATOR, exe.ORCHESTRATOR):
+        assert "never stop research use" in " ".join(text.split())
+    assert set(boot.INSTRUCTIONS) == {"discussor", "orchestrator", "researcher", "designer"}
 
 
 def test_autopilot_answers_a_stop_the_orchestrator_chose_but_not_the_users(run, script):

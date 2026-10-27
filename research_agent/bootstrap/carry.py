@@ -1,7 +1,7 @@
 """
 WHAT:  Starting a run from an earlier one: its research state -- with the
        reviewer's review -- carried into a new run folder, for the bootstrap's
-       planner and designer to revise.
+       designer to revise.
 WHY:   A review asks for more: more seeds, a missing baseline, an ablation.
        That changes the plan and the design, which the user approves -- so the
        next run goes back through the bootstrap, starting from everything the
@@ -13,9 +13,7 @@ CONCEPT: What carries over, and what is approved again:
                   open questions, risks, reviews
     left behind   the step table and the node calls (the review keeps what
                   was run; the old folder keeps the files)
-    approvals     hypotheses, rubric and protocol stay approved (a revision
-                  of them lapses it, as always); the plan and the design must
-                  be approved again
+    approvals     none: the revised design is approved again, as one
 """
 
 from __future__ import annotations
@@ -28,7 +26,7 @@ from research_agent import state as S
 
 CARRIED = ("goal", "constraints", "assumptions", "evidence", "hypotheses", "rubric", "protocol",
            "plan", "design", "decisions", "open_questions", "risks", "reviews")
-STILL_APPROVED = ("hypotheses", "rubric", "protocol")
+STILL_APPROVED: tuple[str, ...] = ()
 
 
 def next_folder(old: Path) -> Path:
@@ -59,7 +57,7 @@ def carried_state(old: Path) -> dict:
                + (f" Its review ({', '.join(r['id'] for r in reviews)}) asks for: {asked}"
                   if reviews else " It was not reviewed."))
     new["status"] = {"phase": "discussing", "summary": summary.strip(),
-                     "next": "revise the plan and the design for the review"}
+                     "next": "revise the design for the review"}
     new, _ = S.apply(new, [{"op": "add", "section": "decisions", "value": {
         "what": f"Start from run {old.name}" + (f" and its review {reviews[-1]['id']}"
                                                 if reviews else ""),
@@ -86,6 +84,5 @@ def start_from(old: Path, folder: Path) -> dict:
 
 def first_message(old: Path) -> str:
     return (f"Continue the study from the previous run ({Path(old).expanduser()}). Its results "
-            f"and the reviewer's review are in the research state. Revise the plan -- and the "
-            f"hypotheses, rubric or protocol only where the review needs it -- and the design, "
-            f"to answer the review.")
+            f"and the reviewer's review are in the research state. Revise the design to answer "
+            f"the review.")

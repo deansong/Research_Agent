@@ -7,7 +7,7 @@ Antigravity alike, through `research_backend` (see its README, "Skills").
 
 | skills | for |
 | --- | --- |
-| `experiment-design`, `ml-hypotheses`, `ml-statistics` | settling what an NLP / ML / AI / computational-social-science experiment must show, the rivals it must rule out, and how big it must be (`ml_power.py`: test-set size, seeds, judged pairs, paired bootstrap, Holm) -- the planner's defaults |
+| `experiment-design`, `ml-hypotheses`, `ml-statistics` | settling what an NLP / ML / AI / computational-social-science experiment must show, the rivals it must rule out, and how big it must be (`ml_power.py`: test-set size, seeds, judged pairs, paired bootstrap, Holm) -- what the designer reads |
 | `hypothesis-generation`, `statistical-power` | the same for general and biomedical science: PICO-style questions, preregistration, power for human-participant studies |
 | `research` | papers in every field (OpenAlex, Semantic Scholar, PubMed, Europe PMC, arXiv), citations, datasets and models, with sources; how to search (landscape, prior work, contrary results, citations both ways) |
 | `transformers`, `peft`, `bitsandbytes`, `accelerate`, `ml-training-recipes`, `scikit-learn`, `sentence-transformers` | training and fine-tuning: classifiers, LoRA/QLoRA, quantisation, multi-GPU, baselines, embeddings |

@@ -398,7 +398,7 @@ class RunHost:
                                      else boot_prompts).INSTRUCTIONS["discussor"])
             return out
         if self.stage == "bootstrap" and node in boot_config.ROLES:
-            keys = ["planner_hypothesize", "planner_plan"] if node == "planner" else [node]
+            keys = [node]
             out.update(role=node, group="bootstrap", runs_on=runs_on(boot.roles[node]),
                        skills=[s for k in keys for s in skills_word(boot.skills.get(k))],
                        instructions=boot_prompts.INSTRUCTIONS[node],
@@ -433,8 +433,7 @@ class RunHost:
     # ---- which skills a node is given ---------------------------------------------------
 
     def skill_slots(self, node: str, boot=None, exe=None, st=None) -> list[dict]:
-        """Where a node's skills are chosen: one slot, or two for the planner
-        (one per job). Each: key, label, the file it is kept in, the choice now
+        """Where a node's skills are chosen. Each slot: key, label, the file it is kept in, the choice now
         ({mode: none|auto|chosen, skills}) and whether it is the design's."""
         boot = boot or boot_config.load(self.folder)
         exe = exe or exec_config.load(self.folder)
@@ -448,7 +447,7 @@ class RunHost:
             return {"mode": "chosen", "skills": list(choice)}
 
         if node == "discussor" or (self.stage == "bootstrap" and node in boot_config.ROLES):
-            keys = (["planner_hypothesize", "planner_plan"] if node == "planner" else [node])
+            keys = [node]
             return [{"key": k, "label": k.replace("_", " "), "group": "bootstrap",
                      "file": "config.json", **mode(boot.skills.get(k)), "from_design": False}
                     for k in keys]
@@ -803,7 +802,7 @@ def stage_of(st: dict) -> str:
 
 def node_of(label: str) -> str:
     """The graph node a call belongs to, from its label: "researcher",
-    "planner hypothesize", "step 5 (trainer)", "validate step 5",
+    "designer", "step 5 (trainer)", "validate step 5",
     "discussor (aside)", "reviewer"."""
     owner = re.fullmatch(r"step \S+ \((.+)\)", label or "")
     if owner:

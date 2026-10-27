@@ -93,89 +93,92 @@ def test_the_researcher_s_sources_are_checked(run, script, monkeypatch):
         in call["prompt"]
 
 
-HYPO = {"summary": "two hypotheses", "hypotheses": [
-    {"plain": "Higher LoRA rank helps on small data.", "statement": "Rank matters",
+NODES = [{"name": "orchestrator", "role": "orchestrator", "instructions": "run it"},
+         {"name": "trainer", "role": "runner", "steps": ["1", "2"], "access": "write",
+          "skills": ["peft"], "instructions": "train", "validated_by": ["R1"]},
+         {"name": "validator", "role": "validator", "instructions": "check"}]
+DESIGN = {"summary": "two steps, three nodes", "hypotheses": [
+    {"id": "H1", "plain": "Higher LoRA rank helps on small data.", "statement": "Rank matters",
      "prediction": "r=64 beats r=4 by >=1 F1", "evidence": ["E1"]}],
-    "rubric": [{"criterion": "Effect size", "measure": "F1 difference", "threshold": ">=1"}],
-    "protocol": {"baselines": ["full fine-tuning"], "metrics": ["F1"], "statistics": "paired t-test",
-                 "seeds": "5 seeds", "stop_criteria": "all ranks run"}}
+    "rubric": [{"id": "R1", "criterion": "Effect size", "measure": "F1 difference",
+                "threshold": ">=1"}],
+    "protocol": {"baselines": ["full fine-tuning"], "metrics": ["F1"],
+                 "statistics": "paired t-test", "seeds": "5 seeds"},
+    "steps": [{"id": "1", "title": "Data", "detail": "load SST-2", "check": "rows counted"},
+              {"id": "2", "title": "Train", "detail": "ranks 4..64", "check": "F1 logged",
+               "depends_on": ["1"], "rubric": ["R1"], "gate": True}],
+    "nodes": NODES}
 
 
-def test_a_bad_answer_goes_back_with_what_is_wrong(run, script):
-    bad = {**HYPO, "hypotheses": [{**HYPO["hypotheses"][0], "evidence": ["E9"]}]}
-    script.add("HypothesizeOutput", bad, HYPO)
-    st = _apply(S.new(), nodes.Outcome(ops=[{"op": "add", "section": "evidence", "value": {
+@pytest.fixture
+def evidence():
+    return _apply(S.new(), nodes.Outcome(ops=[{"op": "add", "section": "evidence", "value": {
         "claim": "c", "source": "s"}}]), "x")
-    out = nodes.hypothesize(run, st, task="write hypotheses")
-    retry = script.calls[1]
-    assert retry["thread"] == "thread-1", "the retry continues the same call"
-    assert "cites E9, which is not an evidence id" in retry["prompt"]
-    st = _apply(st, out, "planner")
+
+
+def test_the_designer_writes_the_whole_design_in_one_call(run, script, evidence, monkeypatch):
+    monkeypatch.setattr(nodes.Run, "catalogue", lambda self: [("peft", "LoRA")])
+    script.add("DesignOutput", DESIGN)
+    out = nodes.design(run, evidence, task="design it")
+    st = _apply(evidence, out, "designer")
     assert st["hypotheses"][0]["id"] == "H1" and st["rubric"][0]["id"] == "R1"
     assert st["protocol"]["statistics"] == "paired t-test"
-
-    script.add("HypothesizeOutput", bad, bad, bad)
-    with pytest.raises(nodes.NodeFailed, match="no usable answer in 3 attempts"):
-        nodes.hypothesize(run, st, task="again")
-
-
-def test_a_draft_s_own_numbering_means_new_items(run, script):
-    st = _apply(S.new(), nodes.Outcome(ops=[
-        {"op": "add", "section": "evidence", "value": {"claim": "c", "source": "s"}},
-        {"op": "add", "section": "hypotheses", "value": {"statement": "old"}}]), "x")
-    revised = {**HYPO, "hypotheses": [
-        {**HYPO["hypotheses"][0], "id": "H1", "statement": "old, sharpened"},
-        {**HYPO["hypotheses"][0], "id": "H7", "statement": "brand new"}],
-        "rubric": [{**HYPO["rubric"][0], "id": "R3"}]}
-    script.add("HypothesizeOutput", revised)
-    st = _apply(st, nodes.hypothesize(run, st, task="revise"), "planner")
-    assert len(script.calls) == 1, "no retry"
-    assert [(h["id"], h["statement"]) for h in st["hypotheses"]] == [
-        ("H1", "old, sharpened"), ("H2", "brand new")]
-    assert [r["id"] for r in st["rubric"]] == ["R1"]
-
-
-def test_the_plan_is_checked_against_the_rubric(run, script):
-    st = _apply(S.new(), nodes.Outcome(ops=[{"op": "add", "section": "rubric", "value": {
-        "criterion": "Effect"}}]), "x")
-    bad = {"summary": "s", "steps": [
-        {"id": "1", "title": "Data", "detail": "d", "check": "c"},
-        {"id": "3", "title": "Train", "detail": "d", "check": "", "depends_on": ["2"],
-         "rubric": ["R7"]}]}
-    good = {"summary": "two steps", "steps": [
-        {"id": "1", "title": "Data", "detail": "d", "check": "c"},
-        {"id": "2", "title": "Train", "detail": "d", "check": "c", "depends_on": ["1"],
-         "rubric": ["R1"], "gate": True}]}
-    script.add("PlanOutput", bad, good)
-    out = nodes.plan(run, st, task="plan it")
-    problems = script.calls[1]["prompt"]
-    for expected in ('step ids must be "1", "2"', "has no check", "serves R7", "depends on 2"):
-        assert expected in problems
-    st = _apply(st, out, "planner")
     assert [s["id"] for s in st["plan"]["steps"]] == ["1", "2"] and st["plan"]["steps"][1]["gate"]
+    assert [n["name"] for n in st["design"]["nodes"]] == ["orchestrator", "trainer", "validator"]
+    assert out.summary.startswith("a design of 2 steps and 3 nodes, 1 hypotheses, 1 criteria")
+    brief = script.calls[0]["prompt"]
+    assert "=== EVIDENCE (cite by id) ===" in brief and "- peft: LoRA" in brief
 
 
-def test_the_design_covers_every_step_once(run, script):
-    st = _apply(S.new(), nodes.Outcome(ops=[
-        {"op": "add", "section": "rubric", "value": {"criterion": "Effect"}},
-        {"op": "set", "section": "plan", "value": {"steps": [
-            {"id": "1", "title": "a"}, {"id": "2", "title": "b"}]}}]), "x")
-    node = {"name": "orchestrator", "role": "orchestrator", "instructions": "run it"}
-    bad = {"summary": "s", "nodes": [node,
-                                     {"name": "Worker", "role": "worker", "steps": ["1"],
-                                      "skills": ["nope"], "instructions": "i"}]}
-    good = {"summary": "three nodes", "nodes": [
-        node, {"name": "worker", "role": "worker", "steps": ["1", "2"], "access": "write",
-               "skills": ["peft"], "instructions": "i", "validated_by": ["R1"]},
-        {"name": "validator", "role": "validator", "instructions": "check"}]}
-    script.add("DesignOutput", bad, good)
-    out = nodes.design(run, st, task="design it")
-    problems = script.calls[1]["prompt"]
-    for expected in ("Worker is not lower_snake_case", "exactly one validator",
-                     "plan step 2 has no node", "no skill called nope"):
-        assert expected in problems
-    st = _apply(st, out, "designer")
-    assert [n["name"] for n in st["design"]["nodes"]] == ["orchestrator", "worker", "validator"]
+def test_a_bad_design_goes_back_with_what_is_wrong(run, script, evidence, monkeypatch):
+    monkeypatch.setattr(nodes.Run, "catalogue", lambda self: [("peft", "LoRA")])
+    bad = {**DESIGN,
+           "hypotheses": [{**DESIGN["hypotheses"][0], "evidence": ["E9"]}],
+           "steps": [DESIGN["steps"][0],
+                     {"id": "3", "title": "Train", "detail": "d", "check": "c",
+                      "depends_on": ["2"], "rubric": ["R7"]}],
+           "nodes": [NODES[0], {"name": "Worker", "role": "worker", "steps": ["1"],
+                                "skills": ["nope"], "instructions": "i"}]}
+    script.add("DesignOutput", bad, DESIGN)
+    nodes.design(run, evidence, task="design it")
+    retry = script.calls[1]
+    assert retry["thread"] == "thread-1", "the retry continues the same call"
+    for expected in ("cites E9, which is not an evidence id", 'step ids must be "1", "2"',
+                     "serves R7", "depends on 2", "Worker is not lower_snake_case",
+                     "exactly one validator", "no skill called nope"):
+        assert expected in retry["prompt"]
+
+    script.add("DesignOutput", bad, bad, bad)
+    with pytest.raises(nodes.NodeFailed, match="no usable answer in 3 attempts"):
+        nodes.design(run, evidence, task="again")
+
+
+def test_a_revision_replaces_the_design_and_what_it_leaves_out_goes(run, script, evidence,
+                                                                    monkeypatch):
+    monkeypatch.setattr(nodes.Run, "catalogue", lambda self: [("peft", "LoRA")])
+    two = {**DESIGN, "hypotheses": [*DESIGN["hypotheses"],
+                                    {**DESIGN["hypotheses"][0], "id": "H2", "statement": "Data"}],
+           "rubric": [*DESIGN["rubric"], {**DESIGN["rubric"][0], "id": "R2", "criterion": "Old"}]}
+    script.add("DesignOutput", two)
+    st = _apply(evidence, nodes.design(run, evidence, task="first"), "designer")
+    revised = {**DESIGN, "hypotheses": [{**DESIGN["hypotheses"][0], "statement": "Sharper"}],
+               "rubric": [DESIGN["rubric"][0],
+                          {**DESIGN["rubric"][0], "id": "R5", "criterion": "Cost"}]}
+    script.add("DesignOutput", revised)
+    st = _apply(st, nodes.design(run, st, task="revise"), "designer")
+    assert [(h["id"], h["statement"], h["status"]) for h in st["hypotheses"]] == [
+        ("H1", "Sharper", "proposed"), ("H2", "Data", "dropped")]
+    assert [(r["id"], r["criterion"]) for r in st["rubric"]] == [("R1", "Effect size"),
+                                                                 ("R5", "Cost")]
+
+
+def test_a_build_needs_no_hypotheses(run, script, evidence, monkeypatch):
+    monkeypatch.setattr(nodes.Run, "catalogue", lambda self: [("peft", "LoRA")])
+    script.add("DesignOutput", {**DESIGN, "hypotheses": []})
+    st = _apply(evidence, nodes.design(run, evidence, task="build a dataset"), "designer")
+    assert st["hypotheses"] == [] and st["plan"]["steps"]
+    st, _ = S.apply(st, [{"op": "approve", "section": "design"}], by="user")
+    assert S.approved(st, "design")
 
 
 def test_no_brief_but_the_discussor_s_carries_the_users_words(run, script):
@@ -186,8 +189,6 @@ def test_no_brief_but_the_discussor_s_carries_the_users_words(run, script):
     user = "my secret aside about the budget"
     briefs = [views.orchestrator(st, requests=[]),
               views.researcher(st, task="t"),
-              views.planner(st, job="hypothesize", task="t"),
-              views.planner(st, job="plan", task="t"),
               views.designer(st, task="t", skills=[("peft", "LoRA")])]
     assert all(user not in b and "Question: Q?" in b for b in briefs)
     assert user in views.discussor_turn(st, {}, user=user)
@@ -216,34 +217,3 @@ def test_the_researcher_is_never_sent_back_for_a_wrong_reference(run, script):
     assert st["evidence"][1]["claim"] == "Novelty: dual encoders now win"
     assert st["evidence"][1]["verified"] is None
     assert out.summary.endswith("(Kept, though filed under unknown ids: H1, Q5.)")
-
-
-def test_rubric_criteria_can_be_retired(run, script):
-    st = _apply(S.new(), nodes.Outcome(ops=[
-        {"op": "add", "section": "evidence", "value": {"claim": "c", "source": "s"}},
-        *[{"op": "add", "section": "rubric", "value": {"criterion": f"old {i}"}} for i in range(3)]]),
-        "x")
-    unknown = {**HYPO, "retire_rubric": ["R9"]}
-    empty = {**HYPO, "rubric": [{"id": "R1", "criterion": " ", "measure": "", "threshold": ""}]}
-    good = {**HYPO, "rubric": [{**HYPO["rubric"][0], "id": "R1"}], "retire_rubric": ["R2", "R3"]}
-    script.add("HypothesizeOutput", unknown, empty, good)
-    out = nodes.hypothesize(run, st, task="retire the stale criteria")
-    assert "retire_rubric names R9, which is not a rubric id (there are: R1, R2, R3)" in script.calls[1]["prompt"]
-    assert "rubric criterion R1 is empty" in script.calls[2]["prompt"]
-    st = _apply(st, out, "planner")
-    assert [(r["id"], r["criterion"]) for r in st["rubric"]] == [("R1", "Effect size")]
-    assert "(retired R2, R3)" in out.summary
-
-
-def test_hypotheses_must_be_readable():
-    from research_agent.bootstrap import schemas
-
-    long = schemas.HypothesisIn(statement="Rank matters", prediction=" ".join(["word"] * 96))
-    good = schemas.HypothesisIn(plain="Higher rank helps.", statement="Rank matters",
-                                prediction="r=64 beats r=4 by >=1 F1")
-    gone = schemas.HypothesisIn(statement="x " * 80, prediction="", status="dropped")
-    problems = nodes.readability([long, good, gone])
-    assert any("has no `plain`" in p for p in problems)
-    assert any("`prediction` has 96 words; at most 70" in p and "protocol's `statistics`" in p
-               for p in problems)
-    assert len(problems) == 2, "a good one and a dropped one pass"

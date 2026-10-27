@@ -152,7 +152,7 @@ def orchestrator(run: Run, st: dict, *, requests: list[dict], last: str = "") ->
     def check(out: schemas.OrchestratorOutput) -> list[str]:
         if out.action == "research" and not (out.questions or out.task.strip()):
             return ["research needs `questions` (or a task saying what to find)"]
-        if out.action in ("hypothesize", "plan", "design", "ask_user") and not out.task.strip():
+        if out.action in ("design", "ask_user") and not out.task.strip():
             return [f"{out.action} needs a `task`"]
         return []
 
@@ -233,113 +233,6 @@ def researcher(run: Run, st: dict, *, task: str, questions: list[str]) -> Outcom
     return Outcome(ops=ops, summary=summary, session=session, data=out)
 
 
-# ---- planner ---------------------------------------------------------------------------------
-
-
-def hypothesize(run: Run, st: dict, *, task: str) -> Outcome:
-    hypotheses, rubric, evidence = _ids(st, "hypotheses"), _ids(st, "rubric"), _ids(st, "evidence")
-
-    def check(out: schemas.HypothesizeOutput) -> list[str]:
-        # An id that does not exist yet is a new item -- models number their
-        # drafts (H1, H2, ...), and a retry costs a whole turn. Code assigns
-        # the real ids.
-        problems = [f"{h.id or h.statement[:40]!r} cites {e}, which is not an evidence id"
-                     for h in out.hypotheses for e in h.evidence if e not in evidence]
-        problems += [f"hypothesis {h.statement[:40]!r} has no prediction"
-                     for h in out.hypotheses if not h.prediction.strip()]
-        problems += readability(out.hypotheses)
-        problems += [f"rubric criterion {r.id or i + 1} is empty: give its criterion, or "
-                     f"retire it in `retire_rubric`"
-                     for i, r in enumerate(out.rubric) if not r.criterion.strip()]
-        problems += [f"retire_rubric names {x}, which is not a rubric id (there are: "
-                     f"{', '.join(sorted(rubric)) or 'none'})"
-                     for x in out.retire_rubric if x not in rubric]
-        problems += [f"{r.id} is both revised in `rubric` and retired"
-                     for r in out.rubric if r.id and r.id in out.retire_rubric]
-        return problems
-
-    out, session = run.call("planner", brief=views.planner(st, job="hypothesize", task=task),
-                            schema=schemas.HypothesizeOutput, skills_key="planner_hypothesize",
-                            check=check)
-    ops = []
-    for h in out.hypotheses:
-        value = h.model_dump(exclude={"id"})
-        ops.append({"op": "update", "section": "hypotheses", "id": h.id, "value": value}
-                   if h.id in hypotheses else {"op": "add", "section": "hypotheses", "value": value})
-    for r in out.rubric:
-        value = r.model_dump(exclude={"id"})
-        ops.append({"op": "update", "section": "rubric", "id": r.id, "value": value}
-                   if r.id in rubric else {"op": "add", "section": "rubric", "value": value})
-    ops += [{"op": "drop", "section": "rubric", "id": x} for x in dict.fromkeys(out.retire_rubric)]
-    ops.append({"op": "set", "section": "protocol", "value": out.protocol.model_dump()})
-    ops += [{"op": "add", "section": "risks", "value": r.model_dump()} for r in out.risks]
-    ops += [{"op": "add", "section": "assumptions", "value": a.model_dump()}
-            for a in out.assumptions]
-    retired = (f" (retired {', '.join(dict.fromkeys(out.retire_rubric))})"
-               if out.retire_rubric else "")
-    summary = (f"{len(out.hypotheses)} hypotheses, {len(out.rubric)} rubric criteria{retired}, "
-               f"protocol set. {out.summary}")
-    ops.append(_result_op("planner", "hypothesize", task, summary, session))
-    return Outcome(ops=ops, summary=summary, session=session, data=out)
-
-
-#: Words a hypothesis's fields may take; the details go in the protocol.
-#: Measured: a 96-word "prediction" holding the whole analysis plan, which
-#: the user could not read.
-PLAIN_WORDS, STATEMENT_WORDS, PREDICTION_WORDS = 45, 40, 70
-
-
-def readability(hypotheses) -> list[str]:
-    """A hypothesis the user can read: a plain sentence, a short claim, a
-    short prediction -- averaging, decision rules and confidence procedures
-    belong in the protocol's `statistics`."""
-    problems = []
-    for h in hypotheses:
-        if h.status == "dropped":
-            continue
-        name = h.id or repr(h.statement[:40])
-        if not h.plain.strip():
-            problems.append(f"{name} has no `plain`: say it in one or two plain sentences any "
-                            f"researcher in the field understands, no symbols")
-        elif len(h.plain.split()) > PLAIN_WORDS:
-            problems.append(f"{name}: `plain` has {len(h.plain.split())} words; at most "
-                            f"{PLAIN_WORDS}")
-        for field, limit in (("statement", STATEMENT_WORDS), ("prediction", PREDICTION_WORDS)):
-            words = len(getattr(h, field).split())
-            if words > limit:
-                problems.append(f"{name}: `{field}` has {words} words; at most {limit}. Keep the "
-                                f"claim and the observable result with its threshold; move "
-                                f"averaging, support/refutation rules and confidence procedures "
-                                f"to the protocol's `statistics`")
-    return problems
-
-
-def plan(run: Run, st: dict, *, task: str) -> Outcome:
-    rubric = _ids(st, "rubric")
-
-    def check(out: schemas.PlanOutput) -> list[str]:
-        ids = [s.id for s in out.steps]
-        problems = [] if ids == [str(n) for n in range(1, len(ids) + 1)] else [
-            f"step ids must be \"1\", \"2\", ... in order, not {ids}"]
-        for s in out.steps:
-            problems += [f"step {s.id} depends on {d}, which is not an earlier step"
-                         for d in s.depends_on if d not in ids[:ids.index(s.id)]]
-            problems += [f"step {s.id} serves {r}, which is not a rubric id"
-                         for r in s.rubric if r not in rubric]
-            if not s.check.strip():
-                problems.append(f"step {s.id} has no check")
-        return problems
-
-    out, session = run.call("planner", brief=views.planner(st, job="plan", task=task),
-                            schema=schemas.PlanOutput, skills_key="planner_plan", check=check)
-    ops = [{"op": "set", "section": "plan", "value": {
-        "summary": out.summary, "steps": [s.model_dump() for s in out.steps]}}]
-    ops += [{"op": "add", "section": "risks", "value": r.model_dump()} for r in out.risks]
-    summary = f"a plan of {len(out.steps)} steps. {out.summary}"
-    ops.append(_result_op("planner", "plan", task, summary, session))
-    return Outcome(ops=ops, summary=summary, session=session, data=out)
-
-
 # ---- designer ---------------------------------------------------------------------------------
 
 
@@ -377,18 +270,69 @@ def design_problems(design: dict, *, steps: list[str], rubric: set[str],
 
 
 def design(run: Run, st: dict, *, task: str) -> Outcome:
-    steps = [s["id"] for s in (st.get("plan") or {}).get("steps") or []]
-    rubric = _ids(st, "rubric")
+    """The whole design in one call -- hypotheses, rubric, protocol, steps and
+    the nodes that do them -- so the study and the agent are thought out
+    together. It replaces the last one: what it leaves out goes."""
+    evidence = _ids(st, "evidence")
     catalogue = run.catalogue()
     known_skills = {name for name, _ in catalogue}
 
     def check(out: schemas.DesignOutput) -> list[str]:
-        return design_problems(out.model_dump(), steps=steps, rubric=rubric,
-                               skills=known_skills)
+        problems = _unique("hypothesis", [h.id for h in out.hypotheses], "H")
+        problems += _unique("rubric", [r.id for r in out.rubric], "R")
+        problems += [f"{h.id} cites {e}, which is not an evidence id"
+                     for h in out.hypotheses for e in h.evidence if e not in evidence]
+        ids = [s.id for s in out.steps]
+        if ids != [str(n) for n in range(1, len(ids) + 1)]:
+            problems.append(f'step ids must be "1", "2", ... in order, not {ids}')
+        rubric = {r.id for r in out.rubric}
+        for s in out.steps:
+            problems += [f"step {s.id} depends on {d}, which is not an earlier step"
+                         for d in s.depends_on if d not in ids[:ids.index(s.id)]]
+            problems += [f"step {s.id} serves {r}, which is not a rubric id"
+                         for r in s.rubric if r not in rubric]
+        problems += design_problems({"nodes": [n.model_dump() for n in out.nodes]}, steps=ids,
+                                    rubric=rubric, skills=known_skills)
+        return problems
 
     out, session = run.call("designer", brief=views.designer(st, task=task, skills=catalogue),
                             schema=schemas.DesignOutput, check=check)
-    ops = [{"op": "set", "section": "design", "value": out.model_dump()}]
-    summary = f"a design of {len(out.nodes)} nodes. {out.summary}"
+    ops = _replace(st, "hypotheses", [h.model_dump() for h in out.hypotheses])
+    ops += _replace(st, "rubric", [r.model_dump() for r in out.rubric])
+    ops += [{"op": "set", "section": "protocol", "value": out.protocol.model_dump()},
+            {"op": "set", "section": "plan", "value": {
+                "summary": out.summary, "steps": [s.model_dump() for s in out.steps]}},
+            {"op": "set", "section": "design", "value": {
+                "summary": out.summary, "nodes": [n.model_dump() for n in out.nodes],
+                "notes": out.notes}}]
+    ops += [{"op": "add", "section": "risks", "value": r.model_dump()} for r in out.risks]
+    summary = (f"a design of {len(out.steps)} steps and {len(out.nodes)} nodes, "
+               f"{len(out.hypotheses)} hypotheses, {len(out.rubric)} criteria. {out.summary}")
     ops.append(_result_op("designer", "", task, summary, session))
     return Outcome(ops=ops, summary=summary, session=session, data=out)
+
+
+def _unique(what: str, ids: list[str], prefix: str) -> list[str]:
+    bad = [i for i in ids if not (i.startswith(prefix) and i[len(prefix):].isdigit())]
+    problems = [f"{what} ids are {prefix}1, {prefix}2, ...: not {', '.join(bad)}"] if bad else []
+    twice = sorted({i for i in ids if ids.count(i) > 1})
+    return problems + ([f"{what} ids used twice: {', '.join(twice)}"] if twice else [])
+
+
+def _replace(st: dict, section: str, items: list[dict]) -> list[dict]:
+    """Ops making `section` these items, by id: kept ids are revised, new ones
+    added, the rest dropped (a hypothesis is kept, marked dropped)."""
+    have = {x["id"]: x for x in st.get(section) or []}
+    ops = []
+    for x in items:
+        value = {k: v for k, v in x.items() if k != "id"}
+        if x["id"] in have:
+            if have[x["id"]].get("status") == "dropped":
+                value["status"] = "proposed"
+            ops.append({"op": "update", "section": section, "id": x["id"], "value": value})
+        else:
+            ops.append({"op": "add", "section": section, "id": x["id"], "value": value})
+    wanted = {x["id"] for x in items}
+    ops += [{"op": "drop", "section": section, "id": i} for i, x in have.items()
+            if i not in wanted and x.get("status") != "dropped"]
+    return ops

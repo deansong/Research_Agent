@@ -318,7 +318,8 @@ def create_app(runs_root: Path = RUNS_ROOT, *, roles=(), watch: bool = True) -> 
     def get_state(run_id: str):
         st = S.Store(folder_of(run_id)).read()
         return {"state": st, "sections": list(S.SECTIONS), "approvable": list(S.APPROVABLE),
-                "approved": {s: S.approved(st, s) for s in S.APPROVABLE},
+                "parts": list(S.PARTS),
+                "approved": {s: S.approved(st, s) for s in S.PARTS},
                 "markdown": S.render(st)}
 
     @app.get("/api/runs/{run_id}/history")
@@ -510,8 +511,7 @@ def _graph(st: dict, stage: str) -> dict:
     edges = [("human", "discussor", ""), ("discussor", "human", ""),
              ("discussor", "orchestrator", "request / go"), ("orchestrator", "discussor", "ask")]
     if stage == "bootstrap":
-        for name, label in (("researcher", "research"), ("planner", "hypothesize / plan"),
-                            ("designer", "design")):
+        for name, label in (("researcher", "research"), ("designer", "design")):
             nodes.append({"id": name, "label": name, "kind": "worker"})
             edges += [("orchestrator", name, label), (name, "orchestrator", "")]
         return {"stage": stage, "nodes": nodes,

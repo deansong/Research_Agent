@@ -68,7 +68,7 @@ def test_a_run_from_the_page(web, script):
 
     st = web.get("/api/runs/lora/state").json()
     assert st["state"]["evidence"][0]["id"] == "E1" and "## Evidence" in st["markdown"]
-    assert st["approved"] == {s: False for s in S.APPROVABLE}
+    assert st["approved"] == {s: False for s in S.PARTS} and st["approvable"] == ["design"]
     hist = web.get("/api/runs/lora/history").json()
     assert hist and hist[0]["n"] == 1 and "by" in hist[0]
     entry = web.get(f"/api/runs/lora/history/{hist[-1]['n']}").json()
@@ -323,7 +323,7 @@ def test_the_models_each_role_runs_on_can_be_changed(web, script, monkeypatch):
     assert web.put("/api/runs/m/models", json={"group": "execution", "role": "chef",
                                                "provider": "codex"}).status_code == 400
     assert web.put("/api/runs/m/models", json={"group": "bootstrap", "role": "planner",
-                                               "provider": "gpt"}).status_code == 400
+                                               "provider": "codex"}).status_code == 400
     monkeypatch.setattr(server, "_providers", lambda refresh=False: [{"provider": "codex", "models": ["m1"],
                                                         "efforts": ["high"], "error": ""}])
     assert web.get("/api/providers").json()[0]["models"] == ["m1"]
@@ -362,9 +362,10 @@ def test_a_node_s_settings_and_what_a_running_call_is_sent(web, script):
     folder = web.root / "ni"
     S.Store(folder).write(approved_state())
     web.get("/api/runs/ni")
-    info = web.get("/api/runs/ni/nodes/planner").json()
-    assert info["role"] == "planner" and info["runs_on"]["provider"] == "fake"
-    assert "You are the PLANNER" in info["instructions"]
+    info = web.get("/api/runs/ni/nodes/designer").json()
+    assert info["role"] == "designer" and info["runs_on"]["provider"] == "fake"
+    assert "You are the DESIGNER" in info["instructions"]
+    assert web.get("/api/runs/ni/nodes/planner").status_code == 400
     trainer = web.get("/api/runs/ni/nodes/trainer").json()   # from the design's preview
     assert trainer["role"] == "runner" and trainer["steps"] == ["2"] and trainer["access"] == "full"
     assert "Train with seeds 17 and 29." in trainer["design"]
@@ -396,17 +397,17 @@ def test_a_node_s_skills_can_be_chosen(web, script, tmp_path):
     S.Store(folder).write(approved_state())
     names = {s["name"] for s in web.get("/api/runs/sk/skills").json()["skills"]}
     assert {"research", "peer-review", "experiment-design"} <= names
-    planner = web.get("/api/runs/sk/nodes/planner").json()["slots"]
-    assert [s["key"] for s in planner] == ["planner_hypothesize", "planner_plan"]
-    r = web.put("/api/runs/sk/nodes/planner/skills", json={"key": "planner_plan", "mode": "chosen",
-                                                           "skills": ["experiment-design", "statistical-power"]})
+    designer = web.get("/api/runs/sk/nodes/designer").json()["slots"]
+    assert [s["key"] for s in designer] == ["designer"]
+    r = web.put("/api/runs/sk/nodes/designer/skills", json={"key": "designer", "mode": "chosen",
+                                                            "skills": ["experiment-design", "statistical-power"]})
     assert r.status_code == 200 and r.json()["skills"] == ["experiment-design", "statistical-power"]
     saved = json.loads((folder / "config.json").read_text())["skills"]
-    assert saved["planner_plan"] == ["experiment-design", "statistical-power"]
+    assert saved["designer"] == ["experiment-design", "statistical-power"]
     host = web.app_.state.hosts["sk"]
-    assert host.session.run.skills["planner_plan"] == ["experiment-design", "statistical-power"]
-    assert web.put("/api/runs/sk/nodes/planner/skills", json={"key": "planner_plan", "mode": "chosen",
-                                                              "skills": ["nope"]}).status_code == 400
+    assert host.session.run.skills["designer"] == ["experiment-design", "statistical-power"]
+    assert web.put("/api/runs/sk/nodes/designer/skills", json={"key": "designer", "mode": "chosen",
+                                                               "skills": ["nope"]}).status_code == 400
     assert web.put("/api/runs/sk/nodes/discussor/skills",
                    json={"key": "discussor", "mode": "none"}).json()["mode"] == "none"
     # An execution node: the design's skills, or the user's choice over them.

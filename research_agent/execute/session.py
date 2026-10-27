@@ -27,7 +27,7 @@ THREAD = {"configurable": {"thread_id": "execute"}, "recursion_limit": 10_000}
 
 def ready(st: dict) -> list[str]:
     """Why a run cannot be executed yet, in words (empty: it can)."""
-    problems = [f"the {s} is not approved" for s in S.APPROVABLE if not S.approved(st, s)]
+    problems = [] if S.approved(st, "design") else ["the design is not approved"]
     if not (st.get("plan") or {}).get("steps"):
         problems.append("there is no plan")
     return problems

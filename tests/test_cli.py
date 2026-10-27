@@ -11,7 +11,7 @@ import pytest
 
 from research_agent import cli
 from tests.scripted import script  # noqa: F401 -- fixture
-from tests.test_graph import FINDINGS, HYPO, decide, say
+from tests.test_graph import DESIGN, FINDINGS, decide, say
 
 
 def _typing(monkeypatch, *lines):
@@ -30,14 +30,14 @@ def _typing(monkeypatch, *lines):
 def test_a_conversation_with_commands(tmp_path, script, monkeypatch, capsys):
     script.add("DiscussorOutput",
                say("Let me check the literature.", ("research", "baselines")),
-               say("H1, R1 and the protocol are ready. Approve?"),
-               say("Thanks."), say("Shall I write the plan?"))
+               say("The design is ready. Approve?"),
+               say("Thanks."), say("The bootstrap is done."))
     script.add("ResearcherOutput", FINDINGS)
-    script.add("HypothesizeOutput", HYPO)
-    script.add("OrchestratorOutput", decide("research", questions=["q"]), decide("hypothesize"),
-               decide("ask_user", "Approve?"), decide("ask_user", "Plan now?"))
+    script.add("DesignOutput", DESIGN)
+    script.add("OrchestratorOutput", decide("research", questions=["q"]), decide("design"),
+               decide("ask_user", "Approve?"))
     _typing(monkeypatch, "/show hypotheses", "/show nonsense", "/approve plan",
-            "/approve hypotheses rubric protocol", "/sessions", "/exit")
+            "/approve", "/sessions", "/exit")
     run = tmp_path / "run"
     assert cli.main(["bootstrap", "Does LoRA rank matter?", "--run", str(run),
                      "--role", "all=fake"]) == 0
@@ -45,12 +45,12 @@ def test_a_conversation_with_commands(tmp_path, script, monkeypatch, capsys):
     assert f"Run: {run}" in out and "discussor=fake" in out
     assert "  . orchestrator -> research: because research" in out
     assert "  . researcher (research): 1 findings" in out
-    assert "H1, R1 and the protocol are ready. Approve?" in out
+    assert "The design is ready. Approve?" in out
     assert "- H1 [proposed] Higher LoRA rank helps on small data." in out, "/show"
     assert "Show which?" in out
-    assert "There is no plan to approve yet." in out
-    assert "Shall I write the plan?" in out
-    assert "hypotheses: approved | rubric: approved | protocol: approved" in out
+    assert "Approve which? design" in out
+    assert "The bootstrap is done." in out
+    assert "design (hypotheses, rubric, protocol, steps, nodes): approved" in out
     assert "orchestrator-001" in out and "discussor" in out, "/sessions"
     assert f"Finished. The run is in {run}." in out
     assert (run / "config.json").exists() and (run / "state" / "research.md").exists()
@@ -80,13 +80,13 @@ def test_bad_arguments_are_refused(tmp_path, capsys):
 
 
 def test_a_failed_step_waits_for_retry(tmp_path, script, monkeypatch, capsys):
-    bad = say("ok", approve=["plan"])                     # there is no plan to approve
+    bad = say("ok", approve=["design"])                   # there is no design to approve
     script.add("DiscussorOutput", bad, bad, bad, say("Hello! What shall we study?"))
     _typing(monkeypatch, "hello?", "/show goal", "/retry", "/retry", "/exit")
     assert cli.main(["bootstrap", "idea", "--run", str(tmp_path / "r"), "--role", "all=fake"]) == 0
     out = capsys.readouterr().out
     assert "! discussor gave no usable answer in 3 attempts" in out
-    assert "approve: there is no plan yet" in out
+    assert "approve: there is no design yet" in out
     assert "The last step failed: /retry it first" in out
     assert "Hello! What shall we study?" in out
     assert "Nothing to retry." in out
@@ -173,7 +173,7 @@ def test_execute_refuses_a_run_that_is_not_approved(tmp_path, capsys):
     S.Store(tmp_path).write(S.new())
     with pytest.raises(SystemExit):
         cli.main(["execute", "--run", str(tmp_path), "--role", "all=fake"])
-    assert "the hypotheses is not approved" in capsys.readouterr().err
+    assert "the design is not approved" in capsys.readouterr().err
 
 
 def test_execute_answers_while_the_team_works(tmp_path, script, monkeypatch, capsys):

@@ -2,7 +2,7 @@
 WHAT:  The bootstrap's configuration: which provider, model and effort each
        role runs on, and which skills each node is given.
 WHY:   The discussor talks for hours and should be the best writer; the
-       researcher needs web and the research tools; the planner should think
+       researcher needs web and the research tools; the designer should think
        hard. Those choices belong in a file you can read and edit, not in code.
 CONCEPT: Three layers, later ones winning:
 
@@ -22,10 +22,12 @@ import tomllib
 from dataclasses import dataclass, field, replace
 from pathlib import Path
 
-ROLES = ("discussor", "orchestrator", "researcher", "planner", "designer")
-#: What a skills choice is keyed by: each role, but the planner per job.
-NODES = ("discussor", "orchestrator", "researcher", "planner_hypothesize", "planner_plan",
-         "designer")
+ROLES = ("discussor", "orchestrator", "researcher", "designer")
+#: What a skills choice is keyed by: each role.
+NODES = ROLES
+#: Roles and skills keys of earlier versions, left out when an old run's
+#: config.json is read: the designer now does the planner's work.
+RETIRED = ("planner", "planner_hypothesize", "planner_plan")
 
 DEFAULT_FILE = Path(__file__).with_name("config.toml")
 #: Where a relative skills folder is taken from: the repository root.
@@ -200,7 +202,7 @@ def backup_problems(roles: dict) -> list[str]:
 
 
 def parse_role(text: str) -> tuple[str, RoleConfig]:
-    """'planner=codex:gpt-5.6-sol:high' -> ("planner", RoleConfig(...));
+    """'designer=codex:gpt-5.6-sol:high' -> ("designer", RoleConfig(...));
     'all=...' sets every role."""
     role, sep, spec = text.partition("=")
     role = role.strip()
@@ -213,7 +215,7 @@ def parse_role(text: str) -> tuple[str, RoleConfig]:
 
 
 def parse_skills(text: str) -> tuple[str, None | str | list[str]]:
-    """'planner_plan=experiment-design,ml-statistics' -> a list;
+    """'designer=experiment-design,ml-statistics' -> a list;
     'discussor=auto'; 'designer=none'."""
     node, sep, spec = text.partition("=")
     node = node.strip()
@@ -231,12 +233,16 @@ def parse_skills(text: str) -> tuple[str, None | str | list[str]]:
 def _merge(cfg: BootstrapConfig, data: dict, *, base: Path) -> BootstrapConfig:
     roles = dict(cfg.roles)
     for role, spec in (data.get("roles") or {}).items():
+        if role in RETIRED:
+            continue
         known = roles.get(role)
         fields = role_fields(spec)
         roles[role] = replace(known, **fields) if known else RoleConfig(**fields)
     skills = dict(cfg.skills)
     skills_dir = cfg.skills_dir
     for key, value in (data.get("skills") or {}).items():
+        if key in RETIRED:
+            continue
         if key == "dir":
             skills_dir = (base / Path(value).expanduser()).resolve() if value else None
         else:

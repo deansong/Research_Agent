@@ -185,7 +185,7 @@ class ReviewRequest(BaseModel):
 
 class Review(BaseModel):
     """A conference-style review of a run's results, by the reviewer. It is
-    carried into the next run, whose planner and designer address it."""
+    carried into the next run, whose designer addresses it."""
 
     id: str = ""
     run: str = ""
@@ -294,8 +294,11 @@ OBJECTS: dict[str, type[BaseModel]] = {
 SECTIONS = ("goal", "constraints", "assumptions", "evidence", "hypotheses", "rubric",
             "protocol", "plan", "design", "execution", "decisions", "open_questions", "risks",
             "reviews", "results", "status")
-#: What the user approves, in the order the work needs them.
-APPROVABLE = ("hypotheses", "rubric", "protocol", "plan", "design")
+#: The design, as the designer writes it in one go and the user approves it:
+#: its hypotheses, rubric, protocol, plan (the steps) and nodes.
+PARTS = ("hypotheses", "rubric", "protocol", "plan", "design")
+#: What the user approves: the design, all its parts at once.
+APPROVABLE = ("design",)
 #: Never deleted: a dropped hypothesis is marked dropped, a decision stands.
 KEPT = {"hypotheses", "decisions", "results", "reviews"}
 
@@ -320,7 +323,15 @@ def version(state: dict, section: str) -> int:
 
 
 def approved(state: dict, section: str) -> bool:
-    """Approved, and not changed since."""
+    """Approved, and not changed since. The design counts as approved only
+    with every part of it that exists."""
+    if section == "design":
+        return _stamped(state, "design") and all(
+            _stamped(state, p) for p in PARTS if version(state, p))
+    return _stamped(state, section)
+
+
+def _stamped(state: dict, section: str) -> bool:
     at = (state.get("approvals") or {}).get(section)
     return at is not None and at == version(state, section) and version(state, section) > 0
 
@@ -337,11 +348,13 @@ def apply(state: dict, ops: list[dict], *, by: str) -> tuple[dict, list[str]]:
 
     An op is one of:
         {"op": "add",    "section": "hypotheses", "value": {...}}      new id given
+        {"op": "add",    "section": "rubric", "id": "R3", "value": {...}}  that id, if free
         {"op": "update", "section": "hypotheses", "id": "H2", "value": {...}}
         {"op": "drop",   "section": "evidence",   "id": "E4"}
         {"op": "set",    "section": "plan",       "value": {...}}      a whole object
         {"op": "merge",  "section": "goal",       "value": {...}}      some fields
-        {"op": "approve", "section": "plan"}                           this version
+        {"op": "approve", "section": "design"}                         this version
+                                                         (the design: with all its parts)
 
     All or nothing: a bad op raises StateError and nothing changes.
     """
@@ -353,11 +366,13 @@ def apply(state: dict, ops: list[dict], *, by: str) -> tuple[dict, list[str]]:
         if section not in SECTIONS:
             raise StateError(f"There is no section {section!r}.")
         if kind == "approve":
-            if section not in APPROVABLE:
+            if section not in PARTS:
                 raise StateError(f"{section} is not something to approve.")
             if version(out, section) == 0:
                 raise StateError(f"There is no {section} to approve yet.")
-            out.setdefault("approvals", {})[section] = version(out, section)
+            for part in (PARTS if section == "design" else (section,)):
+                if version(out, part):
+                    out.setdefault("approvals", {})[part] = version(out, part)
             continue
         if section in LISTS:
             _list_op(out, section, kind, op, by)
@@ -376,7 +391,12 @@ def _list_op(state: dict, section: str, kind: str, op: dict, by: str) -> None:
     items = state.setdefault(section, [])
     value = dict(op.get("value") or {})
     if kind == "add":
-        value["id"] = _next_id(items, prefix)
+        wanted = str(op.get("id") or "")
+        if wanted and not (wanted.startswith(prefix) and wanted[len(prefix):].isdigit()):
+            raise StateError(f"{wanted!r} is not a {section} id ({prefix}1, {prefix}2, ...).")
+        if wanted and item(state, section, wanted):
+            raise StateError(f"{section} already has {wanted}.")
+        value["id"] = wanted or _next_id(items, prefix)
         if section == "decisions":
             value.setdefault("by", by)
             value.setdefault("at", _now())
@@ -435,7 +455,7 @@ def render(state: dict, sections=SECTIONS, *, brief: bool = False) -> str:
         text = _render(state, section, brief)
         if text:
             mark = ""
-            if section in APPROVABLE and version(state, section):
+            if section in PARTS and version(state, section):
                 mark = (" (approved)" if approved(state, section) else
                         f" (v{version(state, section)}, not approved)")
             parts.append(f"## {section.replace('_', ' ').title()}{mark}\n{text}")

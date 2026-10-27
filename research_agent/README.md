@@ -17,8 +17,16 @@ python -m research_agent bootstrap --from ~/research_runs/20261024-0930-does-lor
 | **discussor** | yes, the only one | yes: the whole chat, for the whole run | your words, and what changed in the research state since it last spoke |
 | **orchestrator** | no | no: a new conversation each call | the research state, the requests the discussor passed on, the last result |
 | **researcher** | no | no | the goal, constraints, its questions, the hypotheses and the evidence already found |
-| **planner** | no | no | for `hypothesize`: goal, constraints, assumptions, evidence, decisions, current hypotheses, rubric, protocol. For `plan`: the hypotheses to test, rubric, protocol, constraints, current plan |
-| **designer** | no | no | the approved plan, hypotheses, rubric, protocol, constraints, the skills catalogue |
+| **designer** | no | no | goal, constraints, assumptions, decisions, evidence, the current design (hypotheses, rubric, protocol, steps, nodes), reviews, the skills catalogue |
+
+The designer writes the whole design in one call -- hypotheses (none for a
+pure build), rubric, protocol, the steps, and the nodes that carry them out --
+so the study and the agent are thought out together. Each revision gives the
+whole design again; what it leaves out goes.
+
+Every role's standing instructions are short (under 1,200 characters): who it
+is, what it owns, and the few facts code relies on. The models are trusted to
+do the rest.
 
 This is the context management. Your conversation stays with the discussor.
 It records what you settled in the research state, and passes work on as
@@ -32,11 +40,10 @@ into, and explains once the evidence is in, unless the idea is too unclear to
 research. When it is passing on the orchestrator's message it always answers
 you, so the two cannot loop.
 
-The orchestrator decides what the team does next. Code holds the gates:
-- **planning** needs the hypotheses, rubric and protocol approved;
-- **designing** needs the plan approved;
-- **finishing** happens once the design is approved: questions about carrying
-  the plan out are left for the execution stage. Asking for a change reopens the work.
+The orchestrator decides what the team does next: research, design, ask you,
+or finish. Code holds one gate: **finishing** needs the design approved --
+one approval for all of it (hypotheses, rubric, protocol, steps, nodes).
+Asking for a change reopens the work, and a revision needs approving again.
 
 The team stops to ask you after 6 steps without hearing from you.
 
@@ -64,7 +71,8 @@ same, readable.
 
 Nodes never edit the state. They propose changes by id, and code checks the
 ids and applies the changes, versioning every section. An approval records
-the version you approved, so a later change shows as "not approved".
+the version you approved, so a later change shows as "not approved". You
+approve the design as one: that stamps every part of it.
 `state/history/` keeps every change: who made it, when, and what it was.
 
 ## In the terminal
@@ -73,14 +81,14 @@ The discussor's reply comes first. Then one line for each piece of work the
 team does, and a status line:
 
 ```
-[discussing | 4 evidence, 2 hypotheses, 0 plan steps | hypotheses: v1, not approved | rubric: ...]
+[discussing | 4 evidence, 2 hypotheses, 3 plan steps | design (hypotheses, rubric, protocol, steps, nodes): v1, not approved]
 ```
 
 | command | |
 | --- | --- |
 | `/state` | the whole research state |
 | `/show hypotheses rubric` | some sections |
-| `/approve hypotheses rubric protocol` | approve them as they stand (or say so to the discussor) |
+| `/approve` | approve the design as it stands (or say so to the discussor) |
 | `/sessions` | every model call of this run |
 | `/usage` | the providers' usage limits |
 | `/retry` | run a failed step again |
@@ -113,9 +121,7 @@ dir = "skills"                      # a folder of <name>/SKILL.md, from the repo
 discussor = "auto"                  # shown every skill; reads the ones it needs
 orchestrator = ["research-orchestration"]
 researcher = ["research"]           # given these in full
-planner_hypothesize = ["hypothesis-generation", "experiment-design", "statistical-power"]
-planner_plan = ["experiment-design"]
-designer = "none"                   # sees the skills catalogue anyway, to choose for the execution nodes
+designer = "auto"                   # reads what its study needs; its brief lists every skill for the nodes
 
 [roles.researcher]
 provider = "antigravity"
@@ -127,16 +133,15 @@ model = "gemini-3.8-flash-high"     # antigravity's ids carry the effort level
 | discussor | claude_code, opus |
 | orchestrator | codex |
 | researcher | antigravity, gemini-3.8-flash-high |
-| planner | codex, high effort |
-| designer | codex |
+| designer | codex, high effort |
 
 A run copies what it starts with into `<run>/config.json`. Edit that file to
 change one run; it is read again on `--resume`. For one start, the command
 line overrides both:
 
 ```
---role planner=codex:gpt-5.6-sol:high      provider[:model[:effort]]; all=... for every role
---skills planner_plan=experiment-design,statistical-power
+--role designer=codex:gpt-5.6-sol:high     provider[:model[:effort]]; all=... for every role
+--skills designer=experiment-design,statistical-power
 --skills discussor=none                    none, auto, or skill names
 --skills-dir ~/my_skills
 ```
@@ -188,7 +193,7 @@ tab.
 
 To read any call afterwards:
 `RB.list_sessions(home="<run>/rb")` and
-`RB(session="planner-002", home="<run>/rb").history()`.
+`RB(session="designer-002", home="<run>/rb").history()`.
 
 # The execution stage
 
@@ -254,12 +259,10 @@ python -m research_agent bootstrap --from ~/research_runs/<run>
 This makes `<run>-next` and carries the research state over, with the
 review: the goal, constraints, evidence, hypotheses and their results, rubric,
 protocol, plan, design, decisions and risks. The step table and the node calls
-stay behind; the old folder keeps the files. The hypotheses, rubric and
-protocol stay approved. The orchestrator works through the review's requests:
-the planner revises the plan (and the hypotheses or protocol only where a
-request needs it), saying which request each step answers. The designer then
-revises the design, and you approve the plan and the design again. The new
-run's owners can read the earlier run's files.
+stay behind; the old folder keeps the files. Nothing stays approved. The
+orchestrator works through the review's requests: the designer revises the
+design for them, and you approve it again. The new run's owners can read the
+earlier run's files.
 
 Code holds what a model cannot change:
 - **Order.** A step runs only once the steps it depends on have passed or been skipped.

@@ -487,7 +487,7 @@ async function sourcesBox() {
 }
 
 // The node's skills: which are given, and choosing them. A slot per place a
-// choice is kept (the planner has one per job).
+// choice is kept.
 let catalogue = null;
 
 async function skillsBox(n) {

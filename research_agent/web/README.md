@@ -36,7 +36,7 @@ Then open http://localhost:8421.
 | messages, model  | Goal  Constraints  Evidence  Hypotheses  Rubric | models per role    |
 | calls and steps  | Protocol  Plan  Design  Execution  Decisions    | live model calls,  |
 | as they happen   | Open questions  Risks  Reviews  Work done       | every session's    |
-| [Approve plan]   |                                                 | turns; jobs + logs |
+| [Approve design] |                                                 | turns; jobs + logs |
 | [ always open  ] |                                                 |                    |
 +------------------+-------------------------------------------------+--------------------+
 ```
@@ -109,7 +109,7 @@ What it shows:
   list on the left and flash once.
 - **Where things stand:** the orchestrator's summary and next step, and the
   approval of the hypotheses, rubric, protocol, plan and design. In the
-  bootstrap, each pending section has an **Approve** button, live while the
+  bootstrap, the design (all its parts at once) has an **Approve** button, live while the
   team waits for you.
 - **Execution:** the step table, with each step's status, attempts, GPU-hours
   and verdict. Tick **before** or **after** to set a breakpoint, and press
@@ -174,8 +174,7 @@ it makes, while it makes it. That is what you watch when you are debugging.
   - chosen skills, from the folder's list;
   - for an execution node, the design's skills again.
 
-  Bootstrap nodes keep the choice in `config.json`; the planner has one per
-  job. Execution nodes keep it in `execute.json` under `skills.nodes`, over
+  Bootstrap nodes keep the choice in `config.json`. Execution nodes keep it in `execute.json` under `skills.nodes`, over
   the approved design. A change applies from the node's next call, and a
   conversation already under way, such as the discussor's, gets the new
   skills with its next message.
@@ -200,15 +199,15 @@ was sent and the whole answer). The live feed comes from research_backend's
 once a second.
 
 Nodes and their calls: the bootstrap's discussor (asides too), orchestrator,
-researcher, planner (both jobs) and designer; in the execution, each step
+researcher and designer; in the execution, each step
 owner (all its steps and attempts), the validator and the reviewer. **wait**
 opens the Jobs tab, and **you** goes back to the chat.
 
 ### Which model each role runs on
 
 The **Run** tab lists every role with a provider, model and effort picker.
-The **Bootstrap** group holds the discussor, orchestrator, researcher,
-planner and designer. The **Execution** group holds the orchestrator, worker,
+The **Bootstrap** group holds the discussor, orchestrator, researcher and
+designer. The **Execution** group holds the orchestrator, worker,
 runner, writer, validator and reviewer. Every node of the design runs on its
 role's model.
 
@@ -232,7 +231,7 @@ role's model.
 - **A call that waits.** When a model is out of credits, over its usage
   limit, at capacity or busy, research_backend waits and retries (for
   credits, up to a day). The page says so as it happens: a line in the chat
-  ("planner hypothesize: Out of credits or over the usage limit. Waiting 30
+  ("designer: Out of credits or over the usage limit. Waiting 30
   min, until 20:15 ..."), the status line, and a **Waiting until ...** box in
   the node's window. **Pause** ends such a wait at once; give the role a
   backup or another model, then **Carry on**.
@@ -296,7 +295,7 @@ Deep links: `/?tab=graph&side=jobs#<run>` opens a run with those tabs showing.
 | POST | `/api/runs/{id}/start` | start a run created with `start: false`, from its idea |
 | GET | `/api/runs/{id}` | its status and chat history |
 | POST | `/api/runs/{id}/message` | `{text}`: an answer, an aside, or the idea (the reply says which) |
-| POST | `/api/runs/{id}/approve` | `{sections}` |
+| POST | `/api/runs/{id}/approve` | `{sections: ["design"]}` |
 | POST | `/api/runs/{id}/go`, `/stop`, `/pause`, `/resume` | |
 | POST | `/api/runs/{id}/break` | `{step, when: before\|after, on}` |
 | POST | `/api/runs/{id}/execute` | `{wall_hours, gpu_hours, confirm}` |

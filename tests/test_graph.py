@@ -41,66 +41,55 @@ def decide(action, task="", **fields):
 
 FINDINGS = {"summary": "found baselines", "findings": [
     {"claim": "LoRA rank 8 is common", "source": "https://example.org/lora"}]}
-HYPO = {"summary": "one hypothesis", "hypotheses": [
-    {"plain": "Higher LoRA rank helps on small data.", "statement": "Rank matters",
+DESIGN = {"summary": "two steps, three nodes", "hypotheses": [
+    {"id": "H1", "plain": "Higher LoRA rank helps on small data.", "statement": "Rank matters",
      "prediction": "r=64 beats r=4 by >=1 F1", "evidence": ["E1"]}],
-    "rubric": [{"criterion": "Effect", "measure": "F1 gap", "threshold": ">=1"}],
-    "protocol": {"metrics": ["F1"], "statistics": "paired t-test", "seeds": "5"}}
-PLAN = {"summary": "two steps", "steps": [
-    {"id": "1", "title": "Data", "detail": "load SST-2", "check": "rows counted"},
-    {"id": "2", "title": "Train", "detail": "ranks 4..64", "check": "F1 logged",
-     "depends_on": ["1"], "rubric": ["R1"]}]}
-DESIGN = {"summary": "three nodes", "nodes": [
-    {"name": "orchestrator", "role": "orchestrator", "instructions": "run it"},
-    {"name": "trainer", "role": "runner", "steps": ["1", "2"], "access": "write",
-     "instructions": "train", "validated_by": ["R1"]},
-    {"name": "validator", "role": "validator", "instructions": "check"}]}
+    "rubric": [{"id": "R1", "criterion": "Effect", "measure": "F1 gap", "threshold": ">=1"}],
+    "protocol": {"metrics": ["F1"], "statistics": "paired t-test", "seeds": "5"},
+    "steps": [
+        {"id": "1", "title": "Data", "detail": "load SST-2", "check": "rows counted"},
+        {"id": "2", "title": "Train", "detail": "ranks 4..64", "check": "F1 logged",
+         "depends_on": ["1"], "rubric": ["R1"]}],
+    "nodes": [
+        {"name": "orchestrator", "role": "orchestrator", "instructions": "run it"},
+        {"name": "trainer", "role": "runner", "steps": ["1", "2"], "access": "write",
+         "instructions": "train", "validated_by": ["R1"]},
+        {"name": "validator", "role": "validator", "instructions": "check"}]}
 
 
 def test_a_whole_bootstrap_from_idea_to_an_approved_design(run, script):
     script.add("DiscussorOutput",
                say("Let me look into it.", ("research", "Find LoRA rank baselines"),
                    goal={"question": "Does LoRA rank matter?"}),
-               say("Here are H1, R1 and the protocol. Approve?"),
-               say("Planning now.", ("proceed", "Write the plan")),
-               say("The plan has 2 steps. Approve?"),
-               say("Designing.", ("proceed", "Design it")),
-               say("Design ready. Approve?"),
+               say("Design ready: H1, R1, two steps, three nodes. Approve?"),
                say("All done.", approve=["design"]),
                say("Bootstrap complete."))
     script.add("ResearcherOutput", FINDINGS)
-    script.add("HypothesizeOutput", HYPO)
-    script.add("PlanOutput", PLAN)
     script.add("DesignOutput", DESIGN)
     script.add("OrchestratorOutput",
                decide("research", questions=["LoRA rank results?"]),
-               decide("hypothesize"),
-               decide("ask_user", "Approve the hypotheses, rubric and protocol?"),
-               decide("plan"),
-               decide("ask_user", "Approve the plan?"),
                decide("design"),
                decide("ask_user", "Approve the design?"))
     steps = []
     boot = Bootstrap(run)
     turn = boot.start("I want to study LoRA rank on small data",
                       on_step=lambda node, update: steps.append(node))
-    assert turn.reply == "Here are H1, R1 and the protocol. Approve?" and turn.waiting
-    assert steps == ["discussor", "orchestrator", "researcher", "orchestrator", "planner",
+    assert turn.reply.startswith("Design ready") and turn.waiting
+    assert steps == ["discussor", "orchestrator", "researcher", "orchestrator", "designer",
                      "orchestrator", "discussor"], "then it waits for the user"
     st = boot.research
     assert st["goal"]["question"] == "Does LoRA rank matter?"
     assert [e["id"] for e in st["evidence"]] == ["E1"] and st["hypotheses"][0]["id"] == "H1"
+    assert [s["id"] for s in st["plan"]["steps"]] == ["1", "2"] and st["rubric"][0]["id"] == "R1"
+    assert not S.approved(st, "design")
 
-    turn = boot.answer("Looks good, go on", approve=["hypotheses", "rubric", "protocol"])
-    assert turn.reply == "The plan has 2 steps. Approve?"
-    turn = boot.answer("", approve=["plan"])
-    assert turn.reply == "Design ready. Approve?"
     turn = boot.answer("Yes, approved.")
     assert turn.outcome == "ready" and turn.reply == "Bootstrap complete."
 
     st = boot.research
-    assert all(S.approved(st, s) for s in S.APPROVABLE)
-    assert [r["node"] for r in st["results"]] == ["researcher", "planner", "planner", "designer"]
+    assert S.approved(st, "design")
+    assert all(S.approved(st, s) for s in S.PARTS), "one approval covers every part"
+    assert [r["node"] for r in st["results"]] == ["researcher", "designer"]
 
     # Context: one long discussor conversation; every other call fresh.
     disc = [c for c in script.calls if c["schema"] == "DiscussorOutput"]
@@ -115,10 +104,10 @@ def test_a_whole_bootstrap_from_idea_to_an_approved_design(run, script):
     saved = json.loads((folder / "state" / "research.json").read_text())
     assert saved["design"]["nodes"][1]["name"] == "trainer"
     assert "## Design (approved)" in (folder / "state" / "research.md").read_text()
-    assert len(list((folder / "state" / "history").glob("*.json"))) > 10
+    assert len(list((folder / "state" / "history").glob("*.json"))) > 5
     sessions = sorted(p.name for p in (folder / "rb" / "sessions").iterdir())
     assert sessions[:2] == ["designer-001", "discussor"] and sessions[-1] == "researcher-001"
-    assert "orchestrator-007" in sessions and "orchestrator-008" not in sessions, \
+    assert "orchestrator-003" in sessions and "orchestrator-004" not in sessions, \
         "with the design approved, no model is asked whether to finish"
     assert st["status"]["phase"] == "ready"
     told = script.prompts("DiscussorOutput")[-1]
@@ -128,13 +117,12 @@ def test_a_whole_bootstrap_from_idea_to_an_approved_design(run, script):
 
 
 def test_the_orchestrator_cannot_skip_an_approval(run, script):
-    script.add("DiscussorOutput", say("ok", ("other", "Design it now")), say("Need approval first."))
-    script.add("OrchestratorOutput", decide("design"))
+    script.add("DiscussorOutput", say("ok", ("other", "Finish now")), say("Need approval first."))
+    script.add("OrchestratorOutput", decide("ready"))
     turn = Bootstrap(run).start("idea")
-    assert turn.reply == "Need approval first."
+    assert turn.reply == "Need approval first." and turn.outcome != "ready"
     told = [c for c in script.calls if c["schema"] == "DiscussorOutput"][1]["prompt"]
-    assert "wanted to design, but first the user must approve: plan" in told
-    assert not [c for c in script.calls if c["schema"] == "DesignOutput"]
+    assert "wanted to ready, but first the user must approve: design" in told
 
 
 def test_the_team_stops_to_ask_after_its_step_limit(run, script, monkeypatch):
@@ -190,19 +178,19 @@ def test_a_failing_worker_is_reported_to_the_orchestrator(run, script):
 
 
 def test_an_approval_alone_lets_the_work_move_on(run, script):
-    script.add("DiscussorOutput", say("ok", ("research", "dig")), say("Approve H1?"),
-               say("Thanks."), say("Planning is next."))
+    script.add("DiscussorOutput", say("ok", ("research", "dig")), say("Approve the design?"),
+               say("Thanks."), say("The bootstrap is done."))
     script.add("ResearcherOutput", FINDINGS)
-    script.add("HypothesizeOutput", HYPO)
-    script.add("OrchestratorOutput", decide("research", questions=["q"]), decide("hypothesize"),
-               decide("ask_user", "Approve?"), decide("ask_user", "Shall I plan?"))
+    script.add("DesignOutput", DESIGN)
+    script.add("OrchestratorOutput", decide("research", questions=["q"]), decide("design"),
+               decide("ask_user", "Approve?"))
     boot = Bootstrap(run)
     boot.start("idea")
-    turn = boot.answer("", approve=["hypotheses", "rubric", "protocol"])
-    assert turn.reply == "Planning is next."
-    assert len([c for c in script.calls if c["schema"] == "OrchestratorOutput"]) == 4
+    turn = boot.answer("", approve=["design"])
+    assert turn.outcome == "ready" and turn.reply == "The bootstrap is done."
+    assert len([c for c in script.calls if c["schema"] == "OrchestratorOutput"]) == 3
     told = [c for c in script.calls if c["schema"] == "DiscussorOutput"][2]["prompt"]
-    assert "(I approved: hypotheses, rubric, protocol.)" in told
+    assert "(I approved: design.)" in told
 
 
 def test_asking_for_a_change_after_ready_reopens_the_work(run, script):
@@ -259,26 +247,26 @@ def test_handing_over_with_nothing_to_hand_is_sent_back(run, script):
     assert 'hand_to is "orchestrator" but there is no request or approval' in retry
 
 
-def test_the_discussor_discusses_and_still_sends_research():
-    from research_agent.bootstrap.prompts import DISCUSSOR
-
-    assert "AND send research to the team" in DISCUSSOR
-    assert "When they ask what you think\n  or know, say it" in DISCUSSOR
-    assert "Your knowledge is not evidence" in DISCUSSOR
-    assert "never invent a title" in DISCUSSOR
-
-
-def test_research_starts_open_from_the_newest_evidence():
+def test_the_instructions_are_minimal_and_keep_what_code_needs():
     from datetime import date
 
     from research_agent.bootstrap import prompts, views
+    from research_agent.execute import prompts as exec_prompts
 
-    assert "as candidates, never as limits" in prompts.DISCUSSOR
-    assert "The first research on a topic is a landscape scan" in prompts.ORCHESTRATOR
-    assert "suggestions, not limits" in prompts.RESEARCHER
+    assert set(prompts.INSTRUCTIONS) == {"discussor", "orchestrator", "researcher", "designer"}
+    for text in (*prompts.INSTRUCTIONS.values(), *exec_prompts.INSTRUCTIONS.values()):
+        assert len(text) < 1200, "a role's instructions stay short"
+    def said(text):
+        return " ".join(text.split())
+
+    assert "never invent a title" in said(prompts.DISCUSSOR)
+    assert '`approve` ["design"]' in said(prompts.DISCUSSOR)
+    assert "names its source" in said(prompts.RESEARCHER)
+    assert "what you leave out goes" in said(prompts.DESIGNER)
     today = f"Today is {date.today().isoformat()}."
     assert views.researcher(S.new(), task="t").startswith(today)
     assert views.orchestrator(S.new(), requests=[]).startswith(today)
+    assert views.designer(S.new(), task="t", skills=[]).startswith(today)
 
 
 def test_the_user_writes_while_the_team_works(run, script):
@@ -362,39 +350,34 @@ def test_autopilot_takes_a_bootstrap_to_an_approved_design_alone(run, script):
     _autopilot(run.folder)
     script.add("DiscussorOutput",
                say("Let me look into it.", ("research", "Find LoRA rank baselines")),
-               say("Here are H1, R1 and the protocol. Approve?"),
-               say("Planning now.", ("proceed", "Write the plan")),
-               say("The plan has 2 steps. Approve?"),
-               say("Designing.", ("proceed", "Design it")),
                say("Design ready. Approve?"),
+               say("Revising the design.", ("revise_design", "Five seeds")),
+               say("Revised design ready. Approve?"),
                say("All approved."),
                say("Bootstrap complete."))
     script.add("ResearcherOutput", FINDINGS)
-    script.add("HypothesizeOutput", HYPO)
-    script.add("PlanOutput", PLAN)
-    script.add("DesignOutput", DESIGN)
+    script.add("DesignOutput", DESIGN, DESIGN)
     script.add("OrchestratorOutput",
-               decide("research", questions=["LoRA rank results?"]), decide("hypothesize"),
-               decide("ask_user", "Approve?"), decide("plan"), decide("ask_user", "Approve the plan?"),
-               decide("design"), decide("ask_user", "Approve the design?"))
+               decide("research", questions=["LoRA rank results?"]), decide("design"),
+               decide("ask_user", "Approve?"), decide("design"),
+               decide("ask_user", "Approve the design?"))
     script.add("AutopilotOutput",
-               AUTO("Approved, plan it.", ["hypotheses", "rubric", "protocol"]),
-               AUTO("The plan is fine.", ["plan"]),
+               AUTO("Use five seeds."),
                AUTO("Approve the design.", ["design"]))
     boot = Bootstrap(run)
     turn = boot.start("I want to study LoRA rank on small data")
-    assert turn.outcome == "ready", "nobody answered: the autopilot did, three times"
+    assert turn.outcome == "ready", "nobody answered: the autopilot did, twice"
     st = boot.research
-    assert all(S.approved(st, s) for s in S.APPROVABLE)
-    assert [d["by"] for d in st["decisions"]].count("autopilot") == 3
+    assert S.approved(st, "design")
+    assert [d["by"] for d in st["decisions"]].count("autopilot") == 2
     said = [p for p in script.prompts("DiscussorOutput") if "[autopilot]" in p]
-    assert len(said) == 3 and "[autopilot] Approved, plan it." in said[0]
+    assert len(said) == 2 and "[autopilot] Use five seeds." in said[0]
     auto = [c for c in script.calls if c["schema"] == "AutopilotOutput"]
     assert "THE DISCUSSOR ASKS THE USER" in auto[0]["prompt"]
-    assert "Here are H1, R1 and the protocol. Approve?" in auto[0]["prompt"]
-    assert auto[0]["thread"] is None and auto[1]["thread"] and auto[2]["thread"] == auto[1]["thread"], \
+    assert "Design ready. Approve?" in auto[0]["prompt"]
+    assert auto[0]["thread"] is None and auto[1]["thread"], \
         "the autopilot keeps one conversation of its own"
-    assert autopilot.load(run.folder).streak == 3
+    assert autopilot.load(run.folder).streak == 2
     boot.close()
 
 

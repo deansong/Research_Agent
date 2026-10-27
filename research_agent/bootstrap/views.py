@@ -4,7 +4,7 @@ WHAT:  The brief each node is given: which parts of the research state, and
 WHY:   This is the context management. The discussor keeps the conversation;
        every other node starts fresh and sees only what its job needs -- never
        the chat, never another node's raw output. Keeping all of it here makes
-       "what does the planner see?" a question with one place to look.
+       "what does the designer see?" a question with one place to look.
 """
 
 from __future__ import annotations
@@ -13,13 +13,11 @@ from research_agent import state as S
 
 
 def approvals_line(st: dict) -> str:
-    """"hypotheses: approved | rubric: v2, not approved | plan: none yet" """
-    parts = []
-    for section in S.APPROVABLE:
-        v = S.version(st, section)
-        parts.append(f"{section}: " + ("none yet" if not v else "approved" if S.approved(st, section)
-                                       else f"v{v}, not approved"))
-    return " | ".join(parts)
+    """"design (hypotheses, rubric, protocol, steps, nodes): v2, not approved" """
+    v = S.version(st, "design")
+    return ("design (hypotheses, rubric, protocol, steps, nodes): "
+            + ("none yet" if not v else "approved" if S.approved(st, "design")
+               else f"v{v}, not approved"))
 
 
 def _today() -> str:
@@ -135,37 +133,16 @@ def researcher(st: dict, *, task: str) -> str:
     ])
 
 
-def planner(st: dict, *, job: str, task: str) -> str:
-    if job == "hypothesize":
-        sections = ["goal", "constraints", "assumptions", "evidence", "decisions",
-                    "hypotheses", "rubric", "protocol", "risks", "reviews"]
-        title = "JOB: HYPOTHESIZE -- hypotheses, rubric and protocol"
-    else:
-        sections = ["goal", "constraints", "decisions", "protocol", "rubric", "risks", "plan",
-                    "reviews"]
-        title = "JOB: PLAN -- the plan for the approved hypotheses"
-    parts = [_block(title, task), _block("THE RESEARCH STATE", S.render(st, sections))]
-    if job == "plan":
-        chosen = [h for h in st.get("hypotheses") or [] if h.get("status") == "selected"] \
-            or [h for h in st.get("hypotheses") or [] if h.get("status") == "proposed"]
-        parts.insert(1, _block("THE HYPOTHESES TO TEST", S.render(
-            {**st, "hypotheses": chosen}, ["hypotheses"])))
-        parts.append(_block("EVIDENCE", S.render(st, ["evidence"], brief=True)))
-    return "\n\n".join(parts)
-
-
 def designer(st: dict, *, task: str, skills: list[tuple[str, str]]) -> str:
     catalogue = "\n".join(f"- {name}: {description}" for name, description in skills)
     return "\n\n".join([
+        f"Today is {_today()}.",
         _block("YOUR TASK", task),
-        _block("THE APPROVED PLAN", S.render(st, ["plan"])),
-        _block("HYPOTHESES, RUBRIC AND PROTOCOL", S.render(
+        _block("THE RESEARCH STATE", S.render(
             {**st, "hypotheses": [h for h in st.get("hypotheses") or []
                                   if h.get("status") != "dropped"]},
-            ["hypotheses", "rubric", "protocol"])),
-        _block("CONSTRAINTS", S.render(st, ["goal", "constraints"])),
-        _block("THE CURRENT DESIGN", S.render(st, ["design"])),
-        *([_block("THE REVIEW OF AN EARLIER RUN", S.render(st, ["reviews"]))]
-          if st.get("reviews") else []),
+            ["goal", "constraints", "assumptions", "decisions", "hypotheses", "rubric",
+             "protocol", "plan", "design", "risks", "reviews"])),
+        _block("EVIDENCE (cite by id)", S.render(st, ["evidence"], brief=True)),
         _block("SKILLS YOU CAN GIVE A NODE", catalogue),
     ])

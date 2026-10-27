@@ -21,11 +21,10 @@ from tests.test_graph import say
 def test_the_defaults_come_from_config_toml():
     cfg = config.defaults()
     assert cfg.roles["researcher"] == config.RoleConfig("antigravity", "gemini-3.8-flash-high")
-    assert cfg.roles["planner"].effort == "high"
+    assert cfg.roles["designer"].effort == "high"
     assert cfg.skills["discussor"] == "auto"
     assert cfg.skills["orchestrator"] == ["research-orchestration"]
-    assert cfg.skills["planner_plan"] == ["experiment-design", "ml-statistics"]
-    assert cfg.skills["planner_hypothesize"] == ["ml-hypotheses", "experiment-design", "ml-statistics"]
+    assert cfg.skills["designer"] == "auto"
     assert cfg.skills_dir == config.REPOSITORY / "skills"
     assert set(cfg.roles) == set(config.ROLES) and set(cfg.skills) == set(config.NODES)
     assert config.check(cfg) == [], "every default skill exists"
@@ -35,16 +34,24 @@ def test_a_run_s_file_then_the_command_line_win(tmp_path):
     (tmp_path / "config.json").write_text(json.dumps({
         "roles": {"designer": {"provider": "claude_code", "model": "sonnet"}},
         "skills": {"designer": ["peft"], "discussor": "none"}}))
-    cfg = config.load(tmp_path, roles=["planner=codex:gpt-5.6-luna:low"],
-                      skills=["planner_plan=experiment-design,statistical-power",
+    cfg = config.load(tmp_path, roles=["orchestrator=codex:gpt-5.6-luna:low"],
+                      skills=["designer=experiment-design,statistical-power",
                               "researcher=auto"])
-    assert cfg.roles["designer"] == config.RoleConfig("claude_code", "sonnet")
-    assert cfg.roles["planner"] == config.RoleConfig("codex", "gpt-5.6-luna", "low")
-    assert cfg.skills["designer"] == ["peft"] and cfg.skills["discussor"] is None
-    assert cfg.skills["planner_plan"] == ["experiment-design", "statistical-power"]
+    assert cfg.roles["designer"] == config.RoleConfig("claude_code", "sonnet", "high")
+    assert cfg.roles["orchestrator"] == config.RoleConfig("codex", "gpt-5.6-luna", "low")
+    assert cfg.skills["designer"] == ["experiment-design", "statistical-power"]
+    assert cfg.skills["discussor"] is None
     assert cfg.skills["researcher"] == "auto"
     every = config.load(tmp_path, roles=["all=claude_code:opus"])
     assert {str(c) for c in every.roles.values()} == {"claude_code:opus"}
+
+
+def test_an_older_run_s_planner_settings_are_left_out(tmp_path):
+    (tmp_path / "config.json").write_text(json.dumps({
+        "roles": {"planner": {"provider": "codex", "effort": "high"}},
+        "skills": {"planner_plan": ["experiment-design"], "planner_hypothesize": "none"}}))
+    cfg = config.load(tmp_path)
+    assert "planner" not in cfg.roles and "planner_plan" not in cfg.skills
 
 
 def test_what_a_run_saves_is_what_it_reads_back(tmp_path):

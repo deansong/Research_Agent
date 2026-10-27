@@ -111,7 +111,7 @@ export class StateView {
       if (!ok && v && this.controls.stage === "bootstrap") {
         chip.append(el("button", {
           class: "btn tiny primary", text: "Approve", disabled: !this.controls.canApprove,
-          title: this.controls.canApprove ? `Approve the ${s} as it stands`
+          title: this.controls.canApprove ? `Approve the ${s} as it stands: hypotheses, rubric, protocol, steps and nodes`
             : "Approvals go in when the team waits for you", onclick: () => this.approve([s]),
         }));
       }
@@ -132,7 +132,7 @@ export class StateView {
 
   section(name, st) {
     const v = (st.versions || {})[name] || 0;
-    const approvable = this.data.approvable.includes(name);
+    const approvable = (this.data.parts || this.data.approvable).includes(name);
     const badge = approvable ? (this.data.approved[name] ? pill("approved", "ok") : pill(`v${v} not approved`, "warn"))
       : el("span", { class: "dim small", text: `v${v}` });
     const draw = DRAW[name] || DRAW.json;

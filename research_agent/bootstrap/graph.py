@@ -1,10 +1,10 @@
 """
 WHAT:  The bootstrap graph: discussor <-> user, orchestrator -> researcher /
-       planner / designer -> orchestrator, with the approval gates and limits
-       enforced in code.
+       designer -> orchestrator, with the approval gate and limits enforced in
+       code.
 WHY:   The orchestrator LLM decides what the team does next; code makes sure
-       it cannot plan before the hypotheses, rubric and protocol are approved,
-       design before the plan is, or work for ever without the user.
+       it cannot finish before the user approves the design, or work for ever
+       without the user.
 CONCEPT: LangGraph. The graph state carries the research state (also mirrored
        to <run>/state/), the requests waiting for the orchestrator, and what
        the discussor last saw. The user is an interrupt; the checkpoint
@@ -13,8 +13,8 @@ CONCEPT: LangGraph. The graph state carries the research state (also mirrored
     START -> discussor --(it hands the user's request or approval on)--> orchestrator
                        --(it answered, or asked)------------------------> human
     orchestrator --research--> researcher --> orchestrator
-                 --hypothesize/plan--> planner --> orchestrator
-                 --design--> designer --> orchestrator
+                 --design--> designer (hypotheses, rubric, protocol, steps,
+                             nodes: the whole design) --> orchestrator
                  --ask_user / ready / limit--> discussor (tells the user) -> human
     human --> discussor, or END on /exit
 """
@@ -37,14 +37,9 @@ from research_agent.bootstrap import nodes
 MAX_STEPS = 6
 
 #: What each action needs approved first.
-GATES = {
-    "plan": ("hypotheses", "rubric", "protocol"),
-    "design": ("plan",),
-    "ready": ("design",),
-}
+GATES = {"ready": ("design",)}
 
-WORKERS = {"research": "researcher", "hypothesize": "planner", "plan": "planner",
-           "design": "designer"}
+WORKERS = {"research": "researcher", "design": "designer"}
 
 
 class BootstrapState(TypedDict, total=False):
@@ -174,9 +169,6 @@ def build(run: nodes.Run, checkpointer=None):
             try:
                 if name == "researcher":
                     out = nodes.researcher(run, st, task=d["task"], questions=d.get("questions", []))
-                elif name == "planner":
-                    out = (nodes.hypothesize if d["action"] == "hypothesize" else nodes.plan)(
-                        run, st, task=d["task"])
                 else:
                     out = nodes.design(run, st, task=d["task"])
             except RB.BackendCancelled:
@@ -228,7 +220,7 @@ def build(run: nodes.Run, checkpointer=None):
     graph = StateGraph(_Routed)
     graph.add_node("discussor", discussor)
     graph.add_node("orchestrator", orchestrator)
-    for name in ("researcher", "planner", "designer"):
+    for name in ("researcher", "designer"):
         graph.add_node(name, worker(name))
     graph.add_node("human", human)
 
@@ -236,8 +228,8 @@ def build(run: nodes.Run, checkpointer=None):
     graph.add_conditional_edges("discussor", lambda s: s["_to"], ["orchestrator", "human"])
     graph.add_conditional_edges(
         "orchestrator", lambda s: WORKERS.get(s["decision"]["action"], "discussor"),
-        ["researcher", "planner", "designer", "discussor"])
-    for name in ("researcher", "planner", "designer"):
+        ["researcher", "designer", "discussor"])
+    for name in ("researcher", "designer"):
         graph.add_edge(name, "orchestrator")
     graph.add_conditional_edges("human", lambda s: s["_to"], ["discussor", END])
     return graph.compile(checkpointer=checkpointer)

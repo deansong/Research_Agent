@@ -37,7 +37,7 @@ Commands:
   /show <section> ...    one or more sections: goal constraints assumptions evidence
                          hypotheses rubric protocol plan design decisions
                          open_questions risks results status
-  /approve <section> ... approve as they stand: hypotheses rubric protocol plan design
+  /approve               approve the design as it stands (hypotheses, rubric, protocol, steps, nodes)
   /sessions              every model call of this run (research_backend sessions)
   /retry                 run again the step that failed
   /usage                 the providers' usage limits
@@ -56,13 +56,12 @@ def main(argv: list[str] | None = None) -> int:
     boot.add_argument("--resume", metavar="RUN", help="carry on with an earlier run")
     boot.add_argument("--from", dest="start_from", metavar="RUN",
                       help="start a new run from a finished one: its research state and its "
-                           "reviewer's review; the planner and designer revise the plan and "
-                           "design for it")
+                           "reviewer's review; the designer revises the design for it")
     boot.add_argument("--role", action="append", default=[], metavar="ROLE=PROVIDER[:MODEL[:EFFORT]]",
-                      help="which model a role uses, e.g. planner=codex:gpt-5.6-sol:high "
+                      help="which model a role uses, e.g. designer=codex:gpt-5.6-sol:high "
                            "(all=... sets every role)")
     boot.add_argument("--skills", action="append", default=[], metavar="NODE=none|auto|SKILL,SKILL",
-                      help="which skills a node gets, e.g. planner_plan=experiment-design,"
+                      help="which skills a node gets, e.g. designer=experiment-design,"
                            "ml-statistics; nodes: " + ", ".join(config.NODES))
     boot.add_argument("--skills-dir", metavar="FOLDER", help="the skills folder to use")
     boot.add_argument("--progress", action="store_true",
@@ -222,6 +221,7 @@ def _command(boot: Bootstrap, text: str):
         else:
             print(S.render(st, words) or "(nothing there yet)")
     elif name == "approve":
+        words = words or ["design"]
         bad = [w for w in words if w not in S.APPROVABLE]
         missing = [w for w in words if w in S.APPROVABLE and not S.version(st, w)]
         if not words or bad:
@@ -253,7 +253,7 @@ def _show_step(node: str, update: dict) -> None:
         d = update.get("decision") or {}
         if d.get("action") not in (None, "ask_user", "ready"):
             print(f"  . orchestrator -> {d['action']}: {_short(d.get('reason', ''))}", flush=True)
-    elif node in ("researcher", "planner", "designer"):
+    elif node in ("researcher", "designer"):
         print(f"  . {_short(update.get('last', node), 160)}", flush=True)
 
 

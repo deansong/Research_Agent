@@ -77,7 +77,7 @@ export class GraphPanel {
   }
 }
 
-// "researcher", "planner hypothesize", "step 5 (trainer)", "validate step 5",
+// "researcher", "designer", "step 5 (trainer)", "validate step 5",
 // "discussor (aside)", "reviewer" -> the graph node.
 export function nodeOfLabel(label) {
   const text = String(label || "");

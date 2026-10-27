@@ -100,9 +100,8 @@ class AutopilotOutput(BaseModel):
     """What the user says now, in their voice: short, decisive."""
     why: str
     """Why this is what the user would want, from what they said and the state."""
-    approve: list[Literal["hypotheses", "rubric", "protocol", "plan", "design"]] = \
-        Field(default_factory=list)
-    """Bootstrap: sections to approve as they now stand."""
+    approve: list[Literal["design"]] = Field(default_factory=list)
+    """Bootstrap: ["design"] to approve the design as it now stands."""
     go: bool = False
     """Execution: the step waiting for the user's go may start."""
     stop: bool = False
@@ -116,7 +115,7 @@ that talks with them; now you answer the discussor's questions AS THE USER.
 
 Decide as the user would, from what they said (the conversation, their goal,
 constraints and decisions in the research state):
-- Approve a section when it is complete, consistent with the goal and the
+- Approve the design when it is complete, consistent with the goal and the
   constraints, and the team's checks raised nothing open. Otherwise ask for
   the specific change in `answer`, in one or two sentences.
 - In the execution, give the go for a step that is next in the plan; retry a
