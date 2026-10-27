@@ -60,6 +60,9 @@ class BootstrapState(TypedDict, total=False):
     reply: str
     """The discussor's latest words to the user."""
     steps: int
+    designed: bool
+    """The designer just delivered a design that passed the code checks: it
+    goes to the user, not back to a model to judge."""
     approved: bool
     """The user approved something with this message (e.g. /approve)."""
     outcome: str
@@ -136,6 +139,21 @@ def build(run: nodes.Run, checkpointer=None):
             return {"research": st, "note": note, "pending": [], "outcome": "ready",
                     "decision": {"action": "ready", "task": note, "questions": [],
                                  "reason": "the design is approved and nothing new was asked"}}
+        if state.get("designed") and not state.get("pending"):
+            # The user judges a design, not a model: measured, an orchestrator
+            # that saw the design compacted kept finding it "not ready" and
+            # sent it back to the designer 20 times.
+            v = S.version(st, "design")
+            st = commit(st, [{"op": "merge", "section": "status", "value": {
+                "summary": f"Design v{v} is ready for the user's review.",
+                "next": "the user approves the design or asks for changes"}}], "orchestrator")
+            note = (f"The designer delivered design v{v}; it passed the code checks. Show the "
+                    f"user its main points -- what it builds or tests, the steps and who does "
+                    f"them, what it will cost -- and ask them to approve it or say what to "
+                    f"change. It is theirs to judge.")
+            return {"research": st, "note": note, "designed": False, "pending": [],
+                    "decision": {"action": "ask_user", "task": note, "questions": [],
+                                 "reason": "a new design goes to the user"}}
         if state.get("steps", 0) >= MAX_STEPS:
             note = (f"The team has taken {MAX_STEPS} steps since the user last spoke. "
                     f"Tell the user where things stand and ask how to continue.")
@@ -180,7 +198,8 @@ def build(run: nodes.Run, checkpointer=None):
                     "summary": summary}}], name)
                 return {"research": st, "last": summary}
             st = commit(st, out.ops, name)
-            return {"research": st, "last": f"{name} ({d['action']}): {out.summary}"}
+            return {"research": st, "last": f"{name} ({d['action']}): {out.summary}",
+                    "designed": name == "designer"}
         return run_it
 
     def human(state: BootstrapState) -> dict:

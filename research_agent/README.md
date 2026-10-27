@@ -43,7 +43,9 @@ you, so the two cannot loop.
 The orchestrator decides what the team does next: research, design, ask you,
 or finish. Code holds one gate: **finishing** needs the design approved --
 one approval for all of it (hypotheses, rubric, protocol, steps, nodes).
-Asking for a change reopens the work, and a revision needs approving again.
+Asking for a change reopens the work, and a revision needs approving again. A design that passes
+the code checks goes straight to you: no model judges whether it is "ready"
+(one that did, seeing the design compacted, sent it back for 20 rewrites).
 
 The team stops to ask you after 6 steps without hearing from you.
 

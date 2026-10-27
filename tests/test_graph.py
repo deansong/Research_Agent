@@ -68,8 +68,7 @@ def test_a_whole_bootstrap_from_idea_to_an_approved_design(run, script):
     script.add("DesignOutput", DESIGN)
     script.add("OrchestratorOutput",
                decide("research", questions=["LoRA rank results?"]),
-               decide("design"),
-               decide("ask_user", "Approve the design?"))
+               decide("design"))
     steps = []
     boot = Bootstrap(run)
     turn = boot.start("I want to study LoRA rank on small data",
@@ -82,6 +81,10 @@ def test_a_whole_bootstrap_from_idea_to_an_approved_design(run, script):
     assert [e["id"] for e in st["evidence"]] == ["E1"] and st["hypotheses"][0]["id"] == "H1"
     assert [s["id"] for s in st["plan"]["steps"]] == ["1", "2"] and st["rubric"][0]["id"] == "R1"
     assert not S.approved(st, "design")
+    told = script.prompts("DiscussorOutput")[1]
+    assert "The designer delivered design v1" in told and "It is theirs to judge" in told, \
+        "a new design goes to the user: no model judges whether it is ready"
+    assert st["status"]["summary"] == "Design v1 is ready for the user's review."
 
     turn = boot.answer("Yes, approved.")
     assert turn.outcome == "ready" and turn.reply == "Bootstrap complete."
@@ -107,7 +110,7 @@ def test_a_whole_bootstrap_from_idea_to_an_approved_design(run, script):
     assert len(list((folder / "state" / "history").glob("*.json"))) > 5
     sessions = sorted(p.name for p in (folder / "rb" / "sessions").iterdir())
     assert sessions[:2] == ["designer-001", "discussor"] and sessions[-1] == "researcher-001"
-    assert "orchestrator-003" in sessions and "orchestrator-004" not in sessions, \
+    assert "orchestrator-002" in sessions and "orchestrator-003" not in sessions, \
         "with the design approved, no model is asked whether to finish"
     assert st["status"]["phase"] == "ready"
     told = script.prompts("DiscussorOutput")[-1]
@@ -182,13 +185,12 @@ def test_an_approval_alone_lets_the_work_move_on(run, script):
                say("Thanks."), say("The bootstrap is done."))
     script.add("ResearcherOutput", FINDINGS)
     script.add("DesignOutput", DESIGN)
-    script.add("OrchestratorOutput", decide("research", questions=["q"]), decide("design"),
-               decide("ask_user", "Approve?"))
+    script.add("OrchestratorOutput", decide("research", questions=["q"]), decide("design"))
     boot = Bootstrap(run)
     boot.start("idea")
     turn = boot.answer("", approve=["design"])
     assert turn.outcome == "ready" and turn.reply == "The bootstrap is done."
-    assert len([c for c in script.calls if c["schema"] == "OrchestratorOutput"]) == 3
+    assert len([c for c in script.calls if c["schema"] == "OrchestratorOutput"]) == 2
     told = [c for c in script.calls if c["schema"] == "DiscussorOutput"][2]["prompt"]
     assert "(I approved: design.)" in told
 
@@ -359,8 +361,7 @@ def test_autopilot_takes_a_bootstrap_to_an_approved_design_alone(run, script):
     script.add("DesignOutput", DESIGN, DESIGN)
     script.add("OrchestratorOutput",
                decide("research", questions=["LoRA rank results?"]), decide("design"),
-               decide("ask_user", "Approve?"), decide("design"),
-               decide("ask_user", "Approve the design?"))
+               decide("design"))
     script.add("AutopilotOutput",
                AUTO("Use five seeds."),
                AUTO("Approve the design.", ["design"]))
@@ -378,6 +379,8 @@ def test_autopilot_takes_a_bootstrap_to_an_approved_design_alone(run, script):
     assert auto[0]["thread"] is None and auto[1]["thread"], \
         "the autopilot keeps one conversation of its own"
     assert autopilot.load(run.folder).streak == 2
+    assert len(script.prompts("DesignOutput")) == 2 and S.version(st, "design") == 2
+    assert len(script.prompts("OrchestratorOutput")) == 3, "no model judges a new design"
     boot.close()
 
 

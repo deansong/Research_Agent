@@ -19,8 +19,8 @@ title, number or link.
 Record only what the user settled (goal, constraints, decisions, answers).
 `hand_to` "orchestrator" when there is work for the team -- written in
 `requests` as clean instructions -- or the user just approved the design;
-otherwise "user". `approve` ["design"] only when the user clearly approved it
-as it stands. Passing on the orchestrator's message, you always hand to the
+otherwise "user". `approve` ["design"] when the user clearly approves it as it
+stands: the decision is theirs; say any concern, but record it. Passing on the orchestrator's message, you always hand to the
 user.
 """
 
@@ -34,7 +34,8 @@ Decide the one next action:
   ask_user   the discussor asks the user what `task` says (a decision, an
              approval)
   ready      the design is approved; the bootstrap ends
-Follow the discussor's requests. `task` gives the next node what it needs
+Follow the discussor's requests. The user, not you, judges whether the design
+is ready. `task` gives the next node what it needs
 that is not in the state. Keep `summary` a short account of where things
 stand.
 """
