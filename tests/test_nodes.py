@@ -94,7 +94,8 @@ def test_the_researcher_s_sources_are_checked(run, script, monkeypatch):
 
 
 HYPO = {"summary": "two hypotheses", "hypotheses": [
-    {"statement": "Rank matters", "prediction": "r=64 beats r=4 by >=1 F1", "evidence": ["E1"]}],
+    {"plain": "Higher LoRA rank helps on small data.", "statement": "Rank matters",
+     "prediction": "r=64 beats r=4 by >=1 F1", "evidence": ["E1"]}],
     "rubric": [{"criterion": "Effect size", "measure": "F1 difference", "threshold": ">=1"}],
     "protocol": {"baselines": ["full fine-tuning"], "metrics": ["F1"], "statistics": "paired t-test",
                  "seeds": "5 seeds", "stop_criteria": "all ranks run"}}
@@ -232,3 +233,17 @@ def test_rubric_criteria_can_be_retired(run, script):
     st = _apply(st, out, "planner")
     assert [(r["id"], r["criterion"]) for r in st["rubric"]] == [("R1", "Effect size")]
     assert "(retired R2, R3)" in out.summary
+
+
+def test_hypotheses_must_be_readable():
+    from research_agent.bootstrap import schemas
+
+    long = schemas.HypothesisIn(statement="Rank matters", prediction=" ".join(["word"] * 96))
+    good = schemas.HypothesisIn(plain="Higher rank helps.", statement="Rank matters",
+                                prediction="r=64 beats r=4 by >=1 F1")
+    gone = schemas.HypothesisIn(statement="x " * 80, prediction="", status="dropped")
+    problems = nodes.readability([long, good, gone])
+    assert any("has no `plain`" in p for p in problems)
+    assert any("`prediction` has 96 words; at most 70" in p and "protocol's `statistics`" in p
+               for p in problems)
+    assert len(problems) == 2, "a good one and a dropped one pass"

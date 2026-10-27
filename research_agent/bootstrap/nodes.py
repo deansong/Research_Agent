@@ -242,6 +242,7 @@ def hypothesize(run: Run, st: dict, *, task: str) -> Outcome:
                      for h in out.hypotheses for e in h.evidence if e not in evidence]
         problems += [f"hypothesis {h.statement[:40]!r} has no prediction"
                      for h in out.hypotheses if not h.prediction.strip()]
+        problems += readability(out.hypotheses)
         problems += [f"rubric criterion {r.id or i + 1} is empty: give its criterion, or "
                      f"retire it in `retire_rubric`"
                      for i, r in enumerate(out.rubric) if not r.criterion.strip()]
@@ -275,6 +276,37 @@ def hypothesize(run: Run, st: dict, *, task: str) -> Outcome:
                f"protocol set. {out.summary}")
     ops.append(_result_op("planner", "hypothesize", task, summary, session))
     return Outcome(ops=ops, summary=summary, session=session, data=out)
+
+
+#: Words a hypothesis's fields may take; the details go in the protocol.
+#: Measured: a 96-word "prediction" holding the whole analysis plan, which
+#: the user could not read.
+PLAIN_WORDS, STATEMENT_WORDS, PREDICTION_WORDS = 45, 40, 70
+
+
+def readability(hypotheses) -> list[str]:
+    """A hypothesis the user can read: a plain sentence, a short claim, a
+    short prediction -- averaging, decision rules and confidence procedures
+    belong in the protocol's `statistics`."""
+    problems = []
+    for h in hypotheses:
+        if h.status == "dropped":
+            continue
+        name = h.id or repr(h.statement[:40])
+        if not h.plain.strip():
+            problems.append(f"{name} has no `plain`: say it in one or two plain sentences any "
+                            f"researcher in the field understands, no symbols")
+        elif len(h.plain.split()) > PLAIN_WORDS:
+            problems.append(f"{name}: `plain` has {len(h.plain.split())} words; at most "
+                            f"{PLAIN_WORDS}")
+        for field, limit in (("statement", STATEMENT_WORDS), ("prediction", PREDICTION_WORDS)):
+            words = len(getattr(h, field).split())
+            if words > limit:
+                problems.append(f"{name}: `{field}` has {words} words; at most {limit}. Keep the "
+                                f"claim and the observable result with its threshold; move "
+                                f"averaging, support/refutation rules and confidence procedures "
+                                f"to the protocol's `statistics`")
+    return problems
 
 
 def plan(run: Run, st: dict, *, task: str) -> Outcome:

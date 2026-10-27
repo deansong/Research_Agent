@@ -71,6 +71,8 @@ class Evidence(BaseModel):
 
 class Hypothesis(BaseModel):
     id: str = ""
+    plain: str = ""
+    """The hypothesis in one or two plain sentences, for any researcher."""
     statement: str
     prediction: str = ""
     """What would be observed if it is true -- falsifiable."""
@@ -534,8 +536,10 @@ def _line(section: str, x: dict, brief: bool) -> str:
         bears = f" (bears on {', '.join(x['bears_on'])})" if x.get("bears_on") else ""
         return f"- {i} [{check}] {x['claim']} -- {x['source']}{bears}"
     if section == "hypotheses":
-        line = f"- {i} [{x['status']}] {x['statement']}"
+        line = f"- {i} [{x['status']}] {x.get('plain') or x['statement']}"
         if not brief:
+            if x.get("plain"):
+                line += f"\n  claim: {x['statement']}"
             line += "".join(f"\n  {label}: {x[key] if isinstance(x[key], str) else ', '.join(x[key])}"
                             for key, label in (("prediction", "prediction"),
                                                ("rationale", "why"), ("evidence", "evidence"),

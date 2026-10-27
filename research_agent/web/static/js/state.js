@@ -206,7 +206,8 @@ const DRAW = {
   hypotheses(items) {
     return el("div", { class: "cards" }, items.map((h) => el("div", { class: `hcard ${h.status}` },
       el("div", { class: "sv-head" }, idTag(h.id), pill(h.status, statusKind(h.status)),
-        el("b", { text: h.statement })),
+        el("b", { text: h.plain || h.statement })),
+      h.plain ? this.fold(`h-${h.id}-c`, "Claim", h.statement) : null,
       this.fold(`h-${h.id}-p`, "Prediction", h.prediction),
       this.fold(`h-${h.id}-r`, "Why", h.rationale),
       this.fold(`h-${h.id}-n`, "Novelty", h.novelty),

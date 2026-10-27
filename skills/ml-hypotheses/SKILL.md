@@ -84,5 +84,14 @@ it must beat.
    de-identification); dual-use or harmful-capability work. Name the issue
    and the step it needs; do not let it block unrelated work.
 
+9. WRITE FOR A READER
+   A hypothesis is read by the user and by reviewers. Lead with one plain
+   sentence ("Even with names and numbers masked, a strong model can still
+   guess the company's hidden financial trend well above chance"). The claim
+   and prediction are short; define any measure in words, not symbols
+   ("accuracy guessing the hidden fact, with the masked text minus without
+   it"). Averaging, support/refutation rules and confidence procedures belong
+   in the protocol.
+
 Write few, sharp hypotheses: each with its rivals and its deciding
 experiment. Drop or revise ones the evidence has already settled.

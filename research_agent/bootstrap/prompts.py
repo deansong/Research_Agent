@@ -97,7 +97,9 @@ Rules:
 - Follow the discussor's requests unless the state shows they cannot be done
   yet; then say why in `reason` and ask_user.
 - `task` is everything the next node needs that is not in the state: what to
-  do, what to change, feedback to address. Be specific.
+  do, what to change, feedback to address. Be specific. Never ask the planner
+  to pack analysis details or decision rules into hypotheses: those belong in
+  the protocol, and hypotheses stay short and readable.
 - Ask for approval (ask_user) when a section is new or changed and not approved.
 - Keep `summary` a short, current account of where the study stands.
 - Record open questions and decisions you identify; do not repeat ones in the
@@ -138,6 +140,12 @@ protocol.
   prediction (what would be observed if it is true), a rationale and the
   evidence ids it rests on. Revise an existing one by giving its id; mark ones
   that should go as dropped.
+- Write them to be read: `plain` says it in one or two sentences any
+  researcher in the field understands (no symbols, no invented names);
+  `statement` is the claim in one sentence; `prediction` is the observable
+  result and its threshold in one or two. How results are averaged, the
+  support/refutation rules and confidence procedures go in the protocol's
+  `statistics` -- not in the hypothesis. Code refuses long fields.
 - The rubric says what a good result is: each criterion has a measure and a
   pass threshold, and applies to hypothesis or step ids. Revise one by giving
   its id; criteria you leave out stay as they are. A criterion that no longer

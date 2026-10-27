@@ -42,7 +42,8 @@ def decide(action, task="", **fields):
 FINDINGS = {"summary": "found baselines", "findings": [
     {"claim": "LoRA rank 8 is common", "source": "https://example.org/lora"}]}
 HYPO = {"summary": "one hypothesis", "hypotheses": [
-    {"statement": "Rank matters", "prediction": "r=64 beats r=4 by >=1 F1", "evidence": ["E1"]}],
+    {"plain": "Higher LoRA rank helps on small data.", "statement": "Rank matters",
+     "prediction": "r=64 beats r=4 by >=1 F1", "evidence": ["E1"]}],
     "rubric": [{"criterion": "Effect", "measure": "F1 gap", "threshold": ">=1"}],
     "protocol": {"metrics": ["F1"], "statistics": "paired t-test", "seeds": "5"}}
 PLAN = {"summary": "two steps", "steps": [

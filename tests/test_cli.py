@@ -46,7 +46,7 @@ def test_a_conversation_with_commands(tmp_path, script, monkeypatch, capsys):
     assert "  . orchestrator -> research: because research" in out
     assert "  . researcher (research): 1 findings" in out
     assert "H1, R1 and the protocol are ready. Approve?" in out
-    assert "- H1 [proposed] Rank matters" in out, "/show"
+    assert "- H1 [proposed] Higher LoRA rank helps on small data." in out, "/show"
     assert "Show which?" in out
     assert "There is no plan to approve yet." in out
     assert "Shall I write the plan?" in out
