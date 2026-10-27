@@ -138,14 +138,16 @@ def test_a_bad_design_goes_back_with_what_is_wrong(run, script, evidence, monkey
                      {"id": "3", "title": "Train", "detail": "d", "check": "c",
                       "depends_on": ["2"], "rubric": ["R7"]}],
            "nodes": [NODES[0], {"name": "Worker", "role": "worker", "steps": ["1"],
-                                "skills": ["nope"], "instructions": "i"}]}
+                                "skills": ["nope"], "instructions": "i",
+                                "validated_by": ["checker"]}]}
     script.add("DesignOutput", bad, DESIGN)
     nodes.design(run, evidence, task="design it")
     retry = script.calls[1]
     assert retry["thread"] == "thread-1", "the retry continues the same call"
     for expected in ("cites E9, which is not an evidence id", 'step ids must be "1", "2"',
                      "serves R7", "depends on 2", "Worker is not lower_snake_case",
-                     "exactly one validator", "no skill called nope"):
+                     "exactly one validator", "no skill called nope",
+                     "`validated_by` lists rubric ids (R1), not checker"):
         assert expected in retry["prompt"]
 
     script.add("DesignOutput", bad, bad, bad)

@@ -59,9 +59,12 @@ go: what the study tests or builds and the agent that will carry it out.
               rubric ids; `gate` when the user should say go first
   nodes       one orchestrator, one read-only validator, and the workers,
               runners and writers that own the steps (each step one owner),
-              with their instructions and skills from the catalogue
-Think about the study and the nodes together: who does each step, with what.
-Give the whole design every time; what you leave out goes.
+              with their instructions and skills from the catalogue. The
+              validator owns no steps: it checks every step's work after it
+              is done, so a step that validates data is a worker's or
+              runner's. `validated_by` lists rubric ids (R1, ...).
+Think about the study and the nodes together. Give the whole design every
+time; what you leave out goes.
 """
 
 #: Each role's instructions.

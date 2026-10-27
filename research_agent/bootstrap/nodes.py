@@ -252,7 +252,10 @@ def design_problems(design: dict, *, steps: list[str], rubric: set[str],
             problems.append(f"there must be exactly one {role} node, not {count}")
     problems += [f"the validator {n['name']} must be read_only" for n in nodes
                  if n["role"] == "validator" and n.get("access") != "read_only"]
-    problems += [f"the validator {n['name']} owns no steps: it only checks" for n in nodes
+    problems += [f"the validator {n['name']} owns steps {', '.join(n['steps'])}, but it only "
+                 f"checks the other nodes' work, read-only, after each step: give those steps "
+                 f"to a worker or runner (one that writes and runs the checks) and leave the "
+                 f"validator's `steps` empty" for n in nodes
                  if n["role"] == "validator" and n.get("steps")]
     owners: dict[str, list[str]] = {}
     for n in nodes:
@@ -264,8 +267,8 @@ def design_problems(design: dict, *, steps: list[str], rubric: set[str],
     problems += [f"{s} is not a plan step" for s in owners if s not in steps]
     problems += [f"{n['name']}: no skill called {k}" for n in nodes for k in n.get("skills") or []
                  if skills and k not in skills]
-    problems += [f"{n['name']}: {r} is not a rubric id" for n in nodes
-                 for r in n.get("validated_by") or [] if r not in rubric]
+    problems += [f"{n['name']}: `validated_by` lists rubric ids ({', '.join(sorted(rubric)) or 'none'}), "
+                 f"not {r}" for n in nodes for r in n.get("validated_by") or [] if r not in rubric]
     return problems
 
 
