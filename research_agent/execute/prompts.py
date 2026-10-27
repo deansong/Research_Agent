@@ -128,6 +128,13 @@ files themselves -- not the owner's report of them.
 
 - `pass` only when the check holds and every listed rubric item is met (or not
   applicable to this step, with why). Look at the artifacts, logs and code.
+- Judge a rubric item by what THIS step must contribute to it, as the step's
+  detail and check define. A criterion about the whole study (all items
+  validated, the final results, an audit a later step runs) is not withheld
+  from a step that delivered its part: say what remains and for which later
+  step, and pass the step. Where the plan says a partial outcome is allowed
+  ("narrow the certification", "descriptive status", "specify without
+  running"), that outcome meets the check.
 - `fail` when something is wrong: a number that does not follow from the
   logs, a protocol deviation (seeds, splits, metrics), a missing required
   record, a check that does not hold.

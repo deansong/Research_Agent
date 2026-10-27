@@ -486,3 +486,21 @@ def test_the_rules_for_research_use_and_the_user_s_decisions():
         assert "a missing license is never a reason to fail or block" in text
         assert "stand over the plan" in text
     assert "never make a license a pass" in boot.PLANNER
+
+
+def test_autopilot_answers_a_stop_the_orchestrator_chose_but_not_the_users(run, script):
+    from research_agent import autopilot
+
+    autopilot.save(run.folder, autopilot.Settings(on=True, max_decisions=3))
+    script.add("ExecDecision", decide("stop", task="step 1 used its attempts"))
+    script.add("ExecDiscussorOutput", say("The team stopped: step 1 used its attempts."),
+               say("Stopped, as you said."))
+    script.add("AutopilotOutput", {"answer": "Stop here.", "why": "nothing can fix it",
+                                   "stop": True})
+    turn = Execution(run).start()
+    asked = [c for c in script.calls if c["schema"] == "AutopilotOutput"]
+    assert len(asked) == 1, "the orchestrator's stop is a question the autopilot answers"
+    assert "The team stopped: step 1 used its attempts." in asked[0]["prompt"]
+    assert turn.outcome == "stopped" and turn.reply == "Stopped, as you said."
+    assert len([c for c in script.calls if c["schema"] == "AutopilotOutput"]) == 1, \
+        "its own stop is final: it is not asked again"

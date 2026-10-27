@@ -63,6 +63,10 @@ class ExecState(TypedDict, total=False):
     nudged: bool
     """The user said go or stop with this message."""
     outcome: str
+    stopped_by: str
+    """"orchestrator" when it chose to stop: a question the autopilot may
+    answer (pass, retry, amend). A stop by the user, the autopilot or a
+    budget leaves it empty: final."""
     """"" while working; "done", "stopped" or "exit"."""
 
 
@@ -182,7 +186,12 @@ def build(run: nodes.ExecRun, design: nodes.Design, checkpointer=None):
 
     def human(state: ExecState) -> dict:
         st = state["research"]
-        answer = autopilot_answer(state, st) if not state.get("outcome") else None
+        # Unfinished, or stopped by the orchestrator's choice (a step out of
+        # attempts): the autopilot answers. A stop by the user, the
+        # autopilot or a budget is final.
+        open_ = not state.get("outcome") or (state.get("outcome") == "stopped"
+                                             and state.get("stopped_by") == "orchestrator")
+        answer = autopilot_answer(state, st) if open_ else None
         if answer is None:
             answer = interrupt({"reply": state.get("reply", ""),
                                 "outcome": state.get("outcome", "")})
@@ -213,7 +222,7 @@ def build(run: nodes.ExecRun, design: nodes.Design, checkpointer=None):
             st = stop_all(st, "the user stopped the execution")
             text, outcome = text or "(I stopped the execution.)", "stopped"
         return {"research": st, "user": text, "awaiting": awaiting, "nudged": nudged,
-                "outcome": outcome, "_to": "discussor"}
+                "outcome": outcome, "stopped_by": "", "_to": "discussor"}
 
     def autopilot_answer(state: ExecState, st: dict) -> dict | None:
         """The user's answer by the autopilot, when it is on (None: ask the
@@ -258,7 +267,7 @@ def build(run: nodes.ExecRun, design: nodes.Design, checkpointer=None):
         d = out.data
         decision = {"action": d.action, "step": d.step, "reason": d.reason, "task": d.task}
         base = {"research": st, "decision": decision, "pending": [], "outcome": "",
-                "decisions": state.get("decisions", 0) + 1}
+                "stopped_by": "", "decisions": state.get("decisions", 0) + 1}
         note = d.note_for_discussor
         if d.action in ("run", "retry"):
             step = nodes.plan_step(st, d.step)
@@ -295,7 +304,7 @@ def build(run: nodes.ExecRun, design: nodes.Design, checkpointer=None):
             st = stop_all(st, f"stopped by the orchestrator: {d.task}")
             return {**base, "research": st, "note": f"The orchestrator stopped the execution: "
                                                     f"{d.task} {note}".strip(),
-                    "outcome": "stopped", "_to": "discussor"}
+                    "outcome": "stopped", "stopped_by": "orchestrator", "_to": "discussor"}
         return {**base, "note": note or d.task, "_to": "discussor"}    # ask_user
 
     def needs_go(step: dict) -> bool:

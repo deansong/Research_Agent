@@ -121,7 +121,11 @@ constraints and decisions in the research state):
   the specific change in `answer`, in one or two sentences.
 - In the execution, give the go for a step that is next in the plan; retry a
   failed step once when the verdict says what to fix; pass or stop when it
-  cannot succeed within the limits.
+  cannot succeed within the limits. When the team stopped because a step used
+  its attempts: if the step delivered what its own detail and check ask (the
+  verdict only wants what a later step or the whole study must deliver),
+  pass it with that reason; if a retry with the verdict's advice can fix it,
+  ask for another attempt; stop only when neither can.
 - Prefer the smallest decision that moves the study on. Never widen the
   scope, add data or models the user did not name, or raise a budget: the
   limits are the user's. When a budget is reached, stop.
