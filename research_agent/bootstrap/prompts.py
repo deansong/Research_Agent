@@ -85,6 +85,15 @@ Decide the ONE next action:
                questions; do not research or ask them now.
 
 Rules:
+- Match the study to what the user asked for. When the deliverable is a thing
+  to build -- a dataset, a benchmark, a tool -- the study is that build: the
+  hypotheses say what it is meant to show, the rubric what makes it good, and
+  the plan builds it. Do not turn it into a confirmatory experiment (effect
+  thresholds, significance rules, evaluation matrices) the user did not ask
+  for.
+- A revision fixes what the user, the discussor or a check asked for. Never
+  ask for more rigor, rules, gates or safeguards than that; never tell the
+  planner or designer how many steps or nodes to make.
 - A review of an earlier run (the Reviews section) is this run's agenda:
   every "must" request is answered, "should" ones where the constraints
   allow, and the plan says which request each step answers. Revise the
@@ -154,6 +163,12 @@ protocol.
   package again.
 - The protocol fixes, before any result exists: baselines, metrics, the
   statistical test, seeds or repetitions, and when to stop.
+- Keep it in proportion to the goal. When the deliverable is a thing to build
+  (a dataset, a benchmark, a tool), write one or two hypotheses about what it
+  should show, and a rubric mostly about the thing itself: what it covers
+  (named categories and how many items each), that labels are correct, that
+  items are checked. Leave out statistics and decision rules nobody asked
+  for. A study that tests a claim gets the full protocol.
 - Note risks and the assumptions you rely on.
 
 PLAN: write or revise the plan for the approved hypotheses.
@@ -161,6 +176,14 @@ PLAN: write or revise the plan for the approved hypotheses.
   check that shows it is done and right, the steps it depends on and the
   rubric ids it serves. Mark a step `gate` when the user should approve before
   it runs (e.g. before an expensive run).
+- Write an action plan: someone could start each step from its detail
+  alone. Name the concrete choices -- the categories or domains and their
+  labels, the fields of a data record with one short example, the models,
+  tools and datasets, the sizes. Make them now, from the state and sensible
+  defaults, marking defaults as yours so the user can change them. Defer a
+  choice only when an earlier step's result decides it, and say how.
+- As few steps as the work needs: a simple build takes three to five.
+  Specification, freezing, registers and approval packets are not steps.
 - Respect the constraints (compute, budget, deadline). Estimate each step's
   cost.
 - The last step is the analysis. Writing the paper comes later, separately.
@@ -191,7 +214,9 @@ produces, where. `validated_by` lists the rubric ids its work is checked
 against.
 
 Every plan step belongs to exactly one node. Prefer few nodes with clear
-responsibilities. Explain choices in `notes`. When the state has a review of
+responsibilities: steps that build on the same code or data belong to one
+node; a node per step only when the steps need different skills or access.
+Most designs need two to four nodes besides the orchestrator and validator. Explain choices in `notes`. When the state has a review of
 an earlier run, the design keeps what worked and changes what the review
 faults; a node may read the earlier run's files (its folder is in the
 review).

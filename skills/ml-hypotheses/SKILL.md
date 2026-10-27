@@ -21,6 +21,12 @@ it must beat.
      measure (and its validation), comparison or variation, period.
    Say what answer would change what people do or believe.
 
+   Building a dataset or benchmark is not testing a claim. Its hypotheses
+   are what the resource should reveal ("models that only mask names still
+   let a reader infer the hidden trend"), its rubric is the resource's
+   quality (coverage per category, label correctness, items validated), and
+   a small demonstration on it is enough -- not a confirmatory study.
+
 2. NAME THE CLAIM TYPE -- it decides the design
    comparative (A > B), ablation (component X causes gain), scaling (trend
    with size/data/compute), generalisation (holds out of distribution, across
