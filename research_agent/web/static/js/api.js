@@ -31,6 +31,7 @@ const run = (id) => `/api/runs/${encodeURIComponent(id)}`;
 export const api = {
   runs: () => request("GET", "/api/runs"),
   newRun: (body) => request("POST", "/api/runs", body),
+  trash: (id) => request("POST", `${run(id)}/trash`),
   run: (id) => request("GET", run(id)),
   closeRun: (id) => request("DELETE", run(id)),
   message: (id, text) => request("POST", `${run(id)}/message`, { text }),

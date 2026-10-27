@@ -212,12 +212,25 @@ async function showOpen() {
     if (!runs.length) list.append(el("div", { class: "empty", text: "No runs yet: start a new one." }));
     for (const r of runs) {
       list.append(el("a", { href: "#", class: "run-row", onclick: (e) => { e.preventDefault(); $("dialog-open").close(); openRun(r.id); } },
-        el("div", {}, el("b", { class: "mono", text: r.id }), r.busy ? el("span", { class: "pill pill-live", text: "working" }) : null),
+        el("div", { class: "run-row-head" }, el("b", { class: "mono", text: r.id }),
+          r.busy ? el("span", { class: "pill pill-live", text: "working" }) : null,
+          el("button", { class: "btn tiny danger run-delete", type: "button", text: "Delete",
+            title: "Move this run to the .trash folder of the runs root", disabled: r.busy,
+            onclick: (e) => { e.preventDefault(); e.stopPropagation(); deleteRun(r.id); } })),
         el("div", { class: "small", text: r.goal || "(no goal yet)" }),
         el("div", { class: "dim small", text: `${r.stage} · ${r.phase} · ${when(r.updated)}` })));
     }
   } catch (err) { problem(err); }
-  $("dialog-open").showModal();
+  if (!$("dialog-open").open) $("dialog-open").showModal();
+}
+
+async function deleteRun(id) {
+  if (!confirm(`Delete the run ${id}?\n\nIts folder moves to the .trash folder of the runs root; move it back to restore it.`)) return;
+  try {
+    await api.trash(id);
+    if (app.runId === id) { window.history.replaceState(null, "", location.pathname + location.search); location.reload(); return; }
+    await showOpen();
+  } catch (err) { problem(err); }
 }
 
 async function showNew() {

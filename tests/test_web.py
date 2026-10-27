@@ -12,6 +12,7 @@ from __future__ import annotations
 import json
 import threading
 import time
+from pathlib import Path
 
 import pytest
 from fastapi.testclient import TestClient
@@ -592,3 +593,23 @@ def test_autopilot_carries_on_after_an_error(web, script):
     assert s.decisions == 2 and s.handed_back, "the restart counted as a decision; then it handed back"
     events = web.get("/api/runs/err/events?follow=false").text
     assert "Autopilot: the run stopped with an error" in events
+
+
+def test_a_run_can_be_deleted_to_the_trash(web, monkeypatch):
+    from research_agent.execute import jobs as J
+
+    S.Store(web.root / "old").write(S.new())
+    web.get("/api/runs/old")                                   # open: it is closed first
+    monkeypatch.setattr(J, "records", lambda folder: [{"id": "j1"}])
+    monkeypatch.setattr(J, "status", lambda job: {"state": "running"})
+    r = web.post("/api/runs/old/trash")
+    assert r.status_code == 409 and "Jobs still run (j1)" in r.text
+    monkeypatch.setattr(J, "status", lambda job: {"state": "finished"})
+    r = web.post("/api/runs/old/trash")
+    assert r.status_code == 200
+    moved = Path(r.json()["moved_to"])
+    assert moved.parent == web.root / ".trash" and (moved / "state" / "research.json").exists()
+    assert not (web.root / "old").exists()
+    assert "old" not in [x["id"] for x in web.get("/api/runs").json()]
+    assert web.post("/api/runs/old/trash").status_code == 404
+    assert web.post("/api/runs/.trash/trash").status_code == 404

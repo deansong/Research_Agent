@@ -263,6 +263,7 @@ GPUs: they run with `full` access, which is Codex's unsandboxed mode.
 | Run | stage, phase, what is running, the outcome or last error, the model of each role |
 | Model calls | each call as it starts and ends (seconds, tokens, problems), and every session; click one for its turns: what was sent and what came back |
 | Jobs | the execution's background jobs, their state, GPUs and hours, and their logs |
+| Open run | every run, newest first; **Delete** moves one to `.trash` in the runs root (move it back to restore it) |
 | Top bar | **Pause** (after the current step), **Carry on**, **Start execution** (once the design is approved: limits and which steps wait for your go), **Stop** (the execution's jobs and steps) |
 
 Deep links: `/?tab=graph&side=jobs#<run>` opens a run with those tabs showing.
@@ -296,6 +297,7 @@ Deep links: `/?tab=graph&side=jobs#<run>` opens a run with those tabs showing.
 | GET | `/api/runs/{id}` | its status and chat history |
 | POST | `/api/runs/{id}/message` | `{text}`: an answer, an aside, or the idea (the reply says which) |
 | POST | `/api/runs/{id}/approve` | `{sections: ["design"]}` |
+| POST | `/api/runs/{id}/trash` | delete the run: its folder moves to `<runs root>/.trash/<id>-<time>` (refused while it works or its jobs run) |
 | POST | `/api/runs/{id}/go`, `/stop`, `/pause`, `/resume` | |
 | POST | `/api/runs/{id}/break` | `{step, when: before\|after, on}` |
 | POST | `/api/runs/{id}/execute` | `{wall_hours, gpu_hours, confirm}` |

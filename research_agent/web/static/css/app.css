@@ -268,6 +268,8 @@ dialog label.check { flex-direction: row; align-items: center; gap: 8px; color: 
 .run-list { display: flex; flex-direction: column; gap: 6px; max-height: 60vh; overflow-y: auto; }
 .run-row { display: block; text-decoration: none; color: var(--text); border: 1px solid var(--line); border-radius: 7px; padding: 7px 10px; }
 .run-row:hover { border-color: var(--accent-dim); }
+.run-row-head { display: flex; align-items: center; gap: 8px; }
+.run-row-head .run-delete { margin-left: auto; }
 .session-body { overflow-y: auto; max-height: 74vh; display: flex; flex-direction: column; gap: 10px; }
 .turn { border: 1px solid var(--line); border-radius: 7px; padding: 8px 10px; }
 .turn .reply { background: var(--bg-input); padding: 8px; border-radius: 5px; max-height: 40vh; overflow: auto; }

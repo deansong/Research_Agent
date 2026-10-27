@@ -15,6 +15,7 @@ from __future__ import annotations
 import asyncio
 import json
 import re
+import shutil
 import threading
 from datetime import datetime
 from pathlib import Path
@@ -28,6 +29,9 @@ from research_agent import state as S
 from research_agent.bootstrap import carry
 from research_agent.execute import jobs as J
 from research_agent.web import host as H
+
+#: Where deleted runs go, inside the runs root: move one back to restore it.
+TRASH = ".trash"
 
 STATIC = Path(__file__).with_name("static")
 RUNS_ROOT = Path.home() / "research_runs"
@@ -130,7 +134,7 @@ def create_app(runs_root: Path = RUNS_ROOT, *, roles=(), watch: bool = True) -> 
     app.state.hosts = hosts
 
     def folder_of(run_id: str) -> Path:
-        if not re.fullmatch(r"[\w.\-]+", run_id or ""):
+        if not re.fullmatch(r"[\w.\-]+", run_id or "") or run_id.startswith("."):
             raise _bad(404, "no_run", f"No run {run_id!r}.")
         folder = root / run_id
         if not (folder / "state" / "research.json").exists():
@@ -206,6 +210,25 @@ def create_app(runs_root: Path = RUNS_ROOT, *, roles=(), watch: bool = True) -> 
                 act(host.close)
                 del hosts[run_id]
         return {"ok": True}
+
+    @app.post("/api/runs/{run_id}/trash")
+    def trash_run(run_id: str):
+        """Delete a run: its folder moves to <runs root>/.trash, from where it
+        can be moved back. Not while it works or its jobs still run."""
+        folder = folder_of(run_id)
+        running = [j["id"] for j in J.records(folder) if J.status(j)["state"] == "running"]
+        if running:
+            raise _bad(409, "busy", f"Jobs still run ({', '.join(running)}): stop the run first.")
+        with lock:
+            host = hosts.get(run_id)
+            if host:
+                act(host.close)
+                del hosts[run_id]
+        bin_ = root / TRASH
+        bin_.mkdir(exist_ok=True)
+        to = bin_ / f"{run_id}-{datetime.now():%Y%m%d-%H%M%S}"
+        shutil.move(str(folder), str(to))
+        return {"ok": True, "moved_to": str(to)}
 
     # ---- talking and steering -------------------------------------------------------
 
