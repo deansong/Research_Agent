@@ -38,6 +38,12 @@ BUSY_BENCH_SECONDS = 600.0
 #: Turns of a conversation a backup taking it over is given.
 HANDOVER_TURNS = 8
 
+#: A conversation whose last turn used more than this share of the model's
+#: context window starts afresh, handed over, before it overflows. Measured: a
+#: discussor conversation of 36 turns on a 128k-token model overflowed at
+#: 137k, and stopped the run.
+ROLL_SHARE = 0.6
+
 
 class NodeFailed(RB.BackendError):
     """A node could not give a usable answer within its attempts."""
@@ -116,11 +122,26 @@ class Run:
             sent = brief
             if n and session and self._moved(session, cfg.provider) is not None:
                 sent = takeover() if takeover else self._handover(session) + "\n\n" + brief
+            elif session and self._full(session, cfg):
+                sent = self._roll(session, label, cfg, brief, takeover, "is nearly full")
             try:
-                return self._call_on(cfg, role, final=final, brief=sent, schema=schema,
-                                     skills_key=skills_key, skills=skills,
-                                     instructions=instructions, access=access, workdir=workdir,
-                                     session=session, label=label, check=check)
+                try:
+                    return self._call_on(cfg, role, final=final, brief=sent, schema=schema,
+                                         skills_key=skills_key, skills=skills,
+                                         instructions=instructions, access=access,
+                                         workdir=workdir, session=session, label=label,
+                                         check=check)
+                except Exception as exc:  # noqa: BLE001 -- only an overflow is handled here
+                    if not (session and _overflowed(exc)):
+                        raise
+                    # The conversation outgrew the model's window: a fresh one
+                    # takes over, once.
+                    sent = self._roll(session, label, cfg, brief, takeover, "overflowed")
+                    return self._call_on(cfg, role, final=final, brief=sent, schema=schema,
+                                         skills_key=skills_key, skills=skills,
+                                         instructions=instructions, access=access,
+                                         workdir=workdir, session=session, label=label,
+                                         check=check)
             except (RB.BackendOutOfCredits, RB.BackendUnavailable, RB.BackendBusy) as exc:
                 if final:
                     raise
@@ -276,6 +297,37 @@ class Run:
         found = conversation.open_session(session, home=self.rb_home)
         return found if found.provider != provider else None
 
+    def _full(self, session: str, cfg) -> bool:
+        """The conversation's last turn used more than ROLL_SHARE of the
+        model's window: the next one might not fit."""
+        from research_backend import catalog, conversation
+
+        if not conversation.exists(session, home=self.rb_home):
+            return False
+        old = conversation.open_session(session, home=self.rb_home)
+        if old.provider != cfg.provider or not old.turns:
+            return False
+        tokens = next((t.get("tokens") for t in reversed(old.turns) if t.get("tokens")), None) or {}
+        used = (tokens.get("input_tokens") or 0) + (tokens.get("output_tokens") or 0)
+        window = catalog.context_window(cfg.provider, cfg.model, tokens.get("context_window"))
+        return used > ROLL_SHARE * window
+
+    def _roll(self, session: str, label: str, cfg, brief: str, takeover, why: str) -> str:
+        """Keep the conversation as <session>-<provider>-NNN and start a fresh
+        one, handed over: `takeover()` (the discussor's: the recent chat and
+        the whole state), else the old conversation's last turns. Returns the
+        brief to send."""
+        from research_backend import conversation
+
+        old = conversation.open_session(session, home=self.rb_home)
+        folder = self.rb_home / "sessions"
+        n = len(list(folder.glob(f"{session}-{old.provider}-*"))) + 1
+        kept = f"{session}-{old.provider}-{n:03d}"
+        old.rename(kept)
+        self.say(f"  ~ {label}: the conversation {why} for {cfg}'s context window; a fresh one "
+                 f"takes over, handed the recent conversation (kept as {kept}).")
+        return takeover() if takeover else self._handover(kept) + "\n\n" + brief
+
     def _retire_if_moved(self, session: str, provider: str) -> None:
         """A provider cannot continue another's thread: keep the old session
         as <session>-<provider>-NNN, so the name starts afresh."""
@@ -342,6 +394,12 @@ def box(title: str, text: str) -> str:
     """A titled block of text for the terminal."""
     rule = "-" * max(10, 78 - len(title))
     return f"\n---- {title} {rule}\n{(text or '').rstrip()}\n{'-' * 84}\n"
+
+
+def _overflowed(exc: BaseException) -> bool:
+    text = str(exc).lower()
+    return any(m in text for m in ("context_length_exceeded", "exceeds the context window",
+                                   "maximum context length", "prompt is too long"))
 
 
 def _shape_hint(schema, problems: list[str]) -> str:

@@ -87,6 +87,9 @@ decision.
   raise them; when one is reached, it stops.
 - **Hands back:** after N decisions in a row (20 by default; you choose) it
   stops answering and waits for you; your answer starts the count again.
+- **Errors:** a run that stops with an error carries on by itself, and each
+  restart counts as one of its decisions, so an error that keeps coming back
+  ends at the limit, handed back to you.
 - **Taking over:** untick it, and the run waits for you at its next stop.
   Asides and Pause work as always. A run already waiting goes on as soon as
   you tick it.

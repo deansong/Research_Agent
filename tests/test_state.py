@@ -136,3 +136,21 @@ def test_the_execution_section_records_each_step():
     assert "1. [pass] Data (builder, 1 attempts, 0.0 GPU-h) -- pass: rows counted" in text
     with pytest.raises(S.StateError):
         S.apply(st, [{"op": "add", "section": "execution", "value": {}}], by="x")
+
+
+def test_a_brief_keeps_what_binds_and_counts_the_rest():
+    ops = [{"op": "add", "section": "decisions", "value": {"what": f"team {i}", "by": "orchestrator"}}
+           for i in range(30)]
+    ops += [{"op": "add", "section": "decisions", "value": {"what": "user says x " * 60, "by": "user"}}]
+    ops += [{"op": "add", "section": "open_questions", "value": {"text": f"q{i}"}} for i in range(15)]
+    st, _ = S.apply(S.new(), ops, by="t")
+    st, _ = S.apply(st, [{"op": "update", "section": "open_questions", "id": f"Q{i}",
+                          "value": {"status": "answered", "answer": "a"}} for i in range(1, 14)], by="t")
+    text = S.render(st, ["decisions", "open_questions"], brief=True)
+    assert "(10 earlier team decisions, D1 to D10, are in state/research.md)" in text
+    assert "team 29" in text and "team 9]" not in text and "D11" in text
+    assert "user says x" in text and max(len(line) for line in text.splitlines()) <= 260
+    assert "(3 earlier questions, answered, are in state/research.md)" in text
+    assert "q14" in text and "q0" not in text, "open ones all stay; old answered ones go"
+    full = S.render(st, ["decisions"])
+    assert "team 0" in full, "the full rendering keeps everything"

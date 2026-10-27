@@ -301,6 +301,15 @@ class RunHost:
             s = autopilot.load(self.folder)
             if self.busy or not s.on or s.handed_back or s.streak >= s.max_decisions:
                 return              # off, or it handed back: the user answers
+            if self._status.get("stopped_midway") and self.error:
+                # Stopped by an error, not by the user: carry on, as one of
+                # its decisions -- so an error that keeps coming back stops
+                # at the limit, handed back.
+                autopilot.counted(self.folder)
+                self.bus.emit("note", text=f"Autopilot: the run stopped with an error "
+                                           f"({self.error[:200]}); carrying on.")
+                self.resume()
+                return
             if self.stage == "bootstrap" and self._status.get("outcome") == "ready":
                 try:
                     self.execute()

@@ -566,3 +566,28 @@ def test_a_new_model_takes_over_a_call_that_waits(web, script, monkeypatch):
         time.sleep(0.05)
     assert d["waiting"] and d["transcript"][-1]["text"] == "Hello from the new model."
     assert web.get("/api/runs/sw/live").json()["running"] == [], "no stale call left"
+
+
+def test_autopilot_carries_on_after_an_error(web, script):
+    from research_agent import autopilot
+
+    def boom(prompt):
+        raise RuntimeError("the server fell over")
+
+    web.post("/api/runs", json={"idea": "an idea", "name": "err", "start": False})
+    web.put("/api/runs/err/autopilot", json={"on": True, "max_decisions": 2,
+                                              "wall_hours": 1, "gpu_hours": 1})
+    script.add("DiscussorOutput", boom, say("Hello. Which data?"), say("Fine. Anything else?"))
+    script.add("AutopilotOutput", {"answer": "Use SST-2.", "why": "the user named it"})
+    web.post("/api/runs/err/start")
+    end = time.time() + 10
+    while time.time() < end:
+        d = web.get("/api/runs/err").json()
+        if d["waiting"] and not d["busy"]:
+            break
+        time.sleep(0.05)
+    assert d["waiting"] and d["transcript"][-1]["text"] == "Fine. Anything else?"
+    s = autopilot.load(web.root / "err")
+    assert s.decisions == 2 and s.handed_back, "the restart counted as a decision; then it handed back"
+    events = web.get("/api/runs/err/events?follow=false").text
+    assert "Autopilot: the run stopped with an error" in events

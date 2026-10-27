@@ -200,3 +200,45 @@ def test_an_answer_off_the_schema_is_retried_with_its_shape(tmp_path, monkeypatc
     assert "ONLY one JSON object with the fields answer" in retry and "search query" in retry
     kept = [json.loads(line) for line in (tmp_path / "activity").glob("*.jsonl").__next__().open()]
     assert kept[0]["events"][0]["command"] == "search x", "what it did before the bad answer"
+
+
+class Filling(Model):
+    """Answers; reports a big prompt; overflows when told to."""
+
+    def __init__(self, name, used=1000, overflow=False):
+        super().__init__(name)
+        self.used, self.overflow = used, overflow
+
+    def run_structured(self, *, thread_id, prompt, output_model, **_):
+        self.calls.append({"thread": thread_id, "prompt": prompt})
+        if self.overflow and thread_id:
+            self.overflow = False
+            raise RuntimeError('{"error": {"message": "request exceeds the context window: prompt '
+                               '(137497 tokens)", "code": "context_length_exceeded"}}')
+        return StructuredRun(data=output_model.model_validate({"answer": "ok"}),
+                             thread_id=thread_id or f"t{len(self.calls)}",
+                             is_new_thread=thread_id is None,
+                             usage=Usage(input_tokens=self.used, context_window=100_000), events=[])
+
+
+def test_a_nearly_full_conversation_starts_afresh_handed_over(tmp_path, monkeypatch):
+    model = Filling("codex", used=70_000)
+    monkeypatch.setattr("research_backend.conversation._backend", lambda *a, **k: model)
+    run = Run(tmp_path, roles={"discussor": RoleConfig("codex")}, quiet=True)
+    run.call("discussor", brief="first", schema=Out, session="discussor")
+    run.call("discussor", brief="second", schema=Out, session="discussor",
+             takeover=lambda: "HANDOVER + second")
+    assert model.calls[1] == {"thread": None, "prompt": "HANDOVER + second"}, "a fresh thread"
+    assert (tmp_path / "rb" / "sessions" / "discussor-codex-001").is_dir()
+
+
+def test_an_overflow_starts_afresh_and_the_call_goes_on(tmp_path, monkeypatch):
+    model = Filling("codex", used=1000, overflow=True)
+    monkeypatch.setattr("research_backend.conversation._backend", lambda *a, **k: model)
+    run = Run(tmp_path, roles={"orchestrator": RoleConfig("codex")}, quiet=True)
+    run.call("orchestrator", brief="first brief", schema=Out, session="owner")
+    answer, _ = run.call("orchestrator", brief="second brief", schema=Out, session="owner")
+    assert answer.answer == "ok"
+    assert model.calls[2]["thread"] is None and "first brief" in model.calls[2]["prompt"], \
+        "without a takeover: the old conversation's turns, then the brief"
+    assert model.calls[2]["prompt"].endswith("second brief")

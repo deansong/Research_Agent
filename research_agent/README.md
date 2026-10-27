@@ -144,6 +144,17 @@ line overrides both:
 Names are checked when a run starts: an unknown role, node or skill, or a
 missing skills folder, stops it with what is wrong.
 
+### Long conversations
+
+A conversation that is continued (the discussor's, the autopilot's, a step
+owner's across its waits) starts afresh before it outgrows the model's
+context window: when its last turn used more than 60% of the window, or the
+server says the window is exceeded. The old one is kept as
+`<session>-<provider>-NNN`, and the new one is handed the recent
+conversation and the whole research state. Briefs keep long lists short:
+every decision of yours (and the autopilot's), the team's 20 newest, open
+questions, and the 10 newest answered; the rest stay in `state/research.md`.
+
 ### Backups
 
 A role can name backups, for when its model runs out of credits or cannot be

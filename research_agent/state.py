@@ -492,7 +492,37 @@ def _render(state: dict, section: str, brief: bool) -> str:
             lines.append(f"{r['id']}. [{r['status']}] {r.get('title', '')} ({r.get('owner', '')}{go}, "
                          f"{r.get('attempts', 0)} attempts, {r.get('gpu_hours', 0):.1f} GPU-h){tail}")
         return "\n".join(lines)
-    return "\n".join(_line(section, x, brief) for x in value or [])
+    items = list(value or [])
+    head = []
+    if brief and section == "decisions":
+        # The user's (and the autopilot's, for the user) bind the team: all
+        # of them. The team's own: the newest. Measured: 172 decisions and
+        # 107 questions were 117k of a 166k-character orchestrator brief.
+        theirs = [x for x in items if x.get("by") not in ("user", "autopilot")]
+        dropped = theirs[:-BRIEF_TEAM_DECISIONS] if len(theirs) > BRIEF_TEAM_DECISIONS else []
+        if dropped:
+            gone = {id(x) for x in dropped}
+            items = [x for x in items if id(x) not in gone]
+            head = [f"- ({len(dropped)} earlier team decisions, {dropped[0].get('id', '')} to "
+                    f"{dropped[-1].get('id', '')}, are in state/research.md)"]
+    if brief and section == "open_questions":
+        answered = [x for x in items if x.get("status") == "answered"]
+        dropped = answered[:-BRIEF_ANSWERED] if len(answered) > BRIEF_ANSWERED else []
+        if dropped:
+            gone = {id(x) for x in dropped}
+            items = [x for x in items if id(x) not in gone]
+            head = [f"- ({len(dropped)} earlier questions, answered, are in state/research.md)"]
+    lines = [_line(section, x, brief) for x in items]
+    if brief and section in ("decisions", "open_questions"):
+        lines = [x if len(x) <= BRIEF_LINE else x[:BRIEF_LINE - 3] + "..." for x in lines]
+    return "\n".join(head + lines)
+
+
+#: In a brief (render(..., brief=True)): the team's decisions kept, answered
+#: questions kept, and the characters of one such line.
+BRIEF_TEAM_DECISIONS = 20
+BRIEF_ANSWERED = 10
+BRIEF_LINE = 260
 
 
 def _line(section: str, x: dict, brief: bool) -> str:
