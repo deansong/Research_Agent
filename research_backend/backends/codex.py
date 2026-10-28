@@ -97,6 +97,12 @@ def classify(exc: BaseException) -> BaseException:
 # provider's and may move -- but a warning you can see beats a hang you cannot.
 SAFE_INSTRUCTIONS_CHARS = 6000
 
+try:                                    # an older SDK has no approval modes
+    from openai_codex import ApprovalMode as _ApprovalMode
+    _DENY_ALL = _ApprovalMode.deny_all
+except ImportError:
+    _DENY_ALL = None
+
 # Our provider-neutral Access maps onto Codex's own sandbox levels.
 # NONE has no Codex equivalent (Codex always runs in a working directory), so
 # it is clamped to read_only -- the closest thing to "cannot change anything".
@@ -647,6 +653,12 @@ class CodexBackend:
         common: dict[str, object] = {
             "cwd": repo_path,
             "sandbox": sandbox,
+            # A read-only turn stays read-only. Codex's default (auto_review)
+            # lets the model ask to run a command beyond its sandbox and an
+            # automatic reviewer approve it -- measured: a read-only
+            # discussor cloned a repository and probed the GPUs.
+            **({"approval_mode": _DENY_ALL}
+               if _DENY_ALL is not None and access in (Access.NONE, Access.READ_ONLY) else {}),
             # BUG FIX: developer_instructions used to be passed only when
             # STARTING a thread, so editing agent/prompts.py had no effect on
             # any session that already existed -- a genuinely confusing thing
