@@ -119,6 +119,14 @@ def test_an_owner_s_brief_has_its_step_its_rubric_and_where_to_work(tmp_path):
     assert "Seeds fixed" in brief and "Unrelated" not in brief
     assert "Step 1 [pass]" in brief and "rows.json" in brief and "step_01" in brief
     assert "python jobs.py --run R launch --step 2" in brief
+    assert "The study's Python" not in brief
+    brief = views.owner(st, node=node, step=st["plan"]["steps"][1], task="",
+                        paths={**paths, "python": "/envs/train/bin/python"},
+                        jobs_command="python jobs.py --run R")
+    assert "The study's Python (torch, CUDA, its libraries)" in brief
+    assert "-- /envs/train/bin/python train.py --seed 17" in brief
+    assert nodes.access_for({**node, "access": "read_only"}) == "full", \
+        "a step owner always runs with full access"
 
 
 def test_an_older_run_s_runner_is_a_worker(tmp_path):

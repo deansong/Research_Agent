@@ -174,9 +174,11 @@ def owner(st: dict, *, node: dict, step: dict, task: str, paths: dict, jobs_comm
             f"The run folder (read anything in it): {paths['run']}",
             *[f"An earlier run, reviewed in {r['id']} (its files stand; read them): {r['run']}"
               for r in st.get("reviews") or [] if r.get("run") and r["run"] != paths["run"]],
+            *([f"The study's Python (torch, CUDA, its libraries) -- use it for the study's "
+               f"code: {paths['python']}"] if paths.get("python") else []),
             "Launch anything longer than a few minutes as a job, e.g.:",
             f"  {jobs_command} launch --step {step['id']} --gpus 1 --name seed17 -- "
-            f"python train.py --seed 17",
+            f"{paths.get('python') or 'python'} train.py --seed 17",
             f"  (prints the job id; --gpus N picks N free GPUs; `{jobs_command} status "
             f"--step {step['id']}` lists them)"])),
     ]

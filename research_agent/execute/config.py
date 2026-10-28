@@ -30,7 +30,8 @@ RETIRED = {"runner": "worker"}
 CONFIRM = ("gated", "all", "none")
 
 DEFAULT_FILE = Path(__file__).with_name("config.toml")
-LIMITS = ("confirm", "max_attempts", "wall_hours", "gpu_hours", "poll_seconds", "max_decisions")
+LIMITS = ("confirm", "max_attempts", "wall_hours", "gpu_hours", "poll_seconds", "max_decisions",
+          "python")
 
 
 @dataclass(frozen=True)
@@ -46,6 +47,9 @@ class ExecConfig:
     gpu_hours: float = 0.0
     poll_seconds: float = 30.0
     max_decisions: int = 30
+    python: str = ""
+    """The Python the study's code runs with (torch, CUDA ...), told to the
+    step owners; "" leaves it to them."""
 
     def describe(self) -> str:
         roles = ", ".join(f"{r}={c}" for r, c in self.roles.items())

@@ -24,6 +24,11 @@ gpu_hours = 0
 poll_seconds = 30
 # Orchestrator decisions in a row before the user hears where things stand.
 max_decisions = 30
+# The Python the study's code runs with -- the environment with torch, CUDA
+# and the study's libraries. Step owners are told to use it; without it they
+# find one (the web server's own may have none of them).
+#     python = "/path/to/miniconda3/envs/train/bin/python"
+python = ""
 
 
 [skills]

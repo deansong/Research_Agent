@@ -80,7 +80,7 @@ class ExecRun(run_base.Run):
 
     def paths(self, step_id: str) -> dict:
         return {"run": str(self.folder), "work": str(self.work),
-                "artifacts": str(self.artifacts(step_id))}
+                "artifacts": str(self.artifacts(step_id)), "python": self.limits.python}
 
     @property
     def jobs_command(self) -> str:
@@ -156,10 +156,12 @@ def skills_for(run: ExecRun, node: dict, key: str = ""):
 
 
 def access_for(node: dict) -> str:
-    """A design's `write` owner runs commands -- on the GPUs, writing outside
-    its workspace (artifacts, jobs) -- which research_backend calls `full`:
-    Claude Code's `write` cannot run a command without asking."""
-    return {"write": "full", "read_only": "read_only", "none": "none"}[node.get("access", "write")]
+    """A step owner runs commands -- on the GPUs, on the network, writing
+    outside its workspace (artifacts, jobs) -- which research_backend calls
+    `full`, whatever access the design gave it: measured, a preflight owner
+    designed read_only ran in a sandbox with no network, GPUs or writes, and
+    reported the machine as having none. Only the validator is read-only."""
+    return "full"
 
 
 # ---- the steps: what may happen next -----------------------------------------------------
