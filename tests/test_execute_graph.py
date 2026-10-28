@@ -525,3 +525,37 @@ def test_a_skipped_step_can_be_reopened_and_a_needed_one_is_not_skipped():
     assert nodes.open_moves(st, 3)["retry"] == ["1"], "one more attempt, as the user asked"
     assert nodes.step_problems(st, ["2"], []) == ["retry: step 2 has not failed or been "
                                                   "skipped (it is pending)"]
+
+
+def test_the_autopilot_s_retry_gives_a_step_out_of_attempts_one_more(run, script):
+    # Run 20261027-2108: the autopilot wrote "retry step 2" three times; in
+    # words it gave no attempt, and the run stopped for good.
+    from research_agent import autopilot
+
+    run.limits = replace(run.limits, max_attempts=1)
+    autopilot.save(run.folder, autopilot.Settings(on=True, max_decisions=1))
+    script.add("ExecDecision", decide("run", "1"),
+               decide("stop", task="step 1 used its attempts"),
+               lambda prompt: decide("retry", "1", task="fix the rows") if "retry 1" in prompt
+               else decide("ask_user", task="no retry offered"),
+               decide("ask_user", task="step 2 next?"))
+    script.add("StepReport", {"state": "failed", "summary": "rows missing"},
+               done_writing(run, "1", "rows.json", "[1000]"))
+    script.add("Verdict", verdict())
+    script.add("ExecDiscussorOutput", say("Step 1 failed and has no attempts left."),
+               say("One more attempt at step 1, as you said."),
+               say("Step 1 passed. Step 2 next?"))
+    script.add("AutopilotOutput", {"answer": "Try step 1 once more.", "why": "fixable",
+                                   "retry": ["1"]})
+    turn = Execution(run).start()
+    asked = script.prompts("AutopilotOutput")[0]
+    assert "OUT OF ATTEMPTS" in asked and "step 1 fail: 1 of 1 attempts used" in asked
+    st = Execution(run).research
+    rec = nodes.records(st)["1"]
+    assert rec["status"] == "pass" and rec["extra_attempts"] == 1
+    assert any(d["what"] == "Another attempt at step 1" and d["by"] == "autopilot"
+               for d in st["decisions"])
+    assert turn.reply == "Step 1 passed. Step 2 next?"
+    assert nodes.step_problems(st, ["1"], [], 1) and \
+        nodes.step_problems({**st}, ["1"], []) == ["retry: step 1 has not failed or been "
+                                                   "skipped (it is pass)"]

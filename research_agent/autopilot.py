@@ -104,6 +104,9 @@ class AutopilotOutput(BaseModel):
     """Bootstrap: ["design"] to approve the design as it now stands."""
     go: bool = False
     """Execution: the step waiting for the user's go may start."""
+    retry: list[str] = Field(default_factory=list)
+    """Execution: steps that failed, were stopped or skipped, to give one more
+    attempt -- the only way a step out of attempts gets another."""
     stop: bool = False
     """Execution: end the run (a budget reached, nothing sensible left)."""
 
@@ -124,7 +127,8 @@ constraints and decisions in the research state):
   its attempts: if the step delivered what its own detail and check ask (the
   verdict only wants what a later step or the whole study must deliver),
   pass it with that reason; if a retry with the verdict's advice can fix it,
-  ask for another attempt; stop only when neither can.
+  put the step in `retry` (the only way it gets another attempt) and say in
+  `answer` what to change; stop only when neither can.
 - Prefer the smallest decision that moves the study on. Never widen the
   scope, add data or models the user did not name, or raise a budget: the
   limits are the user's. When a budget is reached, stop.
@@ -143,9 +147,12 @@ def decide(run, st: dict, *, stage: str, reply: str, awaiting: str = "") -> Auto
         problems = [] if out.answer.strip() else ["`answer` is empty: write the user's reply"]
         if stage == "execution" and out.approve:
             problems.append("`approve` is for the bootstrap; in the execution use go or stop")
-        if stage == "bootstrap" and (out.go or out.stop):
-            problems.append("`go` and `stop` are for the execution; in the bootstrap approve "
-                            "or answer")
+        if stage == "bootstrap" and (out.go or out.stop or out.retry):
+            problems.append("`go`, `stop` and `retry` are for the execution; in the bootstrap "
+                            "approve or answer")
+        if stage == "execution" and out.retry:
+            from research_agent.execute import nodes as exec_nodes
+            problems += exec_nodes.step_problems(st, out.retry, [])
         for s in out.approve:
             if not S.version(st, s):
                 problems.append(f"approve: there is no {s} yet")
@@ -171,6 +178,12 @@ def decide(run, st: dict, *, stage: str, reply: str, awaiting: str = "") -> Auto
                 else ["goal", "constraints", "decisions", "plan", "execution", "status"])
     parts.append(_block("THE RESEARCH STATE", S.render_within(
         st, sections, max(budget - sum(len(p) for p in parts), 4000))))
+    limits = getattr(run, "limits", None)
+    if stage == "execution" and limits is not None:
+        from research_agent.execute import nodes as exec_nodes
+        stuck = exec_nodes.out_of_attempts(st, limits.max_attempts)
+        if stuck:
+            parts.append(stuck)
     parts.append(f"Today is {datetime.now(timezone.utc):%Y-%m-%d}. Answer as the user.")
     out, _ = run.call("discussor", brief="\n\n".join(parts), schema=AutopilotOutput,
                       skills=None, instructions=INSTRUCTIONS, session=SESSION,
@@ -185,7 +198,7 @@ def _block(title: str, text: str) -> str:
 def answer_for(out: AutopilotOutput) -> dict:
     """The resume value the human node takes, as if the user had answered."""
     return {"text": f"{MARK} {out.answer.strip()}", "approve": list(out.approve),
-            "go": out.go, "stop": out.stop}
+            "go": out.go, "stop": out.stop, "retry": list(out.retry)}
 
 
 def decision_op(out: AutopilotOutput) -> dict:

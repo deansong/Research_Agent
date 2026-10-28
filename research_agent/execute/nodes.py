@@ -246,10 +246,19 @@ class DiscussorTurn(Outcome):
     waive: list[dict] = field(default_factory=list)
 
 
-def step_problems(st: dict, retry, waive) -> list[str]:
+def step_problems(st: dict, retry, waive, max_attempts: int | None = None) -> list[str]:
     """Another attempt, or a pass by the user, is for a step that failed or
-    was stopped."""
+    was stopped (a retry also for a skipped one) -- and, given the limit, a
+    retry only for a step out of attempts: one already granted is not
+    granted twice."""
     rec = records(st)
+    if max_attempts is not None:
+        retry = list(retry)
+        left = [s for s in retry if rec.get(s, {}).get("status") in ("fail", "stopped")
+                and rec[s].get("attempts", 0) < max_attempts + rec[s].get("extra_attempts", 0)]
+        if left:
+            return [f"retry: step {s} still has an attempt left (the orchestrator will use "
+                    f"it); leave `retry` empty" for s in left]
     problems = [f"retry: step {s} has not failed or been skipped (it is "
                 f"{rec[s]['status'] if s in rec else 'not a step'})"
                 for s in retry if rec.get(s, {}).get("status") not in REOPENABLE]
@@ -259,7 +268,22 @@ def step_problems(st: dict, retry, waive) -> list[str]:
     return problems
 
 
-def user_step_ops(st: dict, retry, waive) -> list[dict]:
+def out_of_attempts(st: dict, max_attempts: int) -> str:
+    """The failed steps no attempt is left for, in words: only the user's
+    `retry` gives one -- measured, models took "the retry is authorized" in
+    words for an attempt, and waited for one that never came."""
+    lines = [f"- step {r['id']} {r['status']}: {r.get('attempts', 0)} of "
+             f"{max_attempts + r.get('extra_attempts', 0)} attempts used"
+             for r in records(st).values()
+             if r["status"] in ("fail", "stopped")
+             and r.get("attempts", 0) >= max_attempts + r.get("extra_attempts", 0)]
+    if not lines:
+        return ""
+    return ("=== OUT OF ATTEMPTS -- only `retry` (the user's call) gives one more; saying so "
+            "in words does not ===\n" + "\n".join(lines))
+
+
+def user_step_ops(st: dict, retry, waive, by: str = "user") -> list[dict]:
     """The user's call on failed steps, as changes: another attempt beyond
     the limit, or a pass -- kept as the verdict, with their reason."""
     ops = []
@@ -277,7 +301,7 @@ def user_step_ops(st: dict, retry, waive) -> list[dict]:
                     ops.append(record_op(st, later, status="pending"))
                     st = S.apply(st, ops[-1:], by="user")[0]
         ops.append({"op": "add", "section": "decisions", "value": {
-            "what": f"Another attempt at step {sid}", "why": "the user asked for it", "by": "user"}})
+            "what": f"Another attempt at step {sid}", "why": f"the {by} asked for it", "by": by}})
         st = S.apply(st, ops[-1:], by="user")[0]
     for w in waive:
         sid, why = (w["step"], w["why"]) if isinstance(w, dict) else (w.step, w.why)
@@ -326,7 +350,7 @@ def discussor(run: ExecRun, st: dict, *, seen: dict, user: str = "", note: str =
             problems.append('hand_to is "orchestrator" but there is no request or go for the '
                             'team to act on: add the request, or hand to "user"')
         return (problems + breakpoint_problems(st, out.breakpoints)
-                + step_problems(st, out.retry, out.waive))
+                + step_problems(st, out.retry, out.waive, run.limits.max_attempts))
 
     budget = run.brief_budget("discussor")
     brief = views.discussor_turn(st, seen, user=user, note=note, awaiting=awaiting,
@@ -341,6 +365,9 @@ def discussor(run: ExecRun, st: dict, *, seen: dict, user: str = "", note: str =
                                                      awaiting=awaiting, budget=room - len(said))
     if run.takes_over(DISCUSSOR_SESSION, "discussor"):
         brief = takeover()
+    stuck = out_of_attempts(st, run.limits.max_attempts)
+    if stuck:
+        brief += "\n\n" + stuck
     with run.discussor_lock:
         out, session = run.call("discussor", brief=brief, schema=schemas.ExecDiscussorOutput,
                                 session=DISCUSSOR_SESSION, check=check, takeover=takeover)
@@ -361,7 +388,7 @@ def aside(run: ExecRun, st: dict, *, user: str, activity: str) -> schemas.AsideO
     step -- the state here may already be behind."""
 
     def check(out: schemas.AsideOutput) -> list[str]:
-        return breakpoint_problems(st, out.breakpoints) + step_problems(st, out.retry, out.waive)
+        return breakpoint_problems(st, out.breakpoints) + step_problems(st, out.retry, out.waive, run.limits.max_attempts)
 
     budget = run.brief_budget("discussor")
     plain = views.aside(st, user=user, activity=activity, run_dir=str(run.folder),
