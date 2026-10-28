@@ -504,3 +504,24 @@ def test_autopilot_answers_a_stop_the_orchestrator_chose_but_not_the_users(run, 
     assert turn.outcome == "stopped" and turn.reply == "Stopped, as you said."
     assert len([c for c in script.calls if c["schema"] == "AutopilotOutput"]) == 1, \
         "its own stop is final: it is not asked again"
+
+
+def test_a_skipped_step_can_be_reopened_and_a_needed_one_is_not_skipped():
+    # Run 20261027-2108: step 1 failed its last attempt, the orchestrator
+    # skipped it and then step 2, and nothing could bring them back.
+    st, _ = S.apply(approved_state(), [{"op": "set", "section": "execution", "value": {
+        "steps": [{"id": "1", "title": "Data", "status": "fail", "attempts": 3},
+                  {"id": "2", "title": "Train", "status": "pending"}]}}], by="execution")
+    moves = nodes.open_moves(st, 3)
+    assert moves["retry"] == [] and "1" not in moves["skip"], \
+        "a failed step that step 2 needs is the user's call"
+    st, _ = S.apply(st, [nodes.record_op(st, "1", status="skipped"),
+                         ], by="execution")
+    st, _ = S.apply(st, [nodes.record_op(st, "2", status="skipped")], by="execution")
+    assert nodes.step_problems(st, ["1"], []) == []
+    st, _ = S.apply(st, nodes.user_step_ops(st, ["1"], []), by="user")
+    rec = nodes.records(st)
+    assert rec["1"]["status"] == "stopped" and rec["2"]["status"] == "pending"
+    assert nodes.open_moves(st, 3)["retry"] == ["1"], "one more attempt, as the user asked"
+    assert nodes.step_problems(st, ["2"], []) == ["retry: step 2 has not failed or been "
+                                                  "skipped (it is pending)"]

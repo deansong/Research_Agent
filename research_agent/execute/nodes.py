@@ -36,6 +36,9 @@ NodeFailed = run_base.NodeFailed
 RESERVED = {"discussor", "orchestrator", "validator", "wait", "human"}
 #: Where a step's status says it is finished, one way or another.
 SETTLED = {"pass", "skipped"}
+#: What the user can give another attempt: a step that failed or was
+#: stopped -- or skipped, which reopens the steps skipped after it.
+REOPENABLE = ("fail", "stopped", "skipped")
 
 
 _KEEP = object()
@@ -187,9 +190,22 @@ def open_moves(st: dict, max_attempts: int) -> dict:
         if r["status"] in ("fail", "stopped") and ready and \
                 r.get("attempts", 0) < max_attempts + r.get("extra_attempts", 0):
             moves["retry"].append(s["id"])
-        if r["status"] in ("pending", "fail", "stopped"):
+        if r["status"] == "pending" or (r["status"] in ("fail", "stopped")
+                                         and not dependents(st, s["id"])):
+            # A failed step that others need is the user's call, not a skip:
+            # measured, skipping one skipped everything after it, for good.
             moves["skip"].append(s["id"])
     return moves
+
+
+def dependents(st: dict, step_id: str) -> list[str]:
+    """The steps that need `step_id`, directly or through others, in plan order."""
+    steps = (st.get("plan") or {}).get("steps") or []
+    found = {step_id}
+    for s in steps:
+        if found & set(s.get("depends_on") or []):
+            found.add(s["id"])
+    return [s["id"] for s in steps if s["id"] in found and s["id"] != step_id]
 
 
 def describe_moves(moves: dict, st: dict, max_attempts: int) -> list[str]:
@@ -234,8 +250,9 @@ def step_problems(st: dict, retry, waive) -> list[str]:
     """Another attempt, or a pass by the user, is for a step that failed or
     was stopped."""
     rec = records(st)
-    problems = [f"retry: step {s} has not failed (it is {rec[s]['status'] if s in rec else 'not a step'})"
-                for s in retry if rec.get(s, {}).get("status") not in ("fail", "stopped")]
+    problems = [f"retry: step {s} has not failed or been skipped (it is "
+                f"{rec[s]['status'] if s in rec else 'not a step'})"
+                for s in retry if rec.get(s, {}).get("status") not in REOPENABLE]
     problems += [f"waive: step {w.step} has not failed (it is "
                  f"{rec[w.step]['status'] if w.step in rec else 'not a step'})"
                  for w in waive if rec.get(w.step, {}).get("status") not in ("fail", "stopped")]
@@ -250,8 +267,15 @@ def user_step_ops(st: dict, retry, waive) -> list[dict]:
         r = records(st).get(sid)
         if not r:
             continue
-        ops.append(record_op(st, sid, extra_attempts=r.get("extra_attempts", 0) + 1))
+        reopen = {"status": "stopped"} if r["status"] == "skipped" else {}
+        ops.append(record_op(st, sid, extra_attempts=r.get("extra_attempts", 0) + 1, **reopen))
         st = S.apply(st, ops[-1:], by="user")[0]
+        if reopen:
+            # The steps skipped because this one was wait for it again.
+            for later in dependents(st, sid):
+                if records(st).get(later, {}).get("status") == "skipped":
+                    ops.append(record_op(st, later, status="pending"))
+                    st = S.apply(st, ops[-1:], by="user")[0]
         ops.append({"op": "add", "section": "decisions", "value": {
             "what": f"Another attempt at step {sid}", "why": "the user asked for it", "by": "user"}})
         st = S.apply(st, ops[-1:], by="user")[0]

@@ -141,7 +141,7 @@ def build(run: nodes.ExecRun, design: nodes.Design, checkpointer=None):
                 waive = [{"step": item["step"], "why": item.get("why", "")}] \
                     if item["kind"] == "waive" else []
                 rec = nodes.records(st).get(item["step"], {})
-                if rec.get("status") in ("fail", "stopped"):
+                if rec.get("status") in (nodes.REOPENABLE if retry else ("fail", "stopped")):
                     st = commit(st, nodes.user_step_ops(st, retry, waive), "user")
         return st, requests, stop
 
