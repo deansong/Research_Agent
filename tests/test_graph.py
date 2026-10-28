@@ -61,6 +61,9 @@ def test_a_whole_bootstrap_from_idea_to_an_approved_design(run, script):
     script.add("DiscussorOutput",
                say("Let me look into it.", ("research", "Find LoRA rank baselines"),
                    goal={"question": "Does LoRA rank matter?"}),
+               say("Rank 8 is common. Brief: compare ranks 4-64 on SST-2. Approve?",
+                   brief="Compare LoRA ranks 4 to 64 on SST-2, two seeds."),
+               say("Brief approved.", approve=["brief"]),
                say("Design ready: H1, R1, two steps, three nodes. Approve?"),
                say("All done.", approve=["design"]),
                say("Bootstrap complete."))
@@ -68,20 +71,34 @@ def test_a_whole_bootstrap_from_idea_to_an_approved_design(run, script):
     script.add("DesignOutput", DESIGN)
     script.add("OrchestratorOutput",
                decide("research", questions=["LoRA rank results?"]),
+               decide("brief", "Cover the rank baselines"),
                decide("design"))
     steps = []
     boot = Bootstrap(run)
     turn = boot.start("I want to study LoRA rank on small data",
                       on_step=lambda node, update: steps.append(node))
+    assert turn.reply.startswith("Rank 8 is common") and turn.waiting
+    assert steps == ["discussor", "orchestrator", "researcher", "orchestrator", "discussor"]
+    told = script.prompts("DiscussorOutput")[1]
+    assert "=== WHAT THE RESEARCHER REPORTED ===" in told and "found baselines" in told, \
+        "the discussor gets everything the team found, to explain"
+    assert "Cover the rank baselines" in told and "write the design brief in `brief`" in told
+    assert boot.research["brief"]["text"].startswith("Compare LoRA ranks")
+
+    steps.clear()
+    turn = boot.answer("Yes, that's the brief.", on_step=lambda node, update: steps.append(node))
     assert turn.reply.startswith("Design ready") and turn.waiting
-    assert steps == ["discussor", "orchestrator", "researcher", "orchestrator", "designer",
-                     "orchestrator", "discussor"], "then it waits for the user"
+    assert steps == ["human", "discussor", "orchestrator", "designer", "orchestrator", "discussor"]
+    designed = script.prompts("DesignOutput")[0]
+    assert "=== THE APPROVED BRIEF -- design from this ===\nCompare LoRA ranks" in designed
+    assert "found baselines" not in designed, "the researcher's report is not the designer's"
     st = boot.research
+    assert S.approved(st, "brief")
     assert st["goal"]["question"] == "Does LoRA rank matter?"
     assert [e["id"] for e in st["evidence"]] == ["E1"] and st["hypotheses"][0]["id"] == "H1"
     assert [s["id"] for s in st["plan"]["steps"]] == ["1", "2"] and st["rubric"][0]["id"] == "R1"
     assert not S.approved(st, "design")
-    told = script.prompts("DiscussorOutput")[1]
+    told = script.prompts("DiscussorOutput")[3]
     assert "The designer delivered design v1" in told and "It is theirs to judge" in told, \
         "a new design goes to the user: no model judges whether it is ready"
     assert st["status"]["summary"] == "Design v1 is ready for the user's review."
@@ -110,7 +127,7 @@ def test_a_whole_bootstrap_from_idea_to_an_approved_design(run, script):
     assert len(list((folder / "state" / "history").glob("*.json"))) > 5
     sessions = sorted(p.name for p in (folder / "rb" / "sessions").iterdir())
     assert sessions[:2] == ["designer-001", "discussor"] and sessions[-1] == "researcher-001"
-    assert "orchestrator-002" in sessions and "orchestrator-003" not in sessions, \
+    assert "orchestrator-003" in sessions and "orchestrator-004" not in sessions, \
         "with the design approved, no model is asked whether to finish"
     assert st["status"]["phase"] == "ready"
     told = script.prompts("DiscussorOutput")[-1]
@@ -180,19 +197,23 @@ def test_a_failing_worker_is_reported_to_the_orchestrator(run, script):
     assert "researcher failed: researcher gave no usable answer" in orch[1]["prompt"]
 
 
-def test_an_approval_alone_lets_the_work_move_on(run, script):
-    script.add("DiscussorOutput", say("ok", ("research", "dig")), say("Approve the design?"),
-               say("Thanks."), say("The bootstrap is done."))
+def test_no_design_before_the_user_approves_the_brief(run, script):
+    script.add("DiscussorOutput", say("ok", ("research", "dig")),
+               say("Here is the brief. Approve it?", brief="Build a small benchmark."),
+               say("Thanks."), say("Design ready. Approve?"))
     script.add("ResearcherOutput", FINDINGS)
     script.add("DesignOutput", DESIGN)
-    script.add("OrchestratorOutput", decide("research", questions=["q"]), decide("design"))
+    script.add("OrchestratorOutput", decide("research", questions=["q"]), decide("design"),
+               decide("design"))
     boot = Bootstrap(run)
     boot.start("idea")
-    turn = boot.answer("", approve=["design"])
-    assert turn.outcome == "ready" and turn.reply == "The bootstrap is done."
-    assert len([c for c in script.calls if c["schema"] == "OrchestratorOutput"]) == 2
-    told = [c for c in script.calls if c["schema"] == "DiscussorOutput"][2]["prompt"]
-    assert "(I approved: design.)" in told
+    assert not script.prompts("DesignOutput"), "the orchestrator's design waits for a brief"
+    assert "=== WHAT THE RESEARCHER REPORTED ===" in script.prompts("DiscussorOutput")[1]
+    turn = boot.answer("", approve=["brief"])
+    assert turn.reply == "Design ready. Approve?"
+    told = script.prompts("DiscussorOutput")[2]
+    assert "(I approved: brief.)" in told
+    assert "Build a small benchmark." in script.prompts("DesignOutput")[0]
 
 
 def test_asking_for_a_change_after_ready_reopens_the_work(run, script):
@@ -262,7 +283,7 @@ def test_the_instructions_are_minimal_and_keep_what_code_needs():
         return " ".join(text.split())
 
     assert "never invent a title" in said(prompts.DISCUSSOR)
-    assert '`approve` ["design"]' in said(prompts.DISCUSSOR)
+    assert '`approve` "brief" or "design"' in said(prompts.DISCUSSOR)
     assert "names its source" in said(prompts.RESEARCHER)
     assert "what you leave out goes" in said(prompts.DESIGNER)
     today = f"Today is {date.today().isoformat()}."
@@ -352,6 +373,8 @@ def test_autopilot_takes_a_bootstrap_to_an_approved_design_alone(run, script):
     _autopilot(run.folder)
     script.add("DiscussorOutput",
                say("Let me look into it.", ("research", "Find LoRA rank baselines")),
+               say("Brief: compare ranks. Approve?", brief="Compare LoRA ranks."),
+               say("Brief approved; designing."),
                say("Design ready. Approve?"),
                say("Revising the design.", ("revise_design", "Five seeds")),
                say("Revised design ready. Approve?"),
@@ -360,27 +383,29 @@ def test_autopilot_takes_a_bootstrap_to_an_approved_design_alone(run, script):
     script.add("ResearcherOutput", FINDINGS)
     script.add("DesignOutput", DESIGN, DESIGN)
     script.add("OrchestratorOutput",
-               decide("research", questions=["LoRA rank results?"]), decide("design"),
-               decide("design"))
+               decide("research", questions=["LoRA rank results?"]), decide("brief"),
+               decide("design"), decide("design"))
     script.add("AutopilotOutput",
+               AUTO("That brief is right.", ["brief"]),
                AUTO("Use five seeds."),
                AUTO("Approve the design.", ["design"]))
     boot = Bootstrap(run)
     turn = boot.start("I want to study LoRA rank on small data")
-    assert turn.outcome == "ready", "nobody answered: the autopilot did, twice"
+    assert turn.outcome == "ready", "nobody answered: the autopilot did, three times"
     st = boot.research
     assert S.approved(st, "design")
-    assert [d["by"] for d in st["decisions"]].count("autopilot") == 2
+    assert S.approved(st, "brief")
+    assert [d["by"] for d in st["decisions"]].count("autopilot") == 3
     said = [p for p in script.prompts("DiscussorOutput") if "[autopilot]" in p]
-    assert len(said) == 2 and "[autopilot] Use five seeds." in said[0]
+    assert len(said) == 3 and "[autopilot] Use five seeds." in said[1]
     auto = [c for c in script.calls if c["schema"] == "AutopilotOutput"]
     assert "THE DISCUSSOR ASKS THE USER" in auto[0]["prompt"]
-    assert "Design ready. Approve?" in auto[0]["prompt"]
+    assert "Brief: compare ranks. Approve?" in auto[0]["prompt"]
     assert auto[0]["thread"] is None and auto[1]["thread"], \
         "the autopilot keeps one conversation of its own"
-    assert autopilot.load(run.folder).streak == 2
+    assert autopilot.load(run.folder).streak == 3
     assert len(script.prompts("DesignOutput")) == 2 and S.version(st, "design") == 2
-    assert len(script.prompts("OrchestratorOutput")) == 3, "no model judges a new design"
+    assert len(script.prompts("OrchestratorOutput")) == 4, "no model judges a new design"
     boot.close()
 
 

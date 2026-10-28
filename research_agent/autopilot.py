@@ -100,8 +100,8 @@ class AutopilotOutput(BaseModel):
     """What the user says now, in their voice: short, decisive."""
     why: str
     """Why this is what the user would want, from what they said and the state."""
-    approve: list[Literal["design"]] = Field(default_factory=list)
-    """Bootstrap: ["design"] to approve the design as it now stands."""
+    approve: list[Literal["brief", "design"]] = Field(default_factory=list)
+    """Bootstrap: "brief" or "design", to approve it as it now stands."""
     go: bool = False
     """Execution: the step waiting for the user's go may start."""
     retry: list[str] = Field(default_factory=list)
@@ -118,7 +118,7 @@ that talks with them; now you answer the discussor's questions AS THE USER.
 
 Decide as the user would, from what they said (the conversation, their goal,
 constraints and decisions in the research state):
-- Approve the design when it is complete, consistent with the goal and the
+- Approve the brief when it says what the user asked for; the design when it is complete, consistent with the goal and the
   constraints, and the team's checks raised nothing open. Otherwise ask for
   the specific change in `answer`, in one or two sentences.
 - In the execution, give the go for a step that is next in the plan; retry a
@@ -173,7 +173,7 @@ def decide(run, st: dict, *, stage: str, reply: str, awaiting: str = "") -> Auto
         parts.append(_block("WAITING FOR A GO", f"step {step}"
                             + (" (after it ran: to go on)" if awaiting.startswith("after:")
                                else " (before it runs)")))
-    sections = (["goal", "constraints", "decisions", "hypotheses", "rubric", "protocol",
+    sections = (["goal", "constraints", "decisions", "brief", "hypotheses", "rubric", "protocol",
                  "plan", "design", "open_questions", "risks", "status"] if stage == "bootstrap"
                 else ["goal", "constraints", "decisions", "plan", "execution", "status"])
     parts.append(_block("THE RESEARCH STATE", S.render_within(

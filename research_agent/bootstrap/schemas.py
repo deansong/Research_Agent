@@ -15,7 +15,7 @@ from typing import Literal
 
 from pydantic import BaseModel, Field
 
-APPROVABLE = Literal["design"]
+APPROVABLE = Literal["brief", "design"]
 
 
 # ---- pieces several nodes use --------------------------------------------------------
@@ -71,7 +71,7 @@ class ConstraintsIn(BaseModel):
 
 
 class Request(BaseModel):
-    kind: Literal["research", "revise_design", "proceed", "other"]
+    kind: Literal["research", "revise_brief", "revise_design", "proceed", "other"]
     detail: str
     """What the user wants, in your own clean words -- never the chat itself."""
 
@@ -90,9 +90,12 @@ class DiscussorOutput(BaseModel):
     decisions: list[DecisionIn] = Field(default_factory=list, max_length=10)
     assumptions: list[AssumptionIn] = Field(default_factory=list, max_length=10)
     answers: list[AnswerIn] = Field(default_factory=list, max_length=10)
+    brief: str = ""
+    """The design brief, written or revised with the user: what to build or
+    test, the scope, the main choices -- in plain words. "" leaves it as is."""
     approve: list[APPROVABLE] = Field(default_factory=list)
-    """["design"] when the user has just clearly approved the design (its
-    hypotheses, rubric, protocol, steps and nodes) as it now stands."""
+    """What the user has just clearly approved as it now stands: "brief", or
+    "design" (its hypotheses, rubric, protocol, steps and nodes)."""
     requests: list[Request] = Field(default_factory=list, max_length=6)
     """Work for the orchestrator. Empty: the conversation simply continues."""
 
@@ -110,7 +113,7 @@ class BootstrapAside(BaseModel):
 
 
 class OrchestratorOutput(BaseModel):
-    action: Literal["research", "design", "ask_user", "ready"]
+    action: Literal["research", "brief", "design", "ask_user", "ready"]
     reason: str
     task: str
     """For research/design: what that node must do now, with any feedback it

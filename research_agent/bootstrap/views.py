@@ -13,11 +13,13 @@ from research_agent import state as S
 
 
 def approvals_line(st: dict) -> str:
-    """"design (hypotheses, rubric, protocol, steps, nodes): v2, not approved" """
-    v = S.version(st, "design")
-    return ("design (hypotheses, rubric, protocol, steps, nodes): "
-            + ("none yet" if not v else "approved" if S.approved(st, "design")
-               else f"v{v}, not approved"))
+    """"brief: approved | design (hypotheses, rubric, protocol, steps, nodes): v2, not approved" """
+    def one(section: str, label: str) -> str:
+        v = S.version(st, section)
+        return f"{label}: " + ("none yet" if not v else "approved" if S.approved(st, section)
+                               else f"v{v}, not approved")
+    return (one("brief", "brief") + " | "
+            + one("design", "design (hypotheses, rubric, protocol, steps, nodes)"))
 
 
 def _today() -> str:
@@ -133,10 +135,41 @@ def researcher(st: dict, *, task: str) -> str:
     ])
 
 
+def brief_request(st: dict, *, task: str = "", budget: int | None = None) -> str:
+    """For the discussor, before anything is designed: everything the team
+    found, to explain to the user and turn into the brief with them."""
+    found = []
+    for r in st.get("results") or []:
+        if r.get("node") == "researcher":
+            found.append(f"- researcher, asked: {r.get('asked', '')[:300]}\n  {r['summary']}")
+    for q in st.get("open_questions") or []:
+        if q.get("for") == "research" and q.get("answer"):
+            found.append(f"- {q['id']} {q['text']}\n  {q['answer']}")
+    material = clip("\n".join(found), None if budget is None else budget // 2)
+    evidence = S.render(st, ["evidence"], brief=True)
+    if budget is not None:
+        evidence = clip(evidence, max(budget - len(material), 2000))
+    ask = ("Explain to the user, in plain words and in general, what the team found and what "
+           "it means for the study. Then write the design brief in `brief`: what to build or "
+           "test, the scope, the main choices (with the options where the user should "
+           "choose), and what the research says matters. Ask them to revise it or approve "
+           "it; the design is made only from an approved brief.")
+    if (st.get("brief") or {}).get("text"):
+        ask += " A brief exists (in the state): revise it rather than start again."
+    parts = [ask]
+    if task:
+        parts.append(_block("FROM THE ORCHESTRATOR", task))
+    parts += [_block("WHAT THE RESEARCHER REPORTED", material or "(no research yet)"),
+              _block("EVIDENCE", evidence)]
+    return "\n\n".join(parts)
+
+
 def designer(st: dict, *, task: str, skills: list[tuple[str, str]]) -> str:
     catalogue = "\n".join(f"- {name}: {description}" for name, description in skills)
     return "\n\n".join([
         f"Today is {_today()}.",
+        _block("THE APPROVED BRIEF -- design from this",
+               (st.get("brief") or {}).get("text") or "(none)"),
         _block("YOUR TASK", task),
         _block("THE RESEARCH STATE", S.render(
             {**st, "hypotheses": [h for h in st.get("hypotheses") or []

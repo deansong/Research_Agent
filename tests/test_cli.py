@@ -30,14 +30,15 @@ def _typing(monkeypatch, *lines):
 def test_a_conversation_with_commands(tmp_path, script, monkeypatch, capsys):
     script.add("DiscussorOutput",
                say("Let me check the literature.", ("research", "baselines")),
-               say("The design is ready. Approve?"),
+               say("The brief: compare LoRA ranks. Approve?", brief="Compare LoRA ranks."),
+               say("Thanks, designing."), say("The design is ready. Approve?"),
                say("Thanks."), say("The bootstrap is done."))
     script.add("ResearcherOutput", FINDINGS)
     script.add("DesignOutput", DESIGN)
-    script.add("OrchestratorOutput", decide("research", questions=["q"]), decide("design"),
-               decide("ask_user", "Approve?"))
-    _typing(monkeypatch, "/show hypotheses", "/show nonsense", "/approve plan",
-            "/approve", "/sessions", "/exit")
+    script.add("OrchestratorOutput", decide("research", questions=["q"]), decide("brief"),
+               decide("design"))
+    _typing(monkeypatch, "/show brief", "/show nonsense", "/approve plan", "/approve",
+            "/show hypotheses", "/approve", "/sessions", "/exit")
     run = tmp_path / "run"
     assert cli.main(["bootstrap", "Does LoRA rank matter?", "--run", str(run),
                      "--role", "all=fake"]) == 0
@@ -45,10 +46,11 @@ def test_a_conversation_with_commands(tmp_path, script, monkeypatch, capsys):
     assert f"Run: {run}" in out and "discussor=fake" in out
     assert "  . orchestrator -> research: because research" in out
     assert "  . researcher (research): 1 findings" in out
+    assert "The brief: compare LoRA ranks. Approve?" in out and "Compare LoRA ranks." in out
     assert "The design is ready. Approve?" in out
     assert "- H1 [proposed] Higher LoRA rank helps on small data." in out, "/show"
     assert "Show which?" in out
-    assert "Approve which? design" in out
+    assert "Approve which? brief, design" in out
     assert "The bootstrap is done." in out
     assert "design (hypotheses, rubric, protocol, steps, nodes): approved" in out
     assert "orchestrator-001" in out and "discussor" in out, "/sessions"

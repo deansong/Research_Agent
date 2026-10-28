@@ -17,7 +17,15 @@ python -m research_agent bootstrap --from ~/research_runs/20261024-0930-does-lor
 | **discussor** | yes, the only one | yes: the whole chat, for the whole run | your words, and what changed in the research state since it last spoke |
 | **orchestrator** | no | no: a new conversation each call | the research state, the requests the discussor passed on, the last result |
 | **researcher** | no | no | the goal, constraints, its questions, the hypotheses and the evidence already found |
-| **designer** | no | no | goal, constraints, assumptions, decisions, evidence, the current design (hypotheses, rubric, protocol, steps, nodes), reviews, the skills catalogue |
+| **designer** | no | no | **the brief you approved**, goal, constraints, assumptions, decisions, evidence (one line each), the current design (hypotheses, rubric, protocol, steps, nodes), reviews, the skills catalogue (to choose for nodes; no skills of its own) |
+
+Before anything is designed, you and the discussor agree a **brief**. Once the
+research is in, the orchestrator hands the discussor everything the team
+found -- the researcher's reports, its answers, the evidence. The discussor
+explains it in general terms and drafts the brief: what to build or test, the
+scope, the main choices. You revise it in conversation and approve it, and
+only then does the designer design, from that brief. The researcher's full
+report goes to the discussor, not the designer.
 
 The designer writes the whole design in one call -- hypotheses (none for a
 pure build), rubric, protocol, the steps, and the nodes that carry them out --
@@ -40,9 +48,10 @@ into, and explains once the evidence is in, unless the idea is too unclear to
 research. When it is passing on the orchestrator's message it always answers
 you, so the two cannot loop.
 
-The orchestrator decides what the team does next: research, design, ask you,
-or finish. Code holds one gate: **finishing** needs the design approved --
-one approval for all of it (hypotheses, rubric, protocol, steps, nodes).
+The orchestrator decides what the team does next: research, the brief,
+design, ask you, or finish. Code holds two gates: **designing** needs the
+brief approved, and **finishing** needs the design approved -- one approval
+for all of it (hypotheses, rubric, protocol, steps, nodes).
 Asking for a change reopens the work, and a revision needs approving again. A design that passes
 the code checks goes straight to you: no model judges whether it is "ready"
 (one that did, seeing the design compacted, sent it back for 20 rewrites).
@@ -90,7 +99,7 @@ team does, and a status line:
 | --- | --- |
 | `/state` | the whole research state |
 | `/show hypotheses rubric` | some sections |
-| `/approve` | approve the design as it stands (or say so to the discussor) |
+| `/approve [brief\|design]` | approve the brief, or the design, as it stands (or say so to the discussor) |
 | `/sessions` | every model call of this run |
 | `/usage` | the providers' usage limits |
 | `/retry` | run a failed step again |
@@ -123,7 +132,7 @@ dir = "skills"                      # a folder of <name>/SKILL.md, from the repo
 discussor = "auto"                  # shown every skill; reads the ones it needs
 orchestrator = ["research-orchestration"]
 researcher = ["research"]           # given these in full
-designer = "auto"                   # reads what its study needs; its brief lists every skill for the nodes
+designer = "none"                   # designs from the brief; its message lists every skill for the nodes
 
 [roles.researcher]
 provider = "antigravity"
@@ -215,7 +224,7 @@ builds the graph from it: one graph node per step owner, plus fixed nodes.
 | --- | --- | --- | --- |
 | **discussor** | -- (the bootstrap's) | the bootstrap's conversation, continued | the only one who talks to you: what happened, verdicts, asks for your go |
 | **orchestrator** | its `orchestrator` node's instructions and skills | new for each decision | picks the next move from those code allows |
-| **step owners** | each `worker`, `runner`, `writer` node: its instructions, skills, steps | one per attempt (`step05-a1`), continued when its jobs finish | writes the code in `work/`, launches jobs, writes `artifacts/step_05/` |
+| **step owners** | each `worker` or `writer` node (an older design's `runner` runs as a worker): its instructions, skills, steps | one per attempt (`step05-a1`), continued when its jobs finish | writes the code in `work/`, launches jobs, writes `artifacts/step_05/` |
 | **wait** | -- (code only) | none | polls the step's jobs and counts their GPU-hours |
 | **validator** | its `validator` node | new for each verdict, read-only | checks the step's files against its check and rubric items |
 | **reviewer** | -- (always there) | new, read-only | once every step is settled: reviews the study as a NeurIPS/ICML/ICLR reviewer |
@@ -288,7 +297,7 @@ Access. A `write` owner runs commands on the GPUs and writes outside its workspa
 | role | default (`research_agent/execute/config.toml`) |
 | --- | --- |
 | orchestrator | codex |
-| worker, runner, writer | claude_code, opus (idle timeout 20 min) |
+| worker, writer | claude_code, opus (idle timeout 20 min) |
 | validator | codex |
 
 Commands:

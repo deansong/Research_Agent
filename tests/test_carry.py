@@ -64,21 +64,22 @@ def test_bootstrap_from_a_reviewed_run(reviewed, tmp_path, script, monkeypatch, 
     script.add("DiscussorOutput",
                say("The review asks for five seeds; the designer will revise the design.",
                    ("revise_design", "Answer review V1: five seeds")),
-               say("The revised design is ready. Approve?"))
-    script.add("OrchestratorOutput", decide("design", "Add seeds per V1"),
-               decide("ask_user", "Approve the revised design?"))
-    script.add("DesignOutput", {**DESIGN, "hypotheses": [
-        {**DESIGN["hypotheses"][0], "evidence": []}]})
+               say("The revised brief adds five seeds. Approve?",
+                   brief="As before, with five seeds (review V1)."))
+    script.add("OrchestratorOutput", decide("design", "Add seeds per V1"))
     monkeypatch.setattr("builtins.input", lambda prompt="": (_ for _ in ()).throw(EOFError))
     new = tmp_path / "next"
     assert cli.main(["bootstrap", "--from", str(reviewed), "--run", str(new),
                      "--role", "all=fake"]) == 0
     out = capsys.readouterr().out
-    assert f"Starting from {reviewed}" in out and "The revised design is ready." in out
+    assert f"Starting from {reviewed}" in out and "The revised brief adds five seeds." in out
     first = script.prompts("DiscussorOutput")[0]
     assert "Continue the study from the previous run" in first
     assert "## Reviews" in first and "[must] Run five seeds" in first
     assert "[must] Run five seeds" in script.prompts("OrchestratorOutput")[0]
-    assert "rating 5/10" in script.prompts("DesignOutput")[0], "the designer sees the review"
+    assert "=== WHAT THE RESEARCHER REPORTED ===" in script.prompts("DiscussorOutput")[1], \
+        "the revision starts from a brief the user agrees again"
     st = S.Store(new).read()
-    assert S.version(st, "design") > 1 and not S.approved(st, "design")
+    assert st["brief"]["text"].startswith("As before") and not S.approved(st, "brief")
+    from research_agent.bootstrap import views
+    assert "rating 5/10" in views.designer(st, task="t", skills=[]), "the designer sees the review"

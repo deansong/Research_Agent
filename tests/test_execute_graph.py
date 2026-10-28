@@ -47,7 +47,7 @@ def approved_state(design=DESIGN, plan=PLAN) -> dict:
         {"op": "set", "section": "protocol", "value": {"seeds": "17, 29"}},
         {"op": "set", "section": "plan", "value": plan},
         {"op": "set", "section": "design", "value": design}], by="bootstrap")
-    st, _ = S.apply(st, [{"op": "approve", "section": s} for s in S.APPROVABLE], by="user")
+    st, _ = S.apply(st, [{"op": "approve", "section": "design"}], by="user")
     return st
 
 

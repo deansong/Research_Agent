@@ -69,7 +69,8 @@ def test_a_run_from_the_page(web, script):
 
     st = web.get("/api/runs/lora/state").json()
     assert st["state"]["evidence"][0]["id"] == "E1" and "## Evidence" in st["markdown"]
-    assert st["approved"] == {s: False for s in S.PARTS} and st["approvable"] == ["design"]
+    assert st["approved"] == {s: False for s in ("brief", *S.PARTS)}
+    assert st["approvable"] == ["brief", "design"]
     hist = web.get("/api/runs/lora/history").json()
     assert hist and hist[0]["n"] == 1 and "by" in hist[0]
     entry = web.get(f"/api/runs/lora/history/{hist[-1]['n']}").json()

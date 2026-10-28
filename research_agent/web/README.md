@@ -208,7 +208,7 @@ opens the Jobs tab, and **you** goes back to the chat.
 The **Run** tab lists every role with a provider, model and effort picker.
 The **Bootstrap** group holds the discussor, orchestrator, researcher and
 designer. The **Execution** group holds the orchestrator, worker,
-runner, writer, validator and reviewer. Every node of the design runs on its
+writer, validator and reviewer. Every node of the design runs on its
 role's model.
 
 - **Where it is saved:** a change goes into the run's `config.json` or
@@ -237,7 +237,7 @@ role's model.
   backup or another model, then **Carry on**.
 - **Providers without files.** `strata` (the Strata server's API) has no
   files or commands, so the page refuses it for the roles that need them:
-  the researcher, and the execution's worker, runner, writer, validator and
+  the researcher, and the execution's worker, writer, validator and
   reviewer. `codex_strata` runs the same model through Codex, with its
   tools, and can be any role. Both read the key from `STRATA_API_KEY`, which
   must be set where the server runs.

@@ -341,8 +341,8 @@ def create_app(runs_root: Path = RUNS_ROOT, *, roles=(), watch: bool = True) -> 
     def get_state(run_id: str):
         st = S.Store(folder_of(run_id)).read()
         return {"state": st, "sections": list(S.SECTIONS), "approvable": list(S.APPROVABLE),
-                "parts": list(S.PARTS),
-                "approved": {s: S.approved(st, s) for s in S.PARTS},
+                "parts": ["brief", *S.PARTS],
+                "approved": {s: S.approved(st, s) for s in ("brief", *S.PARTS)},
                 "markdown": S.render(st)}
 
     @app.get("/api/runs/{run_id}/history")

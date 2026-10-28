@@ -119,6 +119,8 @@ def discussor(run: Run, st: dict, *, seen: dict, user: str = "", note: str = "")
             for a in out.assumptions]
     ops += [{"op": "update", "section": "open_questions", "id": a.id,
              "value": {"status": "answered", "answer": a.answer}} for a in out.answers]
+    if out.brief.strip():
+        ops.append({"op": "set", "section": "brief", "value": {"text": out.brief.strip()}})
     ops += [{"op": "approve", "section": s} for s in dict.fromkeys(out.approve)]
     return DiscussorTurn(ops=ops, summary=out.reply[:200], session=session, data=out,
                          reply=out.reply, requests=[r.model_dump() for r in out.requests],

@@ -24,7 +24,8 @@ from pathlib import Path
 
 from research_agent import state as S
 
-CARRIED = ("goal", "constraints", "assumptions", "evidence", "hypotheses", "rubric", "protocol",
+CARRIED = ("goal", "constraints", "assumptions", "evidence", "brief", "hypotheses", "rubric",
+           "protocol",
            "plan", "design", "decisions", "open_questions", "risks", "reviews")
 STILL_APPROVED: tuple[str, ...] = ()
 

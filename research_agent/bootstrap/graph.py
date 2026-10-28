@@ -31,13 +31,13 @@ import research_backend as RB
 
 from research_agent import autopilot, inbox
 from research_agent import state as S
-from research_agent.bootstrap import nodes
+from research_agent.bootstrap import nodes, views
 
 #: Orchestrator decisions per user message before the user is asked again.
 MAX_STEPS = 6
 
 #: What each action needs approved first.
-GATES = {"ready": ("design",)}
+GATES = {"design": ("brief",), "ready": ("design",)}
 
 WORKERS = {"research": "researcher", "design": "designer"}
 
@@ -167,6 +167,16 @@ def build(run: nodes.Run, checkpointer=None):
                     "reason": d.reason}
         note = d.note_for_discussor or (d.task if d.action == "ask_user" else "")
         waiting = blocked(st, d.action)
+        if d.action == "brief" or (d.action == "design" and waiting == ["brief"]):
+            # The user agrees what the design is to be before it is made: the
+            # discussor gets everything the team found, to explain and draft
+            # the brief with them.
+            note = views.brief_request(st, task=d.task,
+                                       budget=run.brief_budget("discussor") // 2)
+            decision = {"action": "brief", "task": d.task, "questions": [],
+                        "reason": d.reason if d.action == "brief"
+                        else "the design waits for the user's brief"}
+            waiting = []
         if waiting:
             note = (f"The orchestrator wanted to {d.action}, but first the user must approve: "
                     f"{', '.join(waiting)}. Show them and ask for approval. {note}").strip()

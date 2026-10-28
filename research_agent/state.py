@@ -91,6 +91,14 @@ class Criterion(BaseModel):
     applies_to: list[str] = Field(default_factory=list)
 
 
+class Brief(BaseModel):
+    """What the design is to be, as the user agreed it with the discussor
+    after hearing what the team found: what to build or test, the scope, the
+    choices made. The designer designs from it."""
+
+    text: str = ""
+
+
 class Protocol(BaseModel):
     baselines: list[str] = Field(default_factory=list)
     metrics: list[str] = Field(default_factory=list)
@@ -258,6 +266,7 @@ class ResearchState(BaseModel):
     constraints: Constraints = Field(default_factory=Constraints)
     assumptions: list[Assumption] = Field(default_factory=list)
     evidence: list[Evidence] = Field(default_factory=list)
+    brief: Brief = Field(default_factory=Brief)
     hypotheses: list[Hypothesis] = Field(default_factory=list)
     rubric: list[Criterion] = Field(default_factory=list)
     protocol: Protocol = Field(default_factory=Protocol)
@@ -288,17 +297,18 @@ LISTS: dict[str, tuple[str, type[BaseModel]]] = {
     "results": ("N", Result),
 }
 OBJECTS: dict[str, type[BaseModel]] = {
-    "goal": Goal, "constraints": Constraints, "protocol": Protocol, "plan": Plan,
+    "goal": Goal, "constraints": Constraints, "brief": Brief, "protocol": Protocol, "plan": Plan,
     "design": Design, "execution": Execution, "status": Status,
 }
-SECTIONS = ("goal", "constraints", "assumptions", "evidence", "hypotheses", "rubric",
+SECTIONS = ("goal", "constraints", "assumptions", "evidence", "brief", "hypotheses", "rubric",
             "protocol", "plan", "design", "execution", "decisions", "open_questions", "risks",
             "reviews", "results", "status")
 #: The design, as the designer writes it in one go and the user approves it:
 #: its hypotheses, rubric, protocol, plan (the steps) and nodes.
 PARTS = ("hypotheses", "rubric", "protocol", "plan", "design")
-#: What the user approves: the design, all its parts at once.
-APPROVABLE = ("design",)
+#: What the user approves: the brief the designer works from, then the
+#: design, all its parts at once.
+APPROVABLE = ("brief", "design")
 #: Never deleted: a dropped hypothesis is marked dropped, a decision stands.
 KEPT = {"hypotheses", "decisions", "results", "reviews"}
 
@@ -366,7 +376,7 @@ def apply(state: dict, ops: list[dict], *, by: str) -> tuple[dict, list[str]]:
         if section not in SECTIONS:
             raise StateError(f"There is no section {section!r}.")
         if kind == "approve":
-            if section not in PARTS:
+            if section not in (*PARTS, "brief"):
                 raise StateError(f"{section} is not something to approve.")
             if version(out, section) == 0:
                 raise StateError(f"There is no {section} to approve yet.")
@@ -455,7 +465,7 @@ def render(state: dict, sections=SECTIONS, *, brief: bool = False) -> str:
         text = _render(state, section, brief)
         if text:
             mark = ""
-            if section in PARTS and version(state, section):
+            if section in (*PARTS, "brief") and version(state, section):
                 mark = (" (approved)" if approved(state, section) else
                         f" (v{version(state, section)}, not approved)")
             parts.append(f"## {section.replace('_', ' ').title()}{mark}\n{text}")
@@ -498,6 +508,8 @@ def _render(state: dict, section: str, brief: bool) -> str:
                  f"Out of scope: {'; '.join(g['scope_out'])}" if g.get("scope_out") else "",
                  f"Deliverable: {g.get('deliverable')}" if g.get("deliverable") else ""]
         return "\n".join(x for x in lines if x)
+    if section == "brief":
+        return (value or {}).get("text", "")
     if section in ("constraints", "protocol", "status"):
         return "\n".join(f"{k.replace('_', ' ').capitalize()}: "
                          f"{'; '.join(v) if isinstance(v, list) else v}"

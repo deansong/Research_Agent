@@ -8,6 +8,7 @@ import { el, clear, pill, when } from "./dom.js";
 
 const TITLES = {
   goal: "Goal", constraints: "Constraints", assumptions: "Assumptions", evidence: "Evidence",
+  brief: "Brief",
   hypotheses: "Hypotheses", rubric: "Rubric", protocol: "Protocol", plan: "Plan",
   design: "Design", execution: "Execution", decisions: "Decisions",
   open_questions: "Open questions", risks: "Risks", reviews: "Reviews", results: "Work done",
@@ -179,6 +180,9 @@ const DRAW = {
     return facts([["Question", g.question], ["Motivation", g.motivation],
       ["In scope", (g.scope_in || []).join("; ")], ["Out of scope", (g.scope_out || []).join("; ")],
       ["Deliverable", g.deliverable]]);
+  },
+  brief(b) {
+    return el("div", { class: "sv-brief", style: "white-space: pre-wrap", text: b.text || "" });
   },
   constraints(c) {
     return facts([["Compute", c.compute], ["Budget", c.budget], ["Deadline", c.deadline],

@@ -37,7 +37,7 @@ Commands:
   /show <section> ...    one or more sections: goal constraints assumptions evidence
                          hypotheses rubric protocol plan design decisions
                          open_questions risks results status
-  /approve               approve the design as it stands (hypotheses, rubric, protocol, steps, nodes)
+  /approve [brief|design] approve the brief, or the design (hypotheses, rubric, protocol, steps, nodes)
   /sessions              every model call of this run (research_backend sessions)
   /retry                 run again the step that failed
   /usage                 the providers' usage limits
@@ -221,7 +221,8 @@ def _command(boot: Bootstrap, text: str):
         else:
             print(S.render(st, words) or "(nothing there yet)")
     elif name == "approve":
-        words = words or ["design"]
+        words = words or (["design"] if S.version(st, "design") and not S.approved(st, "design")
+                          else ["brief"])
         bad = [w for w in words if w not in S.APPROVABLE]
         missing = [w for w in words if w in S.APPROVABLE and not S.version(st, w)]
         if not words or bad:
