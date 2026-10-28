@@ -145,6 +145,24 @@ def test_the_orchestrator_cannot_skip_an_approval(run, script):
     assert "wanted to ready, but first the user must approve: design" in told
 
 
+def test_after_approval_a_request_to_carry_on_is_the_execution_s(run, script):
+    from research_agent import inbox
+
+    st, _ = S.apply(S.new(), [{"op": "set", "section": "design", "value": {"summary": "d"}}],
+                    by="x")
+    st, _ = S.apply(st, [{"op": "approve", "section": "design"}], by="user")
+    S.Store(run.folder).write(st)
+    script.add("DiscussorOutput", say("Handing it on.", ("proceed", "Run the preflight checks")),
+               say("The bootstrap is done: start the execution."))
+    turn = Bootstrap(run).start("yes, run it in a writable environment")
+    assert turn.outcome == "ready" and not script.prompts("OrchestratorOutput"), \
+        "no bootstrap model is asked to do the execution's work"
+    told = script.prompts("DiscussorOutput")[1]
+    assert "**Start execution**" in told and "Run the preflight checks" in told
+    assert [i["text"] for i in inbox.take(run.folder, kinds=("request",))] == \
+        ["Run the preflight checks"], "kept for the execution's orchestrator"
+
+
 def test_the_team_stops_to_ask_after_its_step_limit(run, script, monkeypatch):
     monkeypatch.setattr(graph, "MAX_STEPS", 2)
     script.add("DiscussorOutput", say("ok", ("research", "dig")), say("We have been busy."))

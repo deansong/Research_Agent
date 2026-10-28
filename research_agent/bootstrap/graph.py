@@ -70,6 +70,17 @@ class BootstrapState(TypedDict, total=False):
     open; "exit" when the user left."""
 
 
+#: Requests that reopen the bootstrap once the design is approved: a change
+#: to what was approved. Anything else -- "proceed", "run the preflight" -- is
+#: the execution's work: measured, a request to run the preflight went to the
+#: read-only bootstrap team, which asked the user for "a writable environment".
+REOPEN = {"research", "revise_brief", "revise_design"}
+
+
+def reopens(pending: list[dict]) -> bool:
+    return any(r.get("kind") in REOPEN for r in pending)
+
+
 def blocked(st: dict, action: str) -> list[str]:
     """The sections `action` is waiting on: not approved, or not there."""
     return [s for s in GATES.get(action, ()) if not S.approved(st, s)]
@@ -126,16 +137,22 @@ def build(run: nodes.Run, checkpointer=None):
         st, asked = drain(state["research"])
         if asked:
             state = {**state, "pending": list(state.get("pending") or []) + asked}
-        if S.approved(st, "design") and not state.get("pending"):
+        if S.approved(st, "design") and not reopens(state.get("pending") or []):
             # Done, whatever a model might still want to look into: seen in a
             # real run, an orchestrator with everything approved went on to
             # ask about sign-offs and research licences -- the execution
             # stage's work. Asking for a change still reopens the bootstrap.
             st = commit(st, [{"op": "merge", "section": "status", "value": {
                 "phase": "ready", "next": "execution"}}], "orchestrator")
+            later = [r["detail"] for r in state.get("pending") or []]
+            for text in later:
+                inbox.post(run.folder, "request", text=text)
             note = ("Everything is approved: the bootstrap is done. Tell the user, and that "
-                    "anything about carrying the plan out is for the execution stage. "
-                    + how_to_execute())
+                    "anything about carrying the plan out -- setup, preflight checks, "
+                    "training -- is the execution stage's: its workers write files, run code "
+                    "and use the GPUs. " + how_to_execute()
+                    + (" What the user asked for now goes to the execution once it starts: "
+                       + "; ".join(later) if later else ""))
             return {"research": st, "note": note, "pending": [], "outcome": "ready",
                     "decision": {"action": "ready", "task": note, "questions": [],
                                  "reason": "the design is approved and nothing new was asked"}}
