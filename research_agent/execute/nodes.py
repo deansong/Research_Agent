@@ -435,6 +435,13 @@ def orchestrator(run: ExecRun, st: dict, design: Design, *, budget: str, request
     asked_once = []
 
     def check(out: schemas.ExecDecision) -> list[str]:
+        if out.action == "ask_user" and out.step in moves["retry"] and not asked_once:
+            asked_once.append(out.step)
+            return [f"step {out.step} can be retried: its owner works with full access (files, "
+                    f"commands, network, GPUs) -- what an earlier attempt or a read-only "
+                    f"sandbox could not reach says nothing about this one. Retry it with a "
+                    f"`task` saying what to do differently, or ask the user only for a "
+                    f"decision the state does not settle."]
         if out.action == "ask_user" and out.step in untried and not asked_once:
             # Once per decision, so a real question still gets through.
             # Measured: the read-only discussor probed the machine, found no

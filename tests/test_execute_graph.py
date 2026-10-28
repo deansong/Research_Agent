@@ -578,3 +578,11 @@ def test_asking_the_user_about_an_untried_step_goes_back_once(run, script):
                decide("ask_user", "1", task="Which tier, really?"))
     out = nodes.orchestrator(run, st, design, budget="", requests=[])
     assert out.data.action == "ask_user", "a question it insists on still reaches the user"
+    st, _ = S.apply(st, [nodes.record_op(st, "1", status="fail", attempts=1,
+                                         problems=["nvidia-smi cannot reach the driver"])],
+                    by="execution")
+    script.add("ExecDecision", decide("ask_user", "1", task="Provide GPUs"),
+               decide("retry", "1", task="use the GPUs; the last attempt was sandboxed"))
+    out = nodes.orchestrator(run, st, design, budget="", requests=[])
+    assert out.data.action == "retry"
+    assert "step 1 can be retried" in script.prompts("ExecDecision")[-1]
