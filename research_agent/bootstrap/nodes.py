@@ -254,7 +254,7 @@ def design_problems(design: dict, *, steps: list[str], rubric: set[str],
                  if n["role"] == "validator" and n.get("access") != "read_only"]
     problems += [f"the validator {n['name']} owns steps {', '.join(n['steps'])}, but it only "
                  f"checks the other nodes' work, read-only, after each step: give those steps "
-                 f"to a worker or runner (one that writes and runs the checks) and leave the "
+                 f"to a worker (one that writes and runs the checks) and leave the "
                  f"validator's `steps` empty" for n in nodes
                  if n["role"] == "validator" and n.get("steps")]
     owners: dict[str, list[str]] = {}

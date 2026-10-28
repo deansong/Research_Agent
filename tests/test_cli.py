@@ -164,7 +164,7 @@ def test_execute_runs_the_approved_design_with_commands(tmp_path, script, monkey
     assert "(no jobs)" in out and "0.00 GPU-hours used (no limit)" in out
     assert "No job or step 2 with jobs." in out
     saved = json.loads((run / "execute.json").read_text())
-    assert saved["roles"]["runner"]["provider"] == "fake" and saved["execute"]["poll_seconds"] == 0.05
+    assert saved["roles"]["worker"]["provider"] == "fake" and saved["execute"]["poll_seconds"] == 0.05
 
 
 def test_execute_refuses_a_run_that_is_not_approved(tmp_path, capsys):

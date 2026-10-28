@@ -15,7 +15,7 @@ import time
 import pytest
 
 from research_agent import state as S
-from research_agent.execute import config, jobs, views
+from research_agent.execute import config, jobs, nodes, views
 
 
 def test_the_defaults_and_a_run_s_file_then_the_command_line(tmp_path):
@@ -23,18 +23,18 @@ def test_the_defaults_and_a_run_s_file_then_the_command_line(tmp_path):
 
     cfg = config.defaults()
     toml = tomllib.loads(config.DEFAULT_FILE.read_text())
-    runner = toml["roles"]["runner"]
-    assert cfg.roles["runner"].provider == runner["provider"] and cfg.confirm == "gated"
-    assert cfg.roles["runner"].options == runner.get("options", {})
+    worker = toml["roles"]["worker"]
+    assert cfg.roles["worker"].provider == worker["provider"] and cfg.confirm == "gated"
+    assert cfg.roles["worker"].options == worker.get("options", {})
     assert set(cfg.roles) == set(config.ROLES) and config.check(cfg) == []
     (tmp_path / "execute.json").write_text(json.dumps({
         "roles": {"validator": {"provider": "claude_code", "model": "sonnet"}},
         "execute": {"gpu_hours": 140, "confirm": "all"}}))
-    cfg = config.load(tmp_path, roles=["runner=codex::high"], limits={"wall_hours": 24,
+    cfg = config.load(tmp_path, roles=["worker=codex::high"], limits={"wall_hours": 24,
                                                                         "confirm": None})
     assert (cfg.gpu_hours, cfg.wall_hours, cfg.confirm) == (140, 24, "all")
     assert str(cfg.roles["validator"]) == "claude_code:sonnet"
-    assert str(cfg.roles["runner"]) == "codex:high"
+    assert str(cfg.roles["worker"]) == "codex:high"
     config.save(tmp_path, cfg)
     assert config.load(tmp_path) == cfg
     with pytest.raises(ValueError, match="confirm is 'often'"):
@@ -110,12 +110,19 @@ def test_an_owner_s_brief_has_its_step_its_rubric_and_where_to_work(tmp_path):
             {"id": "1", "title": "Data", "status": "pass", "summary": "1000 rows",
              "artifacts": ["rows.json"]},
             {"id": "2", "title": "Train"}]}}], by="x")
-    node = {"name": "trainer", "role": "runner", "instructions": "Train it.", "validated_by": []}
+    node = {"name": "trainer", "role": "worker", "instructions": "Train it.", "validated_by": []}
     paths = {"run": str(tmp_path), "work": str(tmp_path / "work"),
              "artifacts": str(tmp_path / "artifacts" / "step_02")}
     brief = views.owner(st, node=node, step=st["plan"]["steps"][1], task="", paths=paths,
                         jobs_command="python jobs.py --run R")
-    assert "Step 2: Train" in brief and "You are trainer (runner).\nTrain it." in brief
+    assert "Step 2: Train" in brief and "You are trainer (worker).\nTrain it." in brief
     assert "Seeds fixed" in brief and "Unrelated" not in brief
     assert "Step 1 [pass]" in brief and "rows.json" in brief and "step_01" in brief
     assert "python jobs.py --run R launch --step 2" in brief
+
+
+def test_an_older_run_s_runner_is_a_worker(tmp_path):
+    (tmp_path / "execute.json").write_text(json.dumps({"roles": {"runner": {"provider": "x"}}}))
+    cfg = config.load(tmp_path)
+    assert "runner" not in cfg.roles and "worker" in cfg.roles
+    assert nodes.role_of({"role": "runner"}) == "worker"

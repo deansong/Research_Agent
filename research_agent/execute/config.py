@@ -21,10 +21,12 @@ from pathlib import Path
 
 from research_agent.bootstrap.config import REPOSITORY, RoleConfig, backup_problems, role_fields
 
-#: Roles the execution stage runs. Step owners are worker, runner and writer,
-#: by the role the design gives them.
-ROLES = ("orchestrator", "worker", "runner", "writer", "validator", "reviewer")
-OWNERS = ("worker", "runner", "writer")
+#: Roles the execution stage runs. Step owners are workers (code, data, runs)
+#: and writers (the report), by the role the design gives them.
+ROLES = ("orchestrator", "worker", "writer", "validator", "reviewer")
+OWNERS = ("worker", "writer")
+#: A role of earlier versions, run as a worker: the two did not differ.
+RETIRED = {"runner": "worker"}
 CONFIRM = ("gated", "all", "none")
 
 DEFAULT_FILE = Path(__file__).with_name("config.toml")
@@ -105,7 +107,7 @@ def check(cfg: ExecConfig) -> list[str]:
 
 
 def parse_role(text: str) -> tuple[str, RoleConfig]:
-    """'runner=claude_code:opus' -> ("runner", RoleConfig(...)); 'all=...'."""
+    """'worker=claude_code:opus' -> ("worker", RoleConfig(...)); 'all=...'."""
     role, sep, spec = text.partition("=")
     role = role.strip()
     if not sep or not spec.strip():
@@ -119,6 +121,8 @@ def parse_role(text: str) -> tuple[str, RoleConfig]:
 def _merge(cfg: ExecConfig, data: dict, *, base: Path) -> ExecConfig:
     roles = dict(cfg.roles)
     for role, spec in (data.get("roles") or {}).items():
+        if role in RETIRED:
+            continue
         known = roles.get(role)
         fields = role_fields(spec)
         roles[role] = replace(known, **fields) if known else RoleConfig(**fields)

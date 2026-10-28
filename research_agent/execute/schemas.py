@@ -34,7 +34,7 @@ class ExecDecision(BaseModel):
     note_for_discussor: str = ""
 
 
-# ---- a step's owner (worker, runner, writer) ----------------------------------------------
+# ---- a step's owner (worker, writer) ----------------------------------------------
 
 
 class MetricIn(BaseModel):

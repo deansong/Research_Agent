@@ -94,7 +94,7 @@ def test_the_researcher_s_sources_are_checked(run, script, monkeypatch):
 
 
 NODES = [{"name": "orchestrator", "role": "orchestrator", "instructions": "run it"},
-         {"name": "trainer", "role": "runner", "steps": ["1", "2"], "access": "write",
+         {"name": "trainer", "role": "worker", "steps": ["1", "2"], "access": "write",
           "skills": ["peft"], "instructions": "train", "validated_by": ["R1"]},
          {"name": "validator", "role": "validator", "instructions": "check"}]
 DESIGN = {"summary": "two steps, three nodes", "hypotheses": [

@@ -52,7 +52,7 @@ DESIGN = {"summary": "two steps, three nodes", "hypotheses": [
          "depends_on": ["1"], "rubric": ["R1"]}],
     "nodes": [
         {"name": "orchestrator", "role": "orchestrator", "instructions": "run it"},
-        {"name": "trainer", "role": "runner", "steps": ["1", "2"], "access": "write",
+        {"name": "trainer", "role": "worker", "steps": ["1", "2"], "access": "write",
          "instructions": "train", "validated_by": ["R1"]},
         {"name": "validator", "role": "validator", "instructions": "check"}]}
 

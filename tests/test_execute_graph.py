@@ -432,7 +432,7 @@ def test_a_validator_that_owns_steps_is_refused():
                      for n in DESIGN["nodes"]]}
     problems = design_problems(bad, steps=["1", "2"], rubric={"R1"}, skills=set())
     assert any(p.startswith("the validator checker owns steps 2, but it only checks")
-               and "give those steps to a worker or runner" in p for p in problems)
+               and "give those steps to a worker" in p for p in problems)
 
 
 def test_the_user_can_give_a_failed_step_another_attempt_or_pass_it(run, script):

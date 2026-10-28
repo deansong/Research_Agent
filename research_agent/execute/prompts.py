@@ -65,5 +65,5 @@ nothing.
 """
 
 INSTRUCTIONS = {"discussor": DISCUSSOR, "orchestrator": ORCHESTRATOR, "worker": OWNER,
-                "runner": OWNER, "writer": OWNER, "validator": VALIDATOR,
+                "writer": OWNER, "validator": VALIDATOR,
                 "reviewer": REVIEWER}

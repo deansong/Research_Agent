@@ -24,7 +24,7 @@ def test_the_defaults_come_from_config_toml():
     assert cfg.roles["designer"].effort == "high"
     assert cfg.skills["discussor"] == "auto"
     assert cfg.skills["orchestrator"] == ["research-orchestration"]
-    assert cfg.skills["designer"] == "auto"
+    assert cfg.skills["designer"] is None
     assert cfg.skills_dir == config.REPOSITORY / "skills"
     assert set(cfg.roles) == set(config.ROLES) and set(cfg.skills) == set(config.NODES)
     assert config.check(cfg) == [], "every default skill exists"

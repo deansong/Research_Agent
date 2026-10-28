@@ -418,7 +418,8 @@ class RunHost:
         else:
             found = next((n for n in design.get("nodes") or []
                           if n["name"] == node or f"node_{n['name']}" == node), None)
-            role = "worker" if found and found["role"] == "orchestrator" else (found or {}).get("role", "")
+            role = ("worker" if found and found["role"] == "orchestrator"
+                    else exec_nodes.role_of(found or {}))
         if found is None or role not in exe.roles:
             raise ValueError(f"No node {node!r} in this run's graph.")
         access = ("read_only" if role in ("orchestrator", "validator") and role == found["role"]
@@ -950,7 +951,7 @@ def run_summary(folder: Path, hosts: dict) -> dict | None:
 #: Roles that read or change files, or run commands: a provider without them
 #: (strata, a plain Responses API) cannot be one of them.
 FILE_ROLES = {"bootstrap": ("researcher",),
-              "execution": ("worker", "runner", "writer", "validator", "reviewer")}
+              "execution": ("worker", "writer", "validator", "reviewer")}
 
 
 def _reaches_files(provider: str) -> bool:

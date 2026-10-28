@@ -272,7 +272,7 @@ def test_a_node_s_work_live_and_afterwards(web, script):
 def test_execute_json_written_before_the_start_chooses_models_and_keeps_the_start(web, script):
     folder = web.root / "early"
     S.Store(folder).write(approved_state())
-    (folder / "execute.json").write_text(json.dumps({"roles": {"runner": {"provider": "fake",
+    (folder / "execute.json").write_text(json.dumps({"roles": {"worker": {"provider": "fake",
                                                                           "model": "big"}}}))
     script.add("DiscussorOutput", say("Ready. Start the execution?"))
     script.add("OrchestratorOutput", decide("ask_user", "Start?"))
@@ -281,7 +281,7 @@ def test_execute_json_written_before_the_start_chooses_models_and_keeps_the_star
     assert d["stage"] == "bootstrap" and d["can_execute"], "the file alone starts nothing"
     from research_agent.execute import config as exec_config
 
-    assert str(exec_config.load(folder).roles["runner"]) == "fake:big", "the file is read"
+    assert str(exec_config.load(folder).roles["worker"]) == "fake:big", "the file is read"
     script.add("ExecDecision", move("ask_user", task="Go?"))
     script.add("ExecDiscussorOutput", tell("Step 1 is next."))
     d = web.post("/api/runs/early/execute", json={}).json()
@@ -294,18 +294,18 @@ def test_the_models_each_role_runs_on_can_be_changed(web, script, monkeypatch):
     S.Store(folder).write(approved_state())
     m = web.get("/api/runs/m/models").json()
     assert [g["name"] for g in m["groups"]] == ["bootstrap", "execution"]
-    assert "discussor" in m["groups"][0]["roles"] and "runner" in m["groups"][1]["roles"]
+    assert "discussor" in m["groups"][0]["roles"] and "worker" in m["groups"][1]["roles"]
     r = web.put("/api/runs/m/models", json={"group": "bootstrap", "role": "discussor",
                                             "provider": "codex", "model": "gpt-5.6-sol"})
     assert r.status_code == 200 and r.json()["now"] == "codex:gpt-5.6-sol"
     host = web.app_.state.hosts["m"]
     assert str(host.session.run.roles["discussor"]) == "codex:gpt-5.6-sol", "used from the next call"
     assert json.loads((folder / "config.json").read_text())["roles"]["discussor"]["provider"] == "codex"
-    r = web.put("/api/runs/m/models", json={"group": "execution", "role": "runner",
+    r = web.put("/api/runs/m/models", json={"group": "execution", "role": "worker",
                                             "provider": "claude_code", "model": "opus",
                                             "effort": "high"})
     assert r.status_code == 200 and json.loads((folder / "execute.json").read_text())[
-        "roles"]["runner"] == {"provider": "claude_code", "model": "opus", "effort": "high",
+        "roles"]["worker"] == {"provider": "claude_code", "model": "opus", "effort": "high",
                                "options": {"timeout": 1200}, "backup": []}
     assert web.get("/api/runs/m").json()["stage"] == "bootstrap", "execute.json starts nothing"
     # Backups: saved, kept when the model changes, and checked.
@@ -318,7 +318,7 @@ def test_the_models_each_role_runs_on_can_be_changed(web, script, monkeypatch):
                                         "provider": "codex", "model": ""})
     shown = web.get("/api/runs/m/models").json()["groups"][0]["roles"]["discussor"]
     assert shown["backup"] == ["claude_code:sonnet"] and shown["now"] == "codex"
-    assert web.put("/api/runs/m/models", json={"group": "execution", "role": "runner",
+    assert web.put("/api/runs/m/models", json={"group": "execution", "role": "worker",
                                                "provider": "codex",
                                                "backup": ["strata"]}).status_code == 400
     assert web.put("/api/runs/m/models", json={"group": "execution", "role": "chef",
@@ -368,7 +368,7 @@ def test_a_node_s_settings_and_what_a_running_call_is_sent(web, script):
     assert "You are the DESIGNER" in info["instructions"]
     assert web.get("/api/runs/ni/nodes/planner").status_code == 400
     trainer = web.get("/api/runs/ni/nodes/trainer").json()   # from the design's preview
-    assert trainer["role"] == "runner" and trainer["steps"] == ["2"] and trainer["access"] == "full"
+    assert trainer["role"] == "worker" and trainer["steps"] == ["2"] and trainer["access"] == "full"
     assert "Train with seeds 17 and 29." in trainer["design"]
     assert web.get("/api/runs/ni/nodes/nobody").status_code == 400
 

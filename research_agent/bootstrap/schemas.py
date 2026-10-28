@@ -196,7 +196,7 @@ class StepIn(BaseModel):
 class DesignNodeIn(BaseModel):
     name: str
     """lower_snake_case, unique."""
-    role: Literal["orchestrator", "worker", "runner", "validator", "writer"]
+    role: Literal["orchestrator", "worker", "validator", "writer"]
     steps: list[str] = Field(default_factory=list)
     skills: list[str] = Field(default_factory=list)
     access: Literal["none", "read_only", "write"] = "read_only"

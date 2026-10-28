@@ -3,7 +3,7 @@ WHAT:  The execution stage's nodes as plain functions -- the discussor, the
        orchestrator, a step's owner, the validator -- and the approved design
        read as the graph's nodes (`Design`).
 WHY:   The design is data: one orchestrator, one read-only validator, and
-       owners (worker, runner, writer) of the plan's steps. Code interprets
+       owners (worker, writer) of the plan's steps. Code interprets
        it; the models do the work inside each node. What a model may do is
        checked here: an orchestrator can only make the moves code opened, an
        owner's files must exist, only a validator's pass passes a step.
@@ -107,11 +107,12 @@ class Design:
         """The approved design as nodes. Raises ValueError with its problems --
         the bootstrap checked it, but the file may have been edited since."""
         design = st.get("design") or {}
+        design = {**design, "nodes": [{**n, "role": role_of(n)} for n in design.get("nodes") or []]}
         steps = [s["id"] for s in (st.get("plan") or {}).get("steps") or []]
         problems = design_problems(design, steps=steps, skills=set(skills),
                                    rubric={r["id"] for r in st.get("rubric") or []})
         problems += [f"{n['name']} is a {n['role']}: an execution node is orchestrator, "
-                     f"validator, worker, runner or writer"
+                     f"validator, worker or writer"
                      for n in design.get("nodes") or []
                      if n["role"] not in ("orchestrator", "validator", *config.OWNERS)]
         if problems:
@@ -127,6 +128,11 @@ class Design:
                    validator=next(n for n in nodes if n["role"] == "validator"),
                    owners=owners,
                    owner_of={s: name for name, n in owners.items() for s in n.get("steps") or []})
+
+
+def role_of(node: dict) -> str:
+    """A design node's role -- a "runner" of an earlier design is a worker."""
+    return config.RETIRED.get(node.get("role", ""), node.get("role", ""))
 
 
 def graph_name(name: str) -> str:

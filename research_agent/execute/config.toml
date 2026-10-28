@@ -4,7 +4,7 @@
 # This file holds the defaults. A run copies what it starts with into
 # <run>/execute.json -- edit that to change one run (it is read again on
 # --resume) -- and the command line overrides both for one start:
-#     --role runner=claude_code:opus  --gpu-hours 140  --wall-hours 24
+#     --role worker=claude_code:opus  --gpu-hours 140  --wall-hours 24
 #
 # The discussor is the bootstrap's (same conversation, same model): see
 # research_agent/bootstrap/config.toml. Each node's skills come from the
@@ -35,7 +35,7 @@ reviewer = ["peer-review", "scientific-critical-thinking"]
 
 
 # Which provider and model each role runs on, as in the bootstrap. Step owners
-# (worker, runner, writer) write code and run it: Claude Code by default, with
+# (worker, writer) write code and run it: Claude Code by default, with
 # a long idle timeout because a command may run for minutes.
 #
 # `backup` is what the role moves to, in order, when its model is out of
@@ -59,11 +59,6 @@ provider = "codex"
 model = "gpt-6-sol"
 options = { timeout = 1200 }
 
-
-[roles.runner]
-provider = "codex"
-model = "gpt-6-sol"
-options = { timeout = 1200 }
 
 [roles.writer]
 provider = "codex"

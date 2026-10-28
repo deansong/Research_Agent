@@ -19,13 +19,12 @@ dir = "skills"
 #   "auto"               the name, description and path of every skill; the
 #                        model reads the ones its task needs
 #   ["a", "b"]           those skills, in full
-# The designer writes the whole design (hypotheses to nodes); "auto" lets it
-# read the skills its study needs -- ml-hypotheses, experiment-design,
-# ml-statistics -- and its brief lists them all to choose skills for nodes.
+# The designer works from the approved brief and its own knowledge: no skills
+# of its own. Its message lists every skill, to choose skills for the nodes.
 discussor = "auto"
 orchestrator = ["research-orchestration"]   # small: it is re-sent with every orchestrator call
 researcher = ["research"]
-designer = "auto"
+designer = "none"
 
 
 [research]
