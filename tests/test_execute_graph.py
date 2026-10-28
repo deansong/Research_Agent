@@ -586,3 +586,22 @@ def test_asking_the_user_about_an_untried_step_goes_back_once(run, script):
     out = nodes.orchestrator(run, st, design, budget="", requests=[])
     assert out.data.action == "retry"
     assert "step 1 can be retried" in script.prompts("ExecDecision")[-1]
+
+
+def test_an_owner_s_failure_with_outputs_is_the_validator_s_to_judge(run, script):
+    # Run 20261028-1657: the preflight owner did its step and then failed it
+    # on a criterion steps 2 and 3 deliver; the validator never saw it.
+    def failed_with_report(prompt):
+        folder = run.artifacts("1")
+        folder.mkdir(parents=True, exist_ok=True)
+        (folder / "preflight.md").write_text("checkpoint loads; probes pass")
+        return {"state": "failed", "summary": "probes pass; R5 not yet audited",
+                "artifacts": ["preflight.md"], "problems": ["dedup not done"]}
+
+    script.add("ExecDecision", decide("run", "1"), decide("ask_user", task="step 2 next?"))
+    script.add("StepReport", failed_with_report)
+    script.add("Verdict", verdict("pass", summary="its own check holds; R5 is steps 2-3's"))
+    script.add("ExecDiscussorOutput", say("Step 1 passed. Step 2 next?"))
+    Execution(run).start()
+    rec = nodes.records(Execution(run).research)["1"]
+    assert rec["status"] == "pass" and len(script.prompts("Verdict")) == 1

@@ -344,7 +344,11 @@ def build(run: nodes.ExecRun, design: nodes.Design, checkpointer=None):
             if rep.state == "launched":
                 st = commit(st, [nodes.record_op(st, sid, status="waiting", **fields)], "execution")
                 return {"research": st, "wake": list(rep.jobs), "_to": "wait"}
-            if rep.state == "done":
+            if rep.state == "done" or (rep.state == "failed" and rep.artifacts):
+                # Outputs are the validator's to judge, a failure the owner
+                # reports included: measured, an owner failed its preflight
+                # on a criterion the next two steps deliver, and spent the
+                # step's last attempt.
                 st = commit(st, [nodes.record_op(st, sid, status="validating", **fields)],
                             "execution")
                 return {"research": st, "report": rep.model_dump(), "wake": [],
