@@ -429,8 +429,21 @@ def orchestrator(run: ExecRun, st: dict, design: Design, *, budget: str, request
                  last: str = "") -> Outcome:
     limit = run.limits.max_attempts
     moves = open_moves(st, limit)
+    untried = [s for s in moves["run"] if not records(st)[s].get("attempts")]
+    asked_once = []
 
     def check(out: schemas.ExecDecision) -> list[str]:
+        if out.action == "ask_user" and out.step in untried and not asked_once:
+            # Once per decision, so a real question still gets through.
+            # Measured: the read-only discussor probed the machine, found no
+            # GPUs in its own sandbox, and the orchestrator asked the user
+            # for "a writable environment" instead of running the preflight.
+            asked_once.append(out.step)
+            return [f"step {out.step} has not been tried and is open to run: its owner works "
+                    f"with full access (files, commands, GPUs), so setup, access and checks "
+                    f"are found out by running it -- what a read-only sandbox cannot see says "
+                    f"nothing about the owner's. Run it, or ask the user only for a decision "
+                    f"the state does not settle."]
         if out.action in ("run", "retry", "skip") and out.step not in moves[out.action]:
             return [f"{out.action} {out.step or '(no step)'} is not open now; open moves: "
                     + "; ".join(describe_moves(moves, st, limit))]

@@ -559,3 +559,22 @@ def test_the_autopilot_s_retry_gives_a_step_out_of_attempts_one_more(run, script
     assert nodes.step_problems(st, ["1"], [], 1) and \
         nodes.step_problems({**st}, ["1"], []) == ["retry: step 1 has not failed or been "
                                                    "skipped (it is pass)"]
+
+
+def test_asking_the_user_about_an_untried_step_goes_back_once(run, script):
+    # Run 20261028-1657: the orchestrator asked the user for "a writable
+    # environment" instead of running the preflight step, whose owner has it.
+    st = Execution(run).research
+    st, _ = S.apply(st, [{"op": "set", "section": "execution", "value": {
+        "steps": [{"id": "1", "title": "Data", "status": "pending"},
+                  {"id": "2", "title": "Train", "status": "pending"}]}}], by="execution")
+    design = nodes.Design.read(st)
+    script.add("ExecDecision", decide("ask_user", "1", task="Provide a writable environment"),
+               decide("run", "1"))
+    out = nodes.orchestrator(run, st, design, budget="", requests=[])
+    assert out.data.action == "run" and out.data.step == "1"
+    assert "has not been tried and is open to run" in script.prompts("ExecDecision")[1]
+    script.add("ExecDecision", decide("ask_user", "1", task="Which tier?"),
+               decide("ask_user", "1", task="Which tier, really?"))
+    out = nodes.orchestrator(run, st, design, budget="", requests=[])
+    assert out.data.action == "ask_user", "a question it insists on still reaches the user"
