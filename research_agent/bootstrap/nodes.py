@@ -308,6 +308,9 @@ def design(run: Run, st: dict, *, task: str) -> Outcome:
             {"op": "set", "section": "design", "value": {
                 "summary": out.summary, "nodes": [n.model_dump() for n in out.nodes],
                 "notes": out.notes}}]
+    # Its risks are part of the design: they replace the last design's, or
+    # every revision piles its list on (measured: 141 risks after 23).
+    ops += [{"op": "drop", "section": "risks", "id": r["id"]} for r in st.get("risks") or []]
     ops += [{"op": "add", "section": "risks", "value": r.model_dump()} for r in out.risks]
     summary = (f"a design of {len(out.steps)} steps and {len(out.nodes)} nodes, "
                f"{len(out.hypotheses)} hypotheses, {len(out.rubric)} criteria. {out.summary}")

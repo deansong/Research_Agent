@@ -172,6 +172,11 @@ def test_a_revision_replaces_the_design_and_what_it_leaves_out_goes(run, script,
         ("H1", "Sharper", "proposed"), ("H2", "Data", "dropped")]
     assert [(r["id"], r["criterion"]) for r in st["rubric"]] == [("R1", "Effect size"),
                                                                  ("R5", "Cost")]
+    script.add("DesignOutput", {**revised, "risks": [{"text": "slow"}]},
+               {**revised, "risks": [{"text": "too slow"}]})
+    st = _apply(st, nodes.design(run, st, task="again"), "designer")
+    st = _apply(st, nodes.design(run, st, task="and again"), "designer")
+    assert [r["text"] for r in st["risks"]] == ["too slow"], "a revision's risks replace the last"
 
 
 def test_a_build_needs_no_hypotheses(run, script, evidence, monkeypatch):
