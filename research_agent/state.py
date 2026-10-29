@@ -270,6 +270,10 @@ class Status(BaseModel):
     phase: str = "discussing"
     summary: str = ""
     next: str = ""
+    paper: str = ""
+    """The paper's PDF, once written."""
+    previous: str = ""
+    """The run folder this one continues: its paper and review are redesigned from."""
 
 
 class ResearchState(BaseModel):

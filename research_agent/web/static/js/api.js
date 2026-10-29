@@ -54,6 +54,7 @@ export const api = {
   session: (id, sid) => request("GET", `${run(id)}/sessions/${encodeURIComponent(sid)}`),
   files: (id) => request("GET", `${run(id)}/files`),
   file: (id, path) => request("GET", `${run(id)}/file?path=${encodeURIComponent(path)}`),
+  redesign: (id) => request("POST", `${run(id)}/redesign`),
   writePaper: (id) => request("POST", `${run(id)}/paper`),
   review: (id) => request("POST", `${run(id)}/review`),
   papers: (id) => request("GET", `${run(id)}/papers`),

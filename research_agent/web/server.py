@@ -243,6 +243,22 @@ def create_app(runs_root: Path = RUNS_ROOT, *, roles=(), watch: bool = True) -> 
             host.hold(idea)
         return host.detail()
 
+    @app.post("/api/runs/{run_id}/redesign")
+    def redesign(run_id: str):
+        """Back to the bootstrap: the next run, from this one's paper and
+        review; the discussor goes through them with the user."""
+        old = folder_of(run_id)
+        if host_of(run_id).busy:
+            raise _bad(409, "busy", "The team is working; stop or wait first.")
+        folder = carry.next_folder(old)
+        try:
+            carry.start_from(old, folder)
+        except ValueError as exc:
+            raise _bad(400, "bad_run", str(exc))
+        host = host_of(folder.name)
+        act(lambda: host.message(carry.first_message(old)))
+        return host.detail()
+
     @app.get("/api/runs/{run_id}")
     def get_run(run_id: str):
         host = host_of(run_id)

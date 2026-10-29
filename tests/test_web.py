@@ -196,6 +196,16 @@ def test_approve_then_execute_from_the_page(web, script):
     assert d["transcript"][-1]["text"] == "New paper, 8/10." and d["waiting"]
     assert [v["rating"] for v in web.get("/api/runs/ready/state").json()["state"]["reviews"]][-1] == 8
 
+    script.add("DiscussorOutput", say("The review asks for five seeds. Shall we?"))
+    r = web.post("/api/runs/ready/redesign")
+    assert r.status_code == 200 and r.json()["id"] == "ready-next"
+    d = settle(web, "ready-next")
+    assert d["stage"] == "bootstrap" and d["waiting"]
+    assert "Go through its paper and the review" in d["transcript"][0]["text"]
+    assert d["transcript"][-1]["text"] == "The review asks for five seeds. Shall we?"
+    new = web.get("/api/runs/ready-next/state").json()["state"]
+    assert new["status"]["previous"] == str(folder.resolve()) and len(new["reviews"]) == 3
+
 
 class _Folder:
     def __init__(self, folder):

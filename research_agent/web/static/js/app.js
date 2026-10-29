@@ -145,6 +145,7 @@ function renderDetail(d) {
   const finished = d.stage === "execution" && d.outcome === "done" && d.waiting && !d.busy;
   $("btn-review").hidden = !finished;
   $("btn-write-paper").hidden = !finished;
+  $("btn-redesign").hidden = !(d.stage === "execution" && !d.busy && (d.waiting || d.outcome));
   $("btn-stop").hidden = !(d.stage === "execution" && (d.busy || d.waiting) && d.outcome !== "done");
   chat.setMode(d);
   stateView.setControls({ stage: d.stage, canApprove: !!(d.waiting && !d.busy), awaiting: d.awaiting || "",
@@ -372,6 +373,10 @@ function wireDialogs() {
   $("btn-review-open").addEventListener("click", openReview);
   $("btn-review").addEventListener("click", () => act(() => api.review(app.runId)));
   $("btn-write-paper").addEventListener("click", () => act(() => api.writePaper(app.runId)));
+  $("btn-redesign").addEventListener("click", async () => {
+    if (!confirm("Start a follow-up run from this run's paper and review? This run stays as it is; the new one starts at the design stage.")) return;
+    try { const d = await api.redesign(app.runId); await openRun(d.id); } catch (err) { problem(err); }
+  });
   $("btn-popout").addEventListener("click", () => {
     if (app.runId) window.open(`/state/${encodeURIComponent(app.runId)}`, `state-${app.runId}`, "width=980,height=1000");
   });

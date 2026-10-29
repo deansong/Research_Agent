@@ -11,6 +11,7 @@ from __future__ import annotations
 
 from research_agent import prompt_files
 from research_agent import state as S
+from research_agent.bootstrap import carry
 
 
 def approvals_line(st: dict) -> str:
@@ -51,6 +52,10 @@ def discussor_turn(st: dict, seen: dict, *, user: str = "", note: str = "",
         tail.append(_block("WHERE THINGS STAND", status["summary"]))
     room = state_room(budget, head + tail)
     if not seen:
+        last = carry.last_run(st, room)
+        if last:
+            head.append(last)
+            room = state_room(budget, head + tail)
         head.append(_block("THE RESEARCH STATE", S.render_within(st, budget=room)))
     elif changed:
         results = _latest_results(st, seen, None if room is None else room // 4)
@@ -158,6 +163,10 @@ def brief_request(st: dict, *, task: str = "", budget: int | None = None,
         parts.append(_block("FROM THE ORCHESTRATOR", task))
     parts += [_block("WHAT THE RESEARCHER REPORTED", material or "(no research yet)"),
               _block("EVIDENCE", evidence)]
+    last = carry.last_run(st, budget)
+    if last:
+        parts.append(last + "\n\nThe brief says what the next run changes for this review, "
+                            "and what it keeps.")
     return "\n\n".join(parts)
 
 
@@ -175,4 +184,7 @@ def designer(st: dict, *, task: str, skills: list[tuple[str, str]]) -> str:
              "protocol", "plan", "design", "risks", "reviews"])),
         _block("EVIDENCE (cite by id)", S.render(st, ["evidence"], brief=True)),
         _block("SKILLS YOU CAN GIVE A NODE", catalogue),
+        *([_block("THE LAST RUN", f"{previous}: its paper is {previous}/paper/main.pdf, its "
+                                  f"files are there; the review above is of it.")]
+          if (previous := (st.get("status") or {}).get("previous")) else []),
     ])
