@@ -95,18 +95,18 @@ def test_the_researcher_s_sources_are_checked(run, script, monkeypatch):
 
 NODES = [{"name": "orchestrator", "role": "orchestrator", "instructions": "run it"},
          {"name": "trainer", "role": "worker", "steps": ["1", "2"], "access": "write",
-          "skills": ["peft"], "instructions": "train", "validated_by": ["R1"]},
+          "skills": ["peft"], "instructions": "train"},
          {"name": "validator", "role": "validator", "instructions": "check"}]
 DESIGN = {"summary": "two steps, three nodes", "hypotheses": [
     {"id": "H1", "plain": "Higher LoRA rank helps on small data.", "statement": "Rank matters",
      "prediction": "r=64 beats r=4 by >=1 F1", "evidence": ["E1"]}],
     "rubric": [{"id": "R1", "criterion": "Effect size", "measure": "F1 difference",
-                "threshold": ">=1"}],
+                "threshold": ">=1", "assessed_at": "2"}],
     "protocol": {"baselines": ["full fine-tuning"], "metrics": ["F1"],
                  "statistics": "paired t-test", "seeds": "5 seeds"},
     "steps": [{"id": "1", "title": "Data", "detail": "load SST-2", "check": "rows counted"},
               {"id": "2", "title": "Train", "detail": "ranks 4..64", "check": "F1 logged",
-               "depends_on": ["1"], "rubric": ["R1"], "gate": True}],
+               "depends_on": ["1"], "gate": True}],
     "nodes": NODES}
 
 
@@ -124,6 +124,8 @@ def test_the_designer_writes_the_whole_design_in_one_call(run, script, evidence,
     assert st["hypotheses"][0]["id"] == "H1" and st["rubric"][0]["id"] == "R1"
     assert st["protocol"]["statistics"] == "paired t-test"
     assert [s["id"] for s in st["plan"]["steps"]] == ["1", "2"] and st["plan"]["steps"][1]["gate"]
+    assert [s["rubric"] for s in st["plan"]["steps"]] == [[], ["R1"]], \
+        "a criterion is checked at the one step that completes it"
     assert [n["name"] for n in st["design"]["nodes"]] == ["orchestrator", "trainer", "validator"]
     assert out.summary.startswith("a design of 2 steps and 3 nodes, 1 hypotheses, 1 criteria")
     brief = script.calls[0]["prompt"]
@@ -136,18 +138,18 @@ def test_a_bad_design_goes_back_with_what_is_wrong(run, script, evidence, monkey
            "hypotheses": [{**DESIGN["hypotheses"][0], "evidence": ["E9"]}],
            "steps": [DESIGN["steps"][0],
                      {"id": "3", "title": "Train", "detail": "d", "check": "c",
-                      "depends_on": ["2"], "rubric": ["R7"]}],
+                      "depends_on": ["2"]}],
+           "rubric": [{**DESIGN["rubric"][0], "assessed_at": "7"}],
            "nodes": [NODES[0], {"name": "Worker", "role": "worker", "steps": ["1"],
-                                "skills": ["nope"], "instructions": "i",
-                                "validated_by": ["checker"]}]}
+                                "skills": ["nope"], "instructions": "i"}]}
     script.add("DesignOutput", bad, DESIGN)
     nodes.design(run, evidence, task="design it")
     retry = script.calls[1]
     assert retry["thread"] == "thread-1", "the retry continues the same call"
     for expected in ("cites E9, which is not an evidence id", 'step ids must be "1", "2"',
-                     "serves R7", "depends on 2", "Worker is not lower_snake_case",
-                     "exactly one validator", "no skill called nope",
-                     "`validated_by` lists rubric ids (R1), not checker"):
+                     "R1: `assessed_at` is '7', not a step id", "depends on 2",
+                     "Worker is not lower_snake_case", "exactly one validator",
+                     "no skill called nope"):
         assert expected in retry["prompt"]
 
     script.add("DesignOutput", bad, bad, bad)

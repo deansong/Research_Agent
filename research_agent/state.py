@@ -89,6 +89,8 @@ class Criterion(BaseModel):
     threshold: str = ""
     weight: float = 1.0
     applies_to: list[str] = Field(default_factory=list)
+    assessed_at: str = ""
+    """The plan step that completes it, where the validator checks it."""
 
 
 class Brief(BaseModel):
@@ -607,7 +609,8 @@ def _line(section: str, x: dict, brief: bool) -> str:
         tail = "" if brief else "".join(
             f"; {label} {x[key]}" for key, label in (("measure", "measured by"),
                                                       ("threshold", "passes at")) if x.get(key))
-        return f"- {i} {x['criterion']}{tail} (weight {x.get('weight', 1)})"
+        at = f", assessed at step {x['assessed_at']}" if x.get("assessed_at") else ""
+        return f"- {i} {x['criterion']}{tail} (weight {x.get('weight', 1)}{at})"
     if section == "decisions":
         why = f" -- because {x['why']}" if x.get("why") and not brief else ""
         by = f" [{x['by']}]" if x.get("by") else ""

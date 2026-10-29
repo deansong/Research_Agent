@@ -44,16 +44,16 @@ FINDINGS = {"summary": "found baselines", "findings": [
 DESIGN = {"summary": "two steps, three nodes", "hypotheses": [
     {"id": "H1", "plain": "Higher LoRA rank helps on small data.", "statement": "Rank matters",
      "prediction": "r=64 beats r=4 by >=1 F1", "evidence": ["E1"]}],
-    "rubric": [{"id": "R1", "criterion": "Effect", "measure": "F1 gap", "threshold": ">=1"}],
+    "rubric": [{"id": "R1", "criterion": "Effect", "measure": "F1 gap", "threshold": ">=1", "assessed_at": "2"}],
     "protocol": {"metrics": ["F1"], "statistics": "paired t-test", "seeds": "5"},
     "steps": [
         {"id": "1", "title": "Data", "detail": "load SST-2", "check": "rows counted"},
         {"id": "2", "title": "Train", "detail": "ranks 4..64", "check": "F1 logged",
-         "depends_on": ["1"], "rubric": ["R1"]}],
+         "depends_on": ["1"]}],
     "nodes": [
         {"name": "orchestrator", "role": "orchestrator", "instructions": "run it"},
         {"name": "trainer", "role": "worker", "steps": ["1", "2"], "access": "write",
-         "instructions": "train", "validated_by": ["R1"]},
+         "instructions": "train"},
         {"name": "validator", "role": "validator", "instructions": "check"}]}
 
 

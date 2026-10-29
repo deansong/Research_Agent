@@ -294,8 +294,8 @@ def design(run: Run, st: dict, *, task: str) -> Outcome:
         for s in out.steps:
             problems += [f"step {s.id} depends on {d}, which is not an earlier step"
                          for d in s.depends_on if d not in ids[:ids.index(s.id)]]
-            problems += [f"step {s.id} serves {r}, which is not a rubric id"
-                         for r in s.rubric if r not in rubric]
+        problems += [f"{r.id}: `assessed_at` is {r.assessed_at!r}, not a step id: give the one "
+                     f"step that completes it" for r in out.rubric if r.assessed_at not in ids]
         problems += design_problems({"nodes": [n.model_dump() for n in out.nodes]}, steps=ids,
                                     rubric=rubric, skills=known_skills)
         return problems
@@ -306,7 +306,10 @@ def design(run: Run, st: dict, *, task: str) -> Outcome:
     ops += _replace(st, "rubric", [r.model_dump() for r in out.rubric])
     ops += [{"op": "set", "section": "protocol", "value": out.protocol.model_dump()},
             {"op": "set", "section": "plan", "value": {
-                "summary": out.summary, "steps": [s.model_dump() for s in out.steps]}},
+                "summary": out.summary, "steps": [
+                    {**s.model_dump(), "rubric": [r.id for r in out.rubric
+                                                  if r.assessed_at == s.id]}
+                    for s in out.steps]}},
             {"op": "set", "section": "design", "value": {
                 "summary": out.summary, "nodes": [n.model_dump() for n in out.nodes],
                 "notes": out.notes}}]

@@ -164,7 +164,7 @@ def owner(st: dict, *, node: dict, step: dict, task: str, paths: dict, jobs_comm
                             "conflict; apply them and say so in your report", decided))
     parts += [
         _block("RUBRIC ITEMS YOUR WORK IS CHECKED AGAINST",
-               rubric_text(st, list(step.get("rubric") or []) + list(node.get("validated_by") or []))),
+               rubric_text(st, list(step.get("rubric") or []))),
         _block("THE STUDY", S.render(st, ["goal", "constraints", "protocol"])),
         _block("HYPOTHESES", S.render({**st, "hypotheses": _live(st)}, ["hypotheses"])),
         _block("EARLIER STEPS' OUTPUTS", upstream(st, step, paths, every=node["role"] == "writer")),
@@ -226,7 +226,7 @@ def validator(st: dict, *, design_part: str, node: dict, step: dict, report: dic
         _block("YOUR PART OF THE APPROVED DESIGN", design_part),
         _block("THE STEP TO CHECK", step_text(step) + f"\nDone by: {node['name']} ({node['role']})"),
         _block("RUBRIC ITEMS TO CHECK", rubric_text(
-            st, list(step.get("rubric") or []) + list(node.get("validated_by") or []))),
+            st, list(step.get("rubric") or []))),
         _block("THE PROTOCOL", S.render(st, ["protocol"])),
         _block("THE USER'S DECISIONS -- they stand over the plan where they conflict: "
                "work that follows one is not a failure", user_decisions(st) or "(none)"),

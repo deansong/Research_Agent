@@ -169,11 +169,14 @@ class HypothesisIn(BaseModel):
 
 class CriterionIn(BaseModel):
     id: str
-    """R1, R2, ...: steps and nodes refer to it."""
+    """R1, R2, ..."""
     criterion: str
     measure: str
     threshold: str
     applies_to: list[str] = Field(default_factory=list)
+    assessed_at: str
+    """The ONE plan step that completes this criterion, where it is checked
+    ("3"); the other steps are judged by their own checks."""
 
 
 class ProtocolIn(BaseModel):
@@ -192,7 +195,6 @@ class StepIn(BaseModel):
     check: str
     depends_on: list[str] = Field(default_factory=list)
     gate: bool = False
-    rubric: list[str] = Field(default_factory=list)
     cost: str = ""
 
 
@@ -204,7 +206,6 @@ class DesignNodeIn(BaseModel):
     skills: list[str] = Field(default_factory=list)
     access: Literal["none", "read_only", "write"] = "read_only"
     instructions: str
-    validated_by: list[str] = Field(default_factory=list)
 
 
 class DesignOutput(BaseModel):
