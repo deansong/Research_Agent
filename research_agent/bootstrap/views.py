@@ -9,6 +9,7 @@ WHY:   This is the context management. The discussor keeps the conversation;
 
 from __future__ import annotations
 
+from research_agent import prompt_files
 from research_agent import state as S
 
 
@@ -90,13 +91,12 @@ def _latest_results(st: dict, seen: dict, budget: int | None = None) -> str:
         for r in recent), budget)
 
 
-def aside(st: dict, *, user: str, activity: str, budget: int | None = None) -> str:
+def aside(st: dict, *, user: str, activity: str, budget: int | None = None,
+          run_dir=None) -> str:
     """The user writes while the team works."""
     room = state_room(budget, [user, activity])
     parts = [_block("AN ASIDE -- the team is working; nothing waits for your answer",
-                    "Answer from the research state and from what you know, saying "
-                    "which is which. Work the user asks for goes in `requests`; the "
-                    "orchestrator takes it at its next decision."),
+                    prompt_files.text("notes/bootstrap_aside", run_dir)),
              _block("THE USER SAYS", user),
              _block("WHAT IS HAPPENING NOW", activity or "(the team is working)"),
              _block("THE RESEARCH STATE", S.render_within(st, budget=room, brief=True)),
@@ -135,7 +135,8 @@ def researcher(st: dict, *, task: str) -> str:
     ])
 
 
-def brief_request(st: dict, *, task: str = "", budget: int | None = None) -> str:
+def brief_request(st: dict, *, task: str = "", budget: int | None = None,
+                  run_dir=None) -> str:
     """For the discussor, before anything is designed: everything the team
     found, to explain to the user and turn into the brief with them."""
     found = []
@@ -149,13 +150,9 @@ def brief_request(st: dict, *, task: str = "", budget: int | None = None) -> str
     evidence = S.render(st, ["evidence"], brief=True)
     if budget is not None:
         evidence = clip(evidence, max(budget - len(material), 2000))
-    ask = ("Explain to the user, in plain words and in general, what the team found and what "
-           "it means for the study. Then write the design brief in `brief`: what to build or "
-           "test, the scope, the main choices (with the options where the user should "
-           "choose), and what the research says matters. Ask them to revise it or approve "
-           "it; the design is made only from an approved brief.")
+    ask = prompt_files.text("notes/brief_request", run_dir)
     if (st.get("brief") or {}).get("text"):
-        ask += " A brief exists (in the state): revise it rather than start again."
+        ask += " " + prompt_files.text("notes/brief_revise", run_dir)
     parts = [ask]
     if task:
         parts.append(_block("FROM THE ORCHESTRATOR", task))

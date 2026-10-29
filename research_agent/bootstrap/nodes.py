@@ -34,7 +34,7 @@ class Run(run_base.Run):
 
     def __post_init__(self):
         super().__post_init__()
-        self.instructions = {**prompts.INSTRUCTIONS, **self.instructions}
+        self.instructions = {**prompts.instructions(self.folder), **self.instructions}
         if self.skills is None or self.skills_dir is None:
             base = config.defaults()
             self.skills = base.skills if self.skills is None else self.skills
@@ -132,7 +132,8 @@ def aside(run: Run, st: dict, *, user: str, activity: str = "") -> schemas.Boots
     """The user writes while the team works: the discussor answers in its own
     conversation; requests and decisions go to the inbox for the graph."""
     budget = run.brief_budget("discussor")
-    plain = views.aside(st, user=user, activity=activity, budget=budget * 2 // 3)
+    plain = views.aside(st, user=user, activity=activity, budget=budget * 2 // 3,
+                        run_dir=run.folder)
 
     def takeover() -> str:
         return chat.handover(run.folder, run.brief_budget("discussor") // 3) + "\n\n" + plain

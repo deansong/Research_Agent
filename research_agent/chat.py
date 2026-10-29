@@ -81,7 +81,7 @@ def handover(folder: Path, budget: int | None = None) -> str:
             lines.pop(0)
     if not lines:
         return ""
-    return ("=== YOU TAKE OVER THIS CONVERSATION ===\n"
-            "Until now another model was the discussor. Here is the conversation so far "
-            f"(its last {len(lines)} messages), and the research state follows. Carry on "
-            "from it as if you had been there; do not greet the user again.\n\n" + "\n\n".join(lines))
+    from research_agent import prompt_files
+
+    return (prompt_files.text("notes/handover", folder, count=len(lines)) + "\n\n"
+            + "\n\n".join(lines))

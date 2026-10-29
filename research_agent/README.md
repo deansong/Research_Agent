@@ -122,6 +122,14 @@ output is kept in `<run>/rb/sessions/`.
 Ctrl-C stops a run, and `--resume <run>` carries on. A step is saved in
 `checkpoint.sqlite` as soon as it finishes.
 
+## Prompts
+
+Every role's instructions and the longer notes the code sends models are
+Markdown files in `research_agent/prompts/` (see its README). To change one
+for a single run, copy it to `<run>/prompts/<same path>`; for all your runs,
+to a folder named by `RESEARCH_AGENT_PROMPTS`. The node window in the web UI
+shows the instructions a node actually gets.
+
 ## Configuration: models and skills
 
 `research_agent/bootstrap/config.toml` holds the defaults, with comments:

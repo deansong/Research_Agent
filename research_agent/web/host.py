@@ -400,13 +400,13 @@ class RunHost:
             out.update(role="discussor", group="bootstrap", runs_on=runs_on(boot.roles["discussor"]),
                        skills=skills_word(boot.skills.get("discussor")),
                        instructions=(exec_prompts if self.stage == "execution"
-                                     else boot_prompts).INSTRUCTIONS["discussor"])
+                                     else boot_prompts).instructions(self.folder)["discussor"])
             return out
         if self.stage == "bootstrap" and node in boot_config.ROLES:
             keys = [node]
             out.update(role=node, group="bootstrap", runs_on=runs_on(boot.roles[node]),
                        skills=[s for k in keys for s in skills_word(boot.skills.get(k))],
-                       instructions=boot_prompts.INSTRUCTIONS[node],
+                       instructions=boot_prompts.instructions(self.folder)[node],
                        access="write" if node == "researcher" else "read_only")
             return out
         design = st.get("design") or {}
@@ -418,7 +418,7 @@ class RunHost:
         elif node == "reviewer":
             out.update(role="reviewer", group="execution", runs_on=runs_on(exe.roles["reviewer"]),
                        skills=list(exe.reviewer_skills), access="read_only",
-                       instructions=exec_prompts.INSTRUCTIONS["reviewer"])
+                       instructions=exec_prompts.instructions(self.folder)["reviewer"])
             return out
         else:
             found = next((n for n in design.get("nodes") or []
@@ -433,7 +433,7 @@ class RunHost:
                    steps=list(found.get("steps") or []) if role != "orchestrator" else [],
                    skills=list(found.get("skills") or []), access=access,
                    design=f"{found['name']} ({found['role']}): {found.get('instructions', '')}",
-                   instructions=exec_prompts.INSTRUCTIONS[role])
+                   instructions=exec_prompts.instructions(self.folder)[role])
         return out
 
     # ---- which skills a node is given ---------------------------------------------------

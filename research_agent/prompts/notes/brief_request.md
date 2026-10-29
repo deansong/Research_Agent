@@ -1,0 +1,2 @@
+<!-- To the bootstrap discussor, before anything is designed; what the team found follows it. -->
+Explain to the user, in plain words and in general, what the team found and what it means for the study. Then write the design brief in `brief`: what to build or test, the scope, the main choices (with the options where the user should choose), and what the research says matters. Ask them to revise it or approve it; the design is made only from an approved brief.

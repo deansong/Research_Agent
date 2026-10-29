@@ -29,7 +29,7 @@ from typing_extensions import TypedDict
 
 import research_backend as RB
 
-from research_agent import autopilot, inbox
+from research_agent import autopilot, inbox, prompt_files
 from research_agent import state as S
 from research_agent.bootstrap import nodes, views
 
@@ -98,9 +98,7 @@ def build(run: nodes.Run, checkpointer=None):
         return new
 
     def how_to_execute() -> str:
-        return ("Tell the user how to start the execution, which carries the plan out with "
-                "the design's nodes: the **Start execution** button in the web UI, or "
-                f"`python -m research_agent execute --run {run.folder}` in a terminal.")
+        return prompt_files.text("notes/how_to_execute", run.folder, run_folder=run.folder)
 
     def discussor(state: BootstrapState) -> dict:
         st = state.get("research") or S.new()
@@ -147,12 +145,10 @@ def build(run: nodes.Run, checkpointer=None):
             later = [r["detail"] for r in state.get("pending") or []]
             for text in later:
                 inbox.post(run.folder, "request", text=text)
-            note = ("Everything is approved: the bootstrap is done. Tell the user, and that "
-                    "anything about carrying the plan out -- setup, preflight checks, "
-                    "training -- is the execution stage's: its workers write files, run code "
-                    "and use the GPUs. " + how_to_execute()
-                    + (" What the user asked for now goes to the execution once it starts: "
-                       + "; ".join(later) if later else ""))
+            note = prompt_files.text(
+                "notes/bootstrap_done", run.folder, how_to_execute=how_to_execute(),
+                later=(" What the user asked for now goes to the execution once it starts: "
+                       + "; ".join(later)) if later else "")
             return {"research": st, "note": note, "pending": [], "outcome": "ready",
                     "decision": {"action": "ready", "task": note, "questions": [],
                                  "reason": "the design is approved and nothing new was asked"}}
@@ -164,16 +160,12 @@ def build(run: nodes.Run, checkpointer=None):
             st = commit(st, [{"op": "merge", "section": "status", "value": {
                 "summary": f"Design v{v} is ready for the user's review.",
                 "next": "the user approves the design or asks for changes"}}], "orchestrator")
-            note = (f"The designer delivered design v{v}; it passed the code checks. Show the "
-                    f"user its main points -- what it builds or tests, the steps and who does "
-                    f"them, what it will cost -- and ask them to approve it or say what to "
-                    f"change. It is theirs to judge.")
+            note = prompt_files.text("notes/design_ready", run.folder, version=v)
             return {"research": st, "note": note, "designed": False, "pending": [],
                     "decision": {"action": "ask_user", "task": note, "questions": [],
                                  "reason": "a new design goes to the user"}}
         if state.get("steps", 0) >= MAX_STEPS:
-            note = (f"The team has taken {MAX_STEPS} steps since the user last spoke. "
-                    f"Tell the user where things stand and ask how to continue.")
+            note = prompt_files.text("notes/step_limit", run.folder, steps=MAX_STEPS)
             return {"decision": {"action": "ask_user", "task": note}, "note": note,
                     "pending": state.get("pending") or []}
         out = nodes.orchestrator(run, st, requests=state.get("pending") or [],
@@ -188,7 +180,7 @@ def build(run: nodes.Run, checkpointer=None):
             # The user agrees what the design is to be before it is made: the
             # discussor gets everything the team found, to explain and draft
             # the brief with them.
-            note = views.brief_request(st, task=d.task,
+            note = views.brief_request(st, task=d.task, run_dir=run.folder,
                                        budget=run.brief_budget("discussor") // 2)
             decision = {"action": "brief", "task": d.task, "questions": [],
                         "reason": d.reason if d.action == "brief"

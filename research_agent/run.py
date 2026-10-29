@@ -270,7 +270,8 @@ class Run:
                 raise NodeFailed(f"{role} gave no usable answer in {ATTEMPTS} attempts. "
                                  f"Last problems:\n" + "\n".join(f"- {p}" for p in problems))
             prompt = ("Your answer could not be used:\n" + "\n".join(f"- {p}" for p in problems)
-                      + "\n\nAnswer the same task again, fixing these." + _shape_hint(schema, problems))
+                      + "\n\nAnswer the same task again, fixing these."
+                      + _shape_hint(schema, problems, self.folder))
 
     def _keep(self, label, rb, attempt, reply, problems, seconds, events=None) -> None:
         """What the model did in this call, every event of it, in
@@ -416,7 +417,7 @@ def _overflowed(exc: BaseException) -> bool:
                                    "maximum context length", "prompt is too long"))
 
 
-def _shape_hint(schema, problems: list[str]) -> str:
+def _shape_hint(schema, problems: list[str], run_dir=None) -> str:
     """When the answer missed the schema: what the answer must be. Measured: a
     small model ending a long agentic turn with a search query as text
     ({"q": "..."}), which ends the turn as if it were the answer."""
@@ -424,9 +425,9 @@ def _shape_hint(schema, problems: list[str]) -> str:
         return ""
     fields = list(getattr(schema, "model_fields", {}) or {})
     shape = f" with the fields {', '.join(fields)}" if fields else ""
-    return ("\n\nYour final message must be ONLY one JSON object" + shape + ". Any other "
-            "message -- a search query, a tool's arguments, a note to yourself -- ends your turn "
-            "and is not an answer: run tools as tools (commands), and finish with the object.")
+    from research_agent import prompt_files
+
+    return "\n\n" + prompt_files.text("notes/answer_shape", run_dir, shape=shape)
 
 
 def _why(exc: BaseException) -> str:

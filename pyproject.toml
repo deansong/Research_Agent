@@ -21,4 +21,5 @@ include = ["research_backend*", "research_agent*"]
 
 [tool.setuptools.package-data]
 research_agent = ["bootstrap/config.toml", "execute/config.toml", "web/static/*.html",
-                  "web/static/css/*", "web/static/js/*", "web/static/vendor/*"]
+                  "web/static/css/*", "web/static/js/*", "web/static/vendor/*",
+                  "prompts/*.md", "prompts/*/*.md", "prompts/*/*/*.md"]

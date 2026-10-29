@@ -9,6 +9,7 @@ from __future__ import annotations
 
 from pathlib import Path
 
+from research_agent import prompt_files
 from research_agent import state as S
 from research_agent.bootstrap.views import _block, _latest_results, _today, state_room
 from research_agent.execute import jobs as J
@@ -77,8 +78,7 @@ def aside(st: dict, *, user: str, activity: str, run_dir: str,
           budget: int | None = None) -> str:
     """The user writes while the team works: what is happening now, from code."""
     parts = [_block("AN ASIDE -- the team is working; nothing waits for your answer",
-                    "Answer from the state, the files and what you know, saying which is "
-                    "which; record breakpoints, a stop or requests if the user asks for them."),
+                    prompt_files.text("notes/execute_aside", run_dir)),
              _block("THE USER SAYS", user),
              _block("WHAT IS HAPPENING NOW", activity),
              _block("THE STEP TABLE", S.render_within(st, ["execution"],
@@ -194,9 +194,7 @@ def owner_wake(run_dir: Path, job_ids: list[str]) -> str:
             continue
         lines.append(J.describe(job) + f"\nlog: {job['log']}\n--- last lines ---\n{J.tail(job)}")
     return (_block("YOUR JOBS FINISHED", "\n\n".join(lines))
-            + "\n\nCheck their outputs. Launch more jobs if the step needs them (answer "
-              "`launched`), or finish the step (`done`, with its artifacts), or report "
-              "`failed` / `blocked`.")
+            + "\n\n" + prompt_files.text("notes/owner_wake", run_dir))
 
 
 def upstream(st: dict, step: dict, paths: dict, *, every: bool = False) -> str:

@@ -28,7 +28,7 @@ from research_agent import run as run_base
 from research_agent import state as S
 from research_agent.bootstrap.config import RoleConfig
 from research_agent.bootstrap.nodes import DISCUSSOR_SESSION, Outcome, design_problems
-from research_agent import chat, inbox
+from research_agent import chat, inbox, prompt_files
 from research_agent.execute import config, jobs, prompts, schemas, views
 
 NodeFailed = run_base.NodeFailed
@@ -54,7 +54,7 @@ class ExecRun(run_base.Run):
 
     def __post_init__(self):
         super().__post_init__()
-        self.instructions = {**prompts.INSTRUCTIONS, **self.instructions}
+        self.instructions = {**prompts.instructions(self.folder), **self.instructions}
         if self.limits is None:
             self.limits = config.defaults()
 
@@ -330,7 +330,7 @@ def step_problems(st: dict, retry, waive, max_attempts: int | None = None) -> li
     return problems
 
 
-def out_of_attempts(st: dict, max_attempts: int) -> str:
+def out_of_attempts(st: dict, max_attempts: int, run_dir=None) -> str:
     """The failed steps no attempt is left for, in words: only the user's
     `retry` gives one -- measured, models took "the retry is authorized" in
     words for an attempt, and waited for one that never came."""
@@ -341,8 +341,7 @@ def out_of_attempts(st: dict, max_attempts: int) -> str:
              and r.get("attempts", 0) >= max_attempts + r.get("extra_attempts", 0)]
     if not lines:
         return ""
-    return ("=== OUT OF ATTEMPTS -- only `retry` (the user's call) gives one more; saying so "
-            "in words does not ===\n" + "\n".join(lines))
+    return prompt_files.text("notes/out_of_attempts", run_dir) + "\n" + "\n".join(lines)
 
 
 def user_step_ops(st: dict, retry, waive, by: str = "user") -> list[dict]:
@@ -429,7 +428,7 @@ def discussor(run: ExecRun, st: dict, *, seen: dict, user: str = "", note: str =
                                                      awaiting=awaiting, budget=room - len(said))
     if run.takes_over(DISCUSSOR_SESSION, "discussor"):
         brief = takeover()
-    stuck = out_of_attempts(st, run.limits.max_attempts)
+    stuck = out_of_attempts(st, run.limits.max_attempts, run.folder)
     if stuck:
         brief += "\n\n" + stuck
     with run.discussor_lock:
@@ -497,22 +496,14 @@ def orchestrator(run: ExecRun, st: dict, design: Design, *, budget: str, request
     def check(out: schemas.ExecDecision) -> list[str]:
         if out.action == "ask_user" and out.step in moves["retry"] and not asked_once:
             asked_once.append(out.step)
-            return [f"step {out.step} can be retried: its owner works with full access (files, "
-                    f"commands, network, GPUs) -- what an earlier attempt or a read-only "
-                    f"sandbox could not reach says nothing about this one. Retry it with a "
-                    f"`task` saying what to do differently, or ask the user only for a "
-                    f"decision the state does not settle."]
+            return [prompt_files.text("notes/retry_not_ask", run.folder, step=out.step)]
         if out.action == "ask_user" and out.step in untried and not asked_once:
             # Once per decision, so a real question still gets through.
             # Measured: the read-only discussor probed the machine, found no
             # GPUs in its own sandbox, and the orchestrator asked the user
             # for "a writable environment" instead of running the preflight.
             asked_once.append(out.step)
-            return [f"step {out.step} has not been tried and is open to run: its owner works "
-                    f"with full access (files, commands, GPUs), so setup, access and checks "
-                    f"are found out by running it -- what a read-only sandbox cannot see says "
-                    f"nothing about the owner's. Run it, or ask the user only for a decision "
-                    f"the state does not settle."]
+            return [prompt_files.text("notes/run_not_ask", run.folder, step=out.step)]
         if out.action in ("run", "retry", "skip") and out.step not in moves[out.action]:
             return [f"{out.action} {out.step or '(no step)'} is not open now; open moves: "
                     + "; ".join(describe_moves(moves, st, limit))]
