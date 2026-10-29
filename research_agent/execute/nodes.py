@@ -198,10 +198,13 @@ def open_moves(st: dict, max_attempts: int) -> dict:
         if r["status"] in ("fail", "stopped") and ready and \
                 r.get("attempts", 0) < max_attempts + r.get("extra_attempts", 0):
             moves["retry"].append(s["id"])
-        if r["status"] == "pending" or (r["status"] in ("fail", "stopped")
-                                         and not dependents(st, s["id"])):
-            # A failed step that others need is the user's call, not a skip:
-            # measured, skipping one skipped everything after it, for good.
+        if (r["status"] == "pending" and ready) or (r["status"] in ("fail", "stopped")
+                                                    and not dependents(st, s["id"])):
+            # A failed step that others need is the user's call, not a skip --
+            # nor is skipping the step after it: measured, both skipped round
+            # a failed preflight, and the next step ran without its inputs.
+            # A pending step is skipped only once its own inputs are settled
+            # (a branch that does not apply).
             moves["skip"].append(s["id"])
     return moves
 
@@ -270,9 +273,10 @@ def step_problems(st: dict, retry, waive, max_attempts: int | None = None) -> li
     problems = [f"retry: step {s} has not failed or been skipped (it is "
                 f"{rec[s]['status'] if s in rec else 'not a step'})"
                 for s in retry if rec.get(s, {}).get("status") not in REOPENABLE]
-    problems += [f"waive: step {w.step} has not failed (it is "
-                 f"{rec[w.step]['status'] if w.step in rec else 'not a step'})"
-                 for w in waive if rec.get(w.step, {}).get("status") not in ("fail", "stopped")]
+    steps = [w["step"] if isinstance(w, dict) else w.step for w in waive]
+    problems += [f"waive: step {s} has not failed (it is "
+                 f"{rec[s]['status'] if s in rec else 'not a step'})"
+                 for s in steps if rec.get(s, {}).get("status") not in ("fail", "stopped")]
     return problems
 
 
@@ -321,7 +325,7 @@ def user_step_ops(st: dict, retry, waive, by: str = "user") -> list[dict]:
                                      f"{r.get('verdict', '')[:600]})"))
         st = S.apply(st, ops[-1:], by="user")[0]
         ops.append({"op": "add", "section": "decisions", "value": {
-            "what": f"Step {sid} passes on the user's decision", "why": why, "by": "user"}})
+            "what": f"Step {sid} passes on the {by}'s decision", "why": why, "by": by}})
         st = S.apply(st, ops[-1:], by="user")[0]
     return ops
 

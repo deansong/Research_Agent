@@ -513,8 +513,8 @@ def test_a_skipped_step_can_be_reopened_and_a_needed_one_is_not_skipped():
         "steps": [{"id": "1", "title": "Data", "status": "fail", "attempts": 3},
                   {"id": "2", "title": "Train", "status": "pending"}]}}], by="execution")
     moves = nodes.open_moves(st, 3)
-    assert moves["retry"] == [] and "1" not in moves["skip"], \
-        "a failed step that step 2 needs is the user's call"
+    assert moves["retry"] == [] and moves["skip"] == [], \
+        "a failed step that step 2 needs is the user's call, and step 2 waits for it"
     st, _ = S.apply(st, [nodes.record_op(st, "1", status="skipped"),
                          ], by="execution")
     st, _ = S.apply(st, [nodes.record_op(st, "2", status="skipped")], by="execution")
@@ -605,3 +605,24 @@ def test_an_owner_s_failure_with_outputs_is_the_validator_s_to_judge(run, script
     Execution(run).start()
     rec = nodes.records(Execution(run).research)["1"]
     assert rec["status"] == "pass" and len(script.prompts("Verdict")) == 1
+
+
+def test_the_autopilot_can_pass_a_step_that_did_its_part(run, script):
+    from research_agent import autopilot
+
+    run.limits = replace(run.limits, max_attempts=1)
+    autopilot.save(run.folder, autopilot.Settings(on=True, max_decisions=1))
+    script.add("ExecDecision", decide("run", "1"),
+               decide("stop", task="step 1 used its attempts"),
+               decide("ask_user", task="step 2 next?"))
+    script.add("StepReport", {"state": "failed", "summary": "probes pass; R5 is later steps'"})
+    script.add("ExecDiscussorOutput", say("Step 1 failed and has no attempts left."),
+               say("Step 1 passes, as you decided."), say("Step 2 next; go?"),
+               say("Waiting."))
+    script.add("AutopilotOutput", {"answer": "Pass step 1.", "why": "its own check holds",
+                                   "waive": ["1"]})
+    Execution(run).start()
+    st = Execution(run).research
+    rec = nodes.records(st)["1"]
+    assert rec["status"] == "pass" and "passed by the user: autopilot: its own check" in rec["verdict"]
+    assert any(d["what"] == "Step 1 passes on the autopilot's decision" for d in st["decisions"])

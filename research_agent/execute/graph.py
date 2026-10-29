@@ -218,10 +218,11 @@ def build(run: nodes.ExecRun, design: nodes.Design, checkpointer=None):
         if answer.get("go") and awaiting:
             st = commit(st, go_ops(st, awaiting), "user")
             awaiting, nudged = "", True
-        if answer.get("retry"):
+        if answer.get("retry") or answer.get("waive"):
             # The autopilot's call on a failed step: applied by code, as the
-            # user's retry is -- a retry said only in words gives no attempt.
-            st = commit(st, nodes.user_step_ops(st, answer["retry"], [], by="autopilot"),
+            # user's is -- a retry or a pass said only in words does nothing.
+            st = commit(st, nodes.user_step_ops(st, answer.get("retry") or [],
+                                                answer.get("waive") or [], by="autopilot"),
                         "autopilot")
             nudged, outcome = True, ""
         if answer.get("stop"):

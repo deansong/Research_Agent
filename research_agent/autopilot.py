@@ -107,6 +107,9 @@ class AutopilotOutput(BaseModel):
     retry: list[str] = Field(default_factory=list)
     """Execution: steps that failed, were stopped or skipped, to give one more
     attempt -- the only way a step out of attempts gets another."""
+    waive: list[str] = Field(default_factory=list)
+    """Execution: failed or stopped steps to pass as they are, for `why` --
+    the only way a step that did its own part passes over a failed verdict."""
     stop: bool = False
     """Execution: end the run (a budget reached, nothing sensible left)."""
 
@@ -126,7 +129,8 @@ constraints and decisions in the research state):
   cannot succeed within the limits. When the team stopped because a step used
   its attempts: if the step delivered what its own detail and check ask (the
   verdict only wants what a later step or the whole study must deliver),
-  pass it with that reason; if a retry with the verdict's advice can fix it,
+  pass it (`waive`, with that reason in `why`); if a retry with the verdict's
+  advice can fix it,
   put the step in `retry` (the only way it gets another attempt) and say in
   `answer` what to change; stop only when neither can.
 - Prefer the smallest decision that moves the study on. Never widen the
@@ -147,12 +151,15 @@ def decide(run, st: dict, *, stage: str, reply: str, awaiting: str = "") -> Auto
         problems = [] if out.answer.strip() else ["`answer` is empty: write the user's reply"]
         if stage == "execution" and out.approve:
             problems.append("`approve` is for the bootstrap; in the execution use go or stop")
-        if stage == "bootstrap" and (out.go or out.stop or out.retry):
+        if stage == "bootstrap" and (out.go or out.stop or out.retry or out.waive):
             problems.append("`go`, `stop` and `retry` are for the execution; in the bootstrap "
                             "approve or answer")
         if stage == "execution" and out.retry:
             from research_agent.execute import nodes as exec_nodes
             problems += exec_nodes.step_problems(st, out.retry, [])
+        if stage == "execution" and out.waive:
+            from research_agent.execute import nodes as exec_nodes
+            problems += exec_nodes.step_problems(st, [], [{"step": s} for s in out.waive])
         for s in out.approve:
             if not S.version(st, s):
                 problems.append(f"approve: there is no {s} yet")
@@ -198,7 +205,9 @@ def _block(title: str, text: str) -> str:
 def answer_for(out: AutopilotOutput) -> dict:
     """The resume value the human node takes, as if the user had answered."""
     return {"text": f"{MARK} {out.answer.strip()}", "approve": list(out.approve),
-            "go": out.go, "stop": out.stop, "retry": list(out.retry)}
+            "go": out.go, "stop": out.stop, "retry": list(out.retry),
+            "waive": [{"step": s, "why": f"autopilot: {out.why.strip()[:400]}"}
+                      for s in out.waive]}
 
 
 def decision_op(out: AutopilotOutput) -> dict:
