@@ -22,7 +22,9 @@ import tomllib
 from dataclasses import dataclass, field, replace
 from pathlib import Path
 
-ROLES = ("discussor", "orchestrator", "researcher", "designer")
+ROLES = ("discussor", "orchestrator", "researcher", "designer", "refiner")
+#: The refiner improves the roles' prompts from past runs (research_agent/refine);
+#: it takes no part in a run.
 #: What a skills choice is keyed by: each role.
 NODES = ROLES
 #: Roles and skills keys of earlier versions, left out when an old run's
