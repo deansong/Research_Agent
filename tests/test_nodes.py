@@ -118,8 +118,10 @@ def evidence():
 
 def test_the_designer_writes_the_whole_design_in_one_call(run, script, evidence, monkeypatch):
     monkeypatch.setattr(nodes.Run, "catalogue", lambda self: [("peft", "LoRA")])
-    script.add("DesignOutput", DESIGN)
+    script.add("DesignOutput", {**DESIGN, "rubric": [{**DESIGN["rubric"][0],
+                                                     "assessed_at": "Step 2"}]})
     out = nodes.design(run, evidence, task="design it")
+    assert len(script.calls) == 1, '"Step 2" is taken as "2"'
     st = _apply(evidence, out, "designer")
     assert st["hypotheses"][0]["id"] == "H1" and st["rubric"][0]["id"] == "R1"
     assert st["protocol"]["statistics"] == "paired t-test"

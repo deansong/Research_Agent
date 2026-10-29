@@ -13,6 +13,7 @@ CONCEPT: Every call but the discussor's is a NEW research_backend session,
 
 from __future__ import annotations
 
+import re
 from dataclasses import dataclass, field
 from pathlib import Path
 
@@ -294,6 +295,8 @@ def design(run: Run, st: dict, *, task: str) -> Outcome:
         for s in out.steps:
             problems += [f"step {s.id} depends on {d}, which is not an earlier step"
                          for d in s.depends_on if d not in ids[:ids.index(s.id)]]
+        for r in out.rubric:            # "Step 6" means "6": no retry for that
+            r.assessed_at = re.sub(r"(?i)^\s*step\s*", "", r.assessed_at).strip()
         problems += [f"{r.id}: `assessed_at` is {r.assessed_at!r}, not a step id: give the one "
                      f"step that completes it" for r in out.rubric if r.assessed_at not in ids]
         problems += design_problems({"nodes": [n.model_dump() for n in out.nodes]}, steps=ids,
