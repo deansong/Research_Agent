@@ -38,7 +38,7 @@ LIMITS = ("confirm", "max_attempts", "wall_hours", "gpu_hours", "poll_seconds", 
 class ExecConfig:
     roles: dict[str, RoleConfig]
     skills_dir: Path | None
-    reviewer_skills: tuple = ("peer-review", "scientific-critical-thinking")
+    reviewer_skills: tuple = ("scientific-critical-thinking",)
     node_skills: dict = field(default_factory=dict)
     """Graph node -> its skills, over the design's: None, "auto" or names."""
     confirm: str = "gated"

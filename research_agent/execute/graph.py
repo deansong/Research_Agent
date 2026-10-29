@@ -209,6 +209,8 @@ def build(run: nodes.ExecRun, design: nodes.Design, checkpointer=None):
             st = commit(st, answer.pop("ops"), "autopilot")
         if answer.get("exit"):
             return {"outcome": "exit", "_to": END}
+        if answer.get("review"):
+            return {"note": "", "_to": "reviewer"}
         text = answer.get("text", "")
         awaiting, nudged, outcome = state.get("awaiting", ""), False, state.get("outcome", "")
         if answer.get("work") and not text:
@@ -464,7 +466,7 @@ def build(run: nodes.ExecRun, design: nodes.Design, checkpointer=None):
     graph.add_conditional_edges("orchestrator", _route,
                                 ["discussor", "orchestrator", "reviewer", *owners])
     graph.add_conditional_edges("discussor", _route, ["orchestrator", "human"])
-    graph.add_conditional_edges("human", _route, ["discussor", "orchestrator", END])
+    graph.add_conditional_edges("human", _route, ["discussor", "orchestrator", "reviewer", END])
     for name in owners:
         graph.add_conditional_edges(name, _route, ["wait", "validator", "orchestrator"])
     graph.add_conditional_edges("wait", _route, ["discussor", *owners])

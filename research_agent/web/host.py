@@ -359,6 +359,20 @@ class RunHost:
         self.bus.emit("note", text=f"Step {step}: {word}, from the team's next step.")
         return "next step"
 
+    def review(self) -> None:
+        """The finished study reviewed again: every step settled, the team
+        waiting for the user."""
+        with self._lock:
+            if self.stage != "execution":
+                raise ValueError("Only a finished execution is reviewed.")
+            self._need_waiting()
+            steps = (S.Store(self.folder).read().get("execution") or {}).get("steps") or []
+            open_ = [r["id"] for r in steps if r["status"] not in exec_nodes.SETTLED]
+            if open_:
+                raise ValueError(f"Steps {', '.join(open_)} have not passed or been skipped yet.")
+            self.bus.emit("note", text="The reviewer reviews the study again.")
+            self._run(lambda on: self.session.review(on_step=on))
+
     def execute(self, *, limits: dict | None = None, roles=()) -> None:
         """Start the execution stage of an approved run."""
         with self._lock:

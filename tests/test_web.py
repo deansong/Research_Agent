@@ -178,6 +178,15 @@ def test_approve_then_execute_from_the_page(web, script):
     statuses = {n["id"]: n.get("status") for n in g["nodes"]}
     assert statuses["builder"] == "pass" and "reviewer" in statuses
 
+    script.add("ReviewOutput", {**REVIEW, "rating": 7})
+    script.add("ExecDiscussorOutput", tell("Second review: 7/10."))
+    assert web.post("/api/runs/ready/review").status_code == 200
+    d = settle(web, "ready")
+    assert d["transcript"][-1]["text"] == "Second review: 7/10." and d["waiting"]
+    st = web.get("/api/runs/ready/state").json()["state"]
+    assert [v["rating"] for v in st["reviews"]] == [REVIEW["rating"], 7]
+    assert (folder / "reviews" / "V2.md").exists()
+
 
 class _Folder:
     def __init__(self, folder):
@@ -666,7 +675,7 @@ def test_the_paper_window_shows_the_writer_s_pdf_first(web):
     st["design"] = {"nodes": [{"name": "w", "role": "writer", "access": "write"},
                             {"name": "b", "role": "worker", "access": "write"}]}
     st["execution"] = {"steps": [{"id": "1", "owner": "b", "artifacts": ["artifacts/plot.pdf"]},
-                                 {"id": "2", "owner": "w", "artifacts": ["artifacts/paper.pdf"]}]}
+                                 {"id": "2", "owner": "w", "artifacts": ["../artifacts/paper.pdf"]}]}
     (folder / "state").mkdir(parents=True)      # only what the papers need
     (folder / "state" / "research.json").write_text(json.dumps(st))
     (folder / "artifacts").mkdir()

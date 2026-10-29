@@ -36,7 +36,8 @@ python = ""
 # repository root).
 dir = "skills"
 # The reviewer's skills (it is not in the design).
-reviewer = ["peer-review", "scientific-critical-thinking"]
+# Not peer-review: it asks for a venue and an intake before it reads anything.
+reviewer = ["scientific-critical-thinking"]
 
 
 # Which provider and model each role runs on, as in the bootstrap. Step owners

@@ -14,6 +14,7 @@ from __future__ import annotations
 
 import asyncio
 import json
+import os
 import re
 import shutil
 import threading
@@ -57,10 +58,14 @@ def _papers(folder: Path, st: dict) -> list[dict]:
     owners = {n["name"]: n.get("role") for n in (st.get("design") or {}).get("nodes") or []}
     by_writer: dict[Path, str] = {}
     for rec in (st.get("execution") or {}).get("steps") or []:
+        if owners.get(rec.get("owner")) != "writer":
+            continue
         for a in rec.get("artifacts") or []:
-            path = (folder / a).resolve()
-            if path.suffix.lower() == ".pdf" and owners.get(rec.get("owner")) == "writer":
-                by_writer[path] = rec.get("id", "")
+            # Owners name their files from their workspace (<run>/work).
+            for path in (Path(os.path.normpath(folder / "work" / a)), folder / a):
+                if path.suffix.lower() == ".pdf" and path.is_file():
+                    by_writer[path.resolve()] = rec.get("id", "")
+                    break
     found = []
     for path in folder.rglob("*.pdf"):
         rel = path.relative_to(folder)
@@ -355,6 +360,11 @@ def create_app(runs_root: Path = RUNS_ROOT, *, roles=(), watch: bool = True) -> 
     def step_action(run_id: str, body: StepAction):
         host = host_of(run_id)
         return {"ok": True, "when": act(lambda: host.step_action(body.step, body.action, body.why))}
+
+    @app.post("/api/runs/{run_id}/review")
+    def review(run_id: str):
+        act(host_of(run_id).review)
+        return {"ok": True}
 
     @app.post("/api/runs/{run_id}/execute")
     def execute(run_id: str, body: StartExecution):
