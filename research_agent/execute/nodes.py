@@ -504,6 +504,9 @@ def decision_check(st: dict, limit: int, run_dir=None):
             # for "a writable environment" instead of running the preflight.
             asked_once.append(out.step)
             return [prompt_files.text("notes/run_not_ask", run_dir, step=out.step)]
+        if out.action == "stop" and untried and not asked_once:
+            asked_once.append("stop")
+            return [prompt_files.text("notes/run_not_stop", run_dir, step=untried[0])]
         if out.action in ("run", "retry", "skip") and out.step not in moves[out.action]:
             return [f"{out.action} {out.step or '(no step)'} is not open now; open moves: "
                     + "; ".join(describe_moves(moves, st, limit))]

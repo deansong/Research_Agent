@@ -75,6 +75,10 @@ class Execution:
         if self.started:
             raise RuntimeError(f"{self.run.folder}'s execution has started; resume it instead.")
         st = self._prepare(S.Store(self.run.folder).read())
+        # Requests the bootstrap's discussor queued are about the design, now
+        # approved. Measured: "execution remains user-started; do not run" was
+        # handed to the execution's orchestrator, which stopped at once.
+        inbox.take(self.run.folder, kinds=("request",))
         first = {"research": st, "seen": dict(st.get("versions") or {}), "pending": [],
                  "decisions": 0, "outcome": "", "awaiting": ""}
         return self._drive(first, on_step)

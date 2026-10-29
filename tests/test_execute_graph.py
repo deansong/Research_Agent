@@ -512,7 +512,7 @@ def test_autopilot_answers_a_stop_the_orchestrator_chose_but_not_the_users(run, 
     from research_agent import autopilot
 
     autopilot.save(run.folder, autopilot.Settings(on=True, max_decisions=3))
-    script.add("ExecDecision", decide("stop", task="step 1 used its attempts"))
+    script.add("ExecDecision", *[decide("stop", task="step 1 used its attempts")] * 2)   # sent back once
     script.add("ExecDiscussorOutput", say("The team stopped: step 1 used its attempts."),
                say("Stopped, as you said."))
     script.add("AutopilotOutput", {"answer": "Stop here.", "why": "nothing can fix it",
@@ -709,3 +709,16 @@ def test_the_paper_is_written_and_its_pdf_checked(run, script):
     out = nodes.paper(run, st)
     assert out.ops[0]["value"] == {"paper": str(run.folder / "paper" / "main.pdf")}
     assert "PAPER -- the submission" in nodes.views.reviewer(st, run_dir=str(run.folder))
+
+
+def test_the_design_stage_s_requests_do_not_stop_the_execution(run, script):
+    from research_agent import inbox
+    S.Store(run.folder).write(approved_state())
+    inbox.post(run.folder, "request", text="Execution remains user-started; do not run anything.")
+    script.add("ExecDecision", decide("stop", task="the discussor said not to run"),
+               decide("stop", task="still"))
+    script.add("ExecDiscussorOutput", say("Stopped."))
+    Execution(run).start()
+    first, retry = script.prompts("ExecDecision")
+    assert "do not run anything" not in first, "a request from the design stage is dropped"
+    assert "`stop` ends the execution, and step 1 is open to run and untried" in retry
