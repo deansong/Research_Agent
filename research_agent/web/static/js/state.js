@@ -157,6 +157,7 @@ export class StateView {
       why = window.prompt(`Why does step ${step} pass anyway? (kept as its verdict)`) || "";
       if (!why.trim()) return;
     }
+    if (action === "rewind" && !window.confirm(`Start over from step ${step}? It and every step that needs it go back to pending with fresh attempts; their outputs move to artifacts/_rewound/.`)) return;
     try { await api.stepAction(this.runId, step, action, why); } catch (err) { this.hooks.onError && this.hooks.onError(err); }
   }
 
@@ -279,7 +280,11 @@ const DRAW = {
                       : `Run step ${r.id} again, beyond the attempt limit`,
                     onclick: () => this.stepAction(r.id, "retry") }),
                   r.status === "skipped" ? null : el("button", { class: "btn tiny", text: "Pass anyway", title: "Pass this step on your decision (your reason is kept as its verdict)",
-                    onclick: () => this.stepAction(r.id, "waive") })] : null)),
+                    onclick: () => this.stepAction(r.id, "waive") })] : null,
+                live && !["pending", "running", "waiting", "validating"].includes(r.status) ?
+                  el("button", { class: "btn tiny", text: "Rewind here",
+                    title: `Start over from step ${r.id}: it and the steps that need it go back to pending; their outputs are kept in artifacts/_rewound/`,
+                    onclick: () => this.stepAction(r.id, "rewind") }) : null)),
             (r.verdict || r.summary || (r.problems || []).length) ? el("tr", { class: "sub" }, el("td", { colspan: "7" },
               this.fold(`x-${r.id}-v`, "Verdict", r.verdict), this.fold(`x-${r.id}-s`, "Report", r.summary),
               (r.problems || []).length ? this.fold(`x-${r.id}-p`, "Problems", r.problems.join("\n")) : null,

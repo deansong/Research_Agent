@@ -626,3 +626,48 @@ def test_the_autopilot_can_pass_a_step_that_did_its_part(run, script):
     rec = nodes.records(st)["1"]
     assert rec["status"] == "pass" and "passed by the user: autopilot: its own check" in rec["verdict"]
     assert any(d["what"] == "Step 1 passes on the autopilot's decision" for d in st["decisions"])
+
+
+def test_rewind_starts_over_from_a_step_and_keeps_the_outputs(run, monkeypatch):
+    st, _ = S.apply(approved_state(), [{"op": "set", "section": "execution", "value": {
+        "steps": [{"id": "1", "title": "Data", "status": "pass", "attempts": 2,
+                   "verdict": "pass", "artifacts": ["rows.json"]},
+                  {"id": "2", "title": "Train", "status": "fail", "attempts": 3,
+                   "extra_attempts": 1}]}}], by="execution")
+    for sid in ("1", "2"):
+        run.artifacts(sid).mkdir(parents=True, exist_ok=True)
+        (run.artifacts(sid) / "out.txt").write_text(sid)
+    assert nodes.rewind_problems(run.folder, st, "1") == []
+    st, _ = S.apply(st, nodes.rewind(run.folder, st, "1"), by="user")
+    rec = nodes.records(st)
+    assert [(r["status"], r["attempts"], r["extra_attempts"], r["verdict"]) for r in rec.values()] \
+        == [("pending", 0, 0, "")] * 2, "step 1 and the step that needs it start over"
+    kept = list((run.folder / "artifacts" / nodes.REWOUND).iterdir())
+    assert len(kept) == 1 and kept[0].name.endswith("-to-step-1")
+    assert sorted(p.name for p in kept[0].iterdir()) == ["step_01", "step_02"]
+    assert not run.artifacts("1").exists()
+    assert st["decisions"][-1]["what"] == "Rewind to step 1: steps 1, 2 start over"
+    assert nodes.rewind_problems(run.folder, st, "1") == ["rewind: step 1 has not run yet"]
+    st, _ = S.apply(st, [nodes.record_op(st, "1", status="pass"),
+                         ], by="x")
+    st, _ = S.apply(st, [nodes.record_op(st, "2", status="waiting")], by="x")
+    assert "still running: step 2 (waiting)" in nodes.rewind_problems(run.folder, st, "1")[0]
+    assert nodes.rewind_problems(run.folder, st, "9") == ["rewind: there is no step 9"]
+
+
+def test_the_user_can_ask_the_discussor_to_rewind(run, script):
+    script.add("ExecDecision", decide("run", "1"), decide("ask_user", task="Step 2 next?"),
+               decide("ask_user", task="Start over: run 1?"))
+    script.add("StepReport", done_writing(run, "1", "rows.json", "[1000]"))
+    script.add("Verdict", verdict())
+    script.add("ExecDiscussorOutput", say("Step 1 passed. Step 2 next?"),
+               say("Going back to step 1.", hand_to="orchestrator", rewind="1"),
+               say("Step 1 starts over. Run it?"))
+    session = Execution(run)
+    session.start()
+    turn = session.answer("Rewind to step 1, the rows were wrong.")
+    assert turn.reply == "Step 1 starts over. Run it?"
+    rec = nodes.records(session.research)["1"]
+    assert rec["status"] == "pending" and rec["attempts"] == 0
+    assert any(p.name.endswith("-to-step-1")
+               for p in (run.folder / "artifacts" / nodes.REWOUND).iterdir())

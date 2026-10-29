@@ -70,7 +70,7 @@ same, readable.
 | assumptions | A1… | marked unverified, checked or false |
 | evidence | E1… | claim, source, and `verified`: arXiv ids are checked with the research skill's tool |
 | hypotheses | H1… | statement, falsifiable prediction, rationale, evidence ids, novelty, status |
-| rubric | R1… | criterion, measure, pass threshold, weight |
+| rubric | R1… | criterion, measure, pass threshold, weight, and the one step that completes it (`assessed_at`), where it is checked |
 | protocol | | baselines, metrics, statistical test, seeds, stop criteria |
 | plan | steps 1… | what, check, depends on, rubric ids, cost, gate |
 | design | | the execution agent's nodes: role, steps, skills, access, instructions |
@@ -276,11 +276,13 @@ design for them, and you approve it again. The new run's owners can read the
 earlier run's files.
 
 Code holds what a model cannot change:
-- **Order.** A step runs only once the steps it depends on have passed or been skipped.
+- **Order.** A step runs only once the steps it depends on have passed or been skipped. A step waiting on a failed one is not skipped around it.
+- **What a step is judged on.** Its own check, plus the rubric criteria assessed at that step: each criterion is checked at the one step that completes it, never at the steps that only lead up to it.
 - **Attempts.** A failed step is retried at most `max_attempts` times in all (default 3). Each retry starts a new owner session and passes it the validator's verdict.
 - **Your go.** A step the plan gates waits for you (`/go`, or tell the discussor). `--confirm all` makes every step wait; `--confirm none` makes none wait.
 - **Passing.** Only the validator's verdict passes a step. Before the validator looks, code checks that every file the owner lists exists, and that every job it names was launched for that step.
 - **Budget.** The `--wall-hours` and `--gpu-hours` limits are measured from the job records. Going over stops the jobs and the step, and asks you what to do. Raise the limit in `execute.json` and resume to go on.
+- **Rewind.** You can start over from any step that has run (the step table, or tell the discussor): it and every step that needs it go back to pending with fresh attempts; their outputs are kept in `artifacts/_rewound/`.
 - **Frozen design.** The goal, hypotheses, rubric, protocol, plan and design do not change here. A changed plan goes back through the bootstrap and its approvals.
 
 Long jobs. An owner launches anything long through the jobs helper, which picks free GPUs and runs the command detached:

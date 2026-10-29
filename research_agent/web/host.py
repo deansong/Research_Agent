@@ -338,14 +338,19 @@ class RunHost:
             raise ValueError("Steps are for the execution stage.")
         rec = (S.Store(self.folder).read().get("execution") or {}).get("steps") or []
         status = next((r["status"] for r in rec if r["id"] == step), None)
-        if action not in ("retry", "waive"):
-            raise ValueError("The action is retry or waive.")
-        if status not in (exec_nodes.REOPENABLE if action == "retry" else ("fail", "stopped")):
+        if action not in ("retry", "waive", "rewind"):
+            raise ValueError("The action is retry, waive or rewind.")
+        if action == "rewind":
+            problems = exec_nodes.rewind_problems(self.folder, S.Store(self.folder).read(), step)
+            if problems:
+                raise ValueError(problems[0].removeprefix("rewind: "))
+        elif status not in (exec_nodes.REOPENABLE if action == "retry" else ("fail", "stopped")):
             raise ValueError(f"Step {step} has not failed (it is {status or 'not a step'}).")
         if action == "waive" and not why.strip():
             raise ValueError("Say why the step passes anyway: it is kept as its verdict.")
         inbox.post(self.folder, action, step=step, why=why.strip())
-        word = "another attempt" if action == "retry" else f"a pass ({why.strip()})"
+        word = {"retry": "another attempt", "rewind": "start over from here"}.get(
+            action, f"a pass ({why.strip()})")
         with self._lock:
             if not self.busy and self._status.get("waiting"):
                 self.bus.emit("chat", role="user", text=f"(step {step}: {word})", kind="answer")

@@ -394,6 +394,14 @@ def test_the_page_passes_a_failed_step_and_reopens_a_skipped_one(web, script):
     settle(web, "pr")
     rec = {x["id"]: x for x in S.Store(folder).read()["execution"]["steps"]}
     assert rec["1"]["status"] == "pass" and rec["2"]["status"] == "pass"
+    # And back: rewind to step 1 -- both start over, the team goes on.
+    script.add("ExecDecision", move("ask_user", task="Start over: run 1?"))
+    script.add("ExecDiscussorOutput", tell("Steps 1 and 2 start over. Run step 1?"))
+    assert web.post("/api/runs/pr/step", json={"step": "1", "action": "rewind"}).status_code == 200
+    settle(web, "pr")
+    rec = {x["id"]: x for x in S.Store(folder).read()["execution"]["steps"]}
+    assert rec["1"]["status"] == rec["2"]["status"] == "pending"
+    assert web.post("/api/runs/pr/step", json={"step": "1", "action": "rewind"}).status_code == 400
 
 
 def test_a_node_s_settings_and_what_a_running_call_is_sent(web, script):

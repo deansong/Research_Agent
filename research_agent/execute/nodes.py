@@ -17,6 +17,7 @@ CONCEPT: Sessions, in <run>/rb:
 
 from __future__ import annotations
 
+import shutil
 import subprocess
 import sys
 from dataclasses import dataclass, field
@@ -255,6 +256,55 @@ class DiscussorTurn(Outcome):
     stop: bool = False
     retry: list[str] = field(default_factory=list)
     waive: list[dict] = field(default_factory=list)
+    rewind: str = ""
+
+
+# ---- rewinding -------------------------------------------------------------------------
+
+#: Where a rewind keeps the outputs of the steps it starts over.
+REWOUND = "_rewound"
+
+
+def rewind_problems(folder: Path, st: dict, step_id: str) -> list[str]:
+    """Why the execution cannot go back to `step_id` now (empty: it can)."""
+    rec = records(st)
+    if step_id not in rec:
+        return [f"rewind: there is no step {step_id}"]
+    if rec[step_id]["status"] == "pending":
+        return [f"rewind: step {step_id} has not run yet"]
+    affected = [step_id, *dependents(st, step_id)]
+    busy = [f"step {s} ({rec[s]['status']})" for s in affected
+            if rec.get(s, {}).get("status") in ("running", "waiting", "validating")]
+    busy += [f"job {j['id']} of step {j['step']}" for s in affected
+             for j in jobs.records(folder, s) if jobs.status(j)["state"] == "running"]
+    return [f"rewind: still running: {', '.join(busy)} -- stop the run first"] if busy else []
+
+
+def rewind(folder: Path, st: dict, step_id: str, *, by: str = "user") -> list[dict]:
+    """Start over from `step_id`: it and every step that needs it go back to
+    pending with fresh attempts. Their outputs move to
+    artifacts/_rewound/<time>-to-step-<id>/, so nothing is lost. Returns the
+    state changes; moves the files."""
+    affected = [step_id, *dependents(st, step_id)]
+    rec = records(st)
+    redo = [s for s in affected if rec.get(s, {}).get("status") != "pending"]
+    keep = Path(folder) / "artifacts" / REWOUND / f"{datetime.now():%Y%m%d-%H%M%S}-to-step-{step_id}"
+    for s in redo:
+        out = Path(folder) / "artifacts" / views.folder_name(s)
+        if out.exists() and any(out.iterdir()):
+            keep.mkdir(parents=True, exist_ok=True)
+            shutil.move(str(out), str(keep / out.name))
+    ops = []
+    for s in redo:
+        ops.append(record_op(st, s, status="pending", attempts=0, extra_attempts=0, go=False,
+                             verdict="", summary="", problems=[], artifacts=[], jobs=[],
+                             sessions=[], started="", finished="", gpu_hours=0.0))
+        st = S.apply(st, ops[-1:], by=by)[0]
+    ops.append({"op": "add", "section": "decisions", "value": {
+        "what": f"Rewind to step {step_id}: steps {', '.join(redo)} start over",
+        "why": f"the {by} asked for it" + (f"; earlier outputs kept in {keep}"
+                                           if keep.exists() else ""), "by": by}})
+    return ops
 
 
 def step_problems(st: dict, retry, waive, max_attempts: int | None = None) -> list[str]:
@@ -358,9 +408,11 @@ def discussor(run: ExecRun, st: dict, *, seen: dict, user: str = "", note: str =
         if out.go and not awaiting:
             problems.append("go: no step is waiting for the user's go")
         if out.hand_to == "orchestrator" and not (out.requests or out.go or out.stop
-                                                  or out.retry or out.waive):
+                                                  or out.retry or out.waive or out.rewind):
             problems.append('hand_to is "orchestrator" but there is no request or go for the '
                             'team to act on: add the request, or hand to "user"')
+        if out.rewind:
+            problems += rewind_problems(run.folder, st, out.rewind)
         return (problems + breakpoint_problems(st, out.breakpoints)
                 + step_problems(st, out.retry, out.waive, run.limits.max_attempts))
 
@@ -391,7 +443,7 @@ def discussor(run: ExecRun, st: dict, *, seen: dict, user: str = "", note: str =
     return DiscussorTurn(ops=ops, summary=out.reply[:200], session=session, data=out,
                          reply=out.reply, requests=list(out.requests), hand_to=out.hand_to,
                          go=out.go and bool(awaiting), stop=out.stop, retry=list(out.retry),
-                         waive=[w.model_dump() for w in out.waive])
+                         waive=[w.model_dump() for w in out.waive], rewind=out.rewind)
 
 
 def aside(run: ExecRun, st: dict, *, user: str, activity: str) -> schemas.AsideOutput:
@@ -400,7 +452,9 @@ def aside(run: ExecRun, st: dict, *, user: str, activity: str) -> schemas.AsideO
     step -- the state here may already be behind."""
 
     def check(out: schemas.AsideOutput) -> list[str]:
-        return breakpoint_problems(st, out.breakpoints) + step_problems(st, out.retry, out.waive, run.limits.max_attempts)
+        return (breakpoint_problems(st, out.breakpoints)
+                + step_problems(st, out.retry, out.waive, run.limits.max_attempts)
+                + (rewind_problems(run.folder, st, out.rewind) if out.rewind else []))
 
     budget = run.brief_budget("discussor")
     plain = views.aside(st, user=user, activity=activity, run_dir=str(run.folder),
@@ -423,6 +477,8 @@ def aside(run: ExecRun, st: dict, *, user: str, activity: str) -> schemas.AsideO
         inbox.post(run.folder, "retry", step=sid)
     for w in out.waive:
         inbox.post(run.folder, "waive", step=w.step, why=w.why)
+    if out.rewind:
+        inbox.post(run.folder, "rewind", step=out.rewind)
     if out.stop:
         inbox.post(run.folder, "stop", why="the user stopped the execution")
     return out

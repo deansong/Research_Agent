@@ -116,7 +116,11 @@ What it shows:
   **Go** when a step waits for you. A step that failed can be moved on:
   **Another attempt** runs it again, past the attempt limit; **Pass anyway**
   passes it on your decision, and your reason is kept as its verdict, next
-  to what the validator said. You can also just tell the discussor.
+  to what the validator said. A skipped step has **Reopen**. **Rewind here**,
+  on any step that has run, starts over from it: that step and every step
+  that needs it go back to pending with fresh attempts, and their outputs
+  move to `artifacts/_rewound/<time>-to-step-N/` (refused while one of them
+  runs). You can also just tell the discussor ("rewind to step 2").
 - **Reviews:** the reviewer's scores, requests (must, should, could), and its
   strengths, weaknesses and questions.
 
