@@ -10,8 +10,8 @@ agent that will carry it out.
   steps       "1", "2", ...: each delivers one thing, concretely, with one
               check of its own; split a step that has two. As few steps as
               the work needs. `gate` when the user should say go first
-  nodes       lower_snake_case names: one orchestrator, one read-only
-              validator that owns no steps, and the workers and writers that
+  nodes       lower_snake_case names: one orchestrator and one read-only
+              validator, which own no steps, and the workers and writers that
               own the steps (one owner each), with instructions and skills
               from the catalogue
 Think about the study and the nodes together. Give the whole design each

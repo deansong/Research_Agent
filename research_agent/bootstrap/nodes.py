@@ -301,6 +301,11 @@ def design_check(st: dict, known_skills: set[str]):
                      f"step that completes it" for r in out.rubric if r.assessed_at not in ids]
         problems += design_problems({"nodes": [n.model_dump() for n in out.nodes]}, steps=ids,
                                     rubric=rubric, skills=known_skills)
+        # New designs only: execution still accepts earlier ones.
+        problems += [f"the orchestrator {n.name} owns steps {', '.join(n.steps)}, but it only "
+                     f"decides what runs next: give those steps to a worker or writer and "
+                     f"leave the orchestrator's `steps` empty"
+                     for n in out.nodes if n.role == "orchestrator" and n.steps]
         return problems
     return check
 

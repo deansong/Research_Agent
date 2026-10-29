@@ -159,6 +159,15 @@ def test_a_bad_design_goes_back_with_what_is_wrong(run, script, evidence, monkey
         nodes.design(run, evidence, task="again")
 
 
+def test_the_orchestrator_owns_no_steps(run, script, evidence, monkeypatch):
+    monkeypatch.setattr(nodes.Run, "catalogue", lambda self: [("peft", "LoRA")])
+    bad = {**DESIGN, "nodes": [{**NODES[0], "steps": ["1"]}, {**NODES[1], "steps": ["2"]},
+                               NODES[2]]}
+    script.add("DesignOutput", bad, DESIGN)
+    nodes.design(run, evidence, task="design it")
+    assert "the orchestrator orchestrator owns steps 1" in script.calls[1]["prompt"]
+
+
 def test_a_revision_replaces_the_design_and_what_it_leaves_out_goes(run, script, evidence,
                                                                     monkeypatch):
     monkeypatch.setattr(nodes.Run, "catalogue", lambda self: [("peft", "LoRA")])
