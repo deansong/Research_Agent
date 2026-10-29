@@ -9,7 +9,9 @@ CONCEPT: A prompt is named by its path without ".md" ("roles/bootstrap/
        designer", "notes/design_ready"). The first file found wins:
 
     <run>/prompts/<name>.md                one run (its folder)
-    $RESEARCH_AGENT_PROMPTS/<name>.md      every run of yours
+    $RESEARCH_AGENT_PROMPTS/<name>.md      every run of yours, if set
+    ~/.research_agent/prompts/<name>.md    every run of yours (refinement
+                                           adopts its winners here)
     research_agent/prompts/<name>.md       the defaults
 
        A note's `$name` placeholders are filled in by the code that sends it
@@ -27,6 +29,9 @@ from string import Template
 
 DEFAULT_DIR = Path(__file__).with_name("prompts")
 ENV = "RESEARCH_AGENT_PROMPTS"
+#: Your own prompts when $RESEARCH_AGENT_PROMPTS is not set (and where
+#: research_agent/refine adopts a winning prompt): $RESEARCH_AGENT_HOME/prompts.
+HOME_ENV = "RESEARCH_AGENT_HOME"
 #: A run folder's own prompts.
 RUN_DIR = "prompts"
 
@@ -46,10 +51,17 @@ def dirs(run_dir: str | os.PathLike | None = None) -> list[Path]:
     found = []
     if run_dir:
         found.append(Path(run_dir) / RUN_DIR)
-    if os.environ.get(ENV):
-        found.append(Path(os.environ[ENV]).expanduser())
+    found.append(user_dir())
     found.append(DEFAULT_DIR)
     return found
+
+
+def user_dir() -> Path:
+    """Your own prompts, for every run: $RESEARCH_AGENT_PROMPTS, else
+    ~/.research_agent/prompts."""
+    if os.environ.get(ENV):
+        return Path(os.environ[ENV]).expanduser()
+    return Path(os.environ.get(HOME_ENV) or "~/.research_agent").expanduser() / "prompts"
 
 
 def text(name: str, run_dir: str | os.PathLike | None = None, **fields) -> str:

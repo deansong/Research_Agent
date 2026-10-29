@@ -8,6 +8,8 @@ Run with:   python -m pytest tests/test_refine.py -q
 
 from __future__ import annotations
 
+from pathlib import Path
+
 import pytest
 
 from research_agent import state as S
@@ -134,3 +136,71 @@ def test_the_judge_sees_answers_not_labels_and_the_base_wins_ties(past_run, scri
     assert SEL.tally(picks)[0] == "base", "a tie keeps the base"
     picks.append(SEL.Pick("c4", "inv"))
     assert SEL.tally(picks) == ("inv", {"inv": 2, "base": 1, "dom": 1})
+
+
+# ---- the whole refinement ----------------------------------------------------------------
+
+from research_agent import prompt_files  # noqa: E402
+from research_agent.refine import experience as X  # noqa: E402
+from research_agent.refine import refine as F  # noqa: E402
+
+
+def test_a_refinement_adopts_the_winner_and_keeps_a_lesson(past_run, script, tmp_path,
+                                                          monkeypatch):
+    monkeypatch.setenv(prompt_files.HOME_ENV, str(tmp_path / "home"))
+    composed = "You are the DESIGNER. The validator owns no steps; checks are a worker's."
+    script.add("DesignOutput", DESIGN, {**DESIGN, "summary": "inv design"},
+               {**DESIGN, "summary": "composed design"})
+    script.add("Proposal",
+               {"instructions": "You are the DESIGNER. Validator: no steps.",
+                "notes": [{"change": "validator rule", "motivated_by": "designer-001 retry"}]},
+               {"keep_base": True},
+               {"instructions": composed, "notes": [{"change": "kept inv", "motivated_by": "replay"}]})
+    script.add("Choice", lambda prompt: {"why": "conformance", "choice": next(
+        c[0] for c in prompt.split("=== CANDIDATE ")[1:] if "composed design" in c)})
+    script.add("Lessons", {"edits": [{"change": "validator rule", "observed": "no retry",
+                                      "verdict": "helped"}],
+                           "cue": "a role keeps failing one structural check",
+                           "lesson": "state the check's rule in the role's own terms",
+                           "evidence": "edit row 1", "confidence": "medium: one case"})
+    said = []
+    report = F.refine("designer", [past_run], n_cases=1, model="fake", refiner="fake",
+                      root=tmp_path, say=said.append)
+    assert report.winner == "composed" and report.wins == {"composed": 1}
+    assert prompt_files.text("roles/bootstrap/designer") == composed, "every later run uses it"
+    assert report.adopted.endswith("roles/bootstrap/designer.md") and not report.backup
+    assert "state the check's rule" in X.lessons_for("designer")
+    md = (report.folder / "report.md").read_text()
+    assert "**Winner: composed**" in md and "```diff" in md and "## Lesson" in md
+    assert "dom: keep the base" in "\n".join(said)
+    sent = script.prompts("Proposal")[0]
+    assert "owns steps 2" in sent, "the proposer saw the check the case failed"
+
+    # A second refinement that the base wins changes nothing, and a winner
+    # after that keeps the file it replaces.
+    script.add("DesignOutput", DESIGN, {**DESIGN, "summary": "inv design"})
+    script.add("Proposal", {"instructions": "Shorter."}, {"keep_base": True},
+               {"keep_base": True})
+    script.add("Choice", lambda prompt: {"why": "fidelity", "choice": next(
+        c[0] for c in prompt.split("=== CANDIDATE ")[1:] if "inv design" not in c)})
+    script.add("Lessons", {"edits": []})
+    again = F.refine("designer", [past_run], n_cases=1, model="fake", refiner="fake",
+                     root=tmp_path, say=said.append)
+    assert again.winner == "base" and not again.adopted
+    assert prompt_files.text("roles/bootstrap/designer") == composed
+    assert "LESSONS FROM EARLIER REFINEMENTS" in script.prompts("Proposal")[3]
+    path, backup = F.adopt_text("designer", "Newer.")
+    assert Path(backup).read_text().endswith(composed + "\n")
+
+
+def test_a_refinement_over_its_budget_is_refused(past_run):
+    with pytest.raises(ValueError, match="up to 9 model calls; the budget is 5"):
+        F.refine("designer", [past_run], n_cases=1, budget=5)
+
+
+def test_the_command_line_lists_the_cases_first(past_run, capsys):
+    from research_agent import cli
+
+    assert cli.main(["refine", "--role", "designer", "--runs", str(past_run), "--dry-run"]) == 0
+    out = capsys.readouterr().out
+    assert "run/designer-001: 1 checks failed" in out and "Up to 9 model calls" in out
