@@ -204,6 +204,9 @@ class AsideOutput(BaseModel):
     """Steps the user gives another attempt (beyond the attempt limit)."""
     waive: list[WaiveIn] = Field(default_factory=list, max_length=10)
     """Failed steps the user passes anyway, with why."""
+    skip: list[WaiveIn] = Field(default_factory=list, max_length=10)
+    """Steps the user says to skip, with why -- the only way a step that later
+    steps need is skipped."""
     rewind: str = ""
     """A step id when the user asks to go back to it: that step and every
     step after it that needs it start over (outputs kept). "" otherwise."""
@@ -229,6 +232,9 @@ class ExecDiscussorOutput(BaseModel):
     """Steps the user gives another attempt (beyond the attempt limit)."""
     waive: list[WaiveIn] = Field(default_factory=list, max_length=10)
     """Failed steps the user passes anyway, with why."""
+    skip: list[WaiveIn] = Field(default_factory=list, max_length=10)
+    """Steps the user says to skip, with why -- the only way a step that later
+    steps need is skipped."""
     rewind: str = ""
     """A step id when the user asks to go back to it: that step and every
     step after it that needs it start over (outputs kept). "" otherwise."""

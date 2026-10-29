@@ -197,7 +197,8 @@ def test_a_failed_verdict_is_retried_with_its_advice_until_attempts_run_out(run,
 
 
 def test_a_skipped_step_leaves_a_record_and_unblocks_the_next(tmp_path, script):
-    plan = {"steps": [PLAN["steps"][0], {**PLAN["steps"][1], "gate": False}]}
+    # Step 2 does not need step 1: the orchestrator may skip it alone.
+    plan = {"steps": [PLAN["steps"][0], {**PLAN["steps"][1], "gate": False, "depends_on": []}]}
     folder = tmp_path / "run"
     S.Store(folder).write(approved_state(plan=plan))
     run = nodes.ExecRun(folder, {r: RoleConfig("fake") for r in (*config.ROLES, "discussor")},
@@ -756,3 +757,42 @@ def test_the_autopilot_does_not_stop_over_a_step_it_could_still_pass(run, script
     out = autopilot.decide(run, st, stage="execution", reply="Step 1 failed.")
     assert out.stop and len(script.prompts("AutopilotOutput")) == 2, "a stop again is final"
     assert "`waive` a step that did its own part" in script.prompts("AutopilotOutput")[1]
+
+
+def test_only_the_user_skips_a_step_later_steps_need(run, script):
+    # Run 1455-next: a runtime gate failed by 57 s, step 4 was skipped and
+    # step 5, the main analysis, could no longer be done.
+    from research_agent import autopilot
+    autopilot.save(run.folder, autopilot.Settings(on=True, max_decisions=5))
+    script.add("ExecDecision", decide("skip", "1", "the gate failed"),
+               decide("ask_user", "1", "Step 1 is over the limit: raise it, or skip it?"))
+    script.add("ExecDiscussorOutput", say("Step 1 is over the limit. Raise it, or skip it?"))
+    ex = Execution(run)
+    turn = ex.start()
+    first, retry = script.prompts("ExecDecision")
+    assert "skip 1: steps 2 need it" in retry and "Only the user decides that" in retry
+    assert not [c for c in script.calls if c["schema"] == "AutopilotOutput"], \
+        "giving up a step later steps need is handed back, not answered by the autopilot"
+    assert "handed back" in autopilot.load(run.folder).handed_back
+    autopilot.save(run.folder, autopilot.Settings(on=False))
+
+    script.add("ExecDiscussorOutput", say("Skipping step 1, as you say.",
+                                          skip=[{"step": "1", "why": "not worth the time"}]))
+    script.add("ExecDecision", decide("run", "2"))
+    script.add("ExecDiscussorOutput", say("Step 2 waits for your go."))
+    ex.answer("Skip step 1.")
+    st = ex.research
+    rec = nodes.records(st)["1"]
+    assert rec["status"] == "skipped" and rec["summary"] == "skipped by the user: not worth the time"
+    assert st["decisions"][-1]["what"] == "Skip step 1" and st["decisions"][-1]["by"] == "user"
+
+
+def test_the_autopilot_s_answer_is_not_recorded_as_the_user_s(run, script):
+    from research_agent import autopilot
+    said = say("Going on.", decisions=[{"what": "Keep going", "why": "it said so"}])
+    script.add("ExecDiscussorOutput", said, said)
+    turn = nodes.discussor(run, approved_state(), seen={}, user=f"{autopilot.MARK} Keep going.")
+    assert not [o for o in turn.ops if o.get("section") == "decisions"], \
+        "the autopilot recorded its own answer; the discussor's copy is not the user's"
+    turn = nodes.discussor(run, approved_state(), seen={}, user="Keep going.")
+    assert [o["value"]["by"] for o in turn.ops if o.get("section") == "decisions"] == ["user"]

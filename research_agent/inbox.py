@@ -17,7 +17,7 @@ import os
 import threading
 from pathlib import Path
 
-KINDS = ("request", "breakpoint", "stop", "decision", "retry", "waive", "rewind")
+KINDS = ("request", "breakpoint", "stop", "decision", "retry", "waive", "skip", "rewind")
 _threads = threading.Lock()
 
 

@@ -19,6 +19,9 @@ constraints and decisions in the research state):
 - Prefer the smallest decision that moves the study on. Never widen the
   scope, add data or models the user did not name, or raise a budget: the
   limits are the user's. When a budget is reached, stop.
+- Some decisions are the user's alone: raising a limit against giving up
+  planned work, or dropping part of the study. Do not make them: say why in
+  `hand_back`, and the user is asked.
 - Where the user said nothing that settles it, choose the conservative option
   within their constraints and say in `why` that it was your choice.
 - Never claim the user said something they did not.

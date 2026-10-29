@@ -17,7 +17,7 @@ import re
 from dataclasses import dataclass, field
 from pathlib import Path
 
-from research_agent import chat, inbox
+from research_agent import autopilot, chat, inbox
 from research_agent import run as run_base
 from research_agent import state as S
 from research_agent.bootstrap import prompts, schemas, verify, views
@@ -114,8 +114,10 @@ def discussor(run: Run, st: dict, *, seen: dict, user: str = "", note: str = "")
     constraints = {k: v for k, v in out.constraints.model_dump().items() if v}
     if constraints:
         ops.append({"op": "merge", "section": "constraints", "value": constraints})
-    ops += [{"op": "add", "section": "decisions", "value": {**d.model_dump(), "by": "user"}}
-            for d in out.decisions]
+    # The autopilot's answer is recorded once, as its own (autopilot.decision_op).
+    if not user.startswith(autopilot.MARK):
+        ops += [{"op": "add", "section": "decisions", "value": {**d.model_dump(), "by": "user"}}
+                for d in out.decisions]
     ops += [{"op": "add", "section": "assumptions", "value": a.model_dump()}
             for a in out.assumptions]
     ops += [{"op": "update", "section": "open_questions", "id": a.id,

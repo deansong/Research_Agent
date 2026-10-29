@@ -84,6 +84,14 @@ def counted(folder: Path) -> None:
     save(folder, s)
 
 
+def hand_back(folder: Path, why: str) -> str:
+    """The autopilot stops answering until the user does; the note for them."""
+    s = load(folder)
+    s.handed_back = f"Autopilot handed back to you: {why}. Answer, and it carries on."
+    save(folder, s)
+    return s.handed_back
+
+
 def user_answered(folder: Path) -> None:
     """A person answered: the count of answers in a row starts again."""
     s = load(folder)
@@ -112,6 +120,10 @@ class AutopilotOutput(BaseModel):
     the only way a step that did its own part passes over a failed verdict."""
     stop: bool = False
     """Execution: end the run (a budget reached, nothing sensible left)."""
+    hand_back: str = ""
+    """Why only the user can decide this ("" when you decide): raising a
+    limit against giving up planned work, or dropping part of the study.
+    Nothing else in your answer is done; the user is asked."""
 
 
 def instructions(run_dir=None) -> str:

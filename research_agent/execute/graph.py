@@ -139,6 +139,8 @@ def build(run: nodes.ExecRun, design: nodes.Design, checkpointer=None):
             elif item["kind"] == "rewind" and item.get("step") in steps:
                 if not nodes.rewind_problems(run.folder, st, item["step"]):
                     st = commit(st, nodes.rewind(run.folder, st, item["step"]), "user")
+            elif item["kind"] == "skip" and item.get("step") in steps:
+                st = commit(st, nodes.user_skip_ops(run.folder, st, [item]), "user")
             elif item["kind"] in ("retry", "waive") and item.get("step") in steps:
                 retry = [item["step"]] if item["kind"] == "retry" else []
                 waive = [{"step": item["step"], "why": item.get("why", "")}] \
@@ -167,6 +169,7 @@ def build(run: nodes.ExecRun, design: nodes.Design, checkpointer=None):
                                note=state.get("note", ""), awaiting=state.get("awaiting", ""))
         st = commit(st, turn.ops, "discussor")
         spoke = bool(state.get("user"))
+        who = "autopilot" if state.get("user", "").startswith(autopilot.MARK) else "user"
         awaiting, outcome = state.get("awaiting", ""), state.get("outcome", "")
         if spoke and turn.go and awaiting:
             st = commit(st, go_ops(st, awaiting), "user")
@@ -175,14 +178,17 @@ def build(run: nodes.ExecRun, design: nodes.Design, checkpointer=None):
             st = commit(st, nodes.rewind(run.folder, st, turn.rewind), "user")
             outcome = ""
         if spoke and (turn.retry or turn.waive):
-            st = commit(st, nodes.user_step_ops(st, turn.retry, turn.waive), "user")
+            st = commit(st, nodes.user_step_ops(st, turn.retry, turn.waive, by=who), who)
+        if spoke and turn.skip and who == "user":
+            st = commit(st, nodes.user_skip_ops(run.folder, st, turn.skip), "user")
         if spoke and turn.stop:
             st = stop_all(st, "the user stopped the execution")
             outcome = "stopped"
         # As in the bootstrap: passing on the orchestrator's message, it
         # answers the user; a go or a request moves the work on.
         go = spoke and not turn.stop and (turn.hand_to == "orchestrator" or turn.go
-                                          or bool(turn.retry or turn.waive or turn.rewind)
+                                          or bool(turn.retry or turn.waive or turn.rewind
+                                                   or turn.skip)
                                           or bool(state.get("nudged")))
         return {"research": st, "seen": dict(st.get("versions") or {}), "reply": turn.reply,
                 "pending": list(state.get("pending") or []) + turn.requests, "user": "",
@@ -249,8 +255,21 @@ def build(run: nodes.ExecRun, design: nodes.Design, checkpointer=None):
             run.say(note)
         if not answer:
             return None
+        decision = state.get("decision") or {}
+        if decision.get("action") == "ask_user" and decision.get("step") \
+                and nodes.needed_by(st, decision["step"]):
+            # Whether to give up a step later steps need -- or raise the limit
+            # that stopped it -- is the user's (measured: run 1455-next).
+            run.say(autopilot.hand_back(run.folder, (
+                f"the team asks about step {decision['step']}, which steps "
+                f"{', '.join(nodes.needed_by(st, decision['step']))} need: giving it up, or "
+                f"raising a limit for it, is yours to decide")))
+            return None
         out = autopilot.decide(run, st, stage="execution", reply=state.get("reply", ""),
                                awaiting=state.get("awaiting", ""))
+        if out.hand_back.strip():
+            run.say(autopilot.hand_back(run.folder, out.hand_back.strip()))
+            return None
         autopilot.counted(run.folder)
         return {**autopilot.answer_for(out), "ops": [autopilot.decision_op(out)]}
 

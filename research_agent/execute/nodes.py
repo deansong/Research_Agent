@@ -28,7 +28,7 @@ from research_agent import run as run_base
 from research_agent import state as S
 from research_agent.bootstrap.config import RoleConfig
 from research_agent.bootstrap.nodes import DISCUSSOR_SESSION, Outcome, design_problems
-from research_agent import chat, inbox, prompt_files
+from research_agent import autopilot, chat, inbox, prompt_files
 from research_agent.execute import config, jobs, prompts, schemas, views
 
 NodeFailed = run_base.NodeFailed
@@ -229,6 +229,34 @@ def short(rec: dict) -> bool:
         rec.get("verdict", "").startswith(("partial", "passed by")))
 
 
+def needed_by(st: dict, step_id: str) -> list[str]:
+    """The steps not settled yet that need `step_id`: what skipping it costs."""
+    rec = records(st)
+    return [d for d in dependents(st, step_id) if rec.get(d, {}).get("status") not in SETTLED]
+
+
+def user_skip_ops(run_dir, st: dict, skips, by: str = "user") -> list[dict]:
+    """The user's skip of steps, for their reason: recorded as the step's
+    terminal record, and as their decision."""
+    ops = []
+    for w in skips:
+        sid, why = (w["step"], w["why"]) if isinstance(w, dict) else (w.step, w.why)
+        r = records(st).get(sid)
+        if not r or r["status"] not in ("pending", "fail", "stopped"):
+            continue
+        folder = Path(run_dir) / "artifacts" / views.folder_name(sid)
+        folder.mkdir(parents=True, exist_ok=True)
+        (folder / "SKIPPED.md").write_text(f"# Step {sid} skipped\n\nBy the {by}, {_now()}: {why}\n")
+        ops.append(record_op(st, sid, status="skipped", finished=_now(),
+                             summary=f"skipped by the {by}: {why}"[:1500],
+                             artifacts=["SKIPPED.md"]))
+        st = S.apply(st, ops[-1:], by=by)[0]
+        ops.append({"op": "add", "section": "decisions", "value": {
+            "what": f"Skip step {sid}", "why": why, "by": by}})
+        st = S.apply(st, ops[-1:], by=by)[0]
+    return ops
+
+
 def dependents(st: dict, step_id: str) -> list[str]:
     """The steps that need `step_id`, directly or through others, in plan order."""
     steps = (st.get("plan") or {}).get("steps") or []
@@ -275,6 +303,7 @@ class DiscussorTurn(Outcome):
     stop: bool = False
     retry: list[str] = field(default_factory=list)
     waive: list[dict] = field(default_factory=list)
+    skip: list[dict] = field(default_factory=list)
     rewind: str = ""
 
 
@@ -425,8 +454,15 @@ def discussor(run: ExecRun, st: dict, *, seen: dict, user: str = "", note: str =
                     if a.id not in open_ids]
         if out.go and not awaiting:
             problems.append("go: no step is waiting for the user's go")
+        problems += [f"skip: step {w.step} is {records(st).get(w.step, {}).get('status', 'not a step')}"
+                     f"; only a pending, failed or stopped step is skipped" for w in out.skip
+                     if records(st).get(w.step, {}).get("status") not in ("pending", "fail",
+                                                                          "stopped")]
+        if out.skip and user.startswith(autopilot.MARK):
+            problems.append("skip: only the user skips a step; the autopilot cannot")
         if out.hand_to == "orchestrator" and not (out.requests or out.go or out.stop
-                                                  or out.retry or out.waive or out.rewind):
+                                                  or out.retry or out.waive or out.rewind
+                                                  or out.skip):
             problems.append('hand_to is "orchestrator" but there is no request or go for the '
                             'team to act on: add the request, or hand to "user"')
         if out.rewind:
@@ -454,14 +490,18 @@ def discussor(run: ExecRun, st: dict, *, seen: dict, user: str = "", note: str =
         out, session = run.call("discussor", brief=brief, schema=schemas.ExecDiscussorOutput,
                                 session=DISCUSSOR_SESSION, check=check, takeover=takeover)
     ops = breakpoint_ops(st, out.breakpoints)
-    ops += [{"op": "add", "section": "decisions", "value": {**d.model_dump(), "by": "user"}}
-            for d in out.decisions]
+    # The autopilot's answer is recorded once, as its own (autopilot.decision_op):
+    # what the discussor makes of it is not the user's decision.
+    if not user.startswith(autopilot.MARK):
+        ops += [{"op": "add", "section": "decisions", "value": {**d.model_dump(), "by": "user"}}
+                for d in out.decisions]
     ops += [{"op": "update", "section": "open_questions", "id": a.id,
              "value": {"status": "answered", "answer": a.answer}} for a in out.answers]
     return DiscussorTurn(ops=ops, summary=out.reply[:200], session=session, data=out,
                          reply=out.reply, requests=list(out.requests), hand_to=out.hand_to,
                          go=out.go and bool(awaiting), stop=out.stop, retry=list(out.retry),
-                         waive=[w.model_dump() for w in out.waive], rewind=out.rewind)
+                         waive=[w.model_dump() for w in out.waive],
+                         skip=[w.model_dump() for w in out.skip], rewind=out.rewind)
 
 
 def aside(run: ExecRun, st: dict, *, user: str, activity: str) -> schemas.AsideOutput:
@@ -495,6 +535,8 @@ def aside(run: ExecRun, st: dict, *, user: str, activity: str) -> schemas.AsideO
         inbox.post(run.folder, "retry", step=sid)
     for w in out.waive:
         inbox.post(run.folder, "waive", step=w.step, why=w.why)
+    for w in out.skip:
+        inbox.post(run.folder, "skip", step=w.step, why=w.why)
     if out.rewind:
         inbox.post(run.folder, "rewind", step=out.rewind)
     if out.stop:
@@ -526,6 +568,14 @@ def decision_check(st: dict, limit: int, run_dir=None):
         if out.action == "stop" and untried and not asked_once:
             asked_once.append("stop")
             return [prompt_files.text("notes/run_not_stop", run_dir, step=untried[0])]
+        if out.action == "skip" and out.step in moves["skip"] and needed_by(st, out.step):
+            # Measured (run 1455-next): a runtime gate failed by 57 s, the
+            # step it guarded was skipped, and the study's main analysis --
+            # the step after -- could no longer be done. Whether to raise the
+            # limit or give that up is the user's.
+            asked_once.append(out.step)      # so the question it is told to ask gets through
+            return [prompt_files.text("notes/skip_needed", run_dir, step=out.step,
+                                      needed=", ".join(needed_by(st, out.step)))]
         if out.action in ("run", "retry", "skip") and out.step not in moves[out.action]:
             return [f"{out.action} {out.step or '(no step)'} is not open now; open moves: "
                     + "; ".join(describe_moves(moves, st, limit))]

@@ -252,6 +252,9 @@ def build(run: nodes.Run, checkpointer=None):
         if not answer:
             return None
         out = autopilot.decide(run, st, stage="bootstrap", reply=state.get("reply", ""))
+        if out.hand_back.strip():
+            run.say(autopilot.hand_back(run.folder, out.hand_back.strip()))
+            return None
         autopilot.counted(run.folder)
         return {**autopilot.answer_for(out), "ops": [autopilot.decision_op(out)]}
 
