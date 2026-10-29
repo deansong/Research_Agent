@@ -84,9 +84,12 @@ class RubricCheck(BaseModel):
 
 
 class Verdict(BaseModel):
-    verdict: Literal["pass", "fail", "incomplete"]
+    verdict: Literal["pass", "partial", "fail", "incomplete"]
     """pass: the step's check holds and its rubric items are met.
-    fail: something is wrong. incomplete: outputs are missing."""
+    partial: the step's own work is right, but part of its check needs
+    outputs an earlier step did not produce (it was skipped, or itself
+    partial) -- `problems` says what is missing and why. fail: something is
+    wrong. incomplete: outputs are missing."""
     summary: str
     rubric: list[RubricCheck] = Field(default_factory=list, max_length=20)
     problems: list[str] = Field(default_factory=list, max_length=20)

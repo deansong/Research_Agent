@@ -210,6 +210,25 @@ def open_moves(st: dict, max_attempts: int) -> dict:
     return moves
 
 
+def ancestors(st: dict, step_id: str) -> list[str]:
+    """The steps `step_id` needs, directly or through others."""
+    steps = {s["id"]: s for s in (st.get("plan") or {}).get("steps") or []}
+    found, todo = [], list((steps.get(step_id) or {}).get("depends_on") or [])
+    while todo:
+        d = todo.pop()
+        if d not in found and d in steps:
+            found.append(d)
+            todo += steps[d].get("depends_on") or []
+    return found
+
+
+def short(rec: dict) -> bool:
+    """A settled step that did not deliver everything: skipped, partial, or
+    passed by the user over its verdict."""
+    return rec.get("status") == "skipped" or rec.get("status") == "pass" and (
+        rec.get("verdict", "").startswith(("partial", "passed by")))
+
+
 def dependents(st: dict, step_id: str) -> list[str]:
     """The steps that need `step_id`, directly or through others, in plan order."""
     steps = (st.get("plan") or {}).get("steps") or []
@@ -636,9 +655,18 @@ def validator(run: ExecRun, st: dict, design: Design, *, node: dict, step: dict,
     rec = records(st)[step["id"]]
     rubric = {r["id"] for r in st.get("rubric") or []}
 
+    upstream = [d for d in ancestors(st, step["id"]) if short(records(st).get(d, {}))]
+
     def check(out: schemas.Verdict) -> list[str]:
         problems = [f"{c.id} is not a rubric id" for c in out.rubric if c.id not in rubric]
-        if out.verdict != "pass" and not (out.problems or out.advice.strip()):
+        if out.verdict == "partial" and not upstream:
+            problems.append("partial is for a step whose missing part an earlier step did not "
+                            "produce (skipped or partial); none of the steps it needs is: give "
+                            "pass, fail or incomplete")
+        elif out.verdict == "partial" and not out.problems:
+            problems.append("partial: say in `problems` what is missing and which earlier step "
+                            "left it out")
+        elif out.verdict not in ("pass", "partial") and not (out.problems or out.advice.strip()):
             problems.append(f"{out.verdict}: say what is wrong (`problems`) and what a retry "
                             f"must do (`advice`)")
         return problems
@@ -652,9 +680,15 @@ def validator(run: ExecRun, st: dict, design: Design, *, node: dict, step: dict,
                             workdir=run.folder, label=f"validate step {step['id']}",
                             session=run.next_name(f"validate{_session(step['id'], attempt)[4:]}"),
                             check=check)
-    passed = out.verdict == "pass"
+    # Partial: the step did what it could; the gap is an earlier step's, and
+    # the run goes on with it recorded (measured: run 1455-next stopped when
+    # its analysis "failed" for want of fits a runtime gate had cancelled).
+    passed = out.verdict in ("pass", "partial")
     unmet = [f"{c.id}: {c.note}" for c in out.rubric if c.met == "no"]
     verdict = f"{out.verdict}: {out.summary}"
+    if out.verdict == "partial":
+        verdict = (f"partial (what steps {', '.join(upstream)} did not produce is missing): "
+                   f"{out.summary}")
     ops = [record_op(st, step["id"], status="pass" if passed else "fail", verdict=verdict[:1500],
                      problems=(list(out.problems) + unmet)[:20]
                      + ([f"advice: {out.advice}"] if out.advice and not passed else []),

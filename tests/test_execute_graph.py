@@ -722,3 +722,37 @@ def test_the_design_stage_s_requests_do_not_stop_the_execution(run, script):
     first, retry = script.prompts("ExecDecision")
     assert "do not run anything" not in first, "a request from the design stage is dropped"
     assert "`stop` ends the execution, and step 1 is open to run and untried" in retry
+
+
+def test_a_step_short_of_what_a_skipped_step_left_out_passes_as_partial(run, script):
+    # Run 1455-next: a runtime gate cancelled the expanded fits (step 4 was
+    # skipped), and the analysis failed for want of them, stopping the run.
+    st, _ = S.apply(approved_state(), [{"op": "set", "section": "execution", "value": {
+        "steps": [{"id": "1", "title": "Data", "status": "skipped"},
+                  {"id": "2", "title": "Train", "status": "validating", "attempts": 1}]}}],
+        by="execution")
+    design = nodes.Design.read(st)
+    node, step = design.owners[design.owner_of["2"]], nodes.plan_step(st, "2")
+    script.add("Verdict", verdict("partial"), verdict("partial", problems=["no expanded fits"]))
+    out = nodes.validator(run, st, design, node=node, step=step, report={})
+    assert "say in `problems` what is missing" in script.prompts("Verdict")[1]
+    rec = nodes.records(S.apply(st, out.ops, by="v")[0])["2"]
+    assert rec["status"] == "pass" and rec["verdict"].startswith("partial (what steps 1 did not")
+    assert nodes.short(rec) and "no expanded fits" in rec["problems"]
+
+    st, _ = S.apply(st, [nodes.record_op(st, "1", status="pass", verdict="pass: ok")], by="x")
+    script.add("Verdict", verdict("partial", problems=["x"]), verdict())
+    nodes.validator(run, st, design, node=node, step=step, report={})
+    assert "none of the steps it needs is" in script.prompts("Verdict")[-1]
+
+
+def test_the_autopilot_does_not_stop_over_a_step_it_could_still_pass(run, script):
+    from research_agent import autopilot
+    st, _ = S.apply(approved_state(), [{"op": "set", "section": "execution", "value": {
+        "steps": [{"id": "1", "title": "Data", "status": "fail", "attempts": 1},
+                  {"id": "2", "title": "Train", "status": "pending"}]}}], by="execution")
+    stop = {"answer": "Stop.", "why": "w", "stop": True}
+    script.add("AutopilotOutput", stop, stop)
+    out = autopilot.decide(run, st, stage="execution", reply="Step 1 failed.")
+    assert out.stop and len(script.prompts("AutopilotOutput")) == 2, "a stop again is final"
+    assert "`waive` a step that did its own part" in script.prompts("AutopilotOutput")[1]

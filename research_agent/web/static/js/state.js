@@ -267,7 +267,9 @@ const DRAW = {
             el("tr", { class: waits ? "awaiting" : "" },
               el("td", {}, el("b", { text: `${r.id}. ` }), r.title),
               el("td", { class: "mono small", text: r.owner }),
-              el("td", {}, pill(r.status, statusKind(r.status)), r.go ? el("span", { class: "dim small", text: " go given" }) : null),
+              el("td", {}, (r.status === "pass" && (r.verdict || "").startsWith("partial"))
+                ? el("span", { title: "Its own work passed; part of its check needed what an earlier (skipped) step did not produce" }, pill("partial", "warn"))
+                : pill(r.status, statusKind(r.status)), r.go ? el("span", { class: "dim small", text: " go given" }) : null),
               el("td", { text: String(r.attempts || 0) }),
               el("td", { text: (r.gpu_hours || 0).toFixed(1) }),
               el("td", {}, ["before", "after"].map((w) => el("label", { class: "brk", title: `Stop for you ${w} step ${r.id}` },

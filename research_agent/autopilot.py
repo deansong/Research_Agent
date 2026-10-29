@@ -129,8 +129,24 @@ def decide(run, st: dict, *, stage: str, reply: str, awaiting: str = "") -> Auto
     in the `autopilot` conversation."""
     from research_backend import conversation
 
+    stopped_once = []
+
     def check(out: AutopilotOutput) -> list[str]:
         problems = [] if out.answer.strip() else ["`answer` is empty: write the user's reply"]
+        if stage == "execution" and out.stop and not stopped_once:
+            # Measured (run 1455-next): a step failed only for want of what a
+            # gate had cancelled, and the autopilot stopped the whole run --
+            # a final stop -- instead of passing the step.
+            from research_agent.execute import nodes as exec_nodes
+            failed = [r["id"] for r in exec_nodes.records(st).values()
+                      if r["status"] in ("fail", "stopped")]
+            if failed:
+                stopped_once.append(True)
+                problems.append(
+                    f"`stop` ends the run for good, and step(s) {', '.join(failed)} can still be "
+                    f"decided: `waive` a step that did its own part (what it lacks is an earlier "
+                    f"or later step's), `retry` one the verdict's advice can fix. Stop only when "
+                    f"neither can, or a budget is reached -- then answer with stop again.")
         if stage == "execution" and out.approve:
             problems.append("`approve` is for the bootstrap; in the execution use go or stop")
         if stage == "bootstrap" and (out.go or out.stop or out.retry or out.waive):
