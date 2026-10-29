@@ -545,7 +545,8 @@ def test_autopilot_from_the_page_to_the_end(web, script):
     st = approved_state()
     st["approvals"] = {k: v for k, v in st["approvals"].items() if k != "design"}
     S.Store(folder).write(st)
-    script.add("DiscussorOutput", say("The design is ready. Approve?"), say("Approved. Done."))
+    script.add("DiscussorOutput", say("The design is ready. Approve?"), say("Approved. Done."),
+               say("The design is approved: execution next."))
     script.add("OrchestratorOutput", decide("ask_user", "Approve the design?"))
     web.post("/api/runs/auto/message", json={"text": "hello"})
     d = settle(web, "auto")
@@ -579,7 +580,7 @@ def test_autopilot_from_the_page_to_the_end(web, script):
         if d["stage"] == "execution" and d["outcome"] == "done" and not d["busy"]:
             break
         time.sleep(0.05)
-    assert d["stage"] == "execution" and d["outcome"] == "done", d
+    assert d["stage"] == "execution" and d["outcome"] == "done"
     st = S.Store(folder).read()
     assert S.approved(st, "design")
     assert [x["by"] for x in st["decisions"]].count("autopilot") == 2

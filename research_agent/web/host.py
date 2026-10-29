@@ -130,7 +130,12 @@ class RunHost:
         waiting = s.waiting_for_user if s.started else False
         self._status = {"started": s.started, "waiting": waiting, "outcome": turn.outcome,
                         "awaiting": getattr(s, "awaiting", "") if self.stage == "execution" else "",
-                        "stopped_midway": s.started and not waiting and not turn.outcome}
+                        # A node still to run that is not the user's: the graph
+                        # was interrupted (a pause, a model switched mid-call),
+                        # whatever the last outcome said. Measured: run
+                        # 1134 kept outcome "stopped" with its discussor
+                        # pending, so no Carry on and every message an aside.
+                        "stopped_midway": s.started and not waiting and turn.waiting}
 
     def status_event(self) -> None:
         self.bus.emit("status", **self.detail())
@@ -183,6 +188,9 @@ class RunHost:
                 return "answer"
             self.bus.emit("chat", role="user", text=text, kind="aside")
             self._aside(text)
+            if not self.busy and self._status.get("stopped_midway"):
+                self.bus.emit("note", text="The run stopped midway: press Carry on, and the team "
+                                           "goes on with what you said.")
             return "aside"
 
     def approve(self, sections: list[str]) -> None:
