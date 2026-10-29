@@ -634,7 +634,7 @@ def _refine(parser, args) -> int:
     try:
         refining.refine(args.role, runs, n_cases=args.cases, k=args.k, model=args.model,
                         refiner=args.refiner, budget=args.budget, root=root,
-                        adopt=not args.no_adopt)
+                        adopt=not args.no_adopt, say=lambda text: print(text, flush=True))
     except ValueError as exc:
         print(f"Cannot refine: {exc}", file=sys.stderr)
         return 1
