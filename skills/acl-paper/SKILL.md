@@ -5,7 +5,7 @@ description: Write an ACL-style paper from a run's step reports and result files
 
 WRITING THE PAPER -- an ACL-style paper from this run, and only this run.
 
-FORMAT. LaTeX in the official ACL style, in {artifacts_dir}/paper:
+FORMAT. LaTeX in the official ACL style, in the paper folder your brief names:
   main.tex        \documentclass[11pt]{article} \usepackage[final]{acl}
                   (use [review] only if the person asked for an anonymous
                   submission). \input each appendix file after the references.
@@ -14,14 +14,14 @@ FORMAT. LaTeX in the official ACL style, in {artifacts_dir}/paper:
                   https://raw.githubusercontent.com/acl-org/acl-style-files/master/latex/acl.sty
                   https://raw.githubusercontent.com/acl-org/acl-style-files/master/latex/acl_natbib.bst
                   If that fails (no network), copy them from the bundled
-                  ACL template, {skills_dir}/ml-paper-writing/templates/acl/
+                  ACL template, templates/acl/ of the ml-paper-writing skill
                   (acl.sty, acl_natbib.bst; acl_latex.tex is a worked example),
                   and say in your report which copy you used. Only if neither
                   is available, use \documentclass[11pt,twocolumn]{article}
                   and say so in a comment at the top of main.tex and in your
                   report.
   references.bib  ONLY papers you confirmed exist: the research rounds listed
-                  below, or a lookup with {python} {skills_dir}/research/research_tools.py paper <arxiv id> / cites.
+                  below, or a lookup with the research skill's research_tools.py (paper <arxiv id> / cites).
                   Never write a citation from memory.
   figures/        made from the result files (matplotlib, if installed);
                   the script that makes them saved beside them.

@@ -106,6 +106,17 @@ class ReviewRequestIn(BaseModel):
     priority: Literal["must", "should", "could"]
 
 
+class PaperReport(BaseModel):
+    """The paper of the finished study."""
+
+    summary: str
+    """What the paper says, in a few sentences, with its headline numbers."""
+    pdf: str = ""
+    """The compiled PDF's path; "" when there is none."""
+    problems: list[str] = Field(default_factory=list, max_length=20)
+    """What is missing or could not be done (no PDF: why)."""
+
+
 class ReviewOutput(BaseModel):
     """A review as a major ML conference asks for one (NeurIPS, ICML, ICLR)."""
 

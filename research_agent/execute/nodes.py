@@ -34,7 +34,7 @@ from research_agent.execute import config, jobs, prompts, schemas, views
 NodeFailed = run_base.NodeFailed
 
 #: Graph node names the design's own names must not take.
-RESERVED = {"discussor", "orchestrator", "validator", "wait", "human"}
+RESERVED = {"discussor", "orchestrator", "validator", "wait", "human", "paper", "reviewer"}
 #: Where a step's status says it is finished, one way or another.
 SETTLED = {"pass", "skipped"}
 #: What the user can give another attempt: a step that failed or was
@@ -667,6 +667,43 @@ def validator(run: ExecRun, st: dict, design: Design, *, node: dict, step: dict,
 
 
 # ---- reviewer -------------------------------------------------------------------------------
+
+
+def paper(run: ExecRun, st: dict) -> Outcome:
+    """The paper of the finished study, in <run>/paper (main.tex, main.pdf),
+    written on the writer's model once every step is settled."""
+    folder = run.folder / "paper"
+    folder.mkdir(parents=True, exist_ok=True)
+    latex = config.find_latex(run.limits)
+
+    def check(out: schemas.PaperReport) -> list[str]:
+        pdf = Path(out.pdf) if out.pdf else None
+        if pdf and not pdf.is_absolute():
+            pdf = folder / pdf
+        if pdf and not (pdf.is_file() and pdf.stat().st_size):
+            return [f"there is no PDF at {out.pdf}: compile main.tex, or leave `pdf` empty "
+                    f"and say why in `problems`"]
+        if not pdf and latex and not out.problems:
+            return [f"`pdf` is empty: compile {folder / 'main.tex'} with {latex}, or say in "
+                    f"`problems` what stops it"]
+        return []
+
+    out, session = run.call("writer", brief=views.paper(st, run_dir=str(run.folder), latex=latex,
+                                                        python=run.limits.python),
+                            schema=schemas.PaperReport, access="full", workdir=folder,
+                            instructions=run.instructions["paper"],
+                            skills=skills_for(run, {"name": "paper",
+                                                    "skills": list(run.limits.paper_skills)},
+                                              "paper"),
+                            check=check, label="paper")
+    pdf = str(Path(out.pdf) if Path(out.pdf).is_absolute() else folder / out.pdf) if out.pdf else ""
+    ops = [{"op": "merge", "section": "status", "value": {"paper": pdf}},
+           {"op": "add", "section": "results", "value": {
+               "node": "paper", "job": "paper", "asked": "write the paper",
+               "summary": (f"{pdf}: " if pdf else "no PDF: ") + out.summary[:1400]
+               + "".join(f"\n- {p}" for p in out.problems[:5]),
+               "session": session}}]
+    return Outcome(ops=ops, summary=f"paper: {pdf or 'no PDF'}", session=session, data=out)
 
 
 def reviewer(run: ExecRun, st: dict) -> Outcome:

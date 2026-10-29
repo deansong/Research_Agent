@@ -211,6 +211,8 @@ def build(run: nodes.ExecRun, design: nodes.Design, checkpointer=None):
             return {"outcome": "exit", "_to": END}
         if answer.get("review"):
             return {"note": "", "_to": "reviewer"}
+        if answer.get("paper"):
+            return {"note": "", "_to": "paper"}
         text = answer.get("text", "")
         awaiting, nudged, outcome = state.get("awaiting", ""), False, state.get("outcome", "")
         if answer.get("work") and not text:
@@ -314,7 +316,7 @@ def build(run: nodes.ExecRun, design: nodes.Design, checkpointer=None):
             st = commit(st, [{"op": "merge", "section": "status", "value": {
                 "phase": "done", "next": "the paper"}}], "execution")
             note = note or "Every step has passed or been skipped: the execution is done."
-            return {**base, "research": st, "note": note, "outcome": "done", "_to": "reviewer"}
+            return {**base, "research": st, "note": note, "outcome": "done", "_to": "paper"}
         if d.action == "stop":
             st = stop_all(st, f"stopped by the orchestrator: {d.task}")
             return {**base, "research": st, "note": f"The orchestrator stopped the execution: "
@@ -434,6 +436,23 @@ def build(run: nodes.ExecRun, design: nodes.Design, checkpointer=None):
                             f"Show them its results and ask whether to go on."}
         return {"research": st, "last": last, "pending": pending, "_to": "orchestrator"}
 
+    def paper(state: ExecState) -> dict:
+        st = state["research"]
+        try:
+            out = nodes.paper(run, st)
+        except RB.BackendCancelled:
+            raise
+        except RB.BackendError as exc:
+            return {"note": f"{state.get('note', '')} The paper could not be written: "
+                            f"{str(exc)[:400]}".strip(), "_to": "reviewer"}
+        st = commit(st, out.ops, "paper", out.session)
+        pdf = (st.get("status") or {}).get("paper", "")
+        said = (f"The paper is written: {pdf} (the user reads it with Paper at the top of the "
+                f"page)." if pdf else
+                f"The paper has no PDF: {'; '.join(out.data.problems) or out.data.summary}")
+        return {"research": st, "note": f"{state.get('note', '')} {said}".strip(),
+                "_to": "reviewer"}
+
     def reviewer(state: ExecState) -> dict:
         st = state["research"]
         try:
@@ -459,18 +478,21 @@ def build(run: nodes.ExecRun, design: nodes.Design, checkpointer=None):
         graph.add_node(name, owner(name))
     graph.add_node("wait", wait)
     graph.add_node("validator", validator)
+    graph.add_node("paper", paper)
     graph.add_node("reviewer", reviewer)
 
     owners = list(design.owners)
     graph.add_edge(START, "orchestrator")
     graph.add_conditional_edges("orchestrator", _route,
-                                ["discussor", "orchestrator", "reviewer", *owners])
+                                ["discussor", "orchestrator", "paper", *owners])
     graph.add_conditional_edges("discussor", _route, ["orchestrator", "human"])
-    graph.add_conditional_edges("human", _route, ["discussor", "orchestrator", "reviewer", END])
+    graph.add_conditional_edges("human", _route, ["discussor", "orchestrator", "paper", "reviewer",
+                                                  END])
     for name in owners:
         graph.add_conditional_edges(name, _route, ["wait", "validator", "orchestrator"])
     graph.add_conditional_edges("wait", _route, ["discussor", *owners])
     graph.add_conditional_edges("validator", _route, ["orchestrator", "discussor"])
+    graph.add_conditional_edges("paper", _route, ["reviewer"])
     graph.add_edge("reviewer", "discussor")
     return graph.compile(checkpointer=checkpointer)
 

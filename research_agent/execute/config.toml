@@ -28,6 +28,10 @@ max_decisions = 30
 # and the study's libraries. Step owners are told to use it; without it they
 # find one (the web server's own may have none of them).
 #     python = "/path/to/miniconda3/envs/train/bin/python"
+# The LaTeX compiler the paper is compiled with. "" finds one: tectonic,
+# latexmk or pdflatex on the PATH, else a tectonic in another env of this
+# conda install.
+latex = ""
 python = ""
 
 
@@ -38,6 +42,8 @@ dir = "skills"
 # The reviewer's skills (it is not in the design).
 # Not peer-review: it asks for a venue and an intake before it reads anything.
 reviewer = ["scientific-critical-thinking"]
+# The paper's, written once every step is settled (it runs on the writer's model).
+paper = ["acl-paper", "ml-paper-writing"]
 
 
 # Which provider and model each role runs on, as in the bootstrap. Step owners

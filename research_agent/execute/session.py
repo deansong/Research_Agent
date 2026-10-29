@@ -89,6 +89,10 @@ class Execution:
         """The finished study reviewed again (the user asked for it)."""
         return self._drive(Command(resume={"review": True}), on_step)
 
+    def paper(self, on_step=None) -> Turn:
+        """The paper written again, then reviewed (the user asked for it)."""
+        return self._drive(Command(resume={"paper": True}), on_step)
+
     def resume(self, on_step=None) -> Turn:
         """Carry on from where the run stopped (a failed call, Ctrl-C while
         jobs ran): the checkpoint stops just before that step."""

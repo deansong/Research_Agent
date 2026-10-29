@@ -75,7 +75,11 @@ def _papers(folder: Path, st: dict) -> list[dict]:
         step = by_writer.get(path.resolve(), "")
         found.append({"path": rel.as_posix(), "size": path.stat().st_size,
                       "modified": path.stat().st_mtime, "step": step, "paper": bool(step)})
-    found.sort(key=lambda p: (not p["paper"], -p["modified"]))
+    main = (folder / "paper" / "main.pdf").resolve()
+    for p in found:
+        if (folder / p["path"]).resolve() == main:
+            p.update(step="paper", paper=True, main=True)
+    found.sort(key=lambda p: (not p.get("main"), not p["paper"], -p["modified"]))
     return found[:200]
 
 
@@ -364,6 +368,11 @@ def create_app(runs_root: Path = RUNS_ROOT, *, roles=(), watch: bool = True) -> 
     @app.post("/api/runs/{run_id}/review")
     def review(run_id: str):
         act(host_of(run_id).review)
+        return {"ok": True}
+
+    @app.post("/api/runs/{run_id}/paper")
+    def write_paper(run_id: str):
+        act(lambda: host_of(run_id).review(paper=True))
         return {"ok": True}
 
     @app.post("/api/runs/{run_id}/execute")
@@ -657,7 +666,8 @@ def _graph(st: dict, stage: str) -> dict:
         if n["role"] == "validator" or (n["role"] == "orchestrator" and not n.get("steps")):
             continue
         name = f"node_{n['name']}" if n["name"] in ("discussor", "orchestrator", "validator",
-                                                    "wait", "human", "reviewer") else n["name"]
+                                                    "wait", "human", "paper", "reviewer") \
+            else n["name"]
         statuses = [records.get(s, {}).get("status", "pending") for s in n.get("steps") or []]
         nodes.append({"id": name, "label": n["name"],
                       "kind": "worker" if n["role"] == "orchestrator" else n["role"],
@@ -667,8 +677,10 @@ def _graph(st: dict, stage: str) -> dict:
                   (name, "validator", "done"), (name, "wait", "jobs")]
     nodes += [{"id": "wait", "label": "wait (jobs)", "kind": "code"},
               {"id": "validator", "label": "validator", "kind": "validator"},
+              {"id": "paper", "label": "paper", "kind": "writer"},
               {"id": "reviewer", "label": "reviewer", "kind": "reviewer"}]
-    edges += [("validator", "orchestrator", "verdict"), ("orchestrator", "reviewer", "done"),
+    edges += [("validator", "orchestrator", "verdict"), ("orchestrator", "paper", "done"),
+              ("paper", "reviewer", "paper.pdf"),
               ("reviewer", "discussor", "review")]
     return {"stage": stage, "nodes": nodes,
             "edges": [{"source": a, "target": b, "label": c} for a, b, c in edges]}

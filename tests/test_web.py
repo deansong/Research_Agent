@@ -20,7 +20,7 @@ from fastapi.testclient import TestClient
 from research_agent import state as S
 from research_agent.web import server
 from tests.scripted import script  # noqa: F401 -- fixture
-from tests.test_execute_graph import REVIEW, approved_state, done_writing, verdict
+from tests.test_execute_graph import PAPER, REVIEW, approved_state, done_writing, verdict
 from tests.test_execute_graph import decide as move, say as tell
 from tests.test_graph import FINDINGS, decide, say
 from dataclasses import replace
@@ -156,6 +156,7 @@ def test_approve_then_execute_from_the_page(web, script):
     script.add("ExecDecision", move("run", "1"), move("run", "2"), move("run", "2"), move("done"))
     script.add("StepReport", done_writing(_Folder(folder), "1"), done_writing(_Folder(folder), "2"))
     script.add("Verdict", verdict(), verdict())
+    script.add("PaperReport", PAPER)
     script.add("ReviewOutput", REVIEW)
     script.add("ExecDiscussorOutput", tell("Step 2 waits for your go."), tell("All done; 5/10."))
     r = web.post("/api/runs/ready/execute", json={"gpu_hours": 10})
@@ -186,6 +187,14 @@ def test_approve_then_execute_from_the_page(web, script):
     st = web.get("/api/runs/ready/state").json()["state"]
     assert [v["rating"] for v in st["reviews"]] == [REVIEW["rating"], 7]
     assert (folder / "reviews" / "V2.md").exists()
+
+    script.add("PaperReport", {**PAPER, "summary": "Rewritten."})
+    script.add("ReviewOutput", {**REVIEW, "rating": 8})
+    script.add("ExecDiscussorOutput", tell("New paper, 8/10."))
+    assert web.post("/api/runs/ready/paper").status_code == 200
+    d = settle(web, "ready")
+    assert d["transcript"][-1]["text"] == "New paper, 8/10." and d["waiting"]
+    assert [v["rating"] for v in web.get("/api/runs/ready/state").json()["state"]["reviews"]][-1] == 8
 
 
 class _Folder:
@@ -546,6 +555,7 @@ def test_autopilot_from_the_page_to_the_end(web, script):
     script.add("ExecDecision", move("run", "1"), move("run", "2"), move("run", "2"), move("done"))
     script.add("StepReport", done_writing(_Folder(folder), "1"), done_writing(_Folder(folder), "2"))
     script.add("Verdict", verdict(), verdict())
+    script.add("PaperReport", PAPER)
     script.add("ReviewOutput", REVIEW)
     script.add("ExecDiscussorOutput", tell("Step 2 waits for your go."), tell("Going ahead."),
                tell("All done; 5/10."))

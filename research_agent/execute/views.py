@@ -94,13 +94,46 @@ def aside(st: dict, *, user: str, activity: str, run_dir: str,
 # ---- reviewer -----------------------------------------------------------------------------
 
 
-def reviewer(st: dict, *, run_dir: str) -> str:
+def paper(st: dict, *, run_dir: str, latex: str, python: str = "") -> str:
     root = Path(run_dir)
+    folder = root / "paper"
+    compile_ = (f"cd {folder} && {latex} main.tex" if latex.endswith("tectonic") else
+                f"cd {folder} && {latex} -pdf main.tex" if latex.endswith("latexmk") else
+                f"cd {folder} && {latex} main.tex; bibtex main; {latex} main.tex; {latex} main.tex"
+                if latex else "")
+    parts = [f"Today is {_today()}.",
+             _block("THE STUDY", S.render(st, ["goal", "constraints", "protocol"])),
+             _block("HYPOTHESES AND RUBRIC", S.render({**st, "hypotheses": _live(st)},
+                                                      ["hypotheses", "rubric"])),
+             _block("WHAT WAS RUN -- the step table", S.render(st, ["execution"])),
+             _block("DECISIONS AND RISKS", S.render(st, ["decisions", "risks"], brief=True)),
+             _block("EVIDENCE YOU MAY CITE", S.render(st, ["evidence"], brief=True)),
+             _block("THE FILES -- read them", "\n".join(_listing(root) + [
+                 f"Code (a git repository): {root / 'work'}", f"Job logs: {root / 'jobs'}"])),
+             _block("THE PAPER", "\n".join([
+                 f"Write it in {folder} (main.tex, figures/, tables/, references.bib); "
+                 f"{folder / 'main.pdf'} is what the user reads.",
+                 f"Compile: {compile_}" if compile_ else
+                 "No LaTeX compiler is installed: leave the folder ready to compile and say so.",
+                 f"Python for the figure and table scripts: {python}" if python else ""]))]
+    if st.get("reviews"):
+        parts.append(_block("EARLIER REVIEWS -- answer them where the files allow",
+                            S.render(st, ["reviews"], brief=True)))
+    return "\n\n".join(parts)
+
+
+def _listing(root: Path) -> list[str]:
     listing = []
     for folder in sorted((root / "artifacts").glob("step_*")):
         files = sorted(p.relative_to(folder).as_posix() for p in folder.rglob("*") if p.is_file())
         listing.append(f"{folder}: {', '.join(files[:30]) or '(empty)'}"
                        + (f" ... and {len(files) - 30} more" if len(files) > 30 else ""))
+    return listing
+
+
+def reviewer(st: dict, *, run_dir: str) -> str:
+    root = Path(run_dir)
+    listing = _listing(root)
     parts = [f"Today is {_today()}.",
              _block("THE STUDY", S.render(st, ["goal", "constraints", "protocol"])),
              _block("HYPOTHESES AND RUBRIC", S.render({**st, "hypotheses": _live(st)},
@@ -112,6 +145,11 @@ def reviewer(st: dict, *, run_dir: str) -> str:
              _block("THE FILES -- read them", "\n".join(listing + [
                  f"Code (a git repository; `git log` shows each step): {root / 'work'}",
                  f"Job records and logs: {root / 'jobs'}"]))]
+    pdf = root / "paper" / "main.pdf"
+    if pdf.is_file():
+        parts.append(_block("THE PAPER -- the submission you review",
+                            f"{pdf} (its source beside it). Check its claims and numbers "
+                            f"against the files above."))
     if st.get("reviews"):
         parts.append(_block("EARLIER REVIEWS -- say whether this run answers them",
                             S.render(st, ["reviews"], brief=True)))

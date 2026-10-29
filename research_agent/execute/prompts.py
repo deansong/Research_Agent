@@ -11,9 +11,11 @@ from __future__ import annotations
 
 from research_agent import prompt_files
 
-#: Graph role -> its file; every step owner (worker, writer) shares one.
+#: Graph role -> its file; every step owner (worker, writer) shares one. The
+#: paper is written on the writer's model, with its own instructions.
 FILES = {"discussor": "discussor", "orchestrator": "orchestrator", "worker": "owner",
-         "writer": "owner", "validator": "validator", "reviewer": "reviewer"}
+         "writer": "owner", "validator": "validator", "reviewer": "reviewer",
+         "paper": "paper"}
 
 
 def instructions(run_dir=None) -> dict[str, str]:

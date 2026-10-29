@@ -80,6 +80,7 @@ def done_writing(run, step_id, name="out.txt", text="ok"):
     return answer
 
 
+PAPER = {"summary": "The paper: 5/10.", "pdf": "", "problems": ["no LaTeX in the tests"]}
 REVIEW = {"summary": "A small, clean study.", "strengths": ["fixed seeds"],
           "weaknesses": ["two seeds only"], "questions": ["why these ranks?"],
           "limitations": "one dataset", "soundness": 3, "presentation": 3, "contribution": 2,
@@ -99,6 +100,7 @@ def test_a_whole_execution_from_the_approved_design_to_done(run, script):
 
     script.add("ExecDecision", decide("run", "1"), decide("run", "2"), decide("run", "2"),
                decide("done"))
+    script.add("PaperReport", PAPER)
     script.add("ReviewOutput", REVIEW)
     script.add("StepReport", done_writing(run, "1", "rows.json", "[1000]"), launch,
                lambda prompt: {"state": "done", "summary": "both seeds scored",
@@ -191,6 +193,7 @@ def test_a_skipped_step_leaves_a_record_and_unblocks_the_next(tmp_path, script):
                         quiet=True)
     script.add("ExecDecision", decide("skip", "1", "the protocol's T3 branch does not apply"),
                decide("run", "2"), decide("done"))
+    script.add("PaperReport", PAPER)
     script.add("ReviewOutput", REVIEW)
     script.add("StepReport", done_writing(run, "2"))
     script.add("Verdict", verdict())
@@ -289,6 +292,7 @@ def test_the_user_can_stop_and_the_discussor_never_relays_into_more_work(run, sc
 def test_a_go_by_command_reaches_the_discussor_and_a_result_keeps_the_approval(run, script):
     script.add("ExecDecision", decide("run", "1"), decide("run", "2"), decide("run", "2"),
                decide("done"))
+    script.add("PaperReport", PAPER)
     script.add("ReviewOutput", REVIEW)
     script.add("StepReport", done_writing(run, "1"), lambda prompt: {
         **done_writing(run, "2")(prompt),
@@ -313,6 +317,7 @@ def test_the_review_is_kept_for_the_next_run(run, script):
                decide("done"))
     script.add("StepReport", done_writing(run, "1"), done_writing(run, "2"))
     script.add("Verdict", verdict(), verdict())
+    script.add("PaperReport", PAPER)
     script.add("ReviewOutput", REVIEW)
     script.add("ExecDiscussorOutput", say("Go?"), say("Reviewed: 5/10."))
     ex = Execution(run)
@@ -671,3 +676,21 @@ def test_the_user_can_ask_the_discussor_to_rewind(run, script):
     assert rec["status"] == "pending" and rec["attempts"] == 0
     assert any(p.name.endswith("-to-step-1")
                for p in (run.folder / "artifacts" / nodes.REWOUND).iterdir())
+
+
+def test_the_paper_is_written_and_its_pdf_checked(run, script):
+    run.limits = replace(run.limits, latex="/usr/bin/tectonic")
+    st = approved_state()
+    script.add("PaperReport", {**PAPER, "pdf": "main.pdf", "problems": []},
+               {**PAPER, "pdf": "", "problems": []}, {**PAPER, "pdf": "", "problems": ["no fonts"]})
+    out = nodes.paper(run, st)
+    retries = script.prompts("PaperReport")
+    assert "there is no PDF at main.pdf" in retries[1] and "`pdf` is empty" in retries[2]
+    assert f"cd {run.folder / 'paper'} && /usr/bin/tectonic main.tex" in retries[0]
+    assert out.ops[0]["value"] == {"paper": ""} and "no fonts" in out.ops[1]["value"]["summary"]
+
+    (run.folder / "paper" / "main.pdf").write_bytes(b"%PDF-1.4")
+    script.add("PaperReport", {**PAPER, "pdf": "main.pdf", "problems": []})
+    out = nodes.paper(run, st)
+    assert out.ops[0]["value"] == {"paper": str(run.folder / "paper" / "main.pdf")}
+    assert "PAPER -- the submission" in nodes.views.reviewer(st, run_dir=str(run.folder))

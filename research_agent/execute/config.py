@@ -15,6 +15,8 @@ The discussor is not here: it is the bootstrap's, continuing its conversation.
 from __future__ import annotations
 
 import json
+import shutil
+import sys
 import tomllib
 from dataclasses import asdict, dataclass, field, replace
 from pathlib import Path
@@ -31,7 +33,7 @@ CONFIRM = ("gated", "all", "none")
 
 DEFAULT_FILE = Path(__file__).with_name("config.toml")
 LIMITS = ("confirm", "max_attempts", "wall_hours", "gpu_hours", "poll_seconds", "max_decisions",
-          "python")
+          "python", "latex")
 
 
 @dataclass(frozen=True)
@@ -39,6 +41,7 @@ class ExecConfig:
     roles: dict[str, RoleConfig]
     skills_dir: Path | None
     reviewer_skills: tuple = ("scientific-critical-thinking",)
+    paper_skills: tuple = ("acl-paper", "ml-paper-writing")
     node_skills: dict = field(default_factory=dict)
     """Graph node -> its skills, over the design's: None, "auto" or names."""
     confirm: str = "gated"
@@ -50,6 +53,8 @@ class ExecConfig:
     python: str = ""
     """The Python the study's code runs with (torch, CUDA ...), told to the
     step owners; "" leaves it to them."""
+    latex: str = ""
+    """The LaTeX compiler the paper is made with; "" finds one (find_latex)."""
 
     def describe(self) -> str:
         roles = ", ".join(f"{r}={c}" for r, c in self.roles.items())
@@ -62,6 +67,7 @@ class ExecConfig:
         return {"roles": {r: asdict(c) for r, c in self.roles.items()},
                 "skills": {"dir": str(self.skills_dir) if self.skills_dir else None,
                            "reviewer": list(self.reviewer_skills),
+                           "paper": list(self.paper_skills),
                            "nodes": {n: c if c is not None else "none"
                                      for n, c in self.node_skills.items()}},
                 "execute": {k: getattr(self, k) for k in LIMITS}}
@@ -135,11 +141,27 @@ def _merge(cfg: ExecConfig, data: dict, *, base: Path) -> ExecConfig:
     if folder is not ...:
         skills_dir = (base / Path(folder).expanduser()).resolve() if folder else None
     reviewer = (data.get("skills") or {}).get("reviewer", cfg.reviewer_skills)
+    paper = (data.get("skills") or {}).get("paper", cfg.paper_skills)
     nodes = {**cfg.node_skills, **{n: _choice(c) for n, c in
                                    ((data.get("skills") or {}).get("nodes") or {}).items()}}
     limits = {k: v for k, v in (data.get("execute") or {}).items() if k in LIMITS}
     return replace(cfg, roles=roles, skills_dir=skills_dir,
-                   reviewer_skills=tuple(reviewer or ()), node_skills=nodes, **limits)
+                   reviewer_skills=tuple(reviewer or ()), paper_skills=tuple(paper or ()),
+                   node_skills=nodes, **limits)
+
+
+def find_latex(cfg: ExecConfig) -> str:
+    """The compiler for the paper: the configured one, else tectonic,
+    latexmk or pdflatex on the PATH, else a tectonic in another environment
+    of this conda install. "" when there is none."""
+    if cfg.latex:
+        return cfg.latex
+    for name in ("tectonic", "latexmk", "pdflatex"):
+        if shutil.which(name):
+            return shutil.which(name)
+    envs = Path(sys.executable).resolve().parents[2]
+    found = sorted(envs.glob("*/bin/tectonic")) if envs.name == "envs" else []
+    return str(found[0]) if found else ""
 
 
 def _choice(value):

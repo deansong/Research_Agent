@@ -118,7 +118,9 @@ function renderDetail(d) {
   $("btn-pause").hidden = !d.busy;
   $("btn-resume").hidden = !(d.stopped_midway && !d.busy);
   $("btn-execute").hidden = !d.can_execute;
-  $("btn-review").hidden = !(d.stage === "execution" && d.outcome === "done" && d.waiting && !d.busy);
+  const finished = d.stage === "execution" && d.outcome === "done" && d.waiting && !d.busy;
+  $("btn-review").hidden = !finished;
+  $("btn-write-paper").hidden = !finished;
   $("btn-stop").hidden = !(d.stage === "execution" && (d.busy || d.waiting) && d.outcome !== "done");
   chat.setMode(d);
   stateView.setControls({ stage: d.stage, canApprove: !!(d.waiting && !d.busy), awaiting: d.awaiting || "",
@@ -344,6 +346,7 @@ function wireDialogs() {
   });
   $("btn-paper").addEventListener("click", openPaper);
   $("btn-review").addEventListener("click", () => act(() => api.review(app.runId)));
+  $("btn-write-paper").addEventListener("click", () => act(() => api.writePaper(app.runId)));
   $("btn-popout").addEventListener("click", () => {
     if (app.runId) window.open(`/state/${encodeURIComponent(app.runId)}`, `state-${app.runId}`, "width=980,height=1000");
   });
