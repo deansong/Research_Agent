@@ -152,14 +152,16 @@ def aside(run: Run, st: dict, *, user: str, activity: str = "") -> schemas.Boots
 # ---- orchestrator ---------------------------------------------------------------------------
 
 
-def orchestrator(run: Run, st: dict, *, requests: list[dict], last: str = "") -> Outcome:
-    def check(out: schemas.OrchestratorOutput) -> list[str]:
-        if out.action == "research" and not (out.questions or out.task.strip()):
-            return ["research needs `questions` (or a task saying what to find)"]
-        if out.action in ("design", "ask_user") and not out.task.strip():
-            return [f"{out.action} needs a `task`"]
-        return []
+def orchestrator_check(out: schemas.OrchestratorOutput) -> list[str]:
+    if out.action == "research" and not (out.questions or out.task.strip()):
+        return ["research needs `questions` (or a task saying what to find)"]
+    if out.action in ("design", "ask_user") and not out.task.strip():
+        return [f"{out.action} needs a `task`"]
+    return []
 
+
+def orchestrator(run: Run, st: dict, *, requests: list[dict], last: str = "") -> Outcome:
+    check = orchestrator_check
     out, session = run.call("orchestrator", brief=views.orchestrator(st, requests=requests,
                                                                      last=last),
                             schema=schemas.OrchestratorOutput, check=check)
@@ -276,13 +278,10 @@ def design_problems(design: dict, *, steps: list[str], rubric: set[str],
     return problems
 
 
-def design(run: Run, st: dict, *, task: str) -> Outcome:
-    """The whole design in one call -- hypotheses, rubric, protocol, steps and
-    the nodes that do them -- so the study and the agent are thought out
-    together. It replaces the last one: what it leaves out goes."""
+def design_check(st: dict, known_skills: set[str]):
+    """What code requires of a design, given the state it was made from --
+    also used to replay a recorded call (research_agent/refine)."""
     evidence = _ids(st, "evidence")
-    catalogue = run.catalogue()
-    known_skills = {name for name, _ in catalogue}
 
     def check(out: schemas.DesignOutput) -> list[str]:
         problems = _unique("hypothesis", [h.id for h in out.hypotheses], "H")
@@ -303,7 +302,15 @@ def design(run: Run, st: dict, *, task: str) -> Outcome:
         problems += design_problems({"nodes": [n.model_dump() for n in out.nodes]}, steps=ids,
                                     rubric=rubric, skills=known_skills)
         return problems
+    return check
 
+
+def design(run: Run, st: dict, *, task: str) -> Outcome:
+    """The whole design in one call -- hypotheses, rubric, protocol, steps and
+    the nodes that do them -- so the study and the agent are thought out
+    together. It replaces the last one: what it leaves out goes."""
+    catalogue = run.catalogue()
+    check = design_check(st, {name for name, _ in catalogue})
     out, session = run.call("designer", brief=views.designer(st, task=task, skills=catalogue),
                             schema=schemas.DesignOutput, check=check)
     ops = _replace(st, "hypotheses", [h.model_dump() for h in out.hypotheses])

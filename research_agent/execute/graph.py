@@ -98,11 +98,11 @@ def build(run: nodes.ExecRun, design: nodes.Design, checkpointer=None):
     store = S.Store(run.folder)
     limits = run.limits
 
-    def commit(st: dict, ops: list[dict], by: str) -> dict:
+    def commit(st: dict, ops: list[dict], by: str, session: str = "") -> dict:
         if not ops:
             return st
         new, changed = S.apply(st, ops, by=by)
-        store.write(new, by=by, ops=ops, changed=changed)
+        store.write(new, by=by, ops=ops, changed=changed, session=session)
         return new
 
     def go_ops(st: dict, awaiting: str) -> list[dict]:
@@ -276,7 +276,7 @@ def build(run: nodes.ExecRun, design: nodes.Design, checkpointer=None):
                     "decision": {"action": "ask_user", "step": "", "reason": "the limit"}}
         out = nodes.orchestrator(run, st, design, budget=used, requests=pending,
                                  last=state.get("last", ""))
-        st = commit(st, out.ops, "orchestrator")
+        st = commit(st, out.ops, "orchestrator", out.session)
         d = out.data
         decision = {"action": d.action, "step": d.step, "reason": d.reason, "task": d.task}
         base = {"research": st, "decision": decision, "pending": [], "outcome": "",
@@ -341,7 +341,7 @@ def build(run: nodes.ExecRun, design: nodes.Design, checkpointer=None):
                 st = commit(st, [nodes.record_op(st, sid, status="fail", problems=[why])],
                             "execution")
                 return {"research": st, "last": f"step {sid}: {why}", "_to": "orchestrator"}
-            st = commit(st, out.ops, node["name"])
+            st = commit(st, out.ops, node["name"], out.session)
             rep = out.data
             rec = nodes.records(st)[sid]
             fields = {"summary": rep.summary[:1500], "jobs": list(dict.fromkeys(
@@ -415,7 +415,7 @@ def build(run: nodes.ExecRun, design: nodes.Design, checkpointer=None):
             st = commit(st, [nodes.record_op(st, sid, status="fail", problems=[why])], "execution")
             return {"research": st, "last": f"step {sid}: {why}", "_to": "orchestrator"}
         was_approved = S.approved(st, "hypotheses")
-        st = commit(st, out.ops, design.validator["name"])
+        st = commit(st, out.ops, design.validator["name"], out.session)
         if was_approved and not S.approved(st, "hypotheses"):
             # Only their status changed (supported, refuted): a result, not a
             # change to what was approved.
@@ -441,7 +441,7 @@ def build(run: nodes.ExecRun, design: nodes.Design, checkpointer=None):
         except RB.BackendError as exc:
             return {"note": f"{state.get('note', '')} The review could not be written: "
                             f"{str(exc)[:400]}".strip(), "_to": "discussor"}
-        st = commit(st, out.ops, "reviewer")
+        st = commit(st, out.ops, "reviewer", out.session)
         review = st["reviews"][-1]
         return {"research": st, "_to": "discussor", "note": (
             f"{state.get('note', '')} The reviewer reviewed the study (review {review['id']}, "

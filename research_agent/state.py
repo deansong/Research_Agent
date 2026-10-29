@@ -666,7 +666,8 @@ class Store:
         return json.loads(self.path.read_text(encoding="utf-8"))
 
     def write(self, state: dict, *, by: str = "", ops: list[dict] | None = None,
-              changed: list[str] | None = None) -> None:
+              changed: list[str] | None = None, session: str = "") -> None:
+        """`session`: the model call that made these changes, when one did."""
         self.folder.mkdir(parents=True, exist_ok=True)
         _atomic(self.path, json.dumps(state, indent=2, ensure_ascii=False))
         _atomic(self.folder / "research.md", "# Research state\n\n" + render(state) + "\n")
@@ -675,7 +676,8 @@ class Store:
             n = len(list(self.history.glob("*.json"))) + 1
             _atomic(self.history / f"{n:04d}.json", json.dumps(
                 {"at": _now(), "by": by, "changed": changed or [], "ops": ops,
-                 "versions": state.get("versions", {})}, indent=2, ensure_ascii=False))
+                 "versions": state.get("versions", {}),
+                 **({"session": session} if session else {})}, indent=2, ensure_ascii=False))
 
 
 def _atomic(path: Path, text: str) -> None:

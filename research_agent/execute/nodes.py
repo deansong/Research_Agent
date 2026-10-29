@@ -486,9 +486,9 @@ def aside(run: ExecRun, st: dict, *, user: str, activity: str) -> schemas.AsideO
 # ---- orchestrator ---------------------------------------------------------------------------
 
 
-def orchestrator(run: ExecRun, st: dict, design: Design, *, budget: str, requests: list[str],
-                 last: str = "") -> Outcome:
-    limit = run.limits.max_attempts
+def decision_check(st: dict, limit: int, run_dir=None):
+    """What code requires of an execution decision in this state -- also used
+    to replay a recorded call (research_agent/refine)."""
     moves = open_moves(st, limit)
     untried = [s for s in moves["run"] if not records(st)[s].get("attempts")]
     asked_once = []
@@ -496,14 +496,14 @@ def orchestrator(run: ExecRun, st: dict, design: Design, *, budget: str, request
     def check(out: schemas.ExecDecision) -> list[str]:
         if out.action == "ask_user" and out.step in moves["retry"] and not asked_once:
             asked_once.append(out.step)
-            return [prompt_files.text("notes/retry_not_ask", run.folder, step=out.step)]
+            return [prompt_files.text("notes/retry_not_ask", run_dir, step=out.step)]
         if out.action == "ask_user" and out.step in untried and not asked_once:
             # Once per decision, so a real question still gets through.
             # Measured: the read-only discussor probed the machine, found no
             # GPUs in its own sandbox, and the orchestrator asked the user
             # for "a writable environment" instead of running the preflight.
             asked_once.append(out.step)
-            return [prompt_files.text("notes/run_not_ask", run.folder, step=out.step)]
+            return [prompt_files.text("notes/run_not_ask", run_dir, step=out.step)]
         if out.action in ("run", "retry", "skip") and out.step not in moves[out.action]:
             return [f"{out.action} {out.step or '(no step)'} is not open now; open moves: "
                     + "; ".join(describe_moves(moves, st, limit))]
@@ -514,7 +514,14 @@ def orchestrator(run: ExecRun, st: dict, design: Design, *, budget: str, request
                 "skip": "why -- it is the step's terminal record", "ask_user": "what to ask",
                 "stop": "why"}[out.action] + ")"]
         return []
+    return check
 
+
+def orchestrator(run: ExecRun, st: dict, design: Design, *, budget: str, requests: list[str],
+                 last: str = "") -> Outcome:
+    limit = run.limits.max_attempts
+    moves = open_moves(st, limit)
+    check = decision_check(st, limit, run.folder)
     brief = views.orchestrator(
         st, design_part=design.orchestrator.get("instructions", ""),
         moves=describe_moves(moves, st, limit), budget=budget, requests=requests, last=last)

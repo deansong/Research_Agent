@@ -90,11 +90,11 @@ def build(run: nodes.Run, checkpointer=None):
     """The compiled graph for one run."""
     store = S.Store(run.folder)
 
-    def commit(st: dict, ops: list[dict], by: str) -> dict:
+    def commit(st: dict, ops: list[dict], by: str, session: str = "") -> dict:
         if not ops:
             return st
         new, changed = S.apply(st, ops, by=by)
-        store.write(new, by=by, ops=ops, changed=changed)
+        store.write(new, by=by, ops=ops, changed=changed, session=session)
         return new
 
     def how_to_execute() -> str:
@@ -170,7 +170,7 @@ def build(run: nodes.Run, checkpointer=None):
                     "pending": state.get("pending") or []}
         out = nodes.orchestrator(run, st, requests=state.get("pending") or [],
                                  last=state.get("last", ""))
-        st = commit(st, out.ops, "orchestrator")
+        st = commit(st, out.ops, "orchestrator", out.session)
         d = out.data
         decision = {"action": d.action, "task": d.task, "questions": list(d.questions),
                     "reason": d.reason}
@@ -216,7 +216,7 @@ def build(run: nodes.Run, checkpointer=None):
                     "node": name, "job": d["action"], "asked": d["task"][:500],
                     "summary": summary}}], name)
                 return {"research": st, "last": summary}
-            st = commit(st, out.ops, name)
+            st = commit(st, out.ops, name, out.session)
             return {"research": st, "last": f"{name} ({d['action']}): {out.summary}",
                     "designed": name == "designer"}
         return run_it
