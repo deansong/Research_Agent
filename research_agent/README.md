@@ -130,6 +130,35 @@ for a single run, copy it to `<run>/prompts/<same path>`; for all your runs,
 to a folder named by `RESEARCH_AGENT_PROMPTS`. The node window in the web UI
 shows the instructions a node actually gets.
 
+## Refining the prompts from past runs
+
+`python -m research_agent refine` improves one role's instructions from the
+calls it made in earlier runs: the method of Google's
+[harness2](https://github.com/google-research/harness2), on this project's
+own backends.
+
+```
+python -m research_agent refine --role designer --runs <run> <run> --dry-run   # the cases, the cost
+python -m research_agent refine --role designer --runs <run> <run>
+```
+
+Roles: `designer`, `orchestrator` (bootstrap), `exec_orchestrator`
+(execution). The web UI has the same thing under **Refine prompts**.
+
+1. **Cases.** The role's recorded calls, the most informative first:
+   - calls code sent back (a check they failed);
+   - calls that trouble followed (the user revising, repeating themselves, steps failing).
+
+   Each case keeps what the call was sent, what it answered, and what happened next.
+2. **Replay.** Each case is sent again with the current instructions, read-only, through a scratch session. The role's real code checks run on the state the call saw.
+3. **Propose.** Two proposers rewrite the instructions from the cases and the replays. One works on how the role works (INV), the other on what a practitioner knows (DOM). Each may also say "keep the base".
+4. **Probe and compose.** Both rewrites are replayed. A composer keeps the edits the replays support, and the composed version is replayed too.
+5. **Judge blindly.** For each case, the answers are shuffled and unlabelled. The judge ranks conformance first, then fidelity, consistency and fitness.
+6. **Adopt.** The base wins ties, so new instructions need more case wins than the base and than every other candidate. A winner is written to your prompts folder (`$RESEARCH_AGENT_PROMPTS`, else `~/.research_agent/prompts`), where every later run picks it up. The file it replaces is kept as `.bak`. Delete the file to go back to the default.
+7. **Lessons.** What each edit did, and at most one lesson that transfers, go to `<prompts folder>/library/<role>.md`. That role's later proposers read them.
+
+Everything is kept in `<runs root>/_refine/<time>-<role>/`: `report.md` (the diffs, the per-case picks with the judge's reasons, the lessons) and every replay. The cost is shown before it starts. For 4 cases it's at most 24 model calls (`--budget` caps it). The `refiner` role (proposers, composer, judge) is configured like the others: `[roles.refiner]`, codex at high effort.
+
 ## Configuration: models and skills
 
 `research_agent/bootstrap/config.toml` holds the defaults, with comments:

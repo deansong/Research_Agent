@@ -402,3 +402,6 @@ ul.plain { margin: 0; padding-left: 18px; }
   .sv-nav { display: none; }
   .node-page { grid-template-columns: 1fr; grid-template-rows: 30vh 1fr; }
 }
+
+.refine-log { max-height: 30vh; overflow: auto; background: var(--bg-input); padding: 8px; border-radius: 5px; font-size: 12px; white-space: pre-wrap; }
+#dialog-refine .run-list { max-height: 30vh; overflow: auto; }

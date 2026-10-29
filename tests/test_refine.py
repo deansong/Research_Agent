@@ -204,3 +204,30 @@ def test_the_command_line_lists_the_cases_first(past_run, capsys):
     assert cli.main(["refine", "--role", "designer", "--runs", str(past_run), "--dry-run"]) == 0
     out = capsys.readouterr().out
     assert "run/designer-001: 1 checks failed" in out and "Up to 9 model calls" in out
+
+
+def test_the_web_page_starts_a_refinement_and_shows_how_it_went(past_run, script, tmp_path,
+                                                              monkeypatch):
+    import time
+
+    from fastapi.testclient import TestClient
+
+    from research_agent.web import server
+
+    monkeypatch.setenv(prompt_files.HOME_ENV, str(tmp_path / "home"))
+    script.add("DesignOutput", DESIGN)
+    script.add("Proposal", {"keep_base": True}, {"keep_base": True})
+    script.add("Lessons", {"edits": []})
+    app = server.create_app(tmp_path, roles=["all=fake"], watch=False)
+    with TestClient(app) as web:
+        assert web.post("/api/refine", json={"role": "chef", "runs": ["run"]}).status_code == 400
+        assert web.post("/api/refine", json={"role": "designer", "runs": ["nope"]}).status_code == 404
+        assert web.post("/api/refine", json={"role": "designer", "runs": ["run"],
+                                             "cases": 1}).status_code == 200
+        end = time.time() + 20
+        while web.get("/api/refine").json()["running"] and time.time() < end:
+            time.sleep(0.05)
+        s = web.get("/api/refine").json()
+        assert not s["error"] and s["report"]["winner"] == "base" and not s["report"]["adopted"]
+        assert any("replay base on run/designer-001: ok" in line for line in s["lines"])
+        assert "_refine" not in [r["id"] for r in web.get("/api/runs").json()]
