@@ -81,11 +81,23 @@ def done_writing(run, step_id, name="out.txt", text="ok"):
 
 
 PAPER = {"summary": "The paper: 5/10.", "pdf": "", "problems": ["no LaTeX in the tests"]}
-REVIEW = {"summary": "A small, clean study.", "strengths": ["fixed seeds"],
-          "weaknesses": ["two seeds only"], "questions": ["why these ranks?"],
-          "limitations": "one dataset", "soundness": 3, "presentation": 3, "contribution": 2,
-          "rating": 5, "confidence": 4, "requests": [
+_A = {"score": 3, "why": "Table 1"}
+#: One panel reviewer's form, and the meta-review that decides.
+PANEL_REVIEW = {"summary": "A small, clean study.", "originality": _A, "significance": _A,
+                "soundness": _A, "clarity": _A, "reproducibility": _A,
+                "strengths": ["fixed seeds"], "weaknesses": ["two seeds only (Sec. 4)"],
+                "questions": ["why these ranks?"], "missing_work": [], "ethics": "",
+                "rating": 5, "justification": "too few seeds", "confidence": 4}
+REVIEW = {"summary": "A small, clean study.", "consensus": ["two seeds only"],
+          "disagreements": [], "decision": "weak reject", "rating": 5, "confidence": 4,
+          "justification": "the effect is not shown to be stable", "requests": [
               {"what": "Run five seeds", "why": "two give no variance", "priority": "must"}]}
+
+
+def reviewed(script, meta=REVIEW):
+    """The panel's three reviews and the meta-review, scripted."""
+    script.add("ReviewOutput", PANEL_REVIEW, PANEL_REVIEW, PANEL_REVIEW)
+    script.add("MetaReviewOutput", meta)
 
 
 def verdict(v="pass", **fields):
@@ -101,7 +113,7 @@ def test_a_whole_execution_from_the_approved_design_to_done(run, script):
     script.add("ExecDecision", decide("run", "1"), decide("run", "2"), decide("run", "2"),
                decide("done"))
     script.add("PaperReport", PAPER)
-    script.add("ReviewOutput", REVIEW)
+    reviewed(script)
     script.add("StepReport", done_writing(run, "1", "rows.json", "[1000]"), launch,
                lambda prompt: {"state": "done", "summary": "both seeds scored",
                                "artifacts": ["scores.txt"], "metrics": [
@@ -194,7 +206,7 @@ def test_a_skipped_step_leaves_a_record_and_unblocks_the_next(tmp_path, script):
     script.add("ExecDecision", decide("skip", "1", "the protocol's T3 branch does not apply"),
                decide("run", "2"), decide("done"))
     script.add("PaperReport", PAPER)
-    script.add("ReviewOutput", REVIEW)
+    reviewed(script)
     script.add("StepReport", done_writing(run, "2"))
     script.add("Verdict", verdict())
     script.add("ExecDiscussorOutput", say("Done; step 1 was skipped."))
@@ -293,7 +305,7 @@ def test_a_go_by_command_reaches_the_discussor_and_a_result_keeps_the_approval(r
     script.add("ExecDecision", decide("run", "1"), decide("run", "2"), decide("run", "2"),
                decide("done"))
     script.add("PaperReport", PAPER)
-    script.add("ReviewOutput", REVIEW)
+    reviewed(script)
     script.add("StepReport", done_writing(run, "1"), lambda prompt: {
         **done_writing(run, "2")(prompt),
         "hypotheses": [{"id": "H1", "status": "supported", "why": "out.txt"}]})
@@ -318,7 +330,7 @@ def test_the_review_is_kept_for_the_next_run(run, script):
     script.add("StepReport", done_writing(run, "1"), done_writing(run, "2"))
     script.add("Verdict", verdict(), verdict())
     script.add("PaperReport", PAPER)
-    script.add("ReviewOutput", REVIEW)
+    reviewed(script)
     script.add("ExecDiscussorOutput", say("Go?"), say("Reviewed: 5/10."))
     ex = Execution(run)
     ex.start()
@@ -331,7 +343,10 @@ def test_the_review_is_kept_for_the_next_run(run, script):
     text = (run.folder / "reviews" / "V1.md").read_text()
     assert "[must] Run five seeds" in text and "1. [pass] Data" in text
     brief = script.prompts("ReviewOutput")[0]
-    assert "step_01: out.txt" in brief and "own work" in brief
+    assert "step_01: out.txt" in brief and "own work" in brief and "YOUR FOCUS" in brief
+    meta = script.prompts("MetaReviewOutput")[0]
+    assert meta.count("REVIEWER R") == 3 and "weakness: two seeds only (Sec. 4)" in meta
+    assert review["decision"] == "weak reject" and len(review["panel"]) == 3
     told = script.prompts("ExecDiscussorOutput")[1]
     assert "rating 5/10" in told and f"bootstrap --from {run.folder}" in told
     reviewer = [c for c in script.calls if c["schema"] == "ReviewOutput"][0]

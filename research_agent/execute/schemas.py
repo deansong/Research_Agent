@@ -117,23 +117,59 @@ class PaperReport(BaseModel):
     """What is missing or could not be done (no PDF: why)."""
 
 
+class Assessment(BaseModel):
+    score: int = Field(ge=1, le=4)
+    """1 poor, 2 fair, 3 good, 4 excellent."""
+    why: str
+    """What in the paper (section, table, figure) the score rests on."""
+
+
 class ReviewOutput(BaseModel):
-    """A review as a major ML conference asks for one (NeurIPS, ICML, ICLR)."""
+    """One program-committee review, on the form AAAI asks for."""
 
     summary: str
-    """What the study claims and did, in your own words."""
+    """What the paper claims and how it supports it, in your own words."""
+    originality: Assessment
+    """What is new against prior work."""
+    significance: Assessment
+    """Whether it matters: to whom, and how much."""
+    soundness: Assessment
+    """Technical quality: do the method, experiments and statistics support
+    each claim."""
+    clarity: Assessment
+    reproducibility: Assessment
+    """Could a reader redo it from the paper and its appendices."""
     strengths: list[str] = Field(max_length=10)
     weaknesses: list[str] = Field(max_length=12)
+    """Each says where (section, table, figure) and what would fix it."""
     questions: list[str] = Field(default_factory=list, max_length=10)
-    limitations: str = ""
-    """Are the limitations and the possible negative impact addressed?"""
-    soundness: int = Field(ge=1, le=4)
-    presentation: int = Field(ge=1, le=4)
-    contribution: int = Field(ge=1, le=4)
+    """For the authors: answers that could change your score."""
+    missing_work: list[str] = Field(default_factory=list, max_length=10)
+    """Prior work the paper should engage with -- only work you are sure exists."""
+    ethics: str = ""
     rating: int = Field(ge=1, le=10)
-    """1 strong reject ... 6 weak accept ... 10 award quality."""
+    """1 strong reject, 3 reject, 5 borderline reject, 6 borderline accept,
+    7 accept, 9 strong accept, 10 award quality."""
+    justification: str
+    """Why this rating: what weighs most."""
     confidence: int = Field(ge=1, le=5)
+
+
+class MetaReviewOutput(BaseModel):
+    """The senior program-committee member's meta-review of the panel."""
+
+    summary: str
+    """What the paper claims, and the panel's view of it."""
+    consensus: list[str] = Field(max_length=10)
+    """What the reviewers agree on."""
+    disagreements: list[str] = Field(default_factory=list, max_length=10)
+    """Where they differ, and which side the paper's evidence supports."""
+    decision: Literal["accept", "weak accept", "borderline", "weak reject", "reject"]
+    rating: int = Field(ge=1, le=10)
+    confidence: int = Field(ge=1, le=5)
+    justification: str
     requests: list[ReviewRequestIn] = Field(min_length=1, max_length=12)
+    """What the next run must do for this paper to be accepted."""
 
 
 # ---- discussor ------------------------------------------------------------------------------

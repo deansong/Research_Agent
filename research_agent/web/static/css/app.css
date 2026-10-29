@@ -415,3 +415,7 @@ ul.plain { margin: 0; padding-left: 18px; }
   border: 1px solid var(--line-bright); border-radius: 5px; padding: 2px 6px; }
 .file-frame { width: 100%; height: calc(100% - 34px); border: 0; background: #fff; }
 .file-image { max-width: 100%; display: block; margin: 12px auto; }
+
+.review-form { border-collapse: collapse; margin: 6px 0; font-size: 12px; }
+.review-form th, .review-form td { border-top: 1px solid var(--line); padding: 4px 8px; vertical-align: top; text-align: left; }
+.review-form th { text-transform: capitalize; white-space: nowrap; }

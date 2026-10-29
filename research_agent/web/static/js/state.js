@@ -308,18 +308,34 @@ const DRAW = {
     return el("div", { class: "cards" }, items.slice().reverse().map((v) => el("div", { class: "review" },
       el("div", { class: "review-scores" },
         el("div", { class: "score big" }, el("span", { text: `${v.rating}` }), el("small", { text: "/10 rating" })),
-        [["confidence", v.confidence, 5], ["soundness", v.soundness, 4], ["presentation", v.presentation, 4],
-          ["contribution", v.contribution, 4]].map(([k, x, m]) => el("div", { class: "score" },
+        v.decision ? pill(v.decision, v.decision.includes("reject") ? "bad" : v.decision === "borderline" ? "warn" : "ok") : null,
+        (v.panel && v.panel.length
+          ? [["confidence", v.confidence, 5], ...v.panel.map((r) => [`reviewer ${r.id}`, r.rating, 10])]
+          : [["confidence", v.confidence, 5], ["soundness", v.soundness, 4], ["presentation", v.presentation, 4],
+            ["contribution", v.contribution, 4]]).map(([k, x, m]) => el("div", { class: "score" },
           el("span", { text: `${x}` }), el("small", { text: `/${m} ${k}` })))),
       el("div", { class: "sv-head" }, idTag(v.id), el("span", { class: "dim small", text: `of ${v.run || "this run"} · ${when(v.at)}` })),
       el("p", { text: v.summary }),
+      v.justification ? el("p", { class: "dim", text: v.justification }) : null,
       el("h4", { text: "Requests for the next run" }),
       el("ul", { class: "requests" }, (v.requests || []).map((r) => el("li", {}, pill(r.priority, r.priority === "must" ? "bad" : r.priority === "should" ? "warn" : ""),
         el("b", { text: ` ${r.what}` }), r.why ? el("div", { class: "dim small", text: r.why }) : null))),
-      [["strengths", "Strengths"], ["weaknesses", "Weaknesses"], ["questions", "Questions"]].map(([k, t]) =>
+      [["consensus", "The reviewers agree"], ["disagreements", "They differ"], ["strengths", "Strengths"],
+        ["weaknesses", "Weaknesses"], ["questions", "Questions"]].map(([k, t]) =>
         (v[k] || []).length ? el("details", { class: "fold", dataset: { key: `v-${v.id}-${k}` } },
           el("summary", { text: `${t} (${v[k].length})` }), el("ul", {}, v[k].map((x) => el("li", { text: x })))) : null),
-      this.fold(`v-${v.id}-l`, "Limitations", v.limitations))));
+      this.fold(`v-${v.id}-l`, "Limitations", v.limitations),
+      (v.panel || []).map((r) => el("details", { class: "fold", dataset: { key: `v-${v.id}-${r.id}` } },
+        el("summary", { text: `Reviewer ${r.id}: ${r.rating}/10, confidence ${r.confidence}/5 — ${r.focus.split(":")[0]}` }),
+        el("p", { text: r.summary }),
+        el("table", { class: "review-form" }, ["originality", "significance", "soundness", "clarity", "reproducibility"]
+          .filter((k) => r[k]).map((k) => el("tr", {}, el("th", { text: k }), el("td", { text: `${r[k].score}/4` }),
+            el("td", { text: r[k].why })))),
+        [["strengths", "Strengths"], ["weaknesses", "Weaknesses"], ["questions", "Questions for the authors"],
+          ["missing_work", "Missing prior work"]].map(([k, t]) => (r[k] || []).length
+          ? [el("h5", { text: t }), el("ul", {}, r[k].map((x) => el("li", { text: x })))] : null),
+        r.ethics ? el("p", { class: "dim", text: `Ethics: ${r.ethics}` }) : null,
+        el("p", { class: "dim", text: `Why this rating: ${r.justification}` }))))));
   },
   results(items) {
     return list(items.slice().reverse().slice(0, 80), (r) => [idTag(r.id),

@@ -466,7 +466,8 @@ def build(run: nodes.ExecRun, design: nodes.Design, checkpointer=None):
         review = st["reviews"][-1]
         return {"research": st, "_to": "discussor", "note": (
             f"{state.get('note', '')} The reviewer reviewed the study (review {review['id']}, "
-            f"{review['file']}): rating {review['rating']}/10, confidence {review['confidence']}/5. "
+            f"{review['file']}): {review.get('decision', '')}, rating {review['rating']}/10, "
+            f"confidence {review['confidence']}/5. "
             f"Tell the user its main points, and that the next run starts from it: "
             f"python -m research_agent bootstrap --from {run.folder}").strip()}
 

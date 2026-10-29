@@ -706,28 +706,76 @@ def paper(run: ExecRun, st: dict) -> Outcome:
     return Outcome(ops=ops, summary=f"paper: {pdf or 'no PDF'}", session=session, data=out)
 
 
+#: The panel: each reviewer fills the whole form, deepest on its focus.
+PANEL = (("R1", "method and soundness: is the method right, and do the experiments, "
+                "baselines and statistics support each claim"),
+         ("R2", "novelty and significance: what is new against prior work, whether it "
+                "matters, and what related work the paper misses"),
+         ("R3", "clarity and reproducibility: could a reader follow the paper, and redo "
+                "the study from it and its appendices"))
+
+
 def reviewer(run: ExecRun, st: dict) -> Outcome:
-    """A conference-style review of the finished study, kept in the state
-    (reviews) and as <run>/reviews/V<n>.md, for the next run."""
-    out, session = run.call("reviewer", brief=views.reviewer(st, run_dir=str(run.folder)),
-                            schema=schemas.ReviewOutput, access="read_only", workdir=run.folder,
-                            skills=skills_for(run, {"name": "reviewer",
-                                                    "skills": list(run.limits.reviewer_skills)},
-                                              "reviewer"),
-                            label="reviewer")
+    """The paper reviewed as AAAI would: a panel of three reviewers, each
+    with a focus, then a meta-review that weighs them and decides. Kept in the
+    state (reviews) and as <run>/reviews/V<n>.md, for the next run."""
+    skills = skills_for(run, {"name": "reviewer", "skills": list(run.limits.reviewer_skills)},
+                        "reviewer")
+    panel = []
+    for rid, focus in PANEL:
+        out, _ = run.call("reviewer", brief=views.reviewer(st, run_dir=str(run.folder),
+                                                           focus=focus),
+                          schema=schemas.ReviewOutput, access="read_only", workdir=run.folder,
+                          skills=skills, label=f"reviewer {rid}")
+        panel.append((rid, focus, out.model_dump()))
+    meta, session = run.call("reviewer", brief=views.meta_reviewer(st, run_dir=str(run.folder),
+                                                                   reviews=panel),
+                             schema=schemas.MetaReviewOutput, access="read_only",
+                             workdir=run.folder, skills=skills,
+                             instructions=run.instructions["meta_reviewer"], label="meta-review")
     review_id = f"V{len(st.get('reviews') or []) + 1}"
     folder = run.folder / "reviews"
     folder.mkdir(parents=True, exist_ok=True)
     path = folder / f"{review_id}.md"
-    outcome = S.render(st, ["execution"])
-    value = {**out.model_dump(), "run": str(run.folder), "outcome": outcome, "file": str(path)}
-    shown = S.render({"reviews": [{**value, "id": review_id}]}, ["reviews"]).split("\n", 1)[-1]
-    path.write_text(f"# Review {review_id} of {run.folder.name}\n\n{shown}\n\n"
-                    f"## What was run\n{outcome}\n")
+    value = {**meta.model_dump(), "run": str(run.folder), "outcome": S.render(st, ["execution"]),
+             "file": str(path),
+             "panel": [{"id": rid, "focus": focus, **r} for rid, focus, r in panel]}
+    path.write_text(review_markdown(review_id, run.folder.name, value))
     ops = [{"op": "add", "section": "reviews", "value": value},
            {"op": "add", "section": "results", "value": {
-               "node": "reviewer", "job": "review", "asked": "review the finished study",
-               "summary": f"rating {out.rating}/10 (confidence {out.confidence}/5): {out.summary}"[:1500],
+               "node": "reviewer", "job": "review", "asked": "review the paper (panel of 3)",
+               "summary": f"{meta.decision}, rating {meta.rating}/10 (confidence "
+                          f"{meta.confidence}/5): {meta.summary}"[:1500],
                "session": session}}]
-    return Outcome(ops=ops, summary=f"review {review_id}: rating {out.rating}/10", session=session,
-                   data=out)
+    return Outcome(ops=ops, summary=f"review {review_id}: {meta.decision}, {meta.rating}/10",
+                   session=session, data=meta)
+
+
+def review_markdown(review_id: str, run_name: str, v: dict) -> str:
+    """The review as a conference sends it: the meta-review, then each review."""
+    lines = [f"# Review {review_id} of {run_name}", "",
+             f"## Meta-review -- **{v['decision']}** (rating {v['rating']}/10, "
+             f"confidence {v['confidence']}/5)", "", v["summary"], "",
+             f"**Justification.** {v['justification']}", "",
+             "**The reviewers agree:**", *[f"- {x}" for x in v["consensus"]], ""]
+    if v.get("disagreements"):
+        lines += ["**They differ:**", *[f"- {x}" for x in v["disagreements"]], ""]
+    lines += ["**For the next run:**", *[f"- [{r['priority']}] {r['what']} -- {r['why']}"
+                                         for r in v["requests"]], ""]
+    for r in v["panel"]:
+        lines += [f"## Reviewer {r['id']} -- rating {r['rating']}/10, confidence "
+                  f"{r['confidence']}/5", f"*Focus: {r['focus']}*", "",
+                  f"**Summary.** {r['summary']}", "", "| Criterion | Score | Why |",
+                  "|---|---|---|"]
+        lines += [f"| {k} | {r[k]['score']}/4 | " + r[k]["why"].replace("\n", " ") + " |"
+                  for k in views.ASSESSED]
+        for key, title in (("strengths", "Strengths"), ("weaknesses", "Weaknesses"),
+                           ("questions", "Questions for the authors"),
+                           ("missing_work", "Missing prior work")):
+            if r.get(key):
+                lines += ["", f"**{title}**", *[f"- {x}" for x in r[key]]]
+        if r.get("ethics"):
+            lines += ["", f"**Ethics.** {r['ethics']}"]
+        lines += ["", f"**Why this rating.** {r['justification']}", ""]
+    lines += ["## What was run", v["outcome"], ""]
+    return "\n".join(lines) + "\n"

@@ -194,8 +194,10 @@ class ReviewRequest(BaseModel):
 
 
 class Review(BaseModel):
-    """A conference-style review of a run's results, by the reviewer. It is
-    carried into the next run, whose designer addresses it."""
+    """A conference review of a run's paper: the meta-review of a panel of
+    three reviewers (AAAI's form; `panel` holds their reviews). Reviews of
+    earlier versions are one reviewer's, scored NeurIPS's way. It is carried
+    into the next run, whose designer addresses it."""
 
     id: str = ""
     run: str = ""
@@ -205,10 +207,17 @@ class Review(BaseModel):
     weaknesses: list[str] = Field(default_factory=list)
     questions: list[str] = Field(default_factory=list)
     limitations: str = ""
+    decision: str = ""
+    """accept, weak accept, borderline, weak reject, reject."""
+    justification: str = ""
+    consensus: list[str] = Field(default_factory=list)
+    disagreements: list[str] = Field(default_factory=list)
+    panel: list[dict] = Field(default_factory=list)
+    """Each reviewer's review: id, focus, and the form."""
     soundness: int = 0
     presentation: int = 0
     contribution: int = 0
-    """1-4 each, as NeurIPS asks."""
+    """1-4 each, as NeurIPS asks (earlier versions' reviews)."""
     rating: int = 0
     """1-10, as NeurIPS asks (6: weak accept)."""
     confidence: int = 0
@@ -622,10 +631,13 @@ def _line(section: str, x: dict, brief: bool) -> str:
         return f"- {i} {x['text']}" + (f" -- mitigation: {x['mitigation']}"
                                        if x.get("mitigation") and not brief else "")
     if section == "reviews":
-        head = (f"- {i} rating {x.get('rating')}/10 (confidence {x.get('confidence')}/5; "
-                f"soundness {x.get('soundness')}, presentation {x.get('presentation')}, "
-                f"contribution {x.get('contribution')}) of {x.get('run') or 'this run'}: "
-                f"{x.get('summary', '')}")
+        scores = (f"panel {', '.join(str(r.get('rating')) for r in x['panel'])}"
+                  if x.get("panel") else
+                  f"soundness {x.get('soundness')}, presentation {x.get('presentation')}, "
+                  f"contribution {x.get('contribution')}")
+        head = (f"- {i} {x['decision'] + ', ' if x.get('decision') else ''}rating "
+                f"{x.get('rating')}/10 (confidence {x.get('confidence')}/5; {scores}) of "
+                f"{x.get('run') or 'this run'}: {x.get('summary', '')}")
         requests = "".join(f"\n  [{r['priority']}] {r['what']}" + (f" -- {r['why']}" if r.get("why")
                                                                      and not brief else "")
                            for r in x.get("requests") or [])
@@ -633,8 +645,13 @@ def _line(section: str, x: dict, brief: bool) -> str:
             return head + requests
         return head + "".join(
             f"\n  {label}:" + "".join(f"\n    - {v}" for v in x.get(key) or [])
-            for key, label in (("strengths", "strengths"), ("weaknesses", "weaknesses"),
-                               ("questions", "questions")) if x.get(key)) + (
+            for key, label in (("consensus", "the reviewers agree"),
+                               ("disagreements", "they differ"), ("strengths", "strengths"),
+                               ("weaknesses", "weaknesses"), ("questions", "questions"))
+            if x.get(key)) + (
+            f"\n  justification: {x['justification']}" if x.get("justification") else "") + (
+            "".join(f"\n  reviewer {r.get('id')} ({r.get('rating')}/10): "
+                    + "; ".join(r.get("weaknesses") or [])[:600] for r in x.get("panel") or [])) + (
             f"\n  limitations: {x['limitations']}" if x.get("limitations") else "") + (
             "\n  requests:" + requests if requests else "")
     if section == "results":

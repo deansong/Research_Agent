@@ -135,7 +135,7 @@ def test_execute_runs_the_approved_design_with_commands(tmp_path, script, monkey
     import json
 
     from research_agent import state as S
-    from tests.test_execute_graph import PAPER, REVIEW, approved_state, done_writing
+    from tests.test_execute_graph import PAPER, REVIEW, reviewed, approved_state, done_writing
     from tests.test_execute_graph import decide as move, say as tell, verdict
 
     run = tmp_path / "run"
@@ -150,7 +150,7 @@ def test_execute_runs_the_approved_design_with_commands(tmp_path, script, monkey
 
     script.add("ExecDecision", move("run", "1"), move("run", "2"), move("run", "2"), move("done"))
     script.add("PaperReport", PAPER)
-    script.add("ReviewOutput", REVIEW)
+    reviewed(script)
     script.add("StepReport", done_writing(Folder, "1"), done_writing(Folder, "2"))
     script.add("Verdict", verdict(), verdict())
     script.add("ExecDiscussorOutput", tell("Step 1 passed. Step 2 is next; go?"),

@@ -20,7 +20,7 @@ from fastapi.testclient import TestClient
 from research_agent import state as S
 from research_agent.web import server
 from tests.scripted import script  # noqa: F401 -- fixture
-from tests.test_execute_graph import PAPER, REVIEW, approved_state, done_writing, verdict
+from tests.test_execute_graph import PAPER, REVIEW, reviewed, approved_state, done_writing, verdict
 from tests.test_execute_graph import decide as move, say as tell
 from tests.test_graph import FINDINGS, decide, say
 from dataclasses import replace
@@ -157,7 +157,7 @@ def test_approve_then_execute_from_the_page(web, script):
     script.add("StepReport", done_writing(_Folder(folder), "1"), done_writing(_Folder(folder), "2"))
     script.add("Verdict", verdict(), verdict())
     script.add("PaperReport", PAPER)
-    script.add("ReviewOutput", REVIEW)
+    reviewed(script)
     script.add("ExecDiscussorOutput", tell("Step 2 waits for your go."), tell("All done; 5/10."))
     r = web.post("/api/runs/ready/execute", json={"gpu_hours": 10})
     assert r.status_code == 200 and r.json()["stage"] == "execution"
@@ -179,7 +179,7 @@ def test_approve_then_execute_from_the_page(web, script):
     statuses = {n["id"]: n.get("status") for n in g["nodes"]}
     assert statuses["builder"] == "pass" and "reviewer" in statuses
 
-    script.add("ReviewOutput", {**REVIEW, "rating": 7})
+    reviewed(script, {**REVIEW, "rating": 7})
     script.add("ExecDiscussorOutput", tell("Second review: 7/10."))
     assert web.post("/api/runs/ready/review").status_code == 200
     d = settle(web, "ready")
@@ -189,7 +189,7 @@ def test_approve_then_execute_from_the_page(web, script):
     assert (folder / "reviews" / "V2.md").exists()
 
     script.add("PaperReport", {**PAPER, "summary": "Rewritten."})
-    script.add("ReviewOutput", {**REVIEW, "rating": 8})
+    reviewed(script, {**REVIEW, "rating": 8})
     script.add("ExecDiscussorOutput", tell("New paper, 8/10."))
     assert web.post("/api/runs/ready/paper").status_code == 200
     d = settle(web, "ready")
@@ -556,7 +556,7 @@ def test_autopilot_from_the_page_to_the_end(web, script):
     script.add("StepReport", done_writing(_Folder(folder), "1"), done_writing(_Folder(folder), "2"))
     script.add("Verdict", verdict(), verdict())
     script.add("PaperReport", PAPER)
-    script.add("ReviewOutput", REVIEW)
+    reviewed(script)
     script.add("ExecDiscussorOutput", tell("Step 2 waits for your go."), tell("Going ahead."),
                tell("All done; 5/10."))
     r = web.put("/api/runs/auto/autopilot", json={"on": True, "max_decisions": 5,

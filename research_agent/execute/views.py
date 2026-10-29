@@ -131,7 +131,7 @@ def _listing(root: Path) -> list[str]:
     return listing
 
 
-def reviewer(st: dict, *, run_dir: str) -> str:
+def reviewer(st: dict, *, run_dir: str, focus: str = "") -> str:
     root = Path(run_dir)
     listing = _listing(root)
     parts = [f"Today is {_today()}.",
@@ -145,17 +145,55 @@ def reviewer(st: dict, *, run_dir: str) -> str:
              _block("THE FILES -- read them", "\n".join(listing + [
                  f"Code (a git repository; `git log` shows each step): {root / 'work'}",
                  f"Job records and logs: {root / 'jobs'}"]))]
-    pdf = root / "paper" / "main.pdf"
-    if pdf.is_file():
-        parts.append(_block("THE PAPER -- the submission you review",
-                            f"{pdf} (its source beside it). Check its claims and numbers "
-                            f"against the files above."))
+    parts.append(_paper_block(root))
+    if focus:
+        parts.append(_block("YOUR FOCUS -- fill the whole form, go deepest here", focus))
     if st.get("reviews"):
         parts.append(_block("EARLIER REVIEWS -- say whether this run answers them",
                             S.render(st, ["reviews"], brief=True)))
     parts.append("The authors -- the user who owns this run -- ask for this review of their "
                  "own work.")
     return "\n\n".join(parts)
+
+
+def _paper_block(root: Path) -> str:
+    pdf = root / "paper" / "main.pdf"
+    if pdf.is_file():
+        return _block("THE PAPER -- the submission you review",
+                      f"{pdf} (its LaTeX source beside it). Check its claims and numbers "
+                      f"against the files above.")
+    return _block("THE PAPER", "There is no compiled paper: review the study's own write-up "
+                               "in the step artifacts as the submission, and say so.")
+
+
+def meta_reviewer(st: dict, *, run_dir: str, reviews: list[tuple[str, str, dict]]) -> str:
+    """`reviews`: (id, focus, the review) for each panel member."""
+    root = Path(run_dir)
+    panel = []
+    for rid, focus, r in reviews:
+        scores = ", ".join(f"{k} {r[k]['score']}/4" for k in ASSESSED)
+        panel.append(_block(f"REVIEWER {rid} -- focus: {focus}", "\n".join([
+            f"rating {r['rating']}/10, confidence {r['confidence']}/5; {scores}",
+            f"summary: {r['summary']}", f"why this rating: {r['justification']}",
+            *[f"{k}: {r[k]['why']}" for k in ASSESSED],
+            *[f"strength: {x}" for x in r["strengths"]],
+            *[f"weakness: {x}" for x in r["weaknesses"]],
+            *[f"question: {x}" for x in r.get("questions") or []],
+            *[f"missing prior work: {x}" for x in r.get("missing_work") or []],
+            *([f"ethics: {r['ethics']}"] if r.get("ethics") else [])])))
+    parts = [f"Today is {_today()}.",
+             _block("THE STUDY", S.render(st, ["goal", "protocol"])),
+             _block("WHAT WAS RUN -- the step table", S.render(st, ["execution"])),
+             _block("THE FILES", "\n".join(_listing(root) + [f"Job logs: {root / 'jobs'}"])),
+             _paper_block(root), *panel]
+    if st.get("reviews"):
+        parts.append(_block("EARLIER DECISIONS -- does this run answer them",
+                            S.render(st, ["reviews"], brief=True)))
+    return "\n\n".join(parts)
+
+
+#: The criteria each reviewer scores, in the form's order.
+ASSESSED = ("originality", "significance", "soundness", "clarity", "reproducibility")
 
 
 # ---- orchestrator ---------------------------------------------------------------------------

@@ -15,7 +15,7 @@ from research_agent import prompt_files
 #: paper is written on the writer's model, with its own instructions.
 FILES = {"discussor": "discussor", "orchestrator": "orchestrator", "worker": "owner",
          "writer": "owner", "validator": "validator", "reviewer": "reviewer",
-         "paper": "paper"}
+         "paper": "paper", "meta_reviewer": "meta_reviewer"}
 
 
 def instructions(run_dir=None) -> dict[str, str]:
