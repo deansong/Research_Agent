@@ -796,3 +796,24 @@ def test_the_autopilot_s_answer_is_not_recorded_as_the_user_s(run, script):
         "the autopilot recorded its own answer; the discussor's copy is not the user's"
     turn = nodes.discussor(run, approved_state(), seen={}, user="Keep going.")
     assert [o["value"]["by"] for o in turn.ops if o.get("section") == "decisions"] == ["user"]
+
+
+def test_a_go_given_before_the_step_waits_counts(run, script):
+    # Run 1134: the user's "go" came as an aside, before step 1 waited for
+    # it, and step 1 then waited for another.
+    from research_agent import inbox
+    S.Store(run.folder).write(approved_state())
+    script.add("AsideOutput", {"reply": "Noted: step 2 goes without asking.", "go": ["2"]})
+    st, _ = S.apply(approved_state(), [{"op": "set", "section": "execution", "value": {
+        "steps": [{"id": "1", "title": "Data", "status": "pending"},
+                  {"id": "2", "title": "Train", "status": "pending"}]}}], by="execution")
+    out = nodes.aside(run, st, user="go for step 2 when it comes", activity="")
+    assert out.go == ["2"] and inbox.peek(run.folder)[-1] == {"kind": "go", "step": "2"}
+    script.add("ExecDecision", decide("run", "1"), decide("run", "2"), decide("done"))
+    script.add("StepReport", done_writing(run, "1"), done_writing(run, "2"))
+    script.add("Verdict", verdict(), verdict())
+    script.add("PaperReport", PAPER)
+    reviewed(script)
+    script.add("ExecDiscussorOutput", say("Done."))
+    turn = Execution(run).start()
+    assert turn.outcome == "done", "step 2 is gated, but its go was given before"

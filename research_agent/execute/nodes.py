@@ -511,6 +511,8 @@ def aside(run: ExecRun, st: dict, *, user: str, activity: str) -> schemas.AsideO
 
     def check(out: schemas.AsideOutput) -> list[str]:
         return (breakpoint_problems(st, out.breakpoints)
+                + [f"go: {s} is not a pending step" for s in out.go
+                   if records(st).get(s, {}).get("status") != "pending"]
                 + step_problems(st, out.retry, out.waive, run.limits.max_attempts)
                 + (rewind_problems(run.folder, st, out.rewind) if out.rewind else []))
 
@@ -537,6 +539,8 @@ def aside(run: ExecRun, st: dict, *, user: str, activity: str) -> schemas.AsideO
         inbox.post(run.folder, "waive", step=w.step, why=w.why)
     for w in out.skip:
         inbox.post(run.folder, "skip", step=w.step, why=w.why)
+    for sid in out.go:
+        inbox.post(run.folder, "go", step=sid)
     if out.rewind:
         inbox.post(run.folder, "rewind", step=out.rewind)
     if out.stop:

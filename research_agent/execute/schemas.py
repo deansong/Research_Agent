@@ -198,6 +198,8 @@ class AsideOutput(BaseModel):
 
     reply: str
     breakpoints: list[BreakpointIn] = Field(default_factory=list, max_length=10)
+    go: list[str] = Field(default_factory=list, max_length=10)
+    """Steps the user gives the go for now, before they wait for it."""
     stop: bool = False
     """The user just said to stop the execution."""
     retry: list[str] = Field(default_factory=list, max_length=10)

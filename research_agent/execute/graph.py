@@ -139,6 +139,10 @@ def build(run: nodes.ExecRun, design: nodes.Design, checkpointer=None):
             elif item["kind"] == "rewind" and item.get("step") in steps:
                 if not nodes.rewind_problems(run.folder, st, item["step"]):
                     st = commit(st, nodes.rewind(run.folder, st, item["step"]), "user")
+            elif item["kind"] == "go" and item.get("step") in steps:
+                # A go given before the step waits for it (measured: run 1134's
+                # "go" was an aside, and step 1 then waited for another).
+                st = commit(st, [nodes.record_op(st, item["step"], go=True)], "user")
             elif item["kind"] == "skip" and item.get("step") in steps:
                 st = commit(st, nodes.user_skip_ops(run.folder, st, [item]), "user")
             elif item["kind"] in ("retry", "waive") and item.get("step") in steps:

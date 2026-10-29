@@ -61,7 +61,9 @@ def discussor_turn(st: dict, seen: dict, *, user: str = "", note: str = "",
         why = ("a breakpoint" if any(r["id"] == awaiting and r.get("pause_before") for r in record)
                else "the plan gates it")
         parts.append(_block(f"WAITING FOR THE USER'S GO ({why})",
-                            step_text(step) if step else awaiting))
+                            (step_text(step) if step else awaiting)
+                            + "\nIt starts only when the user says go now (you set `go`): ask "
+                              "for it; what they said before does not start it."))
     status = st.get("status") or {}
     if status.get("summary"):
         tail.append(_block("WHERE THINGS STAND", status["summary"]))
