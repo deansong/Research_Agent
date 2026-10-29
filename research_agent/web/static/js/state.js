@@ -273,10 +273,12 @@ const DRAW = {
                 el("input", { type: "checkbox", checked: !!r[`pause_${w}`], disabled: !live,
                   onchange: (ev) => this.toggleBreak(r.id, w, ev.target.checked) }), w))),
               el("td", {}, waits ? el("button", { class: "btn tiny primary", text: "Go", onclick: () => this.go() }) : null,
-                live && ["fail", "stopped"].includes(r.status) ? [
-                  el("button", { class: "btn tiny", text: "Another attempt", title: `Run step ${r.id} again, beyond the attempt limit`,
+                live && ["fail", "stopped", "skipped"].includes(r.status) ? [
+                  el("button", { class: "btn tiny", text: r.status === "skipped" ? "Reopen" : "Another attempt",
+                    title: r.status === "skipped" ? `Run step ${r.id} after all (the steps skipped after it wait for it again)`
+                      : `Run step ${r.id} again, beyond the attempt limit`,
                     onclick: () => this.stepAction(r.id, "retry") }),
-                  el("button", { class: "btn tiny", text: "Pass anyway", title: "Pass this step on your decision (your reason is kept as its verdict)",
+                  r.status === "skipped" ? null : el("button", { class: "btn tiny", text: "Pass anyway", title: "Pass this step on your decision (your reason is kept as its verdict)",
                     onclick: () => this.stepAction(r.id, "waive") })] : null)),
             (r.verdict || r.summary || (r.problems || []).length) ? el("tr", { class: "sub" }, el("td", { colspan: "7" },
               this.fold(`x-${r.id}-v`, "Verdict", r.verdict), this.fold(`x-${r.id}-s`, "Report", r.summary),

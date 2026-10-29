@@ -360,6 +360,42 @@ def test_a_failed_step_can_be_moved_on_from_the_page(web, script):
     assert rec["1"]["status"] == "pass" and rec["1"]["attempts"] == 4 and rec["1"]["extra_attempts"] == 1
 
 
+def test_the_page_passes_a_failed_step_and_reopens_a_skipped_one(web, script):
+    # Run 20261028-1657: step 1 failed (it had done its part), step 2 was
+    # skipped round it, and the discussor would neither pass nor reopen them.
+    from tests.test_execute_graph import approved_state, decide as move, done_writing, \
+        say as tell, verdict
+
+    folder = web.root / "pr"
+    st = approved_state()
+    st, _ = S.apply(st, [{"op": "set", "section": "execution", "value": {
+        "started": "2026-10-24T12:00:00+00:00", "steps": [
+            {"id": "1", "title": "Data", "owner": "builder", "status": "fail", "attempts": 3},
+            {"id": "2", "title": "Train", "owner": "trainer", "status": "skipped"}]}}], by="x")
+    S.Store(folder).write(st)
+    (folder / "execute.json").write_text(json.dumps({"execute": {"confirm": "none"}}))
+    script.add("ExecDecision", move("ask_user", task="Step 1 failed; what now?"))
+    script.add("ExecDiscussorOutput", tell("Step 1 failed and step 2 was skipped."))
+    web.get("/api/runs/pr")
+    h = web.app_.state.hosts["pr"]
+    h._run(lambda on: h.session.start(on_step=on))
+    settle(web, "pr")
+    script.add("ExecDecision", move("ask_user", task="Step 2?"))
+    script.add("ExecDiscussorOutput", tell("Step 1 passes on your decision."))
+    r = web.post("/api/runs/pr/step", json={"step": "1", "action": "waive",
+                                            "why": "its own check holds"})
+    assert r.status_code == 200
+    settle(web, "pr")
+    script.add("ExecDecision", move("retry", "2"), move("ask_user", task="?"))
+    script.add("StepReport", done_writing(_Folder(folder), "2"))
+    script.add("Verdict", verdict())
+    script.add("ExecDiscussorOutput", tell("Step 2 passed."))
+    assert web.post("/api/runs/pr/step", json={"step": "2", "action": "retry"}).status_code == 200
+    settle(web, "pr")
+    rec = {x["id"]: x for x in S.Store(folder).read()["execution"]["steps"]}
+    assert rec["1"]["status"] == "pass" and rec["2"]["status"] == "pass"
+
+
 def test_a_node_s_settings_and_what_a_running_call_is_sent(web, script):
     folder = web.root / "ni"
     S.Store(folder).write(approved_state())

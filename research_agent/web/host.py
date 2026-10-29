@@ -331,17 +331,17 @@ class RunHost:
                                    f"(from the team's next step).")
 
     def step_action(self, step: str, action: str, why: str = "") -> str:
-        """The user's call on a failed step: another attempt, or a pass with
-        their reason. Taken at the team's next step; if the team waits for
+        """The user's call on a failed step: another attempt (also reopening a
+        skipped one), or a pass with their reason. Taken at the team's next step; if the team waits for
         the user, it goes on now."""
         if self.stage != "execution":
             raise ValueError("Steps are for the execution stage.")
         rec = (S.Store(self.folder).read().get("execution") or {}).get("steps") or []
         status = next((r["status"] for r in rec if r["id"] == step), None)
-        if status not in ("fail", "stopped"):
-            raise ValueError(f"Step {step} has not failed (it is {status or 'not a step'}).")
         if action not in ("retry", "waive"):
             raise ValueError("The action is retry or waive.")
+        if status not in (exec_nodes.REOPENABLE if action == "retry" else ("fail", "stopped")):
+            raise ValueError(f"Step {step} has not failed (it is {status or 'not a step'}).")
         if action == "waive" and not why.strip():
             raise ValueError("Say why the step passes anyway: it is kept as its verdict.")
         inbox.post(self.folder, action, step=step, why=why.strip())
