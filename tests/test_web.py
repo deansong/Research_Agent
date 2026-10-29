@@ -658,3 +658,31 @@ def test_a_run_can_be_deleted_to_the_trash(web, monkeypatch):
     assert "old" not in [x["id"] for x in web.get("/api/runs").json()]
     assert web.post("/api/runs/old/trash").status_code == 404
     assert web.post("/api/runs/.trash/trash").status_code == 404
+
+
+def test_the_paper_window_shows_the_writer_s_pdf_first(web):
+    folder = web.root / "paper"
+    st = S.new()
+    st["design"] = {"nodes": [{"name": "w", "role": "writer", "access": "write"},
+                            {"name": "b", "role": "worker", "access": "write"}]}
+    st["execution"] = {"steps": [{"id": "1", "owner": "b", "artifacts": ["artifacts/plot.pdf"]},
+                                 {"id": "2", "owner": "w", "artifacts": ["artifacts/paper.pdf"]}]}
+    (folder / "state").mkdir(parents=True)      # only what the papers need
+    (folder / "state" / "research.json").write_text(json.dumps(st))
+    (folder / "artifacts").mkdir()
+    (folder / "artifacts" / "paper.pdf").write_bytes(b"%PDF-1.4 paper")
+    (folder / "artifacts" / "plot.pdf").write_bytes(b"%PDF-1.4 plot")
+    (folder / "research" / "papers").mkdir(parents=True)
+    (folder / "research" / "papers" / "2410.01495.pdf").write_bytes(b"%PDF-1.4 reference")
+    (folder / "rb").mkdir()
+    (folder / "rb" / "x.pdf").write_bytes(b"%PDF-1.4")
+    papers = web.get("/api/runs/paper/papers").json()["papers"]
+    assert [(p["path"], p["step"]) for p in papers] == [("artifacts/paper.pdf", "2"),
+                                                       ("artifacts/plot.pdf", "")]
+    r = web.get("/api/runs/paper/raw", params={"path": "artifacts/paper.pdf"})
+    assert r.status_code == 200 and r.content == b"%PDF-1.4 paper"
+    assert r.headers["content-type"] == "application/pdf"
+    assert r.headers["content-disposition"].startswith("inline")
+    assert web.get("/api/runs/paper/raw", params={"path": "state/research.json"}).status_code == 415
+    assert web.get("/api/runs/paper/raw", params={"path": "../../etc/passwd"}).status_code == 404
+    assert web.get("/paper/paper").status_code == 200

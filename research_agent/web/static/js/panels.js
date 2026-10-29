@@ -45,6 +45,15 @@ export class FilesPanel {
     this.selected = path;
     this.list.querySelectorAll(".file").forEach((a) => a.classList.toggle("selected", a.title.startsWith(path + " ")));
     try {
+      const ext = path.toLowerCase().split(".").pop();
+      if (["pdf", "png", "jpg", "jpeg", "gif", "webp"].includes(ext)) {
+        const src = api.raw(this.runId, path);
+        clear(this.view).append(el("div", { class: "file-head mono" }, `${path} `,
+          el("a", { href: src, target: "_blank", text: "open in a tab ↗" })),
+          ext === "pdf" ? el("iframe", { class: "file-frame", src, title: path })
+            : el("img", { class: "file-image", src, alt: path }));
+        return;
+      }
       const f = await api.file(this.runId, path);
       clear(this.view).append(el("div", { class: "file-head mono", text: `${path} · ${size(f.size)}` }),
         f.text == null ? el("div", { class: "empty", text: f.skipped })

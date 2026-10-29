@@ -54,6 +54,8 @@ export const api = {
   session: (id, sid) => request("GET", `${run(id)}/sessions/${encodeURIComponent(sid)}`),
   files: (id) => request("GET", `${run(id)}/files`),
   file: (id, path) => request("GET", `${run(id)}/file?path=${encodeURIComponent(path)}`),
+  papers: (id) => request("GET", `${run(id)}/papers`),
+  raw: (id, path) => `${run(id)}/raw?path=${encodeURIComponent(path)}`,
   jobs: (id) => request("GET", `${run(id)}/jobs`),
   providers: (refresh) => request("GET", `/api/providers${refresh ? "?refresh=true" : ""}`),
   nodeInfo: (id, node) => request("GET", `${run(id)}/nodes/${encodeURIComponent(node)}`),

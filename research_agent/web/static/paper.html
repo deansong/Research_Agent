@@ -1,0 +1,28 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Paper</title>
+  <link rel="stylesheet" href="/css/app.css">
+</head>
+<body class="state-window">
+  <header class="topbar">
+    <div class="brand"><span class="dot"></span>paper</div>
+    <div class="run-bar">
+      <span id="run-name" class="mono">-</span>
+      <select id="paper-pick" class="paper-pick" hidden></select>
+      <span id="paper-info" class="dim small"></span>
+    </div>
+    <div class="topbar-actions">
+      <a id="paper-tab" class="btn" target="_blank" hidden>Open in a tab &#8599;</a>
+      <span id="live-dot" class="live-dot" title="live"></span>
+    </div>
+  </header>
+  <main class="state-page paper-page">
+    <div id="paper-empty" class="empty">No PDF in this run yet. The writer's paper shows here when its step lists it.</div>
+    <iframe id="paper-frame" class="paper-frame" title="paper" hidden></iframe>
+  </main>
+  <script type="module" src="/js/paper.js"></script>
+</body>
+</html>

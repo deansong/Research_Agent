@@ -43,6 +43,36 @@ TEXT_SUFFIXES = {".md", ".txt", ".json", ".jsonl", ".py", ".sh", ".log", ".yaml"
                  ".toml", ".csv", ".tsv", ".cfg", ".ini", ".exit", ".tex", ".html", ".js",
                  ".css", ""}
 
+#: Files the page shows as themselves (the paper, figures). Not HTML or SVG:
+#: they could run scripts on the page's origin.
+RAW_TYPES = {".pdf": "application/pdf", ".png": "image/png", ".jpg": "image/jpeg",
+             ".jpeg": "image/jpeg", ".gif": "image/gif", ".webp": "image/webp"}
+_NOT_RUN_FILES = ("rb", "activity", "__pycache__")
+
+
+def _papers(folder: Path, st: dict) -> list[dict]:
+    """The run's own PDFs, not the references the researcher downloaded;
+    those a writer's step lists as artifacts first (the paper), then the
+    newest."""
+    owners = {n["name"]: n.get("role") for n in (st.get("design") or {}).get("nodes") or []}
+    by_writer: dict[Path, str] = {}
+    for rec in (st.get("execution") or {}).get("steps") or []:
+        for a in rec.get("artifacts") or []:
+            path = (folder / a).resolve()
+            if path.suffix.lower() == ".pdf" and owners.get(rec.get("owner")) == "writer":
+                by_writer[path] = rec.get("id", "")
+    found = []
+    for path in folder.rglob("*.pdf"):
+        rel = path.relative_to(folder)
+        if rel.parts[0] in _NOT_RUN_FILES or ".git" in rel.parts or not path.is_file() \
+                or rel.parts[:2] == ("research", "papers"):      # the researcher's references
+            continue
+        step = by_writer.get(path.resolve(), "")
+        found.append({"path": rel.as_posix(), "size": path.stat().st_size,
+                      "modified": path.stat().st_mtime, "step": step, "paper": bool(step)})
+    found.sort(key=lambda p: (not p["paper"], -p["modified"]))
+    return found[:200]
+
 
 # ---- request bodies -------------------------------------------------------------------
 
@@ -494,6 +524,25 @@ def create_app(runs_root: Path = RUNS_ROOT, *, roles=(), watch: bool = True) -> 
         return {"path": path, "size": target.stat().st_size,
                 "text": target.read_text(errors="replace"), "skipped": ""}
 
+    @app.get("/api/runs/{run_id}/papers")
+    def papers(run_id: str):
+        """The run's PDFs, the writers' first, newest first."""
+        folder = folder_of(run_id)
+        return {"papers": _papers(folder, S.Store(folder).read())}
+
+    @app.get("/api/runs/{run_id}/raw")
+    def raw(run_id: str, path: str):
+        """A PDF or an image of the run, as itself, for the browser to show."""
+        folder = folder_of(run_id)
+        target = (folder / path).resolve()
+        if not target.is_relative_to(folder) or not target.is_file():
+            raise _bad(404, "no_file", f"No file {path!r} in the run.")
+        kind = RAW_TYPES.get(target.suffix.lower())
+        if not kind:
+            raise _bad(415, "not_shown", f"{path!r} is not a PDF or an image.")
+        return FileResponse(target, media_type=kind, content_disposition_type="inline",
+                            filename=target.name, headers={"Cache-Control": "no-cache"})
+
     @app.get("/api/runs/{run_id}/jobs")
     def list_jobs(run_id: str):
         folder = folder_of(run_id)
@@ -546,6 +595,11 @@ def create_app(runs_root: Path = RUNS_ROOT, *, roles=(), watch: bool = True) -> 
     def node_window(run_id: str, node: str):
         folder_of(run_id)
         return FileResponse(STATIC / "node.html", headers={"Cache-Control": "no-store"})
+
+    @app.get("/paper/{run_id}")
+    def paper_window(run_id: str):
+        folder_of(run_id)
+        return FileResponse(STATIC / "paper.html", headers={"Cache-Control": "no-store"})
 
     @app.get("/state/{run_id}")
     def state_window(run_id: str):

@@ -59,6 +59,7 @@ async function openRun(id) {
   if (app.side === "jobs") inspector.loadJobs();
   if (app.side === "calls") inspector.loadSessions();
   inspector.loadModels();
+  loadPapers();
   app.unsubscribe = subscribe(id, d.last_seq, {
     status: (e) => { app.detail = { ...app.detail, ...e }; renderDetail(app.detail); },
     chat: (e) => chat.message(e.role, e.text, e.kind, e.noted),
@@ -79,11 +80,30 @@ async function openRun(id) {
       if (app.tab === "history") historyPanel.load(id);
       if (app.tab === "graph") loadGraph();
       if (app.detail) renderActions(app.detail);
+      loadPapers();
     },
     error: (e) => chat.line(`! ${e.message}`, "error"),
     open: () => $("run-activity").classList.remove("lost"),
     lost: () => { $("run-activity").textContent = "reconnecting..."; $("run-activity").classList.add("lost"); },
   });
+}
+
+// The Paper button: shown once the run has a PDF, marked when a writer's.
+async function loadPapers() {
+  const id = app.runId;
+  let papers = [];
+  try { ({ papers } = await api.papers(id)); } catch { return; }
+  if (id !== app.runId) return;
+  const button = $("btn-paper");
+  const fresh = papers.some((p) => p.paper) && !button.classList.contains("has-paper");
+  button.hidden = !papers.length;
+  button.classList.toggle("has-paper", papers.some((p) => p.paper));
+  if (fresh && app.paperRun === id) chat.line("The paper is ready: press Paper at the top to read it.", "note");
+  app.paperRun = id;
+}
+
+function openPaper() {
+  if (app.runId) window.open(`/paper/${encodeURIComponent(app.runId)}`, `paper-${app.runId}`, "width=1000,height=1100");
 }
 
 function renderDetail(d) {
@@ -321,6 +341,7 @@ function wireDialogs() {
   $("btn-stop").addEventListener("click", () => {
     if (confirm("Stop the execution? Running jobs are killed.")) act(() => api.stop(app.runId));
   });
+  $("btn-paper").addEventListener("click", openPaper);
   $("btn-popout").addEventListener("click", () => {
     if (app.runId) window.open(`/state/${encodeURIComponent(app.runId)}`, `state-${app.runId}`, "width=980,height=1000");
   });
