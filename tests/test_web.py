@@ -705,3 +705,4 @@ def test_the_paper_window_shows_the_writer_s_pdf_first(web):
     assert web.get("/api/runs/paper/raw", params={"path": "state/research.json"}).status_code == 415
     assert web.get("/api/runs/paper/raw", params={"path": "../../etc/passwd"}).status_code == 404
     assert web.get("/paper/paper").status_code == 200
+    assert web.get("/review/paper").status_code == 200

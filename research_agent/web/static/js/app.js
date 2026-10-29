@@ -60,6 +60,8 @@ async function openRun(id) {
   if (app.side === "calls") inspector.loadSessions();
   inspector.loadModels();
   loadPapers();
+  reviewCount = -1;
+  loadReviews();
   app.unsubscribe = subscribe(id, d.last_seq, {
     status: (e) => { app.detail = { ...app.detail, ...e }; renderDetail(app.detail); },
     chat: (e) => chat.message(e.role, e.text, e.kind, e.noted),
@@ -81,6 +83,7 @@ async function openRun(id) {
       if (app.tab === "graph") loadGraph();
       if (app.detail) renderActions(app.detail);
       loadPapers();
+      loadReviews();
     },
     error: (e) => chat.line(`! ${e.message}`, "error"),
     open: () => $("run-activity").classList.remove("lost"),
@@ -100,6 +103,27 @@ async function loadPapers() {
   button.classList.toggle("has-paper", papers.some((p) => p.paper));
   if (fresh && app.paperRun === id) chat.line("The paper is ready: press Paper at the top to read it.", "note");
   app.paperRun = id;
+}
+
+// The Review button: shown once the run has a review.
+let reviewCount = -1;
+async function loadReviews() {
+  const id = app.runId;
+  let st;
+  try { ({ state: st } = await api.state(id)); } catch { return; }
+  if (id !== app.runId) return;
+  const n = (st.reviews || []).length;
+  $("btn-review-open").hidden = !n;
+  if (n > reviewCount && reviewCount >= 0 && app.reviewRun === id) {
+    const v = st.reviews[n - 1];
+    chat.line(`Review ${v.id} is in${v.decision ? `: ${v.decision}, ${v.rating}/10` : ""}. Press Review at the top to read it.`, "note");
+  }
+  reviewCount = n;
+  app.reviewRun = id;
+}
+
+function openReview() {
+  if (app.runId) window.open(`/review/${encodeURIComponent(app.runId)}`, `review-${app.runId}`, "width=1000,height=1100");
 }
 
 function openPaper() {
@@ -345,6 +369,7 @@ function wireDialogs() {
     if (confirm("Stop the execution? Running jobs are killed.")) act(() => api.stop(app.runId));
   });
   $("btn-paper").addEventListener("click", openPaper);
+  $("btn-review-open").addEventListener("click", openReview);
   $("btn-review").addEventListener("click", () => act(() => api.review(app.runId)));
   $("btn-write-paper").addEventListener("click", () => act(() => api.writePaper(app.runId)));
   $("btn-popout").addEventListener("click", () => {

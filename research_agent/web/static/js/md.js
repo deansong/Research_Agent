@@ -1,5 +1,6 @@
-// A small Markdown renderer for the discussor's words: headings, lists,
-// code blocks, paragraphs, **bold**, *italics*, `code` and http(s) links.
+// A small Markdown renderer for the discussor's words and the reviews:
+// headings, lists, tables, code blocks, paragraphs, **bold**, *italics*,
+// `code` and http(s) links.
 // Everything is escaped first, so no HTML from a model reaches the page.
 
 export function escapeHtml(text) {
@@ -20,7 +21,9 @@ function inline(text) {
   return out;
 }
 
-export function markdown(text) {
+const cells = (row) => row.trim().replace(/^\|/, "").replace(/\|$/, "").split("|").map((c) => c.trim());
+
+export function markdown(text, { headings = false } = {}) {
   const lines = String(text ?? "").replace(/\r\n/g, "\n").split("\n");
   const html = [];
   let list = null;     // "ul" or "ol" while inside one
@@ -39,12 +42,23 @@ export function markdown(text) {
       html.push(`<pre><code>${escapeHtml(code.join("\n"))}</code></pre>`);
       continue;
     }
+    if (line.trim().startsWith("|") && /^\s*\|?[\s:|-]+\|?\s*$/.test(lines[i + 1] || "") && lines[i + 1].includes("-")) {
+      flush(); close();
+      const head = cells(line);
+      const rows = [];
+      for (i += 2; i < lines.length && lines[i].trim().startsWith("|"); i++) rows.push(cells(lines[i]));
+      i--;
+      html.push(`<table><thead><tr>${head.map((c) => `<th>${inline(c)}</th>`).join("")}</tr></thead><tbody>`
+        + rows.map((r) => `<tr>${r.map((c) => `<td>${inline(c)}</td>`).join("")}</tr>`).join("") + "</tbody></table>");
+      continue;
+    }
     const heading = line.match(/^(#{1,4})\s+(.*)$/);
     const bullet = line.match(/^\s*[-*+]\s+(.*)$/);
     const number = line.match(/^\s*\d+[.)]\s+(.*)$/);
     if (heading) {
       flush(); close();
-      html.push(`<h4>${inline(heading[2])}</h4>`);
+      const level = headings ? heading[1].length + 1 : 4;     // a document's own levels
+      html.push(`<h${level}>${inline(heading[2])}</h${level}>`);
     } else if (bullet || number) {
       flush();
       const kind = bullet ? "ul" : "ol";

@@ -1,0 +1,28 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Review</title>
+  <link rel="stylesheet" href="/css/app.css">
+</head>
+<body class="state-window">
+  <header class="topbar">
+    <div class="brand"><span class="dot"></span>review</div>
+    <div class="run-bar">
+      <span id="run-name" class="mono">-</span>
+      <select id="review-pick" class="paper-pick" hidden></select>
+      <span id="review-info" class="dim small"></span>
+    </div>
+    <div class="topbar-actions">
+      <button id="open-paper" class="btn" hidden>Paper &#8599;</button>
+      <span id="live-dot" class="live-dot" title="live"></span>
+    </div>
+  </header>
+  <main class="state-page review-page">
+    <div id="review-empty" class="empty">No review yet. The panel reviews the paper once every step has passed.</div>
+    <article id="review-doc" class="review-doc msg-text" hidden></article>
+  </main>
+  <script type="module" src="/js/review.js"></script>
+</body>
+</html>

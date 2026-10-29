@@ -767,7 +767,8 @@ def review_markdown(review_id: str, run_name: str, v: dict) -> str:
                   f"{r['confidence']}/5", f"*Focus: {r['focus']}*", "",
                   f"**Summary.** {r['summary']}", "", "| Criterion | Score | Why |",
                   "|---|---|---|"]
-        lines += [f"| {k} | {r[k]['score']}/4 | " + r[k]["why"].replace("\n", " ") + " |"
+        lines += [f"| {k} | {r[k]['score']}/4 | " + " ".join(r[k]["why"].replace("|", "/").split())
+                  + " |"
                   for k in views.ASSESSED]
         for key, title in (("strengths", "Strengths"), ("weaknesses", "Weaknesses"),
                            ("questions", "Questions for the authors"),

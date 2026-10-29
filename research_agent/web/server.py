@@ -615,6 +615,11 @@ def create_app(runs_root: Path = RUNS_ROOT, *, roles=(), watch: bool = True) -> 
         folder_of(run_id)
         return FileResponse(STATIC / "node.html", headers={"Cache-Control": "no-store"})
 
+    @app.get("/review/{run_id}")
+    def review_window(run_id: str):
+        folder_of(run_id)
+        return FileResponse(STATIC / "review.html", headers={"Cache-Control": "no-store"})
+
     @app.get("/paper/{run_id}")
     def paper_window(run_id: str):
         folder_of(run_id)
