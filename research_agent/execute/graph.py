@@ -385,7 +385,11 @@ def build(run: nodes.ExecRun, design: nodes.Design, checkpointer=None):
                 # step's last attempt.
                 st = commit(st, [nodes.record_op(st, sid, status="validating", **fields)],
                             "execution")
-                return {"research": st, "report": rep.model_dump(), "wake": [],
+                unverified = [o["value"]["source"] for o in out.ops
+                              if o.get("section") == "evidence"
+                              and o["value"].get("verified") is False]
+                return {"research": st, "report": {**rep.model_dump(), "unverified": unverified},
+                        "wake": [],
                         "_to": "validator"}
             problems = list(rep.problems) + [f"question for the user: {q}"
                                              for q in rep.questions_for_user]

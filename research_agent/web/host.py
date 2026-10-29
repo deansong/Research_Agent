@@ -982,7 +982,7 @@ def run_summary(folder: Path, hosts: dict) -> dict | None:
 #: Roles that read or change files, or run commands: a provider without them
 #: (strata, a plain Responses API) cannot be one of them.
 FILE_ROLES = {"bootstrap": ("researcher",),
-              "execution": ("worker", "writer", "validator", "reviewer")}
+              "execution": ("worker", "researcher", "writer", "validator", "reviewer")}
 
 
 def _reaches_files(provider: str) -> bool:

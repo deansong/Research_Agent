@@ -14,6 +14,7 @@ from research_agent import prompt_files
 #: Graph role -> its file; every step owner (worker, writer) shares one. The
 #: paper is written on the writer's model, with its own instructions.
 FILES = {"discussor": "discussor", "orchestrator": "orchestrator", "worker": "owner",
+         "researcher": "researcher",
          "writer": "owner", "validator": "validator", "reviewer": "reviewer",
          "paper": "paper", "meta_reviewer": "meta_reviewer"}
 

@@ -66,7 +66,8 @@ class StepReport(BaseModel):
     """For launched: the job ids the jobs helper printed."""
     problems: list[str] = Field(default_factory=list, max_length=20)
     questions_for_user: list[str] = Field(default_factory=list, max_length=6)
-    findings: list[FindingIn] = Field(default_factory=list, max_length=10)
+    findings: list[FindingIn] = Field(default_factory=list, max_length=20)
+    """Papers and datasets the step found: a researcher's are checked."""
     risks: list[RiskIn] = Field(default_factory=list, max_length=6)
     hypotheses: list[HypothesisResultIn] = Field(default_factory=list, max_length=10)
     """Only for the final analysis: which hypotheses the results support or

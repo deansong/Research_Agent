@@ -27,6 +27,7 @@ from pathlib import Path
 from research_agent import run as run_base
 from research_agent import state as S
 from research_agent.bootstrap.config import RoleConfig
+from research_agent.bootstrap import verify
 from research_agent.bootstrap.nodes import DISCUSSOR_SESSION, Outcome, design_problems
 from research_agent import autopilot, chat, inbox, prompt_files
 from research_agent.execute import config, jobs, prompts, schemas, views
@@ -150,10 +151,16 @@ def skills_for(run: ExecRun, node: dict, key: str = ""):
     choice = (run.limits.node_skills or {}).get(key or graph_name(node["name"]), _DESIGN)
     if choice is _DESIGN:
         choice = list(node.get("skills") or [])
+    if node.get("role") == "researcher" and isinstance(choice, list) and RESEARCH not in choice:
+        choice = [RESEARCH, *choice]      # its tools are what make it a researcher
     if choice is None or choice == "auto":
         return choice if run.known_skills() else None
     known = run.known_skills()
     return [s for s in choice if s in known] or None
+
+
+#: The skill whose tools a researcher searches with.
+RESEARCH = "research"
 
 
 def access_for(node: dict) -> str:
@@ -645,6 +652,9 @@ def owner(run: ExecRun, st: dict, *, node: dict, step: dict, task: str = "",
                                 "the step's check holds")
             problems += [f"artifact {a} does not exist (looked in {folder} and {run.folder})"
                          for a in out.artifacts if not resolve(run, folder, a)]
+        if out.state == "done" and node["role"] == "researcher" and not out.findings:
+            problems.append("done, but `findings` is empty: a researcher reports the key papers "
+                            "it found, each with its arXiv id, DOI or PMID (they are checked)")
         if out.hypotheses and node["role"] != "writer":
             problems.append("hypotheses are judged by the final analysis (a writer), not here")
         problems += [f"{h.id} is not a hypothesis id" for h in out.hypotheses
@@ -664,9 +674,16 @@ def owner(run: ExecRun, st: dict, *, node: dict, step: dict, task: str = "",
                             check=check)
     _commit_work(run.work, f"step {step['id']}, attempt {rec.get('attempts', 1)}: "
                            f"{out.state} -- {out.summary[:200]}")
+    # A researcher's sources are checked as the bootstrap researcher's are;
+    # the validator is told which were not found.
+    checked = {f.source: verify.source(f.source, run.skills_dir) if node["role"] == "researcher"
+               else None for f in out.findings}
+    unverified = [s for s, ok in checked.items() if ok is False]
     ops = [{"op": "add", "section": "evidence", "value": {
         "claim": f.claim, "source": f.source, "bears_on": list(f.bears_on),
-        "found_by": node["name"]}} for f in out.findings]
+        "found_by": node["name"], **({"verified": checked[f.source]}
+                                     if node["role"] == "researcher" else {})}}
+           for f in out.findings]
     ops += [{"op": "add", "section": "risks", "value": r.model_dump()} for r in out.risks]
     ops += [{"op": "add", "section": "open_questions", "value": {"text": q, "for": "user"}}
             for q in out.questions_for_user]
@@ -674,6 +691,9 @@ def owner(run: ExecRun, st: dict, *, node: dict, step: dict, task: str = "",
     ops.append({"op": "add", "section": "results", "value": {
         "node": node["name"], "job": f"step {step['id']}", "asked": step["title"][:500],
         "summary": summary[:1500], "session": session}})
+    if unverified:
+        out = out.model_copy(update={"problems": [*out.problems, *(
+            f"the research tool found no paper for {s}" for s in unverified)]})
     return Outcome(ops=ops, summary=summary, session=session, data=out)
 
 

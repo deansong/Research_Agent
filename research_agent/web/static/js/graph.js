@@ -5,7 +5,7 @@ import { el, clear } from "./dom.js";
 
 const KIND = {
   human: "#d99b4a", discussor: "#e0a3d0", orchestrator: "#c48ae0", worker: "#35d6c4",
-  runner: "#4fb0e8", writer: "#9ad66b", validator: "#d9b84a", reviewer: "#e56b6b", code: "#7a8aa6",
+  runner: "#4fb0e8", researcher: "#4fb0e8", writer: "#9ad66b", validator: "#d9b84a", reviewer: "#e56b6b", code: "#7a8aa6",
 };
 const STATUS = { pass: "#1e3a2a", fail: "#3a1e22", stopped: "#3a1e22", running: "#173640",
   waiting: "#173640", validating: "#2f2c17", pending: "#18202f" };

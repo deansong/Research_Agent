@@ -72,6 +72,15 @@ model = "gpt-6-sol"
 options = { timeout = 1200 }
 
 
+# Literature steps: searching, screening, evidence tables, related work. The
+# bootstrap researcher's tools (the research skill, always given) and its
+# source check; a step's files like any owner's.
+[roles.researcher]
+provider = "antigravity"
+model = "gemini-3.8-flash-high"
+options = { timeout = 1200 }
+
+
 [roles.writer]
 provider = "codex"
 model = "gpt-6-sol"

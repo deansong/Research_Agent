@@ -23,10 +23,11 @@ from pathlib import Path
 
 from research_agent.bootstrap.config import REPOSITORY, RoleConfig, backup_problems, role_fields
 
-#: Roles the execution stage runs. Step owners are workers (code, data, runs)
-#: and writers (the report), by the role the design gives them.
-ROLES = ("orchestrator", "worker", "writer", "validator", "reviewer")
-OWNERS = ("worker", "writer")
+#: Roles the execution stage runs. Step owners are workers (code, data, runs),
+#: researchers (literature: search, screening, evidence) and writers (the
+#: report), by the role the design gives them.
+ROLES = ("orchestrator", "worker", "researcher", "writer", "validator", "reviewer")
+OWNERS = ("worker", "researcher", "writer")
 #: A role of earlier versions, run as a worker: the two did not differ.
 RETIRED = {"runner": "worker"}
 CONFIRM = ("gated", "all", "none")

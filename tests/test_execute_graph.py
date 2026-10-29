@@ -817,3 +817,36 @@ def test_a_go_given_before_the_step_waits_counts(run, script):
     script.add("ExecDiscussorOutput", say("Done."))
     turn = Execution(run).start()
     assert turn.outcome == "done", "step 2 is gated, but its go was given before"
+
+
+def test_a_researcher_step_searches_with_the_research_tools_and_its_papers_are_checked(
+        run, script, monkeypatch):
+    # Run 1134: the search step's worker wrote its own script, skipped
+    # Semantic Scholar for want of a key and called it a coverage gap.
+    from research_agent.bootstrap import verify
+    monkeypatch.setattr(nodes.ExecRun, "known_skills", lambda self: {"research", "peft"})
+    monkeypatch.setattr(verify, "source", lambda s, d: s != "arXiv:9999.99999")
+    st, _ = S.apply(approved_state(), [{"op": "set", "section": "execution", "value": {
+        "steps": [{"id": "1", "title": "Data", "status": "running", "attempts": 1}]}}],
+        by="execution")
+    node = {"name": "searcher", "role": "researcher", "steps": ["1"], "skills": ["peft"],
+            "instructions": "search"}
+    (run.artifacts("1")).mkdir(parents=True, exist_ok=True)
+    (run.artifacts("1") / "log.json").write_text("{}")
+    done = {"state": "done", "summary": "searched", "artifacts": ["log.json"]}
+    found = {**done, "findings": [{"claim": "MSP baseline", "source": "arXiv:1610.02136"},
+                                  {"claim": "made up", "source": "arXiv:9999.99999"}]}
+    script.add("StepReport", done, found)
+    out = nodes.owner(run, st, node=node, step=nodes.plan_step(st, "1"))
+    call = script.calls[0]
+    assert "Semantic Scholar (no key" in call["instructions"]
+    assert nodes.skills_for(run, node) == ["research", "peft"], "its tools are always given"
+    assert nodes.skills_for(run, {**node, "role": "worker"}) == ["peft"]
+    assert "`findings` is empty" in script.prompts("StepReport")[1]
+    ev = [o["value"] for o in out.ops if o.get("section") == "evidence"]
+    assert [e["verified"] for e in ev] == [True, False]
+    assert "the research tool found no paper for arXiv:9999.99999" in out.data.problems
+    brief = nodes.views.validator(st, design_part="", node=node, step=nodes.plan_step(st, "1"),
+                                  report={"unverified": ["arXiv:9999.99999"]},
+                                  paths=run.paths("1"))
+    assert "A LITERATURE STEP" in brief and "could not find: arXiv:9999.99999" in brief

@@ -313,6 +313,14 @@ def validator(st: dict, *, design_part: str, node: dict, step: dict, report: dic
             "Metrics:\n" + metrics if metrics else "",
             "Problems it saw:\n" + "\n".join(f"- {p}" for p in report.get("problems") or [])
             if report.get("problems") else ""]).strip()),
+        *([_block("A LITERATURE STEP", (
+            "Its owner is a researcher with the research skill's tools, which reach OpenAlex, "
+            "Semantic Scholar (no key needed) and arXiv. A source recorded as a coverage gap "
+            "counts only when those tools failed on it, with their error recorded; a gap "
+            "for want of an API key, or code that never asked, is not one.")
+            + ("\nPapers the research tool could not find: " + "; ".join(report["unverified"])
+               if report.get("unverified") else ""))]
+          if node.get("role") == "researcher" else []),
         _block("THIS STEP'S JOBS", "\n".join(step_jobs) or "(none)"),
         _block("WHERE THINGS ARE", "\n".join([
             f"The step's artifacts: {paths['artifacts']}",
