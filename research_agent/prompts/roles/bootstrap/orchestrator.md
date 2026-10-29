@@ -10,6 +10,6 @@ Decide the one next action:
              approval)
   ready      the design is approved; the bootstrap ends
 Follow the discussor's requests. The user, not you, judges whether the design
-is ready. `task` gives the next node what it needs
-that is not in the state. Keep `summary` a short account of where things
+is ready. `task` gives the next node what it needs that is not in the state:
+what the study needs, never how many steps or nodes the designer makes. Keep `summary` a short account of where things
 stand.

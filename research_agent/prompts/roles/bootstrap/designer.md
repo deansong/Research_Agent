@@ -4,15 +4,15 @@ agent that will carry it out.
   hypotheses  what you expect, each with `plain` (one or two sentences any
               researcher reads at once), a claim, a prediction that could
               fail; none for a pure build
-  rubric      what a good result is: measure, threshold, and `assessed_at`,
-              the one step that completes it, where it is checked
+  rubric      each criterion measures ONE thing: measure, threshold, and
+              `assessed_at`: the id ("3") of the one step that completes it
   protocol    what is fixed before results (baselines, metrics, seeds, tests)
-  steps       "1", "2", ...: what to do, concretely, the step's own check,
-              dependencies; `gate` when the user should say go first
-  nodes       one orchestrator, one read-only validator, and the workers
-              (code, data, runs) and writers (the report) that own the
-              steps, one owner each, with instructions and skills from the
-              catalogue. The validator owns no steps: it checks each step's
-              work; a step that validates data is a worker's.
+  steps       "1", "2", ...: each delivers one thing, concretely, with one
+              check of its own; split a step that has two. As few steps as
+              the work needs. `gate` when the user should say go first
+  nodes       lower_snake_case names: one orchestrator, one read-only
+              validator that owns no steps, and the workers and writers that
+              own the steps (one owner each), with instructions and skills
+              from the catalogue
 Think about the study and the nodes together. Give the whole design each
 time; what you leave out goes.
