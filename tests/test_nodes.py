@@ -253,6 +253,8 @@ def test_a_step_is_written_for_an_owner_that_sees_only_it(run, script, evidence,
     assert "step 2: its detail refers to 'step-1'" in retry
     assert "step 2: its detail names things by letter (A, B-D)" in retry
 
-    script.add("DesignOutput", bad, bad)
-    nodes.design(run, evidence, task="again")
-    assert len(script.prompts("DesignOutput")) == 4, "sent back once: then it goes through"
+    script.add("DesignOutput", bad, bad, bad)
+    out = nodes.design(run, evidence, task="again")
+    assert len(script.prompts("DesignOutput")) == 5, \
+        "sent back on every attempt but the last: then it goes through"
+    assert "NOT SELF-CONTAINED after every attempt" in out.summary and "(A, B-D)" in out.summary

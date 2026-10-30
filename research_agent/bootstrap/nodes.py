@@ -315,7 +315,7 @@ def design_check(st: dict, known_skills: set[str]):
     """What code requires of a design, given the state it was made from --
     a small function so it can be tested and reused."""
     evidence = _ids(st, "evidence")
-    standalone_once: list[bool] = []
+    sent_back: list[bool] = []
 
     def check(out: schemas.DesignOutput) -> list[str]:
         problems = _unique("hypothesis", [h.id for h in out.hypotheses], "H")
@@ -333,12 +333,13 @@ def design_check(st: dict, known_skills: set[str]):
             r.assessed_at = re.sub(r"(?i)^\s*step\s*", "", r.assessed_at).strip()
         problems += [f"{r.id}: `assessed_at` is {r.assessed_at!r}, not a step id: give the one "
                      f"step that completes it" for r in out.rubric if r.assessed_at not in ids]
-        # A step's owner sees only that step: what it names must make sense
-        # there. Sent back once, so a design that keeps them still goes on.
-        if not standalone_once:
+        # A step is its owner's whole prompt: what it names must make sense
+        # there. Sent back on every attempt but the last, so a design that
+        # keeps them still reaches the user -- told which steps (`design`).
+        if len(sent_back) < run_base.ATTEMPTS - 1:
             alone = standalone_problems(out.steps)
             if alone:
-                standalone_once.append(True)
+                sent_back.append(True)
                 problems += alone
         problems += design_problems({"nodes": [n.model_dump() for n in out.nodes]}, steps=ids,
                                     rubric=rubric, skills=known_skills)
@@ -377,6 +378,10 @@ def design(run: Run, st: dict, *, task: str) -> Outcome:
     ops += [{"op": "add", "section": "risks", "value": r.model_dump()} for r in out.risks]
     summary = (f"a design of {len(out.steps)} steps and {len(out.nodes)} nodes, "
                f"{len(out.hypotheses)} hypotheses, {len(out.rubric)} criteria. {out.summary}")
+    alone = standalone_problems(out.steps)
+    if alone:
+        summary += ("\nNOT SELF-CONTAINED after every attempt -- tell the user, and fix "
+                    "before approving: " + "; ".join(alone[:8]))
     ops.append(_result_op("designer", "", task, summary, session))
     return Outcome(ops=ops, summary=summary, session=session, data=out)
 
