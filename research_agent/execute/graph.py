@@ -352,6 +352,7 @@ def build(run: nodes.ExecRun, design: nodes.Design, checkpointer=None):
     def dispatch(state: ExecState) -> dict:
         st, sid, d = state["research"], state["step"], state.get("decision") or {}
         node = design.owners[design.owner_of[sid]]
+        nodes.start_record(run, st)         # a run started before code kept it
         try:
             out = nodes.dispatch(run, st, node=node, step=nodes.plan_step(st, sid),
                                  note=d.get("task", ""))

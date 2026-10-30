@@ -15,6 +15,10 @@ The folders are real, so name files in them:
   step N writes to   $run/artifacts/step_NN/   (step 3: step_03, step 12: step_12)
   code goes in       $run/work/
   the run folder     $run
+  when the execution started, and the user's go that started it:
+                     $run/execution/execution_start.json (code writes it)
+Approval, the go, budgets and time limits, the orchestrator and the validator
+are code's: a step neither checks nor records them.
 
 So the step's `detail` must give its subagent, written in:
 - what to do, and in a sentence why the study needs it;

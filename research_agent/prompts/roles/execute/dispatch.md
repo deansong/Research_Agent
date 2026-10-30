@@ -10,5 +10,7 @@ they hold), the outside data and models it names, the values it must keep.
   context  what its owner needs that the step does not say: what each name
            means, the values and protocol details it must keep, the user's
            decisions that bear on it, for a retry what to do differently
-  missing  what is not there, and which earlier work should have made it
+  missing  data, files, models or results it reads that are not there,
+           and which earlier work should have made them -- never access
+           (its owner can write and run) or the workflow (code keeps it)
 Do not do the step or judge its method; do not invent a file.

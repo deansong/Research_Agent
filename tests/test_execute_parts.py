@@ -218,3 +218,36 @@ def test_a_step_starts_only_with_its_inputs_checked_and_its_context_written(tmp_
     assert "checked to exist before you started ===\n- artifacts/step_01/train.jsonl: the " \
            "training split" in brief
     assert "seeds 17, 29 and 43" in brief and "From the orchestrator: use bf16" in brief
+
+
+def test_code_keeps_the_execution_start_and_tells_the_dispatch_the_owner_can_write(tmp_path,
+                                                                                  script):
+    # Run 1119: a planned step required execution/execution_start.json, which
+    # nothing wrote, and the dispatch -- read-only itself -- said the worker
+    # could not write.
+    st, _ = S.apply(S.new(), [
+        {"op": "add", "section": "decisions", "value": {"what": "Start execution.", "by": "user"}},
+        {"op": "set", "section": "plan", "value": {"steps": [
+            {"id": "1", "title": "Data", "detail": "split it", "check": "splits written"}]}},
+        {"op": "set", "section": "execution", "value": {
+            "started": "2999-01-01T00:00:00+00:00",
+            "steps": [{"id": "1", "title": "Data", "status": "pending"}]}}], by="x")
+    run = nodes.ExecRun(tmp_path, {r: RoleConfig("fake") for r in (*config.ROLES, "discussor")},
+                        skills={}, limits=config.defaults(), quiet=True)
+    path = nodes.start_record(run, st)
+    record = json.loads(path.read_text())
+    assert path == tmp_path / "execution" / "execution_start.json"
+    assert record["started_at_utc"] == "2999-01-01T00:00:00+00:00"
+    assert record["execution_id"] == tmp_path.name
+    assert record["initiated_by"]["what"] == "Start execution."
+    path.write_text("{}")
+    assert nodes.start_record(run, st) == path and path.read_text() == "{}", "written once"
+
+    nodes.dispatch(run, st, node={"name": "prep", "role": "worker"},
+                   step=nodes.plan_step(st, "1"))
+    brief = script.prompts("DispatchOutput")[0]
+    assert "Its owner runs with full access" in brief and "execution_start.json" in brief
+    owner = views.owner(st, node={"name": "prep", "role": "worker"},
+                        step=nodes.plan_step(st, "1"), task="", paths=run.paths("1"),
+                        jobs_command="jobs")
+    assert "The execution started at 2999-01-01T00:00:00+00:00" in owner

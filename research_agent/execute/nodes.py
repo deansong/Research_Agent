@@ -17,6 +17,7 @@ CONCEPT: Sessions, in <run>/rb:
 
 from __future__ import annotations
 
+import json
 import re
 import shutil
 import subprocess
@@ -631,6 +632,30 @@ def orchestrator(run: ExecRun, st: dict, design: Design, *, budget: str, request
 # looks at what the step depends on as it is on disk, names the exact files
 # its owner reads (code checks they exist) and what else it must be told --
 # or says what is missing, and the step does not start.
+
+
+#: The execution's start, kept by code: <run>/<START_RECORD>.
+START_RECORD = "execution/execution_start.json"
+
+
+def start_record(run: ExecRun, st: dict) -> Path | None:
+    """The execution's start as a file a step can read: when it started and
+    the user's go that started it, from the state -- written once, by code.
+    Measured (run 1119): a planned step required such a record, nothing wrote
+    it, and the step could not start."""
+    path = run.folder / START_RECORD
+    started = (st.get("execution") or {}).get("started")
+    if path.exists() or not started:
+        return path if path.exists() else None
+    go = [d for d in st.get("decisions") or []
+          if d.get("by") in ("user", "autopilot") and (d.get("at") or "") <= started]
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(json.dumps({
+        "execution_id": run.folder.name, "started_at_utc": started,
+        "initiated_by": ({k: go[-1].get(k) for k in ("id", "what", "by", "at")} if go else None),
+        "note": "Written by code from the run's state when the execution started."},
+        indent=2) + "\n")
+    return path
 
 
 def dispatch(run: ExecRun, st: dict, *, node: dict, step: dict, note: str = "") -> Outcome:

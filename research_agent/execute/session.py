@@ -160,6 +160,7 @@ class Execution:
                    "phase": "executing", "next": "the first step"}}]
         new, changed = S.apply(st, ops, by="execution")
         S.Store(run.folder).write(new, by="execution", ops=ops, changed=changed)
+        nodes.start_record(run, new)
         return new
 
     def close(self) -> None:
