@@ -702,6 +702,13 @@ def dispatch(run: ExecRun, st: dict, *, node: dict, step: dict, note: str = "") 
                      f"it depends on ({', '.join(earlier) or 'it depends on none'}). An outside "
                      f"resource -- data, weights, a tokenizer, a package -- is its owner's to "
                      f"get: put it in `obtain`" for m in out.missing if m.from_step not in earlier]
+        # execution/ is code's: it holds only the start record. Measured (run
+        # 1119): a step's detail asked for delivery receipts there, which
+        # nothing writes, and the dispatch held step 4 for them.
+        problems += [f"missing {m.what[:120]!r}: execution/ is kept by code and holds only "
+                     f"{START_RECORD}; deliveries, messages, receipts and approvals are code's, "
+                     f"never a step's work -- say so in `context` and let the step go ahead"
+                     for m in out.missing if "execution/" in m.what]
         if out.ready and out.missing:
             problems.append("ready, but `missing` lists what is not there: either it is not "
                             "ready, or nothing is missing")

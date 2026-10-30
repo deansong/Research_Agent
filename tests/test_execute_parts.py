@@ -199,7 +199,9 @@ def test_a_step_starts_only_with_its_inputs_checked_and_its_context_written(tmp_
     (tmp_path / "artifacts" / "step_01" / "train.jsonl").write_text("{}\n")
     bad = {"ready": True, "inputs": [{"path": "artifacts/03_data/train.jsonl", "holds": "x"}],
            "context": "go", "missing": [{"what": "dev split", "from_step": "1"},
-                                        {"what": "the Qwen tokenizer", "from_step": ""}]}
+                                        {"what": "the Qwen tokenizer", "from_step": ""},
+                                        {"what": "execution/delivery_receipts/a.json",
+                                         "from_step": "1"}]}
     good = {"ready": True, "context": "Train with seeds 17, 29 and 43, as the protocol fixes.",
             "inputs": [{"path": "artifacts/step_01/train.jsonl", "holds": "the training split"}],
             "obtain": ["Qwen/Qwen3-4B-Instruct-2507's tokenizer, from Hugging Face"]}
@@ -212,7 +214,7 @@ def test_a_step_starts_only_with_its_inputs_checked_and_its_context_written(tmp_
     for expected in ("input artifacts/03_data/train.jsonl does not exist",
                      "ready, but `missing` lists", "the step follows seeds",
                      "missing 'the Qwen tokenizer': (no step) is not an earlier step",
-                     "put it in `obtain`"):
+                     "put it in `obtain`", "execution/ is kept by code"):
         assert expected in retry
     assert out.data.ready and out.data.inputs[0].path == "artifacts/step_01/train.jsonl"
 
@@ -322,3 +324,4 @@ def test_what_only_the_system_can_give_is_never_a_step_s_to_deliver():
     assert "a receipt, approval, delivery or guarantee" in said("roles/bootstrap/reader")
     assert "never fail a step for it" in said("roles/execute/validator")
     assert "it is not a failure" in said("roles/execute/owner")
+    assert "Never missing, either: what only the system gives" in said("roles/execute/dispatch")
