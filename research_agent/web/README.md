@@ -267,7 +267,6 @@ GPUs: they run with `full` access, which is Codex's unsandboxed mode.
 | Run | stage, phase, what is running, the outcome or last error, the model of each role |
 | Model calls | each call as it starts and ends (seconds, tokens, problems), and every session; click one for its turns: what was sent and what came back |
 | Jobs | the execution's background jobs, their state, GPUs and hours, and their logs |
-| Refine prompts | improve the designer's or an orchestrator's instructions from past runs: choose the role and the runs; it shows its progress, and what it adopted (see the main README) |
 | Open run | every run, newest first; **Delete** moves one to `.trash` in the runs root (move it back to restore it) |
 | Top bar | **Pause** (after the current step), **Carry on**, **Start execution** (once the design is approved: limits and which steps wait for your go), **Stop** (the execution's jobs and steps) |
 

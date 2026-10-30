@@ -92,31 +92,8 @@ def main(argv: list[str] | None = None) -> int:
     web.add_argument("--port", type=int, default=8421)
     web.add_argument("--role", action="append", default=[], metavar="ROLE=PROVIDER[:MODEL[:EFFORT]]",
                      help="override a role for every run opened (all=fake: a free demo)")
-    ref = sub.add_parser("refine", help="improve a role's instructions from its calls in past "
-                                        "runs: replay them, propose, compose, judge blindly, "
-                                        "adopt the winner")
-    ref.add_argument("--role", required=True,
-                     choices=["designer", "orchestrator", "exec_orchestrator"])
-    ref.add_argument("--runs", nargs="+", required=True, metavar="RUN",
-                     help="past run folders (or names in --root) to learn from")
-    ref.add_argument("--root", default=str(RUNS_ROOT),
-                     help=f"the runs folder names are looked up in (default {RUNS_ROOT})")
-    ref.add_argument("--cases", type=int, default=4, help="cases to use (default 4)")
-    ref.add_argument("--k", type=int, default=1, help="replays per case and candidate")
-    ref.add_argument("--model", default="",
-                     help="replay on this provider[:model[:effort]] instead of each run's")
-    ref.add_argument("--refiner", default="",
-                     help="the proposers' and judge's provider[:model[:effort]] "
-                          "(default: [roles.refiner] in bootstrap/config.toml)")
-    ref.add_argument("--budget", type=int, default=40, help="most model calls allowed (40)")
-    ref.add_argument("--no-adopt", action="store_true",
-                     help="report only; do not write a winning prompt")
-    ref.add_argument("--dry-run", action="store_true",
-                     help="list the cases that would be used and the calls, then stop")
     args = parser.parse_args(argv)
 
-    if args.command == "refine":
-        return _refine(parser, args)
     if args.command == "web":
         try:
             from research_agent.web import server
@@ -612,31 +589,3 @@ def _short(text: str, width: int = 120) -> str:
 
 if __name__ == "__main__":
     sys.exit(main())
-
-
-def _refine(parser, args) -> int:
-    from research_agent.refine import cases as refine_cases
-    from research_agent.refine import refine as refining
-
-    root = Path(args.root).expanduser()
-    runs = [Path(r).expanduser() if Path(r).expanduser().exists() else root / r for r in args.runs]
-    missing = [str(r) for r in runs if not (r / "rb").is_dir()]
-    if missing:
-        parser.error(f"not run folders: {', '.join(missing)}")
-    if args.dry_run:
-        found = refine_cases.collect(runs, args.role, args.cases)
-        for c in found:
-            print(f"  {c.id}: {len(c.problems)} checks failed; "
-                  f"{len(refine_cases.TROUBLE.findall(c.aftermath))} signs of trouble after")
-        print(f"Up to {refining.estimate(len(found), args.k)} model calls "
-              f"(budget {args.budget}).")
-        return 0
-    try:
-        refining.refine(args.role, runs, n_cases=args.cases, k=args.k, model=args.model,
-                        refiner=args.refiner, budget=args.budget, root=root,
-                        adopt=not args.no_adopt, say=lambda text: print(text, flush=True))
-    except ValueError as exc:
-        print(f"Cannot refine: {exc}", file=sys.stderr)
-        return 1
-    return 0
-

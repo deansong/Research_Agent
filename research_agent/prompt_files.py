@@ -10,8 +10,7 @@ CONCEPT: A prompt is named by its path without ".md" ("roles/bootstrap/
 
     <run>/prompts/<name>.md                one run (its folder)
     $RESEARCH_AGENT_PROMPTS/<name>.md      every run of yours, if set
-    ~/.research_agent/prompts/<name>.md    every run of yours (refinement
-                                           adopts its winners here)
+    ~/.research_agent/prompts/<name>.md    every run of yours
     research_agent/prompts/<name>.md       the defaults
 
        A note's `$name` placeholders are filled in by the code that sends it
@@ -29,8 +28,8 @@ from string import Template
 
 DEFAULT_DIR = Path(__file__).with_name("prompts")
 ENV = "RESEARCH_AGENT_PROMPTS"
-#: Your own prompts when $RESEARCH_AGENT_PROMPTS is not set (and where
-#: research_agent/refine adopts a winning prompt): $RESEARCH_AGENT_HOME/prompts.
+#: Your own prompts when $RESEARCH_AGENT_PROMPTS is not set:
+#: $RESEARCH_AGENT_HOME/prompts.
 HOME_ENV = "RESEARCH_AGENT_HOME"
 #: A run folder's own prompts.
 RUN_DIR = "prompts"

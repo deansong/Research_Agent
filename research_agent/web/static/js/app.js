@@ -272,48 +272,6 @@ async function showOpen() {
   if (!$("dialog-open").open) $("dialog-open").showModal();
 }
 
-let refineTimer = null;
-
-async function showRefine() {
-  $("refine-error").textContent = "";
-  const list = clear($("refine-runs"));
-  try {
-    for (const r of await api.runs()) {
-      list.append(el("label", { class: "run-row" }, el("input", { type: "checkbox", value: r.id }),
-        " ", el("b", { class: "mono", text: r.id }), el("div", { class: "dim small", text: r.goal || "" })));
-    }
-  } catch (err) { problem(err); }
-  if (!$("dialog-refine").open) $("dialog-refine").showModal();
-  pollRefine();
-}
-
-async function pollRefine() {
-  clearTimeout(refineTimer);
-  let s;
-  try { s = await api.refineStatus(); } catch (err) { return; }
-  const log = $("refine-log");
-  log.hidden = !s.lines.length;
-  log.textContent = s.lines.join("\n");
-  log.scrollTop = log.scrollHeight;
-  $("refine-start").disabled = s.running;
-  $("refine-error").textContent = s.error || "";
-  const r = s.report;
-  clear($("refine-result")).append(r ? el("div", { class: "callout" },
-    el("b", { text: r.winner === "base" ? "The instructions stay: the base won." : `Adopted: ${r.winner}.` }),
-    el("div", { class: "dim small", text: r.adopted ? `Written to ${r.adopted}${r.backup ? ` (old: ${r.backup})` : ""}` : "" }),
-    el("div", { class: "dim small", text: `Report: ${r.report}` })) : "");
-  if (s.running && $("dialog-refine").open) refineTimer = setTimeout(pollRefine, 2000);
-}
-
-async function startRefine() {
-  const runs = [...$("refine-runs").querySelectorAll("input:checked")].map((x) => x.value);
-  if (!runs.length) { $("refine-error").textContent = "Choose at least one past run."; return; }
-  try {
-    await api.refine({ role: $("refine-role").value, runs, cases: Number($("refine-cases").value) || 4 });
-    pollRefine();
-  } catch (err) { $("refine-error").textContent = err.message || String(err); }
-}
-
 async function deleteRun(id) {
   if (!confirm(`Delete the run ${id}?\n\nIts folder moves to the .trash folder of the runs root; move it back to restore it.`)) return;
   try {
@@ -335,9 +293,6 @@ async function showNew() {
 
 function wireDialogs() {
   $("btn-open").addEventListener("click", showOpen);
-  $("btn-refine").addEventListener("click", showRefine);
-  $("refine-close").addEventListener("click", () => { clearTimeout(refineTimer); $("dialog-refine").close(); });
-  $("refine-start").addEventListener("click", startRefine);
   $("open-cancel").addEventListener("click", () => $("dialog-open").close());
   $("btn-new").addEventListener("click", showNew);
   $("new-cancel").addEventListener("click", () => $("dialog-new").close());

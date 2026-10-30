@@ -34,7 +34,6 @@
       <button id="btn-paper" class="btn" hidden title="Open the run's paper (PDF) in its own window">Paper &#8599;</button>
       <button id="btn-new" class="btn">New run</button>
       <button id="btn-open" class="btn">Open run</button>
-      <button id="btn-refine" class="btn" title="Improve a role's instructions from its calls in past runs">Refine prompts</button>
     </div>
   </header>
 
@@ -137,26 +136,7 @@
     </form>
   </dialog>
 
-  <dialog id="dialog-refine">
-    <h2>Refine a role's prompt</h2>
-    <p class="hint">Replays the role's calls in the runs you choose with its current instructions and with rewrites two proposers make (how it works; what a practitioner knows), composes the best, and judges the answers blindly. A winner is adopted for all your runs (the old file is kept); the base stays on a tie.</p>
-    <label>Role
-      <select id="refine-role">
-        <option value="designer">designer</option>
-        <option value="orchestrator">orchestrator (bootstrap)</option>
-        <option value="exec_orchestrator">orchestrator (execution)</option>
-      </select></label>
-    <label>Cases <input id="refine-cases" type="number" min="1" max="12" value="4"></label>
-    <div class="dim small">Learn from these runs:</div>
-    <div id="refine-runs" class="run-list"></div>
-    <pre id="refine-log" class="refine-log" hidden></pre>
-    <div id="refine-result"></div>
-    <div id="refine-error" class="error"></div>
-    <div class="dialog-actions">
-      <button id="refine-close" class="btn" type="button">Close</button>
-      <button id="refine-start" class="btn primary" type="button">Start</button>
-    </div>
-  </dialog>
+
 
   <dialog id="dialog-open">
     <h2>Open a run</h2>

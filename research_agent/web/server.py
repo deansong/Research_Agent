@@ -152,14 +152,6 @@ class SetModel(BaseModel):
     model_config = {"extra": "forbid"}
 
 
-class RefineStart(BaseModel):
-    role: str
-    runs: list[str]
-    cases: int = Field(4, ge=1, le=12)
-    k: int = Field(1, ge=1, le=3)
-    model_config = {"extra": "forbid"}
-
-
 class StartExecution(BaseModel):
     wall_hours: float | None = Field(None, ge=0)
     gpu_hours: float | None = Field(None, ge=0)
@@ -292,47 +284,6 @@ def create_app(runs_root: Path = RUNS_ROOT, *, roles=(), watch: bool = True) -> 
         to = bin_ / f"{run_id}-{datetime.now():%Y%m%d-%H%M%S}"
         shutil.move(str(folder), str(to))
         return {"ok": True, "moved_to": str(to)}
-
-    # ---- refining the roles' prompts (research_agent/refine) --------------------------
-
-    refining: dict = {"thread": None, "lines": [], "report": None, "error": ""}
-    # --role all=X (a demo, the tests) runs the refinement on X too.
-    every = next((r.split("=", 1)[1] for r in roles if r.startswith("all=")), "")
-
-    @app.get("/api/refine")
-    def refine_status():
-        t = refining["thread"]
-        return {"running": bool(t and t.is_alive()), "lines": refining["lines"][-200:],
-                "report": refining["report"], "error": refining["error"]}
-
-    @app.post("/api/refine")
-    def refine_start(body: RefineStart):
-        from research_agent.refine import refine as refining_mod
-
-        if refining["thread"] and refining["thread"].is_alive():
-            raise _bad(409, "busy", "A refinement is running already.")
-        if body.role not in refining_mod.PROMPTS:
-            raise _bad(400, "bad_request", f"No role {body.role!r} to refine.")
-        runs = [folder_of(r) for r in body.runs]
-        if not runs:
-            raise _bad(400, "bad_request", "Choose the past runs to learn from.")
-        refining.update(lines=[], report=None, error="")
-
-        def work():
-            try:
-                r = refining_mod.refine(
-                    body.role, runs, n_cases=body.cases, k=body.k, model=every, refiner=every,
-                    budget=max(40, refining_mod.estimate(body.cases, body.k)), root=root,
-                    say=refining["lines"].append)
-                refining["report"] = {"winner": r.winner, "wins": r.wins, "adopted": r.adopted,
-                                      "backup": r.backup, "folder": str(r.folder),
-                                      "report": str(r.folder / "report.md")}
-            except Exception as exc:  # noqa: BLE001 -- shown on the page
-                refining["error"] = str(exc)[:2000]
-
-        refining["thread"] = threading.Thread(target=work, daemon=True, name="refine")
-        refining["thread"].start()
-        return {"ok": True}
 
     # ---- talking and steering -------------------------------------------------------
 

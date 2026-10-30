@@ -282,7 +282,7 @@ def design_problems(design: dict, *, steps: list[str], rubric: set[str],
 
 def design_check(st: dict, known_skills: set[str]):
     """What code requires of a design, given the state it was made from --
-    also used to replay a recorded call (research_agent/refine)."""
+    a small function so it can be tested and reused."""
     evidence = _ids(st, "evidence")
 
     def check(out: schemas.DesignOutput) -> list[str]:

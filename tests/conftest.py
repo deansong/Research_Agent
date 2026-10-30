@@ -1,5 +1,5 @@
 """Tests never read your own prompts (~/.research_agent/prompts, or
-$RESEARCH_AGENT_PROMPTS): a refinement may have adopted some there. Set
+$RESEARCH_AGENT_PROMPTS): yours may differ from the defaults. Set
 before anything is imported -- the prompt modules read their files then."""
 
 import os

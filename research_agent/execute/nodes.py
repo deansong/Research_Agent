@@ -561,7 +561,7 @@ def aside(run: ExecRun, st: dict, *, user: str, activity: str) -> schemas.AsideO
 
 def decision_check(st: dict, limit: int, run_dir=None):
     """What code requires of an execution decision in this state -- also used
-    to replay a recorded call (research_agent/refine)."""
+    so it can be tested alone."""
     moves = open_moves(st, limit)
     untried = [s for s in moves["run"] if not records(st)[s].get("attempts")]
     asked_once = []
