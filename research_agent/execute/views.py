@@ -227,40 +227,68 @@ def orchestrator(st: dict, *, design_part: str, moves: list[str], budget: str,
 
 def owner(st: dict, *, node: dict, step: dict, task: str, paths: dict, jobs_command: str,
           previous: dict | None = None) -> str:
+    """A step's work order: everything its owner needs to do the step alone,
+    and nothing about the rest of the study. Measured (run 1134): owners got
+    the study's goal and scope, the hypotheses and "After steps: 2 / Rubric:
+    R3 / Cost: ...", and still could not tell what done meant."""
     parts = [f"Today is {_today()}.",
-             _block("YOUR PART OF THE APPROVED DESIGN",
-                    f"You are {node['name']} ({node['role']}).\n{node.get('instructions', '')}"),
-             _block("YOUR STEP", step_text(step))]
+             _block("YOUR JOB", "\n".join(filter(None, [
+                 f"You are {node['name']}. {node.get('instructions', '')}".strip(),
+                 f"The work: {step.get('detail') or step['title']}",
+                 f"Done when: {step['check']}" if step.get("check") else ""])))]
+    criteria = criteria_text(st, list(step.get("rubric") or []))
+    parts.append(_block("HOW YOUR WORK IS CHECKED",
+                        "A validator reads the files you list and checks \"Done when\""
+                        + (" and these criteria:\n" + criteria if criteria else ".")))
     if task:
         parts.append(_block("FROM THE ORCHESTRATOR", task))
     if previous and (previous.get("verdict") or previous.get("problems")):
         parts.append(_block("THE LAST ATTEMPT FAILED -- do it differently", "\n".join(
             [previous.get("verdict", "")] + [f"- {p}" for p in previous.get("problems") or []])))
+    parts.append(_block("YOUR INPUTS -- files earlier work produced",
+                        upstream(st, step, paths, every=node["role"] == "writer")))
+    rules = "\n\n".join(filter(None, [
+        S.render(st, ["protocol"]).split("\n", 1)[-1].strip() if st.get("protocol") else "",
+        S.render(st, ["constraints"]).split("\n", 1)[-1].strip() if st.get("constraints") else ""]))
+    if rules.strip():
+        parts.append(_block("RULES YOU WORK WITHIN -- fixed before results", rules))
     decided = user_decisions(st)
     if decided:
         parts.append(_block("THE USER'S DECISIONS -- they stand over the plan where they "
                             "conflict; apply them and say so in your report", decided))
-    parts += [
-        _block("RUBRIC ITEMS YOUR WORK IS CHECKED AGAINST",
-               rubric_text(st, list(step.get("rubric") or []))),
-        _block("THE STUDY", S.render(st, ["goal", "constraints", "protocol"])),
-        _block("HYPOTHESES", S.render({**st, "hypotheses": _live(st)}, ["hypotheses"])),
-        _block("EARLIER STEPS' OUTPUTS", upstream(st, step, paths, every=node["role"] == "writer")),
-        _block("WHERE TO WORK", "\n".join([
-            f"Workspace (your current folder; code goes here): {paths['work']}",
-            f"Your artifacts folder (outputs go here): {paths['artifacts']}",
-            f"The run folder (read anything in it): {paths['run']}",
-            *[f"An earlier run, reviewed in {r['id']} (its files stand; read them): {r['run']}"
-              for r in st.get("reviews") or [] if r.get("run") and r["run"] != paths["run"]],
-            *([f"The study's Python (torch, CUDA, its libraries) -- use it for the study's "
-               f"code: {paths['python']}"] if paths.get("python") else []),
-            "Launch anything longer than a few minutes as a job, e.g.:",
-            f"  {jobs_command} launch --step {step['id']} --gpus 1 --name seed17 -- "
-            f"{paths.get('python') or 'python'} train.py --seed 17",
-            f"  (prints the job id; --gpus N picks N free GPUs; `{jobs_command} status "
-            f"--step {step['id']}` lists them)"])),
-    ]
+    if node["role"] == "writer" and _live(st):
+        parts.append(_block("HYPOTHESES -- say in your report which the results support or refute",
+                            S.render({**st, "hypotheses": _live(st)}, ["hypotheses"])))
+    parts.append(_block("WHERE TO WORK", "\n".join([
+        f"Workspace (your current folder; code goes here): {paths['work']}",
+        f"Your artifacts folder (outputs go here): {paths['artifacts']}",
+        f"The run folder (read anything in it): {paths['run']}",
+        *[f"An earlier run, reviewed in {r['id']} (its files stand; read them): {r['run']}"
+          for r in st.get("reviews") or [] if r.get("run") and r["run"] != paths["run"]],
+        *([f"The study's Python (torch, CUDA, its libraries) -- use it for the study's "
+           f"code: {paths['python']}"] if paths.get("python") else []),
+        "Launch anything longer than a few minutes as a job, e.g.:",
+        f"  {jobs_command} launch --step {step['id']} --gpus 1 --name seed17 -- "
+        f"{paths.get('python') or 'python'} train.py --seed 17",
+        f"  (prints the job id; --gpus N picks N free GPUs; `{jobs_command} status "
+        f"--step {step['id']}` lists them)"])))
     return "\n\n".join(parts)
+
+
+def criteria_text(st: dict, ids) -> str:
+    """Rubric items as plain criteria: what, measured how, passing when --
+    no ids, weights or step numbers, which mean nothing to an owner."""
+    wanted = list(dict.fromkeys(ids))
+    lines = []
+    for r in st.get("rubric") or []:
+        if r.get("id") in wanted:
+            line = f"- {r['criterion']}"
+            if r.get("measure"):
+                line += f", measured by {r['measure']}"
+            if r.get("threshold"):
+                line += f"; passes at {r['threshold']}"
+            lines.append(line)
+    return "\n".join(lines)
 
 
 def owner_wake(run_dir: Path, job_ids: list[str]) -> str:
@@ -284,11 +312,18 @@ def upstream(st: dict, step: dict, paths: dict, *, every: bool = False) -> str:
         if sid == step["id"] or sid not in records:
             continue
         r = records[sid]
-        lines.append(f"Step {sid} [{r['status']}] in {Path(paths['run']) / 'artifacts' / folder_name(sid)}: "
-                     f"{r.get('summary') or '-'}"
+        plan = _step(st, sid) or {}
+        verdict = r.get("verdict", "")
+        state = (" [partial: some of it is missing]" if verdict.startswith("partial") else
+                 " [passed by the user's decision, not by its check]"
+                 if verdict.startswith("passed by") else
+                 "" if r["status"] == "pass" else f" [{r['status']}]")
+        lines.append(f"{plan.get('title') or 'Earlier work'}{state}: "
+                     f"{Path(paths['run']) / 'artifacts' / folder_name(sid)}\n"
+                     f"  what it did: {r.get('summary') or '-'}"
                      + (f"\n  files: {', '.join(r['artifacts'][:20])}" if r.get("artifacts") else "")
-                     + (f"\n  verdict: {r['verdict']}" if r.get("verdict") else ""))
-    return "\n".join(lines) or "(none: this is the first step)"
+                     + (f"\n  checked: {r['verdict']}" if r.get("verdict") else ""))
+    return "\n".join(lines) or "(none: you start from the rules below)"
 
 
 # ---- validator ---------------------------------------------------------------------------------

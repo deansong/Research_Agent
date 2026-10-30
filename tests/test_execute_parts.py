@@ -115,9 +115,13 @@ def test_an_owner_s_brief_has_its_step_its_rubric_and_where_to_work(tmp_path):
              "artifacts": str(tmp_path / "artifacts" / "step_02")}
     brief = views.owner(st, node=node, step=st["plan"]["steps"][1], task="", paths=paths,
                         jobs_command="python jobs.py --run R")
-    assert "Step 2: Train" in brief and "You are trainer (worker).\nTrain it." in brief
-    assert "Seeds fixed" in brief and "Unrelated" not in brief
-    assert "Step 1 [pass]" in brief and "rows.json" in brief and "step_01" in brief
+    # A work order: what to deliver and how it is checked, in plain words --
+    # no step numbers, rubric ids, cost, goal or hypotheses.
+    assert "You are trainer. Train it.\nThe work: two seeds" in brief
+    assert "- Seeds fixed" in brief and "Unrelated" not in brief and "R1" not in brief
+    assert "Data: " in brief and "rows.json" in brief and "step_01" in brief
+    for gone in ("Step 2:", "After steps", "Rubric:", "Cost:", "THE STUDY", "HYPOTHESES"):
+        assert gone not in brief
     assert "python jobs.py --run R launch --step 2" in brief
     assert "The study's Python" not in brief
     brief = views.owner(st, node=node, step=st["plan"]["steps"][1], task="",

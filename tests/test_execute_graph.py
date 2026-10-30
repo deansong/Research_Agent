@@ -441,7 +441,7 @@ def test_steps_the_design_gives_its_orchestrator_are_run_by_an_owner(tmp_path, s
     script.add("ExecDiscussorOutput", say("Step 1 passed."))
     Execution(run).start()
     brief = script.prompts("StepReport")[0]
-    assert "You are preflight_orchestrator (worker).\nCheck the data first." in brief
+    assert "You are preflight_orchestrator. Check the data first." in brief
     rec = nodes.records(S.Store(folder).read())["1"]
     assert rec["status"] == "pass" and rec["owner"] == "preflight_orchestrator"
 
