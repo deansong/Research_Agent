@@ -86,8 +86,12 @@ class Bootstrap:
 
     def points(self) -> list[dict]:
         """Where `rewind` can go, newest first: one point per brief and design
-        version (approved or not) and what was about to run."""
-        found, seen = [], set()
+        (approved or not) and what was about to run, at the time it was first
+        reached -- across every branch a rewind started."""
+        found: dict[str, dict] = {}
+        # Newest first, so the earliest checkpoint of a state is the one kept:
+        # after a rewind the same state is reached again, later, and should
+        # still show at the time you know it by.
         for snap in self.graph.get_state_history(THREAD):
             research = snap.values.get("research")
             # Points worth going back to: just before the designer or the
@@ -95,19 +99,17 @@ class Bootstrap:
             if not research or not set(snap.next or ()) & POINTS:
                 continue
             versions, approvals = research.get("versions") or {}, research.get("approvals") or {}
-            # One point per brief and design (and whether approved) and what
-            # ran next: the rest of the state changes at every turn.
-            key = json.dumps([[versions.get(p), approvals.get(p) == versions.get(p)]
-                              for p in ("brief", "design")] + [list(snap.next or ())])
-            if key in seen:
-                continue
-            seen.add(key)
-            found.append({"id": snap.config["configurable"]["checkpoint_id"],
+            # One point per brief and design -- their text, not only their
+            # numbers, as a branch reuses the numbers -- whether approved, and
+            # what ran next: the rest of the state changes at every turn.
+            key = json.dumps([[research.get(p), approvals.get(p) == versions.get(p)]
+                              for p in ("brief", "design")]
+                             + [research.get("plan"), list(snap.next or ())], sort_keys=True)
+            found[key] = {"id": snap.config["configurable"]["checkpoint_id"],
                           "at": snap.created_at, "next": list(snap.next or ()),
-                          "versions": research.get("versions") or {},
-                          "approvals": research.get("approvals") or {},
-                          "summary": (research.get("status") or {}).get("summary", "")})
-        return found
+                          "versions": versions, "approvals": approvals,
+                          "summary": (research.get("status") or {}).get("summary", "")}
+        return sorted(found.values(), key=lambda p: p["at"], reverse=True)
 
     def rewind(self, point: str, on_step=None) -> Turn:
         """Back to `point` (a checkpoint of `points`) exactly: the research

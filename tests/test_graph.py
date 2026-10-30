@@ -508,4 +508,8 @@ def test_rewinding_goes_back_exactly_and_on_from_there(run, script, monkeypatch)
     assert S.Store(run.folder).read()["versions"] == now["versions"]
     history = sorted((run.folder / "state" / "history").glob("*.json"))
     assert any(json.loads(p.read_text())["ops"][0].get("op") == "rewind" for p in history)
+    again = [p for p in boot.points() if p["next"] == ["designer"]
+             and p["versions"].get("design") == 1]
+    assert [p["id"] for p in again] == [before["id"]], \
+        "the point keeps its first time after the rewind reaches the same state again"
     boot.close()
