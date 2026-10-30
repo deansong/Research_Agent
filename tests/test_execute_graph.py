@@ -128,7 +128,8 @@ def test_a_whole_execution_from_the_approved_design_to_done(run, script):
     seen = []
     turn = ex.start(on_step=lambda node, update: seen.append(node))
     assert turn.reply == "Step 1 passed. Step 2 trains 2 seeds; go?" and turn.waiting
-    assert seen == ["orchestrator", "builder", "validator", "orchestrator", "discussor"]
+    assert seen == ["orchestrator", "dispatch", "builder", "validator", "orchestrator",
+                    "discussor"], "every step is dispatched before it runs"
     assert ex.awaiting == "2", "step 2 is gated: the user says go first"
     st = ex.research
     assert nodes.records(st)["1"]["status"] == "pass" and st["status"]["phase"] == "executing"
@@ -893,3 +894,21 @@ def test_the_paper_writer_gets_the_literature_and_its_references_are_checked(
     assert len(problems) == 2
     assert "fake (10.9999/nope) was not found" in problems[0]
     assert "noid is a paper with no eprint, doi or pmid" in problems[1]
+
+
+def test_a_step_whose_inputs_are_missing_does_not_start(run, script):
+    missing = {"ready": False, "missing": ["the dev split: the data step wrote only train"]}
+    script.add("ExecDecision", decide("run", "1"), decide("run", "1"))
+    script.add("DispatchOutput", missing, missing)
+    script.add("ExecDiscussorOutput", say("Step 1 cannot start: the dev split is missing."))
+    seen = []
+    turn = Execution(run).start(on_step=lambda node, update: seen.append(node))
+    assert seen == ["orchestrator", "dispatch", "orchestrator", "dispatch", "discussor"]
+    assert not script.prompts("StepReport"), "its owner never ran"
+    again = script.prompts("ExecDecision")[1]
+    assert "step 1 was not started: its dispatch found missing:\n- the dev split" in again
+    told = script.prompts("ExecDiscussorOutput")[0]
+    assert "Step 1 cannot start" in told and "ask how to go on" in told
+    rec = nodes.records(Execution(run).research)["1"]
+    assert rec["attempts"] == 0 and rec["status"] == "pending", "no attempt spent"
+    assert turn.reply.startswith("Step 1 cannot start")

@@ -254,14 +254,16 @@ builds the graph from it: one graph node per step owner, plus fixed nodes.
 | --- | --- | --- | --- |
 | **discussor** | -- (the bootstrap's) | the bootstrap's conversation, continued | the only one who talks to you: what happened, verdicts, asks for your go |
 | **orchestrator** | its `orchestrator` node's instructions and skills | new for each decision | picks the next move from those code allows |
+| **dispatch** | -- (the orchestrator's model) | new for each run or retry, read-only | before a step starts: looks at what the work it depends on left on disk, names the exact files its owner reads (code checks they exist) and what else it must be told -- or what is missing, and the step does not start |
 | **step owners** | each `worker` or `writer` node (an older design's `runner` runs as a worker): its instructions, skills, steps | one per attempt (`step05-a1`), continued when its jobs finish | writes the code in `work/`, launches jobs, writes `artifacts/step_05/` |
 | **wait** | -- (code only) | none | polls the step's jobs and counts their GPU-hours |
 | **validator** | its `validator` node | new for each verdict, read-only | checks the step's files against its check and rubric items |
 | **reviewer** | -- (always there) | new, read-only | once every step is settled: reviews the study as a NeurIPS/ICML/ICLR reviewer |
 
 ```
-orchestrator --run/retry 5--> owner of 5 --done--> validator --> orchestrator
-                                         --launched--> wait --jobs finished--> owner of 5 (same session)
+orchestrator --run/retry 5--> dispatch --ready--> owner of 5 --done--> validator --> orchestrator
+                                                         --launched--> wait --jobs finished--> owner of 5 (same session)
+                                      --missing--> orchestrator (missing again: discussor --> you)
              --skip 5--> orchestrator (artifacts/step_05/SKIPPED.md says why)
              --ask_user / a gated step or breakpoint / stop--> discussor --> you
              --done--> reviewer --> discussor --> you
@@ -309,6 +311,7 @@ Code holds what a model cannot change:
 - **Order.** A step runs only once the steps it depends on have passed or been skipped. A step waiting on a failed one is not skipped around it.
 - **What a step is judged on.** Its own check, plus the rubric criteria assessed at that step: each criterion is checked at the one step that completes it, never at the steps that only lead up to it.
 - **Attempts.** A failed step is retried at most `max_attempts` times in all (default 3). Each retry starts a new owner session and passes it the validator's verdict.
+- **Inputs.** A step starts only once its dispatch is ready: every file it names exists, and a step that depends on earlier work names the files it reads from it. A step that could not start uses no attempt; the second time in a row, you are asked.
 - **Your go.** A step the plan gates waits for you (`/go`, or tell the discussor). `--confirm all` makes every step wait; `--confirm none` makes none wait.
 - **Passing.** Only the validator's verdict passes a step. Before the validator looks, code checks that every file the owner lists exists, and that every job it names was launched for that step.
 - **Budget.** The `--wall-hours` and `--gpu-hours` limits are measured from the job records. Going over stops the jobs and the step, and asks you what to do. Raise the limit in `execute.json` and resume to go on.

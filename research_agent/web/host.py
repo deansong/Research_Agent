@@ -949,8 +949,10 @@ def stage_of(st: dict) -> str:
 
 def node_of(label: str) -> str:
     """The graph node a call belongs to, from its label: "researcher",
-    "designer", "step 5 (trainer)", "validate step 5",
+    "designer", "step 5 (trainer)", "validate step 5", "orchestrator (dispatch, step 5)",
     "discussor (aside)", "reviewer"."""
+    if (label or "").startswith("orchestrator (dispatch"):
+        return "dispatch"
     owner = re.fullmatch(r"step \S+ \((.+)\)", label or "")
     if owner:
         return owner.group(1)

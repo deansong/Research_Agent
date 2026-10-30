@@ -275,7 +275,7 @@ def orchestrator(st: dict, *, design_part: str, moves: list[str], budget: str,
 
 
 def owner(st: dict, *, node: dict, step: dict, task: str, paths: dict, jobs_command: str,
-          previous: dict | None = None) -> str:
+          previous: dict | None = None, dispatch: dict | None = None) -> str:
     """A step's work order: everything its owner needs to do the step alone,
     and nothing about the rest of the study. Measured (run 1134): owners got
     the study's goal and scope, the hypotheses and "After steps: 2 / Rubric:
@@ -289,14 +289,26 @@ def owner(st: dict, *, node: dict, step: dict, task: str, paths: dict, jobs_comm
     parts.append(_block("HOW YOUR WORK IS CHECKED",
                         "A validator reads the files you list and checks \"Done when\""
                         + (" and these criteria:\n" + criteria if criteria else ".")))
-    if task:
+    # What the dispatch found it needs (execute/nodes.dispatch), and the
+    # orchestrator's own note (a retry's "what to do differently") as it
+    # wrote it, whatever the dispatch made of it.
+    context = ((dispatch or {}).get("context") or "").strip()
+    if task.strip() and task.strip() not in context:
+        context = (f"{context}\n\nFrom the orchestrator: {task.strip()}" if context
+                   else task.strip())
+    if context:
         parts.append(_block("WHAT THE STUDY NEEDS FROM THIS STEP -- the names it uses and the "
-                            "rules it follows", task))
+                            "rules it follows", context))
     if previous and (previous.get("verdict") or previous.get("problems")):
         parts.append(_block("THE LAST ATTEMPT FAILED -- do it differently", "\n".join(
             [previous.get("verdict", "")] + [f"- {p}" for p in previous.get("problems") or []])))
-    parts.append(_block("YOUR INPUTS -- files earlier work produced",
-                        upstream(st, step, paths, every=node["role"] == "writer")))
+    earlier = upstream(st, step, paths, every=node["role"] == "writer")
+    exact = dispatched({"dispatch": dispatch or {}})
+    if exact:
+        parts.append(_block("YOUR INPUTS -- the files you read, checked to exist before you "
+                            "started", exact + "\n\nThe earlier work they come from:\n" + earlier))
+    else:
+        parts.append(_block("YOUR INPUTS -- files earlier work produced", earlier))
     decided = user_decisions(st, since_execution=True)
     if decided:
         parts.append(_block("THE USER'S DECISIONS -- they stand over the plan where they "
@@ -342,6 +354,80 @@ def criteria_text(st: dict, ids) -> str:
                 line += f"; passes at {r['threshold']}"
             lines.append(line)
     return "\n".join(lines)
+
+
+def dispatch(st: dict, *, node: dict, step: dict, note: str, paths: dict,
+             previous: dict | None = None) -> str:
+    """For the dispatch before a step runs: the step, the files the work it
+    depends on really left (listed by code, not as reported), the protocol
+    parts it follows, the user's decisions -- to check that everything it
+    needs is there and name exactly what its owner reads."""
+    run = Path(paths["run"])
+    earlier = []
+    records = {r["id"]: r for r in (st.get("execution") or {}).get("steps") or []}
+    for sid in _ancestors(st, step["id"]):
+        plan = _step(st, sid) or {}
+        r = records.get(sid) or {}
+        folder = run / "artifacts" / folder_name(sid)
+        found = sorted(p for p in folder.rglob("*") if p.is_file()) if folder.is_dir() else []
+        files = [f"    {p.relative_to(run).as_posix()} ({_size(p)})" for p in found[:FILES]]
+        if len(found) > FILES:
+            files.append(f"    ... and {len(found) - FILES} more")
+        earlier.append("\n".join([
+            f"{plan.get('title') or 'Earlier work'} [{r.get('status', 'pending')}]: "
+            f"{folder.relative_to(run).as_posix()}/",
+            f"  it was to deliver: {plan.get('check') or '-'}",
+            f"  its report: {r.get('summary') or '-'}",
+            *([f"  checked: {r['verdict']}"] if r.get("verdict") else []),
+            "  files there now:", *(files or ["    (none)"])]))
+    rules = []
+    for key in step.get("follows") or []:
+        value = ((st.get("protocol") or {}).get(key)
+                 if key in ("baselines", "metrics", "statistics", "seeds", "stop_criteria")
+                 else (st.get("constraints") or {}).get(key))
+        if value:
+            rules.append(f"{RULE_LABELS.get(key, key.capitalize())}: "
+                         f"{value if isinstance(value, str) else '; '.join(map(str, value))}")
+    parts = [f"Today is {_today()}.",
+             _block("THE STEP ABOUT TO RUN", step_text(step)
+                    + f"\nDone by: {node['name']} ({node['role']})"),
+             _block("HOW ITS WORK IS CHECKED", criteria_text(st, list(step.get("rubric") or []))
+                    or "(its check only)"),
+             _block("WHAT IT DEPENDS ON -- the files there now, listed by code",
+                    "\n\n".join(earlier) or "(nothing: it depends on no earlier step)"),
+             _block("THE PROTOCOL AND CONSTRAINTS IT FOLLOWS", "\n".join(rules) or "(none named)")]
+    decided = user_decisions(st, since_execution=True)
+    if decided:
+        parts.append(_block("THE USER'S DECISIONS -- they stand over the plan", decided))
+    if previous and (previous.get("verdict") or previous.get("problems")):
+        parts.append(_block("ITS LAST ATTEMPT FAILED", "\n".join(
+            [previous.get("verdict", "")] + [f"- {p}" for p in previous.get("problems") or []])))
+    if note.strip():
+        parts.append(_block("THE ORCHESTRATOR'S NOTE", note.strip()))
+    parts.append(_block("WHERE IT WILL WORK", "\n".join([
+        f"The run folder: {paths['run']} (paths may be relative to it)",
+        f"Its outputs folder: {paths['artifacts']}",
+        f"The code folder: {paths['work']}"])))
+    return "\n\n".join(parts)
+
+
+#: Files listed per earlier step in the dispatch's brief.
+FILES = 60
+
+
+def _size(p: Path) -> str:
+    n = p.stat().st_size
+    for unit in ("B", "KB", "MB", "GB"):
+        if n < 1024 or unit == "GB":
+            return f"{n:.0f} {unit}" if unit == "B" else f"{n:.1f} {unit}"
+        n /= 1024
+    return f"{n} B"
+
+
+def dispatched(record: dict) -> str:
+    """The dispatch's inputs, for its owner."""
+    d = record.get("dispatch") or {}
+    return "\n".join(f"- {i['path']}: {i['holds']}" for i in d.get("inputs") or [])
 
 
 def owner_wake(run_dir: Path, job_ids: list[str]) -> str:

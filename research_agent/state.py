@@ -185,6 +185,10 @@ class StepRecord(BaseModel):
     gpu_hours: float = 0.0
     started: str = ""
     finished: str = ""
+    dispatch: dict = Field(default_factory=dict)
+    """What the orchestrator's dispatch gave its last attempt (execute/
+    nodes.dispatch): `inputs`, the exact files it reads ([{path, holds}],
+    checked to exist), and `context`, what it needs that its step lacks."""
 
 
 class Execution(BaseModel):

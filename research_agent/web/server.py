@@ -717,21 +717,25 @@ def _graph(st: dict, stage: str) -> dict:
     for n in (st.get("design") or {}).get("nodes") or []:
         if n["role"] == "validator" or (n["role"] == "orchestrator" and not n.get("steps")):
             continue
-        name = f"node_{n['name']}" if n["name"] in ("discussor", "orchestrator", "validator",
-                                                    "wait", "human", "paper", "reviewer") \
+        name = f"node_{n['name']}" if n["name"] in ("discussor", "orchestrator", "dispatch",
+                                                    "validator", "wait", "human", "paper",
+                                                    "reviewer") \
             else n["name"]
         statuses = [records.get(s, {}).get("status", "pending") for s in n.get("steps") or []]
         nodes.append({"id": name, "label": n["name"],
                       "kind": "worker" if n["role"] == "orchestrator" else n["role"],
                       "detail": f"steps {', '.join(n.get('steps') or [])}",
                       "status": _overall(statuses)})
-        edges += [("orchestrator", name, "run " + ",".join(n.get("steps") or [])),
+        edges += [("dispatch", name, "run " + ",".join(n.get("steps") or [])),
                   (name, "validator", "done"), (name, "wait", "jobs")]
-    nodes += [{"id": "wait", "label": "wait (jobs)", "kind": "code"},
+    nodes += [{"id": "dispatch", "label": "dispatch", "kind": "orchestrator",
+               "detail": "checks a step's inputs before it runs"},
+              {"id": "wait", "label": "wait (jobs)", "kind": "code"},
               {"id": "validator", "label": "validator", "kind": "validator"},
               {"id": "paper", "label": "paper", "kind": "writer"},
               {"id": "reviewer", "label": "reviewer", "kind": "reviewer"}]
-    edges += [("validator", "orchestrator", "verdict"), ("orchestrator", "paper", "done"),
+    edges += [("orchestrator", "dispatch", "run / retry"), ("dispatch", "orchestrator", "missing"),
+              ("validator", "orchestrator", "verdict"), ("orchestrator", "paper", "done"),
               ("paper", "reviewer", "paper.pdf"),
               ("reviewer", "discussor", "review")]
     return {"stage": stage, "nodes": nodes,

@@ -13,6 +13,11 @@ import pytest
 from research_backend.base import Access, StructuredRun, Usage
 
 
+#: The dispatch's answer when a test does not script one: everything is there.
+READY = {"ready": True, "inputs": [{"path": ".", "holds": "the run folder"}],
+         "context": "Nothing beyond the step itself: its detail and check say it all."}
+
+
 class Script:
     name = "fake"
     max_access = Access.FULL
@@ -43,6 +48,8 @@ class Script:
         queue = self.answers.get(name) or []
         if not queue and name == "ReaderOutput":
             queue = [{"questions": []}]   # the reader check: no questions unless scripted
+        if not queue and name == "DispatchOutput":
+            queue = [READY]               # the dispatch: ready unless scripted
         if not queue:
             raise AssertionError(f"the script has no answer left for {name}")
         answer = queue.pop(0)

@@ -24,15 +24,40 @@ class ExecDecision(BaseModel):
     """For run, retry and skip: the plan step id."""
     reason: str
     task: str = ""
-    """run / retry: the rest of the owner's work order -- it sees only its
-    step, its inputs and where to work: the names the step uses, the protocol
-    details it follows (for a retry, also what to do differently). skip: why -- kept as the step's terminal
-    record. ask_user: what to ask. stop: why."""
+    """run / retry: a note for the dispatch, which checks the step's inputs and
+    writes its owner's exact files and context next (for a retry, what to do
+    differently). skip: why -- kept as the step's terminal record. ask_user:
+    what to ask. stop: why."""
     summary: str
     """Where the execution stands, in a few sentences -- kept as the status."""
     decisions: list[DecisionIn] = Field(default_factory=list, max_length=6)
     open_questions: list[QuestionIn] = Field(default_factory=list, max_length=6)
     note_for_discussor: str = ""
+
+
+# ---- the dispatch: a step's inputs checked before it runs ------------------------------
+
+
+class InputIn(BaseModel):
+    path: str
+    """A file or folder the step reads: absolute, or relative to the run folder."""
+    holds: str
+    """What it holds, and what the step takes from it."""
+
+
+class DispatchOutput(BaseModel):
+    ready: bool
+    """True: everything the step needs is there, and named below. False: it
+    must not start (say what is missing)."""
+    inputs: list[InputIn] = Field(default_factory=list, max_length=40)
+    """The exact files the step reads, from earlier steps and outside."""
+    context: str = ""
+    """What its owner needs that its step does not say: the names the step
+    uses, the values and protocol details it must keep, the user's decisions
+    that bear on it, for a retry what to do differently. "" if nothing."""
+    missing: list[str] = Field(default_factory=list, max_length=12)
+    """What the step needs that is not there (not ready), each with where it
+    should have come from."""
 
 
 # ---- a step's owner (worker, writer) ----------------------------------------------

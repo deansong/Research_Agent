@@ -16,7 +16,9 @@ from research_agent import prompt_files
 FILES = {"discussor": "discussor", "orchestrator": "orchestrator", "worker": "owner",
          "researcher": "researcher",
          "writer": "owner", "validator": "validator", "reviewer": "reviewer",
-         "paper": "paper", "meta_reviewer": "meta_reviewer"}
+         "paper": "paper", "meta_reviewer": "meta_reviewer",
+         # The orchestrator's check before a step runs, on its model.
+         "dispatch": "dispatch"}
 
 
 def instructions(run_dir=None) -> dict[str, str]:

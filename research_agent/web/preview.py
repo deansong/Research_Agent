@@ -168,12 +168,14 @@ def preview(folder: Path, stage: str, node: str, step: str = "") -> dict:
     role = owner["role"]
     prompt = exec_views.owner(
         st, node=owner, step=plan_step,
-        task=_later("the orchestrator's task for this step: the names it uses, and the "
-                    "protocol details it follows"
-                    + (f" ({', '.join(plan_step.get('follows'))})" if plan_step.get("follows")
-                       else "")), paths=run.paths(sid),
-        jobs_command=run.jobs_command,
-        previous=rec if rec.get("attempts", 0) >= 1 and rec.get("status") != "pending" else None)
+        task="", paths=run.paths(sid), jobs_command=run.jobs_command,
+        previous=rec if rec.get("attempts", 0) >= 1 and rec.get("status") != "pending" else None,
+        dispatch={"context": _later(
+            "the dispatch's context: what the step needs besides its detail -- the names it "
+            "uses, the protocol details it follows"
+            + (f" ({', '.join(plan_step.get('follows'))})" if plan_step.get("follows") else "")),
+            "inputs": [{"path": _later("the exact files the dispatch checks exist"),
+                        "holds": "what each holds"}]})
     if rec.get("attempts"):
         notes.append(f"Step {sid} has had {rec['attempts']} attempt(s): shown as its next one.")
     return _shape(out, label=f"step {sid} ({owner['name']})", prompt=prompt,

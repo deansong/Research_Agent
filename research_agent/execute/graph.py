@@ -9,7 +9,8 @@ WHY:   The orchestrator LLM chooses what runs next; code holds what it may
 CONCEPT: LangGraph, as the bootstrap, in the same checkpoint file under its
        own thread.
 
-    START -> orchestrator --run/retry S--> <owner of S> --done-->     validator -> orchestrator
+    START -> orchestrator --run/retry S--> dispatch --ready--> <owner of S> --done--> validator -> orchestrator
+                                                    --missing--> orchestrator (twice: the user)
                                                          --launched--> wait --jobs done--> <owner of S>
                                                          --failed/blocked--> orchestrator
                           --skip S--> orchestrator (the terminal record written)
@@ -62,6 +63,8 @@ class ExecState(TypedDict, total=False):
     """Job ids its owner is woken about."""
     nudged: bool
     """The user said go or stop with this message."""
+    blocked: dict
+    """Steps the dispatch would not start, and how many times in a row."""
     outcome: str
     stopped_by: str
     """"orchestrator" when it chose to stop: a question the autopilot may
@@ -317,13 +320,7 @@ def build(run: nodes.ExecRun, design: nodes.Design, checkpointer=None):
                 note = (f"Step {d.step} is next ({d.reason}). It waits for the user's go ({why}): "
                         f"say what it will do and cost, and ask. {note}").strip()
                 return {**base, "awaiting": d.step, "note": note, "_to": "discussor"}
-            attempt = rec.get("attempts", 0) + 1
-            st = commit(st, [nodes.record_op(
-                st, d.step, status="running", attempts=attempt, started=nodes._now(),
-                problems=rec.get("problems", []) if d.action == "retry" else [],
-                sessions=rec.get("sessions", []) + [nodes._session(d.step, attempt)])], "execution")
-            return {**base, "research": st, "step": d.step, "wake": [], "report": {},
-                    "_to": design.owner_of[d.step]}
+            return {**base, "step": d.step, "wake": [], "report": {}, "_to": "dispatch"}
         if d.action == "skip":
             folder = run.artifacts(d.step)
             folder.mkdir(parents=True, exist_ok=True)
@@ -349,6 +346,47 @@ def build(run: nodes.ExecRun, design: nodes.Design, checkpointer=None):
 
     def needs_go(step: dict) -> bool:
         return nodes.needs_go(step, limits.confirm)
+
+    # ---- the dispatch: the step's inputs checked before it starts --------------------
+
+    def dispatch(state: ExecState) -> dict:
+        st, sid, d = state["research"], state["step"], state.get("decision") or {}
+        node = design.owners[design.owner_of[sid]]
+        try:
+            out = nodes.dispatch(run, st, node=node, step=nodes.plan_step(st, sid),
+                                 note=d.get("task", ""))
+        except RB.BackendCancelled:
+            raise
+        except RB.BackendError as exc:
+            return {"research": st, "_to": "orchestrator",
+                    "last": f"step {sid} was not started: its dispatch failed: {str(exc)[:600]}"}
+        st = commit(st, out.ops, "orchestrator", out.session)
+        got = out.data
+        blocked = dict(state.get("blocked") or {})
+        if not got.ready:
+            blocked[sid] = blocked.get(sid, 0) + 1
+            missing = "".join(f"\n- {m}" for m in got.missing)
+            last = f"step {sid} was not started: its dispatch found missing:{missing}"
+            if blocked[sid] >= 2:
+                # Twice in a row: what to do about it is the user's.
+                note = (f"Step {sid} cannot start: what it needs is not there.{missing}\n"
+                        f"Tell the user, and ask how to go on (redo the earlier work, change "
+                        f"the step, or provide it).")
+                return {"research": st, "last": last, "blocked": blocked, "note": note,
+                        "_to": "discussor",
+                        "decision": {"action": "ask_user", "step": sid, "reason": last}}
+            return {"research": st, "last": last, "blocked": blocked, "_to": "orchestrator"}
+        blocked.pop(sid, None)
+        rec = nodes.records(st)[sid]
+        attempt = rec.get("attempts", 0) + 1
+        st = commit(st, [nodes.record_op(
+            st, sid, status="running", attempts=attempt, started=nodes._now(),
+            problems=rec.get("problems", []) if d.get("action") == "retry" else [],
+            sessions=rec.get("sessions", []) + [nodes._session(sid, attempt)],
+            dispatch={"inputs": [i.model_dump() for i in got.inputs],
+                      "context": got.context})], "execution")
+        return {"research": st, "blocked": blocked, "wake": [], "report": {},
+                "_to": design.owner_of[sid]}
 
     # ---- a step's owner, the jobs, the validator ---------------------------------------
 
@@ -502,6 +540,7 @@ def build(run: nodes.ExecRun, design: nodes.Design, checkpointer=None):
     graph.add_node("discussor", discussor)
     graph.add_node("human", human)
     graph.add_node("orchestrator", orchestrator)
+    graph.add_node("dispatch", dispatch)
     for name in design.owners:
         graph.add_node(name, owner(name))
     graph.add_node("wait", wait)
@@ -512,7 +551,8 @@ def build(run: nodes.ExecRun, design: nodes.Design, checkpointer=None):
     owners = list(design.owners)
     graph.add_edge(START, "orchestrator")
     graph.add_conditional_edges("orchestrator", _route,
-                                ["discussor", "orchestrator", "paper", *owners])
+                                ["discussor", "orchestrator", "paper", "dispatch", *owners])
+    graph.add_conditional_edges("dispatch", _route, ["orchestrator", "discussor", *owners])
     graph.add_conditional_edges("discussor", _route, ["orchestrator", "human"])
     graph.add_conditional_edges("human", _route, ["discussor", "orchestrator", "paper", "reviewer",
                                                   END])

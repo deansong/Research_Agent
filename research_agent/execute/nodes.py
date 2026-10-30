@@ -36,7 +36,8 @@ from research_agent.execute import config, jobs, prompts, schemas, views
 NodeFailed = run_base.NodeFailed
 
 #: Graph node names the design's own names must not take.
-RESERVED = {"discussor", "orchestrator", "validator", "wait", "human", "paper", "reviewer"}
+RESERVED = {"discussor", "orchestrator", "dispatch", "validator", "wait", "human", "paper",
+            "reviewer"}
 #: Where a step's status says it is finished, one way or another.
 SETTLED = {"pass", "skipped"}
 #: What the user can give another attempt: a step that failed or was
@@ -593,11 +594,6 @@ def decision_check(st: dict, limit: int, run_dir=None):
                     + "; ".join(describe_moves(moves, st, limit))]
         if out.action == "done" and not moves["done"]:
             return ["done: not every step has passed or been skipped"]
-        follows = (plan_step(st, out.step) or {}).get("follows") if out.step else None
-        if out.action in ("run", "retry") and follows and len(out.task.strip()) < 40:
-            return [f"{out.action} {out.step}: `task` is the rest of its owner's work order, "
-                    f"which sees only the step and its inputs. Define the names the step uses "
-                    f"and quote what it must follow from the protocol: {', '.join(follows)}"]
         if out.action in ("skip", "ask_user", "stop") and not out.task.strip():
             return [f"{out.action} needs a `task` (" + {
                 "skip": "why -- it is the step's terminal record", "ask_user": "what to ask",
@@ -625,6 +621,59 @@ def orchestrator(run: ExecRun, st: dict, design: Design, *, budget: str, request
             for d in out.decisions]
     return Outcome(ops=ops, summary=f"{out.action} {out.step}: {out.reason}".strip(),
                    session=session, data=out)
+
+
+# ---- the dispatch: a step's inputs checked before it runs -----------------------------------
+#
+# What Claude Code's parent does when it starts a subagent: it writes the
+# subagent's prompt then, with the earlier work done and in view. The
+# orchestrator picks the step; the dispatch, on the orchestrator's model,
+# looks at what the step depends on as it is on disk, names the exact files
+# its owner reads (code checks they exist) and what else it must be told --
+# or says what is missing, and the step does not start.
+
+
+def dispatch(run: ExecRun, st: dict, *, node: dict, step: dict, note: str = "") -> Outcome:
+    """The check before `step` runs: Outcome.data is a DispatchOutput."""
+    rec = records(st)[step["id"]]
+    follows = step.get("follows") or []
+
+    def check(out: schemas.DispatchOutput) -> list[str]:
+        problems = [f"input {i.path} does not exist (paths are absolute, or relative to "
+                    f"{run.folder})" for i in out.inputs if not _exists(run, i.path)]
+        if out.ready and out.missing:
+            problems.append("ready, but `missing` lists what is not there: either it is not "
+                            "ready, or nothing is missing")
+        if not out.ready and not out.missing:
+            problems.append("not ready, but `missing` is empty: say what is missing and which "
+                            "earlier work should have made it")
+        if out.ready and step.get("depends_on") and not out.inputs:
+            problems.append("it depends on earlier work: name the files it reads from it in "
+                            "`inputs`")
+        if out.ready and follows and len(out.context.strip()) < 40:
+            problems.append(f"`context` is what its owner is told besides its step, and the "
+                            f"step follows {', '.join(follows)}: write in the values and "
+                            f"protocol details it must keep, and what each name means")
+        return problems
+
+    brief = views.dispatch(st, node=node, step=step, note=note, paths=run.paths(step["id"]),
+                           previous=rec if rec.get("attempts") else None)
+    out, session = run.call("orchestrator", brief=brief, schema=schemas.DispatchOutput,
+                            instructions=run.instructions["dispatch"], skills=None,
+                            access="read_only", workdir=run.folder,
+                            session=run.next_name("dispatch"),
+                            label=f"orchestrator (dispatch, step {step['id']})", check=check)
+    summary = (f"step {step['id']} dispatched: {len(out.inputs)} inputs" if out.ready else
+               f"step {step['id']} not dispatched -- missing: " + "; ".join(out.missing))
+    ops = [{"op": "add", "section": "results", "value": {
+        "node": "orchestrator", "job": f"dispatch step {step['id']}",
+        "asked": step["title"][:500], "summary": summary[:1500], "session": session}}]
+    return Outcome(ops=ops, summary=summary, session=session, data=out)
+
+
+def _exists(run: ExecRun, path: str) -> bool:
+    p = Path(path).expanduser()
+    return (p if p.is_absolute() else run.folder / p).exists()
 
 
 # ---- a step's owner -------------------------------------------------------------------------
@@ -672,7 +721,8 @@ def owner(run: ExecRun, st: dict, *, node: dict, step: dict, task: str = "",
     else:
         brief = views.owner(st, node=node, step=step, task=task, paths=run.paths(step["id"]),
                             jobs_command=run.jobs_command,
-                            previous=rec if rec.get("attempts", 0) > 1 else None)
+                            previous=rec if rec.get("attempts", 0) > 1 else None,
+                            dispatch=rec.get("dispatch") or None)
     out, session = run.call(node["role"], brief=brief, schema=schemas.StepReport,
                             skills=skills_for(run, node), access=access_for(node),
                             workdir=run.work, label=f"step {step['id']} ({node['name']})",

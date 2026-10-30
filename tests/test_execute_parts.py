@@ -15,7 +15,9 @@ import time
 import pytest
 
 from research_agent import state as S
+from research_agent.bootstrap.config import RoleConfig
 from research_agent.execute import config, jobs, nodes, views
+from tests.scripted import script  # noqa: F401 -- fixture
 
 
 def test_the_defaults_and_a_run_s_file_then_the_command_line(tmp_path):
@@ -179,19 +181,40 @@ def test_before_the_execution_starts_no_decision_is_repeated_to_an_owner():
     assert "Approve design v3" in views.user_decisions(st)
 
 
-def test_running_a_step_that_follows_the_protocol_needs_a_task_that_says_it():
-    # Run 1119: an owner told to "execute B-E" was never told what B-E are.
-    from research_agent.execute import schemas
-
+def test_a_step_starts_only_with_its_inputs_checked_and_its_context_written(tmp_path, script):
+    # Run 1119: an owner told to "execute B-E" was never told what B-E are;
+    # design v1's steps read files from folders that did not exist.
     st, _ = S.apply(S.new(), [
+        {"op": "merge", "section": "protocol", "value": {"seeds": "17, 29, 43"}},
         {"op": "set", "section": "plan", "value": {"steps": [
-            {"id": "1", "title": "Train B", "detail": "train B", "check": "c",
-             "follows": ["baselines", "seeds"]}]}},
+            {"id": "1", "title": "Data", "detail": "split it", "check": "splits written"},
+            {"id": "2", "title": "Train", "detail": "train it", "check": "c",
+             "depends_on": ["1"], "follows": ["seeds"]}]}},
         {"op": "set", "section": "execution", "value": {"steps": [
-            {"id": "1", "title": "Train B", "status": "pending"}]}}], by="x")
-    check = nodes.decision_check(st, 3)
-    short = schemas.ExecDecision(action="run", step="1", reason="r", task="go", summary="s")
-    assert "Define the names the step uses" in check(short)[0] and "baselines, seeds" in check(short)[0]
-    full = short.model_copy(update={"task": "B is a LoRA on Qwen3-4B trained with the "
-                                            "supervised loss only; use seed 42."})
-    assert check(full) == []
+            {"id": "1", "title": "Data", "status": "pass", "summary": "train/dev written"},
+            {"id": "2", "title": "Train", "status": "pending"}]}}], by="x")
+    run = nodes.ExecRun(tmp_path, {r: RoleConfig("fake") for r in (*config.ROLES, "discussor")},
+                        skills={}, limits=config.defaults(), quiet=True)
+    (tmp_path / "artifacts" / "step_01").mkdir(parents=True)
+    (tmp_path / "artifacts" / "step_01" / "train.jsonl").write_text("{}\n")
+    bad = {"ready": True, "inputs": [{"path": "artifacts/03_data/train.jsonl", "holds": "x"}],
+           "context": "go", "missing": ["dev split"]}
+    good = {"ready": True, "context": "Train with seeds 17, 29 and 43, as the protocol fixes.",
+            "inputs": [{"path": "artifacts/step_01/train.jsonl", "holds": "the training split"}]}
+    script.add("DispatchOutput", bad, good)
+    node = {"name": "trainer", "role": "worker"}
+    out = nodes.dispatch(run, st, node=node, step=nodes.plan_step(st, "2"), note="first run")
+    first, retry = script.prompts("DispatchOutput")
+    assert "artifacts/step_01/train.jsonl" in first, "the files there now, listed by code"
+    assert "Seeds: 17, 29, 43" in first and "THE ORCHESTRATOR'S NOTE ===\nfirst run" in first
+    for expected in ("input artifacts/03_data/train.jsonl does not exist",
+                     "ready, but `missing` lists", "the step follows seeds"):
+        assert expected in retry
+    assert out.data.ready and out.data.inputs[0].path == "artifacts/step_01/train.jsonl"
+
+    brief = views.owner(st, node=node, step=nodes.plan_step(st, "2"), task="use bf16",
+                        paths=run.paths("2"), jobs_command="jobs",
+                        dispatch={"inputs": good["inputs"], "context": good["context"]})
+    assert "checked to exist before you started ===\n- artifacts/step_01/train.jsonl: the " \
+           "training split" in brief
+    assert "seeds 17, 29 and 43" in brief and "From the orchestrator: use bf16" in brief
