@@ -164,8 +164,9 @@ def test_an_owner_gets_only_the_rules_its_step_follows_and_decisions_since_the_s
     paths = {"run": str(tmp_path), "work": str(tmp_path / "w"), "artifacts": str(tmp_path / "a")}
     brief = views.owner(st, node=node, step=st["plan"]["steps"][0], task="", paths=paths,
                         jobs_command="jobs")
-    assert "Data: GoEmotions at /data/emotions" in brief and "Metrics: macro-F1" in brief
-    for gone in ("paired bootstrap", "42, 43, 44", "Qwen3-4B", "Use GoEmotions"):
+    assert "follows these parts of the approved protocol: Data, Metrics" in brief
+    for gone in ("GoEmotions at /data", "macro-F1", "paired bootstrap", "42, 43, 44", "Qwen3-4B",
+                 "Use GoEmotions"):
         assert gone not in brief
     assert "Drop the neutral label" in brief, "a decision since the execution started"
     assert str(tmp_path / "state" / "research.md") in brief, "the rest, where to find it"

@@ -296,12 +296,15 @@ def owner(st: dict, *, node: dict, step: dict, task: str, paths: dict, jobs_comm
             [previous.get("verdict", "")] + [f"- {p}" for p in previous.get("problems") or []])))
     parts.append(_block("YOUR INPUTS -- files earlier work produced",
                         upstream(st, step, paths, every=node["role"] == "writer")))
-    rules = step_rules(st, step)
+    # Named, not pasted: the work order carries what the step needs. Measured
+    # (run 1119): pasting the parts a step "follows" still gave a training
+    # step 9,000 characters of protocol it could not tell its work from.
     where = Path(paths["run"]) / "state" / "research.md"
-    parts.append(_block("RULES YOU WORK WITHIN -- fixed before results",
-                        (rules + "\n\n" if rules else "")
-                        + f"The study's whole protocol and constraints are in {where}: read "
-                          f"another part only if your work needs it."))
+    follows = rule_names(step)
+    parts.append(_block("RULES", (
+        f"Your work follows these parts of the approved protocol: {', '.join(follows)}. "
+        f"They are in {where}; read them there before you start." if follows else
+        f"The approved protocol is in {where}: read a part only if your work needs it.")))
     decided = user_decisions(st, since_execution=True)
     if decided:
         parts.append(_block("THE USER'S DECISIONS -- they stand over the plan where they "
@@ -325,20 +328,12 @@ def owner(st: dict, *, node: dict, step: dict, task: str, paths: dict, jobs_comm
     return "\n\n".join(parts)
 
 
-def step_rules(st: dict, step: dict) -> str:
-    """The parts of the protocol and constraints the step follows, in full.
-    Measured (run 1119): a data-preparation step was given the whole
-    protocol -- statistics, seeds, stop criteria -- and the models and budget."""
-    labels = {"stop_criteria": "Stop criteria", "other": "Other constraints"}
-    out = []
-    for key in step.get("follows") or []:
-        section = "protocol" if key in ("baselines", "metrics", "statistics", "seeds",
-                                        "stop_criteria") else "constraints"
-        value = (st.get(section) or {}).get(key)
-        if value:
-            text = "; ".join(value) if isinstance(value, list) else str(value)
-            out.append(f"{labels.get(key, key.capitalize())}: {text}")
-    return "\n".join(out)
+RULE_LABELS = {"stop_criteria": "Stop criteria", "other": "Other constraints"}
+
+
+def rule_names(step: dict) -> list[str]:
+    """The parts of the protocol and constraints a step follows, by name."""
+    return [RULE_LABELS.get(k, k.capitalize()) for k in step.get("follows") or []]
 
 
 def criteria_text(st: dict, ids) -> str:
