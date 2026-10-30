@@ -17,6 +17,7 @@ CONCEPT: Sessions, in <run>/rb:
 
 from __future__ import annotations
 
+import re
 import shutil
 import subprocess
 import sys
@@ -788,6 +789,9 @@ def paper(run: ExecRun, st: dict) -> Outcome:
     latex = config.find_latex(run.limits)
 
     def check(out: schemas.PaperReport) -> list[str]:
+        problems = reference_problems(folder / "references.bib", run.skills_dir)
+        if problems:
+            return problems
         pdf = Path(out.pdf) if out.pdf else None
         if pdf and not pdf.is_absolute():
             pdf = folder / pdf
@@ -803,7 +807,7 @@ def paper(run: ExecRun, st: dict) -> Outcome:
                                                         python=run.limits.python),
                             schema=schemas.PaperReport, access="full", workdir=folder,
                             instructions=run.instructions["paper"],
-                            skills=skills_for(run, {"name": "paper",
+                            skills=skills_for(run, {"name": "paper", "role": "researcher",
                                                     "skills": list(run.limits.paper_skills)},
                                               "paper"),
                             check=check, label="paper")
@@ -815,6 +819,33 @@ def paper(run: ExecRun, st: dict) -> Outcome:
                + "".join(f"\n- {p}" for p in out.problems[:5]),
                "session": session}}]
     return Outcome(ops=ops, summary=f"paper: {pdf or 'no PDF'}", session=session, data=out)
+
+
+_BIB_ENTRY = re.compile(r"@(\w+)\s*\{\s*([^,\s]+)\s*,(.*?)(?=\n@|\Z)", re.S)
+
+
+def reference_problems(bib: Path, skills_dir) -> list[str]:
+    """What is wrong with a paper's references: an entry the research tool
+    cannot find, or a paper with no id to look it up by. Software, data and
+    web pages (@misc with a url and no id, @software, @online) may stand."""
+    if not bib.is_file():
+        return []
+    problems = []
+    for kind, key, body in _BIB_ENTRY.findall(bib.read_text(errors="replace")):
+        if kind.lower() in ("comment", "string", "preamble"):
+            continue
+        ident = verify.paper_id(body) or verify.paper_id(
+            " ".join(re.findall(r"(?:eprint|arxiv)\s*=\s*[{\"]([^}\"]+)", body, re.I)))
+        if ident is None:
+            if kind.lower() in ("article", "inproceedings", "incollection", "proceedings") \
+                    and not re.search(r"\burl\s*=", body, re.I):
+                problems.append(f"references.bib: {key} is a paper with no eprint, doi or pmid "
+                                f"to check it by: add one from the research tool, or drop it")
+            continue
+        if verify.source(ident, skills_dir) is False:
+            problems.append(f"references.bib: {key} ({ident}) was not found by the research "
+                            f"tool: fix its id, or drop it and what cites it")
+    return problems
 
 
 #: The panel: each reviewer fills the whole form, deepest on its focus.

@@ -97,31 +97,74 @@ def aside(st: dict, *, user: str, activity: str, run_dir: str,
 
 
 def paper(st: dict, *, run_dir: str, latex: str, python: str = "") -> str:
+    """The paper writer's brief: what the user wanted, what was planned and
+    done, the files, the literature found so far -- and, in a run that
+    continues another, that run's paper to revise. Measured (run 1455): with
+    only the run's own records as "evidence", the paper cited 3 works."""
     root = Path(run_dir)
     folder = root / "paper"
     compile_ = (f"cd {folder} && {latex} main.tex" if latex.endswith("tectonic") else
                 f"cd {folder} && {latex} -pdf main.tex" if latex.endswith("latexmk") else
                 f"cd {folder} && {latex} main.tex; bibtex main; {latex} main.tex; {latex} main.tex"
                 if latex else "")
+    records = {r["id"]: r for r in (st.get("execution") or {}).get("steps") or []}
+    plan = []
+    for s in _steps(st):
+        r = records.get(s["id"], {})
+        plan.append("\n".join(filter(None, [
+            f"{s['title']} [{r.get('status', 'pending')}] -- files in "
+            f"{root / 'artifacts' / folder_name(s['id'])}",
+            f"  planned: {s.get('detail', '')}", f"  done when: {s.get('check', '')}",
+            f"  what it did: {r.get('summary', '')}" if r.get("summary") else "",
+            f"  checked: {r['verdict']}" if r.get("verdict") else ""])))
     parts = [f"Today is {_today()}.",
-             _block("THE STUDY", S.render(st, ["goal", "constraints", "protocol"])),
-             _block("HYPOTHESES AND RUBRIC", S.render({**st, "hypotheses": _live(st)},
-                                                      ["hypotheses", "rubric"])),
-             _block("WHAT WAS RUN -- the step table", S.render(st, ["execution"])),
-             _block("DECISIONS AND RISKS", S.render(st, ["decisions", "risks"], brief=True)),
-             _block("EVIDENCE YOU MAY CITE", S.render(st, ["evidence"], brief=True)),
-             _block("THE FILES -- read them", "\n".join(_listing(root) + [
-                 f"Code (a git repository): {root / 'work'}", f"Job logs: {root / 'jobs'}"])),
-             _block("THE PAPER", "\n".join([
-                 f"Write it in {folder} (main.tex, figures/, tables/, references.bib); "
-                 f"{folder / 'main.pdf'} is what the user reads.",
-                 f"Compile: {compile_}" if compile_ else
-                 "No LaTeX compiler is installed: leave the folder ready to compile and say so.",
-                 f"Python for the figure and table scripts: {python}" if python else ""]))]
+             _block("WHAT THE USER WANTED -- the brief they approved",
+                    (st.get("brief") or {}).get("text") or S.render(st, ["goal"])),
+             _block("THE STUDY AS DESIGNED", S.render({**st, "hypotheses": _live(st)},
+                                                      ["hypotheses", "rubric", "protocol"])),
+             _block("WHAT WAS PLANNED AND DONE", "\n\n".join(plan) or "(no steps)"),
+             _block("THE FILES -- read them; every number comes from them", "\n".join(
+                 _listing(root) + [f"Code (a git repository): {root / 'work'}",
+                                   f"Job logs: {root / 'jobs'}"])),
+             _block("THE LITERATURE FOUND SO FAR -- start related work here, then search for "
+                    "more with the research skill's tools", literature(st))]
+    decided = user_decisions(st)
+    if decided:
+        parts.append(_block("THE USER'S DECISIONS", decided))
+    previous = (st.get("status") or {}).get("previous")
+    if previous and (Path(previous) / "paper" / "main.tex").is_file():
+        parts.append(_block("THE LAST RUN'S PAPER -- revise it, do not start over",
+                            f"{Path(previous) / 'paper'} (main.tex, references.bib, figures, "
+                            f"tables). Copy what still holds into {folder}; change what this "
+                            f"run changed and what the review below asked for."))
     if st.get("reviews"):
-        parts.append(_block("EARLIER REVIEWS -- answer them where the files allow",
-                            S.render(st, ["reviews"], brief=True)))
+        parts.append(_block("THE REVIEWS -- answer them where the files allow",
+                            S.render({"reviews": st["reviews"][-1:]}, ["reviews"]).split("\n", 1)[-1]))
+    parts.append(_block("THE PAPER", "\n".join(filter(None, [
+        f"Write it in {folder} (main.tex, figures/, tables/, references.bib); "
+        f"{folder / 'main.pdf'} is what the user reads.",
+        "Every references.bib entry needs an eprint (arXiv id), doi or pmid: each is looked "
+        "up, and one that is not found is sent back to you.",
+        f"Compile: {compile_}" if compile_ else
+        "No LaTeX compiler is installed: leave the folder ready to compile and say so.",
+        f"Python for the figure and table scripts: {python}" if python else ""]))))
     return "\n\n".join(parts)
+
+
+def literature(st: dict) -> str:
+    """What the researchers found in the literature: checked findings and the
+    answers to research questions -- not the run's own records."""
+    found = [e for e in st.get("evidence") or [] if e.get("verified") is not None
+             or e.get("found_by") == "researcher"]
+    lines = [f"- {e['id']} [{ {True: 'verified', False: 'NOT FOUND -- do not cite'}.get(e.get('verified'), 'unchecked') }] "
+             f"{e.get('claim', '')} -- {e.get('source', '')}" for e in found]
+    answers = [q for q in st.get("open_questions") or []
+               if q.get("for") == "research" and q.get("answer")]
+    lines += [f"- {q['id']} {q['text']}\n  {q['answer'][:3000]}" for q in answers]
+    novelty = [f"- {h['id']}: {h['novelty']}" for h in _live(st) if h.get("novelty")]
+    if novelty:
+        lines += ["Novelty, as the researcher judged it:", *novelty]
+    return "\n".join(lines) or "(none: search for it)"
 
 
 def _listing(root: Path) -> list[str]:

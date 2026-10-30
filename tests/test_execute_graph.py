@@ -850,3 +850,44 @@ def test_a_researcher_step_searches_with_the_research_tools_and_its_papers_are_c
                                   report={"unverified": ["arXiv:9999.99999"]},
                                   paths=run.paths("1"))
     assert "A LITERATURE STEP" in brief and "could not find: arXiv:9999.99999" in brief
+
+
+def test_the_paper_writer_gets_the_literature_and_its_references_are_checked(
+        run, tmp_path, monkeypatch):
+    # Run 1455: with only the run's own records as "evidence", its paper
+    # cited 3 works, one of them the agent's skill library.
+    from research_agent.bootstrap import verify
+    st, _ = S.apply(approved_state(), [
+        {"op": "set", "section": "brief", "value": {"text": "Rank matters; show it on SST-2."}},
+        {"op": "add", "section": "evidence", "value": {
+            "claim": "LoRA", "source": "arXiv:2106.09685", "verified": True,
+            "found_by": "researcher"}},
+        {"op": "add", "section": "evidence", "value": {
+            "claim": "env is py3.11", "source": "env.json", "found_by": "builder"}},
+        {"op": "add", "section": "open_questions", "value": {
+            "text": "What do rank studies find?", "for": "research",
+            "answer": "Higher rank helps on hard tasks."}},
+        {"op": "add", "section": "decisions", "value": {"what": "orchestrator chose", "by": "orchestrator"}},
+        {"op": "add", "section": "decisions", "value": {"what": "Use five seeds", "by": "user"}},
+        {"op": "merge", "section": "status", "value": {"previous": str(tmp_path / "old")}}],
+        by="x")
+    (tmp_path / "old" / "paper").mkdir(parents=True)
+    (tmp_path / "old" / "paper" / "main.tex").write_text("\\\\documentclass{article}")
+    brief = nodes.views.paper(st, run_dir=str(run.folder), latex="/bin/tectonic")
+    assert "Rank matters; show it on SST-2." in brief
+    assert "[verified] LoRA -- arXiv:2106.09685" in brief and "Higher rank helps" in brief
+    assert "env is py3.11" not in brief.split("THE LITERATURE")[1].split("===")[1]
+    assert "Use five seeds" in brief and "orchestrator chose" not in brief
+    assert "revise it, do not start over" in brief and "done when: scores for both seeds" in brief
+
+    monkeypatch.setattr(verify, "source", lambda s, d: "9999" not in s)
+    bib = tmp_path / "references.bib"
+    bib.write_text("""@misc{lora, title={LoRA}, eprint={2106.09685}, archivePrefix={arXiv}}
+@article{fake, title={Made up}, doi={10.9999/nope}}
+@inproceedings{noid, title={No id at all}}
+@misc{sklearn, title={scikit-learn}, howpublished={software}}
+""")
+    problems = nodes.reference_problems(bib, None)
+    assert len(problems) == 2
+    assert "fake (10.9999/nope) was not found" in problems[0]
+    assert "noid is a paper with no eprint, doi or pmid" in problems[1]

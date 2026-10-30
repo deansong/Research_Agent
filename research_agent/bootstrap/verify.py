@@ -40,7 +40,7 @@ def paper_id(source: str) -> str | None:
         return acl.group(1)
     doi = DOI.search(source or "")
     if doi:
-        bare = doi.group(1).rstrip(".,;)]")
+        bare = doi.group(1).rstrip(".,;)]}\"'")      # BibTeX's braces and quotes too
         arxiv = re.match(r"10\.48550/arxiv\.(\d{4}\.\d{4,5})", bare, re.I)
         return arxiv.group(1) if arxiv else bare
     pmid = PMID.search(source or "")
