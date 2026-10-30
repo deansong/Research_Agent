@@ -322,7 +322,7 @@ async function drawSelected() {
   const scroll = stream.scrollTop;
   let body;
   if (view.tab === "summary") body = summary(c, prompt, data, reply);
-  else if (view.tab === "input") body = input(prompt, running ? null : s, turn);
+  else if (view.tab === "input") body = input(prompt, s, turn, running);
   else if (view.tab === "activity") body = activity(c, false);
   else if (view.tab === "output") body = data ? el("div", { class: "tree" }, tree(data)) : el("pre", { class: "pre small", text: reply || "(none)" });
   else if (view.tab === "raw") body = raw(s, reply, running);
@@ -397,7 +397,7 @@ function summary(c, prompt, data, reply) {
 // the answer's JSON schema, the earlier turns of the conversation, and what
 // the provider adds that is never recorded. From the turn's `sent` record
 // (research_backend Session._wire); a turn from before it has only the message.
-function input(prompt, s, turn) {
+function input(prompt, s, turn, running = false) {
   if (!prompt) return el("div", { class: "empty", text: "Not known: the call may predate this view." });
   const turns = (s && s.turns) || [];
   const upto = turn ? turns.filter((t) => Number(t.turn) <= Number(turn.turn)) : [];
@@ -415,8 +415,9 @@ function input(prompt, s, turn) {
   return el("div", { class: "brief" },
     el("div", { class: "dim small", text: sent
       ? `Everything this turn sent, in order: about ${total.toLocaleString()} characters, plus ${earlier.length} earlier turn(s) of this conversation and what the provider adds.`
+      : running ? "Under way: the standing instructions and the message as sent; the rest is kept when the call ends."
       : "This turn was recorded before the full input was kept: the message is exact; the instructions shown are the session's current ones." }),
-    part("1 · Standing instructions", sent ? sent.route : "(how they were sent was not recorded)",
+    part("1 · Standing instructions", sent ? sent.route : running ? "sent with the message" : "(how they were sent was not recorded)",
       instructions, false),
     before ? part("2 · In front of the message: skills", `${before.length.toLocaleString()} characters, sent once per conversation`, before, false) : null,
     el("div", { class: "wire-head" }, el("b", { text: `${before ? 3 : 2} · The message` }),
