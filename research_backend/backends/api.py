@@ -58,6 +58,8 @@ access, so it cannot edit your repository. Use 'codex' for that role."""
 
 
 class ApiBackend:
+    INSTRUCTIONS_ROUTE = "the system prompt, with every message"
+    PROVIDER_ADDS = "nothing: the request is exactly what is shown"
     name = "api"
     # These two attributes are the whole reason the executor check works.
     supports_repo_access = False

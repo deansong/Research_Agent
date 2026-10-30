@@ -16,6 +16,8 @@ from research_backend.base import Access, OutputT, StructuredRun, Usage
 
 class FakeBackend:
     """Echoes free text; fills every field of any other schema."""
+    INSTRUCTIONS_ROUTE = "the test backend's instructions"
+    PROVIDER_ADDS = "nothing (a scripted test backend)"
 
     name = "fake"
     supports_repo_access = False

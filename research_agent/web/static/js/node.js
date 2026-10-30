@@ -296,7 +296,7 @@ async function drawSelected() {
   const scroll = stream.scrollTop;
   let body;
   if (view.tab === "summary") body = summary(c, prompt, data, reply);
-  else if (view.tab === "input") body = input(prompt);
+  else if (view.tab === "input") body = input(prompt, running ? null : s, turn);
   else if (view.tab === "activity") body = activity(c, false);
   else if (view.tab === "output") body = data ? el("div", { class: "tree" }, tree(data)) : el("pre", { class: "pre small", text: reply || "(none)" });
   else if (view.tab === "raw") body = raw(s, reply, running);
@@ -366,11 +366,47 @@ function summary(c, prompt, data, reply) {
   return el("div", { class: "summary" }, out);
 }
 
-function input(prompt) {
+// What the model received in one turn, in order: the standing instructions,
+// what went in front of the message (skills), the message our code wrote,
+// the answer's JSON schema, the earlier turns of the conversation, and what
+// the provider adds that is never recorded. From the turn's `sent` record
+// (research_backend Session._wire); a turn from before it has only the message.
+function input(prompt, s, turn) {
   if (!prompt) return el("div", { class: "empty", text: "Not known: the call may predate this view." });
+  const turns = (s && s.turns) || [];
+  const upto = turn ? turns.filter((t) => Number(t.turn) <= Number(turn.turn)) : [];
+  const asOf = (key) => { for (const t of upto.slice().reverse()) if (t.sent && key in t.sent) return t.sent[key]; return null; };
+  const sent = (turn && turn.sent) || null;
+  const instructions = sent ? asOf("instructions") : (s && s.instructions) || "";
+  const schema = sent ? asOf("schema") : null;
+  const before = sent ? sent.before_message || "" : "";
+  const earlier = turn ? turns.filter((t) => Number(t.turn) < Number(turn.turn)) : [];
+  const part = (title, note, text, open) => el("details", { class: "call-section wire", open },
+    el("summary", {}, el("b", { text: title }), el("span", { class: "dim small", text: `  ${note}` })),
+    typeof text === "string" ? el("pre", { class: "pre small sent", text: text || "(none)" }) : text);
+  const total = (instructions || "").length + before.length + prompt.length
+    + (schema ? JSON.stringify(schema).length : 0);
+  return el("div", { class: "brief" },
+    el("div", { class: "dim small", text: sent
+      ? `Everything this turn sent, in order: about ${total.toLocaleString()} characters, plus ${earlier.length} earlier turn(s) of this conversation and what the provider adds.`
+      : "This turn was recorded before the full input was kept: the message is exact; the instructions shown are the session's current ones." }),
+    part("1 · Standing instructions", sent ? sent.route : "(how they were sent was not recorded)",
+      instructions, false),
+    before ? part("2 · In front of the message: skills", `${before.length.toLocaleString()} characters, sent once per conversation`, before, false) : null,
+    el("div", { class: "wire-head" }, el("b", { text: `${before ? 3 : 2} · The message` }),
+      el("span", { class: "dim small", text: "  what our code wrote for this turn" })),
+    message(prompt),
+    schema ? part(`${before ? 4 : 3} · Answer format`, "the JSON schema the reply must fill",
+      JSON.stringify(schema, null, 2), false) : null,
+    earlier.length ? part("Earlier turns the model also sees", `${earlier.length} turn(s) of this conversation`,
+      el("ol", { class: "small" }, earlier.map((t) => el("li", { text: oneLine(t.prompt || "", 160) }))), false) : null,
+    sent ? el("div", { class: "dim small wire-note", text: `Not recorded, added by the provider: ${sent.provider_adds}.` }) : null);
+}
+
+function message(prompt) {
   const secs = sections(prompt);
   const id = (i) => `sec-${i}`;
-  return el("div", { class: "brief" },
+  return el("div", {},
     el("div", { class: "sec-index" },
       el("span", { class: "dim small", text: `${prompt.length.toLocaleString()} characters · ` }),
       secs.map(([t], i) => el("a", { href: "#", class: "chip", text: t || "(start)",

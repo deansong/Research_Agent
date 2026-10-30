@@ -116,6 +116,12 @@ _SANDBOX: dict[Access, Sandbox] = {
 
 class CodexBackend:
     """Runs model turns through a Codex thread."""
+    #: How the standing instructions reach the model, and what the provider
+    #: adds that we never see -- shown with each turn (Session.send `sent`).
+    INSTRUCTIONS_ROUTE = "Codex developer instructions, sent with every message"
+    PROVIDER_ADDS = ("Codex's own system prompt, its tool definitions, the environment context "
+                     "(work folder, sandbox, approval mode) and any AGENTS.md in the work "
+                     "folder or a folder above it")
 
     name = "codex"
     supports_repo_access = True

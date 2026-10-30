@@ -121,6 +121,9 @@ _TRANSIENT = ("unavailable", "no capacity", "at capacity", "503", "502", "429",
 
 
 class AntigravityBackend(CliBackend):
+    INSTRUCTIONS_ROUTE = ("written in front of the message on every turn, above a line of "
+                          "'=' (agy has no system-prompt flag)")
+    PROVIDER_ADDS = "the agy CLI's own system prompt and tool definitions"
     name = "antigravity"
     label = "Antigravity"
     executable_default = "agy"

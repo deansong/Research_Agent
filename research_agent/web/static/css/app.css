@@ -431,3 +431,7 @@ ul.plain { margin: 0; padding-left: 18px; }
 .review-doc th, .review-doc td { border: 1px solid var(--line); padding: 5px 9px; vertical-align: top; text-align: left; }
 .review-doc th { background: var(--bg-raised); }
 .review-doc td:nth-child(2) { white-space: nowrap; }
+
+.call-section.wire { border-left: 3px solid var(--accent-dim); }
+.wire-head { margin: 10px 0 4px; }
+.wire-note { margin: 10px 0; }

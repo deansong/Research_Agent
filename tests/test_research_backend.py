@@ -741,3 +741,25 @@ def test_the_newest_codex_binary_is_used(monkeypatch, tmp_path):
     assert C.codex_bin() is None, "an older one on PATH: the bundled one"
     monkeypatch.setenv("RESEARCH_BACKEND_CODEX_BIN", "/my/codex")
     assert C.codex_bin() == "/my/codex"
+
+
+def test_each_turn_keeps_everything_it_sent_besides_the_message(spy):
+    # The page's Input tab showed only the message; the model also gets the
+    # standing instructions, the skills in front and the answer's schema.
+    class Pick(BaseModel):
+        dataset: str
+        why: str
+
+    reader = RB(provider="fake")
+    reader.new_session("w")
+    reader.set_instructions("Be brief.")
+    reader.send("pick one", schema=Pick)
+    reader.send("again", schema=Pick)
+    reader.set_instructions("Be thorough.")
+    reader.send("once more", schema=Pick)
+    t1, t2, t3 = (t["sent"] for t in reader.session.turns)
+    assert t1["instructions"] == "Be brief." and t1["schema"]["required"] == ["dataset", "why"]
+    assert "instructions" not in t2 and "schema" not in t2, "kept only when they change"
+    assert t3["instructions"] == "Be thorough." and t3["earlier_turns"] == 2
+    assert t1["route"] and t1["provider_adds"]
+    assert sessions.sent_as_of(reader.session.turns[:2], "instructions") == "Be brief."

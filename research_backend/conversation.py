@@ -207,6 +207,7 @@ class Session:
             sent, skills_now = self._with_skills(prompt)
             if sent != prompt:
                 entry["skills"] = self.skills
+            entry["sent"] = self._wire(backend, sent, prompt, output_model)
             if on_progress is not None and hasattr(backend, "on_progress"):
                 # Backends are shared between sessions, so the callback is
                 # found per thread: two turns at once each get their own.
@@ -248,6 +249,31 @@ class Session:
             self._append(entry)
             return Reply(session=self.id, turn=turn, text=text, data=data,
                          tokens=run.usage, seconds=seconds, events=list(run.events))
+
+    def _wire(self, backend, sent: str, prompt: str, output_model) -> dict:
+        """Everything this turn sends besides `prompt`, so a reader sees the
+        model's whole input: the standing instructions and the answer schema
+        (kept when they differ from the last turn's -- `sent_as_of` finds
+        them), the skills text put in front of the message, how the
+        instructions travel, and what the provider adds unseen."""
+        wire: dict[str, Any] = {
+            "route": getattr(backend, "INSTRUCTIONS_ROUTE", "with every message"),
+            "provider_adds": getattr(backend, "PROVIDER_ADDS", "not known"),
+            "earlier_turns": len(self._record.get("turns", [])) if self.thread_id else 0}
+        if self.instructions != sent_as_of(self._record.get("turns", []), "instructions"):
+            wire["instructions"] = self.instructions
+        if sent != prompt:
+            wire["before_message"] = sent[:len(sent) - len(prompt)]
+        schema = None
+        if output_model is not None:
+            if json_schema.is_raw(output_model):
+                schema = output_model.raw_schema
+            else:
+                from research_backend.backends._schema import strict_json_schema
+                schema = strict_json_schema(output_model)
+        if schema is not None and schema != sent_as_of(self._record.get("turns", []), "schema"):
+            wire["schema"] = schema
+        return wire
 
     def _with_skills(self, prompt: str) -> tuple[str, dict]:
         """The prompt as sent: with the skills in front when this conversation
@@ -439,6 +465,15 @@ def _dispatch_progress(snapshot: dict) -> None:
     hook = getattr(_progress_hooks, "hook", None)
     if hook is not None:
         hook(snapshot)
+
+
+def sent_as_of(turns: list[dict], key: str):
+    """The `sent` value of `key` (instructions, schema) in force after these
+    turns: the latest turn that recorded it. None when none did."""
+    for t in reversed(turns):
+        if key in (t.get("sent") or {}):
+            return t["sent"][key]
+    return None
 
 
 def _backend(provider: str, model: str | None, options: dict, *, quiet: bool = True,

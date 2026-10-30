@@ -48,6 +48,8 @@ _CHARS_PER_TOKEN = 3
 
 class ResponsesBackend:
     """One model on a Responses-API server. Text in, text or JSON out."""
+    INSTRUCTIONS_ROUTE = "the Responses API `instructions`, with every message"
+    PROVIDER_ADDS = "nothing: the request is exactly what is shown"
 
     name = "responses"
     supports_repo_access = False

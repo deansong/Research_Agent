@@ -79,6 +79,9 @@ _TRANSIENT = ("overloaded", "at capacity", "529", "503", "502", "rate limit", "r
 
 
 class ClaudeCodeBackend(CliBackend):
+    INSTRUCTIONS_ROUTE = "appended to Claude Code's system prompt (--append-system-prompt), every turn"
+    PROVIDER_ADDS = ("Claude Code's own system prompt, its tool definitions and any CLAUDE.md "
+                     "in the work folder or above it")
     name = "claude_code"
     label = "Claude Code"
     executable_default = "claude"
