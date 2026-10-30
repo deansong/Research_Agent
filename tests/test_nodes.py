@@ -121,7 +121,7 @@ def test_the_designer_writes_the_whole_design_in_one_call(run, script, evidence,
     script.add("DesignOutput", {**DESIGN, "rubric": [{**DESIGN["rubric"][0],
                                                      "assessed_at": "Step 2"}]})
     out = nodes.design(run, evidence, task="design it")
-    assert len(script.calls) == 1, '"Step 2" is taken as "2"'
+    assert len(script.prompts("DesignOutput")) == 1, '"Step 2" is taken as "2"'
     st = _apply(evidence, out, "designer")
     assert st["hypotheses"][0]["id"] == "H1" and st["rubric"][0]["id"] == "R1"
     assert st["protocol"]["statistics"] == "paired t-test"
@@ -249,7 +249,8 @@ def test_a_step_is_written_for_an_owner_that_sees_only_it(run, script, evidence,
     script.add("DesignOutput", bad, DESIGN)
     nodes.design(run, evidence, task="design it")
     first, retry = script.prompts("DesignOutput")
-    assert "EVERY STEP IS A SELF-CONTAINED WORKER PROMPT" in first and "stand on its own" in first
+    assert "EACH STEP IS A SUBAGENT WITH ITS OWN CONTEXT" in first
+    assert f"{run.folder}/artifacts/step_NN/" in first, "the real folders, to name files in"
     assert "step 2: its detail refers to 'step-1'" in retry
     assert "step 2: its detail names things by letter (A, B-D)" in retry
 
@@ -267,3 +268,26 @@ def test_a_letter_the_step_defines_or_a_formula_uses_is_not_a_label():
     assert nodes.standalone_problems([defines]) == []
     uses = N(id="7", detail="Maximize development H; compare C with B.", check="done")
     assert "(B, C, H)" in nodes.standalone_problems([uses])[0]
+
+
+def test_each_step_is_read_alone_as_its_subagent_and_its_questions_go_back(
+        run, script, evidence, monkeypatch):
+    # Run 1119, designer-006: every name spelled out, and still step 1 asked
+    # its subagent to copy "the approved complete design" it never sees.
+    monkeypatch.setattr(nodes.Run, "catalogue", lambda self: [("peft", "LoRA")])
+    script.add("DesignOutput", DESIGN, DESIGN, DESIGN)
+    asks = {"questions": ['"the specification": which one? I am given none']}
+    script.add("ReaderOutput", *[asks, {"questions": []}] * 3)    # two steps, three attempts
+    out = nodes.design(run, evidence, task="design it")
+    readers = [c for c in script.calls if c["schema"] == "ReaderOutput"]
+    assert len(readers) == 6, "each step read, on each attempt"
+    one = readers[0]["prompt"]
+    assert "You are" in one and "Done when:" in one and "WHERE TO WORK" in one, \
+        "what its subagent will be told, built by the execution's own code"
+    assert "THE APPROVED BRIEF" not in one and "HYPOTHESES" not in one, "and nothing else"
+    assert "a READER" in readers[0]["instructions"]
+    retries = script.prompts("DesignOutput")[1:]
+    assert 'a reader given only its subagent\'s context would ask: "the specification"' \
+        in retries[0]
+    assert len(retries) == 2 and "NOT SELF-CONTAINED after every attempt" in out.summary, \
+        "sent back on every attempt but the last; what is left goes to the user"

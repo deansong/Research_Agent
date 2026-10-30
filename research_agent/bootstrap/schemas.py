@@ -153,6 +153,14 @@ class ResearcherOutput(BaseModel):
     unanswered: list[str] = Field(default_factory=list, max_length=10)
 
 
+class ReaderOutput(BaseModel):
+    """What a subagent told only one step would have to ask before it could
+    do the work and know it is done (bootstrap/reader.py)."""
+
+    questions: list[str] = Field(default_factory=list)
+    """Each quotes the words it is about; none when the step stands alone."""
+
+
 # ---- designer: the whole design -------------------------------------------------------
 
 

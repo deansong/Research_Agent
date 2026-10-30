@@ -316,11 +316,15 @@ def standalone_problems(steps) -> list[str]:
     return problems
 
 
-def design_check(st: dict, known_skills: set[str]):
+def design_check(st: dict, known_skills: set[str], reader=None):
     """What code requires of a design, given the state it was made from --
-    a small function so it can be tested and reused."""
+    a small function so it can be tested and reused. `reader(out)`: each
+    step's subagent context read alone ({step: questions}, bootstrap/reader).
+    `check.unresolved`: what the last design checked still leaves its
+    subagents to guess."""
     evidence = _ids(st, "evidence")
     sent_back: list[bool] = []
+    unresolved: list[str] = []
 
     def check(out: schemas.DesignOutput) -> list[str]:
         problems = _unique("hypothesis", [h.id for h in out.hypotheses], "H")
@@ -338,14 +342,6 @@ def design_check(st: dict, known_skills: set[str]):
             r.assessed_at = re.sub(r"(?i)^\s*step\s*", "", r.assessed_at).strip()
         problems += [f"{r.id}: `assessed_at` is {r.assessed_at!r}, not a step id: give the one "
                      f"step that completes it" for r in out.rubric if r.assessed_at not in ids]
-        # A step is its owner's whole prompt: what it names must make sense
-        # there. Sent back on every attempt but the last, so a design that
-        # keeps them still reaches the user -- told which steps (`design`).
-        if len(sent_back) < run_base.ATTEMPTS - 1:
-            alone = standalone_problems(out.steps)
-            if alone:
-                sent_back.append(True)
-                problems += alone
         problems += design_problems({"nodes": [n.model_dump() for n in out.nodes]}, steps=ids,
                                     rubric=rubric, skills=known_skills)
         # New designs only: execution still accepts earlier ones.
@@ -353,7 +349,23 @@ def design_check(st: dict, known_skills: set[str]):
                      f"decides what runs next: give those steps to a worker or writer and "
                      f"leave the orchestrator's `steps` empty"
                      for n in out.nodes if n.role == "orchestrator" and n.steps]
+        # A step is its subagent's whole context: what it names must make
+        # sense there. Code catches letters and step numbers; a design that
+        # passes everything else is then read, step by step, as its subagents
+        # would (one call a step). Sent back on every attempt but the last,
+        # so a design that keeps them still reaches the user -- told which
+        # steps (`design`).
+        alone = standalone_problems(out.steps)
+        if not alone and not problems and reader is not None:
+            from research_agent.bootstrap import reader as R
+
+            alone = R.problems(reader(out))
+        unresolved[:] = alone
+        if alone and len(sent_back) < run_base.ATTEMPTS - 1:
+            sent_back.append(True)
+            problems += alone
         return problems
+    check.unresolved = unresolved
     return check
 
 
@@ -361,8 +373,11 @@ def design(run: Run, st: dict, *, task: str) -> Outcome:
     """The whole design in one call -- hypotheses, rubric, protocol, steps and
     the nodes that do them -- so the study and the agent are thought out
     together. It replaces the last one: what it leaves out goes."""
+    from research_agent.bootstrap import reader
+
     catalogue = run.catalogue()
-    check = design_check(st, {name for name, _ in catalogue})
+    check = design_check(st, {name for name, _ in catalogue},
+                         reader=lambda out: reader.read(run, st, out))
     out, session = run.call("designer", brief=views.designer(st, task=task, skills=catalogue,
                                                             run_dir=run.folder),
                             schema=schemas.DesignOutput, check=check)
@@ -383,10 +398,9 @@ def design(run: Run, st: dict, *, task: str) -> Outcome:
     ops += [{"op": "add", "section": "risks", "value": r.model_dump()} for r in out.risks]
     summary = (f"a design of {len(out.steps)} steps and {len(out.nodes)} nodes, "
                f"{len(out.hypotheses)} hypotheses, {len(out.rubric)} criteria. {out.summary}")
-    alone = standalone_problems(out.steps)
-    if alone:
+    if check.unresolved:
         summary += ("\nNOT SELF-CONTAINED after every attempt -- tell the user, and fix "
-                    "before approving: " + "; ".join(alone[:8]))
+                    "before approving: " + "; ".join(check.unresolved[:8]))
     ops.append(_result_op("designer", "", task, summary, session))
     return Outcome(ops=ops, summary=summary, session=session, data=out)
 

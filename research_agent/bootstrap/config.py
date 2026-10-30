@@ -80,6 +80,9 @@ class BootstrapConfig:
     field: str = "nlp"
     """The research field (research_agent/fields): the skills the team may
     use, the roles' default skills, the prompts' voice."""
+    reader: RoleConfig | None = None
+    """The model that reads each step of a new design as its subagent would
+    (bootstrap/reader.py): fast, no tools, one call a step."""
 
     def describe(self) -> str:
         """Two readable lines: roles, then skills."""
@@ -96,7 +99,8 @@ class BootstrapConfig:
                           for r, c in self.roles.items()},
                 "skills": {"dir": str(self.skills_dir) if self.skills_dir else None,
                            **{n: c if c is not None else "none" for n, c in self.skills.items()}},
-                "research": {"sources": list(self.sources)}}
+                "research": {"sources": list(self.sources)},
+                **({"design": {"reader": str(self.reader)}} if self.reader else {})}
 
 
 #: The research skill's literature sources: name, what it is, the key it needs.
@@ -266,9 +270,11 @@ def _merge(cfg: BootstrapConfig, data: dict, *, base: Path) -> BootstrapConfig:
         else:
             skills[key] = _choice(value)
     sources = (data.get("research") or {}).get("sources")
+    reader = (data.get("design") or {}).get("reader")
     return BootstrapConfig(roles, skills, skills_dir,
                            tuple(sources) if sources is not None else cfg.sources,
-                           field=data.get("field") or cfg.field)
+                           field=data.get("field") or cfg.field,
+                           reader=spec_of(reader) if reader else cfg.reader)
 
 
 def _choice(value) -> None | str | list[str]:

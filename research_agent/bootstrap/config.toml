@@ -33,6 +33,13 @@ dir = "skills"
 sources = ["openalex", "s2"]
 
 
+[design]
+# The reader check: every step of a new design is read, alone, as its
+# subagent will get it, and what it would have to ask goes back to the
+# designer. One short call a step, with no tools: a fast model.
+reader = "codex:gpt-6.1-terra:low"
+
+
 # Which provider and model each role runs on. `model` is an id from
 # RB.list_models(provider); leave it out for the provider's default.
 # `effort` is a level from RB.list_efforts(provider) -- not for antigravity,

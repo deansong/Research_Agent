@@ -41,6 +41,8 @@ class Script:
                            "instructions": developer_instructions, "access": access,
                            "workdir": repo_path})
         queue = self.answers.get(name) or []
+        if not queue and name == "ReaderOutput":
+            queue = [{"questions": []}]   # the reader check: no questions unless scripted
         if not queue:
             raise AssertionError(f"the script has no answer left for {name}")
         answer = queue.pop(0)
