@@ -26,6 +26,7 @@ from fastapi.responses import FileResponse, StreamingResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field
 
+from research_agent import fields
 from research_agent import state as S
 from research_agent.bootstrap import carry
 from research_agent.execute import jobs as J
@@ -91,6 +92,9 @@ class NewRun(BaseModel):
     start_from: str = ""
     """A run id (in the runs folder) or a folder: start the next run from it."""
     name: str = ""
+    field: str = ""
+    """The research field (research_agent/fields); "" is the default. A run
+    started from another keeps that run's."""
     start: bool = True
     """False: create the run with its idea, and wait for Start -- so models,
     backups, skills and sources can be set first."""
@@ -227,7 +231,12 @@ def create_app(runs_root: Path = RUNS_ROOT, *, roles=(), watch: bool = True) -> 
             folder = root / (body.name or f"{datetime.now():%Y%m%d-%H%M}-{slug}")
             if folder.exists():
                 raise _bad(409, "exists", f"{folder} exists already.")
+            if body.field and body.field not in fields.names():
+                raise _bad(400, "bad_request", f"No field {body.field!r}; the fields are "
+                                               f"{', '.join(fields.names())}.")
             S.Store(folder).write(S.new())
+            (folder / "config.json").write_text(
+                json.dumps({"field": body.field or fields.DEFAULT}) + "\n")
         host = host_of(folder.name)
         if body.start:
             act(lambda: host.message(idea))
@@ -350,6 +359,11 @@ def create_app(runs_root: Path = RUNS_ROOT, *, roles=(), watch: bool = True) -> 
         return host.detail()
 
     # ---- the research state -------------------------------------------------------
+
+    @app.get("/api/fields")
+    def list_fields():
+        return {"default": fields.DEFAULT,
+                "fields": [{"name": n, "title": fields.load(n).title} for n in fields.names()]}
 
     @app.get("/api/providers")
     def providers(refresh: bool = False):

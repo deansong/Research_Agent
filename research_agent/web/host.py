@@ -30,7 +30,7 @@ from typing import Callable
 
 import research_backend as RB
 
-from research_agent import autopilot, chat, inbox
+from research_agent import autopilot, chat, fields, inbox
 from research_agent import state as S
 from research_agent.bootstrap import config as boot_config
 from research_agent.bootstrap.config import RoleConfig
@@ -113,6 +113,7 @@ class RunHost:
         st = S.Store(self.folder).read()
         roles = {r: str(c) for r, c in self.session.run.roles.items()}
         return {"id": self.id, "folder": str(self.folder), "stage": self.stage,
+                "field": fields.of_run(self.folder),
                 "phase": (st.get("status") or {}).get("phase") or "discussing",
                 "goal": (st.get("goal") or {}).get("question", ""),
                 "busy": self.busy, "asides": self._asides, "current": self.current if self.busy else "",

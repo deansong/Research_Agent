@@ -11,7 +11,11 @@ CONCEPT: A prompt is named by its path without ".md" ("roles/bootstrap/
     <run>/prompts/<name>.md                one run (its folder)
     $RESEARCH_AGENT_PROMPTS/<name>.md      every run of yours, if set
     ~/.research_agent/prompts/<name>.md    every run of yours
+    research_agent/fields/<field>/prompts/  the run's field (research_agent/fields)
     research_agent/prompts/<name>.md       the defaults
+
+       A role's instructions are its file plus the field's voice
+       (`instructions`): how the field talks, for every role.
 
        A note's `$name` placeholders are filled in by the code that sends it
        (string.Template: `$$` is a dollar sign); what a placeholder means is
@@ -47,10 +51,13 @@ def path(name: str, run_dir: str | os.PathLike | None = None) -> Path:
 
 
 def dirs(run_dir: str | os.PathLike | None = None) -> list[Path]:
+    from research_agent import fields
+
     found = []
     if run_dir:
         found.append(Path(run_dir) / RUN_DIR)
     found.append(user_dir())
+    found.append(fields.load(fields.of_run(run_dir)).prompts)
     found.append(DEFAULT_DIR)
     return found
 
@@ -68,6 +75,21 @@ def text(name: str, run_dir: str | os.PathLike | None = None, **fields) -> str:
     raw = path(name, run_dir).read_text(encoding="utf-8")
     body = _COMMENT.sub("", raw).strip()
     return Template(body).safe_substitute({k: str(v) for k, v in fields.items()})
+
+
+def instructions(name: str, run_dir: str | os.PathLike | None = None) -> str:
+    """A role's standing instructions: its prompt file, and the voice of the
+    run's field when it has one."""
+    body = text(name, run_dir)
+    try:
+        voice = text(VOICE, run_dir)
+    except FileNotFoundError:
+        return body
+    return f"{body}\n\n{voice}" if voice else body
+
+
+#: The field's voice: how its researchers talk, added to every role.
+VOICE = "voice"
 
 
 def names() -> list[str]:

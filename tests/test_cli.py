@@ -117,7 +117,7 @@ def test_every_call_is_announced_and_trace_shows_input_and_output(tmp_path, scri
     assert out.count("---- discussor: standing instructions") == 1
     assert "You are the DISCUSSOR" in out
     assert "---- discussor: INPUT" in out and "=== THE USER SAYS ===\nidea two" in out
-    assert "[+ skills, sent in front of the first message: auto]" in out
+    assert "[+ skills" not in out, "no skills by default: nothing is discovered"
     assert "---- discussor: OUTPUT (" in out and '"reply": "Hi."' in out
 
 

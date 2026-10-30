@@ -130,7 +130,7 @@ def instructions(run_dir=None) -> str:
     """The autopilot's standing instructions: prompts/roles/autopilot.md."""
     from research_agent import prompt_files
 
-    return prompt_files.text("roles/autopilot", run_dir)
+    return prompt_files.instructions("roles/autopilot", run_dir)
 
 
 INSTRUCTIONS = instructions()

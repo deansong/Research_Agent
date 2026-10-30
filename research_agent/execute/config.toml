@@ -39,11 +39,11 @@ python = ""
 # The folder the design's skill names are looked up in (relative: from the
 # repository root).
 dir = "skills"
-# The reviewer's skills (it is not in the design).
-# Not peer-review: it asks for a venue and an intake before it reads anything.
-reviewer = ["scientific-critical-thinking"]
-# The paper's, written once every step is settled (it runs on the writer's model).
-paper = ["acl-paper", "ml-paper-writing"]
+# The reviewers' and the paper writer's skills come from the run's field
+# (research_agent/fields/<field>/field.toml, [roles] reviewer and paper); set
+# them here to override every field's:
+#     reviewer = ["scientific-critical-thinking"]
+#     paper = ["acl-paper", "ml-paper-writing"]
 
 
 # Which provider and model each role runs on, as in the bootstrap. Step owners
@@ -62,15 +62,12 @@ paper = ["acl-paper", "ml-paper-writing"]
 
 [roles.orchestrator]
 provider = "codex"
+model = "gpt-6.1-sol"
 
 [roles.worker]
-#provider = "claude_code"
-#model = "opus"
-#options = { timeout = 1200 }
 provider = "codex"
-model = "gpt-6-sol"
+model = "gpt-6.1-terra"
 options = { timeout = 1200 }
-
 
 # Literature steps: searching, screening, evidence tables, related work. The
 # bootstrap researcher's tools (the research skill, always given) and its
@@ -80,18 +77,18 @@ provider = "antigravity"
 model = "gemini-3.8-flash-high"
 options = { timeout = 1200 }
 
-
 [roles.writer]
 provider = "codex"
-model = "gpt-6-sol"
+model = "gpt-6.1-terra"
 options = { timeout = 1200 }
 
 [roles.validator]
 provider = "codex"
+model = "gpt-6.1-terra"
 
 # Reviews the finished study as a major ML conference reviewer would; its
-# review goes to the next run (bootstrap --from RUN). Another model family
-# than the step owners', for an independent eye.
+# review goes to the next run (bootstrap --from RUN).
 [roles.reviewer]
 provider = "codex"
+model = "gpt-6.1-terra"
 effort = "high"

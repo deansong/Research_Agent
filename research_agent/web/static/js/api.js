@@ -58,6 +58,7 @@ export const api = {
   papers: (id) => request("GET", `${run(id)}/papers`),
   raw: (id, path) => `${run(id)}/raw?path=${encodeURIComponent(path)}`,
   jobs: (id) => request("GET", `${run(id)}/jobs`),
+  fields: () => request("GET", "/api/fields"),
   providers: (refresh) => request("GET", `/api/providers${refresh ? "?refresh=true" : ""}`),
   nodeInfo: (id, node) => request("GET", `${run(id)}/nodes/${encodeURIComponent(node)}`),
   skills: (id) => request("GET", `${run(id)}/skills`),

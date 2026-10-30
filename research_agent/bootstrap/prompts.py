@@ -17,7 +17,7 @@ ROLES = ("discussor", "orchestrator", "researcher", "designer")
 
 def instructions(run_dir=None) -> dict[str, str]:
     """Each role's instructions, as a run (its folder) has them."""
-    return {r: prompt_files.text(f"roles/bootstrap/{r}", run_dir) for r in ROLES}
+    return {r: prompt_files.instructions(f"roles/bootstrap/{r}", run_dir) for r in ROLES}
 
 
 #: The defaults, as the files have them now.

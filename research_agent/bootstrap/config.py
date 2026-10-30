@@ -77,6 +77,9 @@ class BootstrapConfig:
     skills_dir: Path | None
     sources: tuple[str, ...] = ("openalex", "s2")
     """The literature sources the research skill may search (SOURCES)."""
+    field: str = "nlp"
+    """The research field (research_agent/fields): the skills the team may
+    use, the roles' default skills, the prompts' voice."""
 
     def describe(self) -> str:
         """Two readable lines: roles, then skills."""
@@ -87,7 +90,8 @@ class BootstrapConfig:
     def to_dict(self) -> dict:
         # Every field, empty ones too: a role given without a model must not
         # get the default's model back when the file is read again.
-        return {"roles": {r: {"provider": c.provider, "model": c.model, "effort": c.effort,
+        return {"field": self.field,
+                "roles": {r: {"provider": c.provider, "model": c.model, "effort": c.effort,
                               "options": c.options, "backup": list(c.backup)}
                           for r, c in self.roles.items()},
                 "skills": {"dir": str(self.skills_dir) if self.skills_dir else None,
@@ -126,14 +130,22 @@ def defaults(path: Path = DEFAULT_FILE) -> BootstrapConfig:
 
 
 def load(run_dir: str | Path | None = None, *, roles=(), skills=(), skills_dir=None,
-         base: Path = DEFAULT_FILE) -> BootstrapConfig:
-    """The configuration for a run: the defaults, then the run's config.json,
-    then the command line. Raises ValueError for anything that is not there
-    (a role, a node, a skill, the skills folder)."""
+         field: str | None = None, base: Path = DEFAULT_FILE) -> BootstrapConfig:
+    """The configuration for a run: the defaults, its field's skills, then
+    the run's config.json, then the command line. Raises ValueError for
+    anything that is not there (a role, a node, a skill, the skills folder,
+    the field)."""
+    from research_agent import fields
+
     cfg = defaults(base)
     path = Path(run_dir) / "config.json" if run_dir else None
-    if path and path.exists():
-        cfg = _merge(cfg, json.loads(path.read_text(encoding="utf-8")), base=Path(run_dir))
+    saved = json.loads(path.read_text(encoding="utf-8")) if path and path.exists() else {}
+    chosen = field or saved.get("field") or fields.DEFAULT
+    pack = fields.load(chosen)
+    cfg = replace(cfg, field=chosen, skills={**cfg.skills, **{
+        r: _choice(s) for r, s in pack.roles.items() if r in NODES}})
+    if saved:
+        cfg = _merge(cfg, {**saved, "field": chosen}, base=Path(run_dir))
     for text in roles:
         role, spec = parse_role(text)
         for name in ROLES if role == "all" else (role,):
@@ -172,11 +184,17 @@ def check(cfg: BootstrapConfig) -> list[str]:
     elif chosen:
         import research_backend as RB
 
+        from research_agent import fields
+
         known = set(RB.list_skills(cfg.skills_dir).names)
+        allowed = fields.load(cfg.field).skills
         for node, choice in chosen.items():
             if isinstance(choice, list):
                 problems += [f"{node}: no skill called {s!r} in {cfg.skills_dir}"
                              for s in choice if s not in known]
+                problems += [f"{node}: {s!r} is not in the {cfg.field} field's skills"
+                             for s in choice if s in known and allowed is not None
+                             and s not in allowed]
     return problems
 
 
@@ -249,7 +267,8 @@ def _merge(cfg: BootstrapConfig, data: dict, *, base: Path) -> BootstrapConfig:
             skills[key] = _choice(value)
     sources = (data.get("research") or {}).get("sources")
     return BootstrapConfig(roles, skills, skills_dir,
-                           tuple(sources) if sources is not None else cfg.sources)
+                           tuple(sources) if sources is not None else cfg.sources,
+                           field=data.get("field") or cfg.field)
 
 
 def _choice(value) -> None | str | list[str]:

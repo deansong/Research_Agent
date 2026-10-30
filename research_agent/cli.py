@@ -64,6 +64,9 @@ def main(argv: list[str] | None = None) -> int:
                       help="which skills a node gets, e.g. designer=experiment-design,"
                            "ml-statistics; nodes: " + ", ".join(config.NODES))
     boot.add_argument("--skills-dir", metavar="FOLDER", help="the skills folder to use")
+    boot.add_argument("--field", default=None,
+                      help="the research field: its skills and how the team talks "
+                           "(research_agent/fields; default nlp)")
     boot.add_argument("--progress", action="store_true",
                       help="print what each model does while it works: commands, files")
     boot.add_argument("--trace", action="store_true",
@@ -124,7 +127,8 @@ def main(argv: list[str] | None = None) -> int:
     else:
         parser.error("give an idea, or --resume <run>.")
     try:
-        cfg = config.load(folder, roles=args.role, skills=args.skills, skills_dir=args.skills_dir)
+        cfg = config.load(folder, roles=args.role, skills=args.skills, skills_dir=args.skills_dir,
+                          field=args.field)
     except ValueError as exc:
         parser.error(str(exc))
     folder.mkdir(parents=True, exist_ok=True)

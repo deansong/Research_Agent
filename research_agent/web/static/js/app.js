@@ -288,6 +288,11 @@ async function showNew() {
   try {
     for (const r of await api.runs()) from.append(el("option", { value: r.id, text: `${r.id} (${r.phase})` }));
   } catch { /* the list is optional */ }
+  try {
+    const f = await api.fields();
+    clear($("new-field")).append(...f.fields.map((x) => el("option", { value: x.name, text: x.title,
+      selected: x.name === f.default })));
+  } catch { /* the server's default */ }
   $("dialog-new").showModal();
 }
 
@@ -299,7 +304,7 @@ function wireDialogs() {
   $("form-new").addEventListener("submit", async (e) => {
     e.preventDefault();
     const body = { idea: $("new-idea").value.trim(), start_from: $("new-from").value, name: $("new-name").value.trim(),
-      start: !$("new-hold").checked };
+      field: $("new-field").value || "", start: !$("new-hold").checked };
     if (!body.idea && !body.start_from) { $("new-error").textContent = "Give your idea, or a run to start from."; return; }
     try {
       const d = await api.newRun(body);

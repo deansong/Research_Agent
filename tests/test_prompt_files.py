@@ -33,11 +33,11 @@ def test_a_run_s_own_prompt_wins_then_the_user_s_folder(tmp_path, monkeypatch):
     mine.mkdir(parents=True)
     (mine / "designer.md").write_text("<!-- mine -->\nYou are MY designer.")
     monkeypatch.setenv(prompt_files.ENV, str(tmp_path / "mine"))
-    assert prompts.instructions(run_dir)["designer"] == "You are MY designer."
+    assert prompts.instructions(run_dir)["designer"].startswith("You are MY designer.\n\n")
     assert prompts.instructions(run_dir)["discussor"] == prompts.DISCUSSOR, "the rest stay"
     own = run_dir / "prompts" / "roles" / "bootstrap"
     own.mkdir(parents=True)
     (own / "designer.md").write_text("You are this run's designer.")
     run = nodes.Run(folder=run_dir, roles={r: RoleConfig("fake") for r in ROLES})
-    assert run.instructions["designer"] == "You are this run's designer."
+    assert run.instructions["designer"].startswith("You are this run's designer.\n\n")
     assert prompt_files.path("roles/bootstrap/designer", run_dir) == own / "designer.md"

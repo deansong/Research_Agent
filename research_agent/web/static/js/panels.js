@@ -127,7 +127,7 @@ export class Inspector {
 
   showFacts(d) {
     const rows = [
-      ["Folder", d.folder], ["Stage", d.stage], ["Phase", d.phase],
+      ["Folder", d.folder], ["Field", d.field], ["Stage", d.stage], ["Phase", d.phase],
       ["Now", d.busy ? (d.current || "working") : d.waiting ? "waiting for you" : d.stopped_midway ? "stopped midway" : "idle"],
       ["Waiting on your go", d.awaiting || ""], ["Outcome", d.outcome || ""], ["Last error", d.error || ""],
     ];

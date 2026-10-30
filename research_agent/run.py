@@ -359,10 +359,13 @@ class Run:
         return f"{role}-{taken + 1:03d}"
 
     def catalogue(self) -> list[tuple[str, str]]:
-        """Every skill in the folder: (name, description)."""
+        """The skills this run's field lets its team use: (name, description)."""
+        from research_agent import fields
+
         if not (self.skills_dir and Path(self.skills_dir).is_dir()):
             return []
-        return [(s.name, s.description) for s in RB.list_skills(self.skills_dir)]
+        return [(s.name, s.description) for s in RB.list_skills(self.skills_dir)
+                if fields.allows(self.folder, s.name)]
 
     # ---- what the terminal shows -----------------------------------------------------
 

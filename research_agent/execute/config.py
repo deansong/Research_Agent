@@ -82,9 +82,15 @@ def defaults(path: Path = DEFAULT_FILE) -> ExecConfig:
 
 def load(run_dir: str | Path | None = None, *, roles=(), limits: dict | None = None,
          base: Path = DEFAULT_FILE) -> ExecConfig:
-    """The defaults, then <run>/execute.json, then the command line. Raises
-    ValueError for anything that is not there."""
+    """The defaults, the run's field's skills for the reviewers and the paper
+    (research_agent/fields), then <run>/execute.json, then the command line.
+    Raises ValueError for anything that is not there."""
+    from research_agent import fields
+
     cfg = defaults(base)
+    pack = fields.load(fields.of_run(run_dir))
+    cfg = replace(cfg, **{f"{k}_skills": tuple(pack.roles[k]) for k in ("reviewer", "paper")
+                          if k in pack.roles})
     path = Path(run_dir) / "execute.json" if run_dir else None
     if path and path.exists():
         cfg = _merge(cfg, json.loads(path.read_text(encoding="utf-8")), base=Path(run_dir))

@@ -1,0 +1,29 @@
+# Natural language processing: the skills an NLP study's team may use, and
+# what each built-in role gets by default. Every other node gets what the
+# design gives it, from this list. No node discovers skills by itself: a
+# role not listed below gets none.
+title = "Natural language processing"
+
+skills = [
+  # finding and judging work
+  "research", "research-orchestration", "scientific-brainstorming", "hypothesis-generation",
+  "ml-hypotheses", "experiment-design", "scientific-critical-thinking", "peer-review",
+  # models, data and runs
+  "transformers", "peft", "accelerate", "bitsandbytes", "vllm", "sentence-transformers",
+  "huggingface-datasets", "hf-cli", "hf-mem", "lm-evaluation-harness", "transformer-lens",
+  "ml-training-recipes", "scikit-learn", "tensorboard",
+  # numbers
+  "ml-statistics", "statistical-analysis", "statistical-power",
+  # writing
+  "acl-paper", "ml-paper-writing", "academic-plotting",
+]
+
+[roles]
+# the design stage
+discussor = []
+orchestrator = ["research-orchestration"]
+researcher = ["research"]
+designer = []
+# the execution stage's built-in nodes (the designed ones get the design's)
+reviewer = ["scientific-critical-thinking"]
+paper = ["acl-paper", "ml-paper-writing"]

@@ -295,8 +295,15 @@ def test_the_instructions_are_minimal_and_keep_what_code_needs():
     from research_agent.execute import prompts as exec_prompts
 
     assert set(prompts.INSTRUCTIONS) == {"discussor", "orchestrator", "researcher", "designer"}
+    from research_agent import prompt_files
+
+    for name in prompt_files.names():
+        if name.startswith(("roles/bootstrap/", "roles/execute/")):
+            assert len(prompt_files.text(name)) < 1200, f"{name}: a role's instructions stay short"
+    voice = prompt_files.text(prompt_files.VOICE)
+    assert len(voice) < 800 and "NLP researcher" in voice, "the NLP field's voice"
     for text in (*prompts.INSTRUCTIONS.values(), *exec_prompts.INSTRUCTIONS.values()):
-        assert len(text) < 1200, "a role's instructions stay short"
+        assert text.endswith(voice), "every role speaks the field's language"
     def said(text):
         return " ".join(text.split())
 

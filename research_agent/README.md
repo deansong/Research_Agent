@@ -130,29 +130,41 @@ for a single run, copy it to `<run>/prompts/<same path>`; for all your runs,
 to a folder named by `RESEARCH_AGENT_PROMPTS`. The node window in the web UI
 shows the instructions a node actually gets.
 
-## Configuration: models and skills
+## Fields: skills and voice
 
-`research_agent/bootstrap/config.toml` holds the defaults, with comments:
+A run belongs to a research field, `nlp` by default (`--field`, or the New run
+dialog). A field is a folder, `research_agent/fields/<field>/`:
 
-```toml
-[skills]
-dir = "skills"                      # a folder of <name>/SKILL.md, from the repository root
-discussor = "auto"                  # shown every skill; reads the ones it needs
-orchestrator = ["research-orchestration"]
-researcher = ["research"]           # given these in full
-designer = "none"                   # designs from the brief; its message lists every skill for the nodes
+- `field.toml`: `skills`, the skills the run's team may use (the designer's
+  catalogue, and what a node can be given); `[roles]`, each built-in role's
+  skills by default. A role not listed gets none: **no node discovers skills
+  by itself** unless you set it to `auto`.
+- `prompts/`: overrides of any default prompt, and `voice.md`, added to every
+  role's instructions. NLP's tells the team to talk as ACL and EMNLP papers
+  do (dev/test split, ablation, macro-F1, seeds), not in words the field
+  rarely uses.
 
-[roles.researcher]
-provider = "antigravity"
-model = "gemini-3.8-flash-high"     # antigravity's ids carry the effort level
-```
+A new field is a new folder: its skill list, its roles' skills, its voice.
+
+| role (NLP) | skills by default |
+| --- | --- |
+| discussor, designer | none |
+| orchestrator | research-orchestration |
+| researcher | research |
+| reviewers | scientific-critical-thinking |
+| paper | acl-paper, ml-paper-writing |
+
+## Configuration: models
+
+`research_agent/bootstrap/config.toml` and `research_agent/execute/config.toml`
+hold the defaults, with comments:
 
 | role | default |
 | --- | --- |
-| discussor | claude_code, opus |
-| orchestrator | codex |
-| researcher | antigravity, gemini-3.8-flash-high |
-| designer | codex, high effort |
+| discussor, orchestrators (both stages) | codex, gpt-6.1-sol |
+| researcher (both stages) | antigravity, gemini-3.8-flash-high |
+| designer, reviewer | codex, gpt-6.1-terra, high effort |
+| worker, writer, validator, paper | codex, gpt-6.1-terra |
 
 A run copies what it starts with into `<run>/config.json`. Edit that file to
 change one run; it is read again on `--resume`. For one start, the command
@@ -161,7 +173,8 @@ line overrides both:
 ```
 --role designer=codex:gpt-5.6-sol:high     provider[:model[:effort]]; all=... for every role
 --skills designer=experiment-design,statistical-power
---skills discussor=none                    none, auto, or skill names
+--skills discussor=none                    none, auto (it reads what it needs), or names
+--field nlp                                the research field (a new run)
 --skills-dir ~/my_skills
 ```
 

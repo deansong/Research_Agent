@@ -18,12 +18,17 @@ from tests.scripted import script  # noqa: F401 -- fixture
 from tests.test_graph import say
 
 
-def test_the_defaults_come_from_config_toml():
-    cfg = config.defaults()
+def test_the_defaults_come_from_config_toml_and_the_field():
+    cfg = config.load()
+    assert cfg.field == "nlp"
     assert cfg.roles["researcher"] == config.RoleConfig("antigravity", "gemini-3.8-flash-high")
-    assert cfg.roles["designer"].effort == "high"
-    assert cfg.skills["discussor"] == "auto"
+    assert (cfg.roles["discussor"].model, cfg.roles["orchestrator"].model) == (
+        "gpt-6.1-sol", "gpt-6.1-sol")
+    assert (cfg.roles["designer"].model, cfg.roles["designer"].effort) == ("gpt-6.1-terra", "high")
+    # Assigned skills or none: no role discovers skills by default.
+    assert cfg.skills["discussor"] is None
     assert cfg.skills["orchestrator"] == ["research-orchestration"]
+    assert cfg.skills["researcher"] == ["research"]
     assert cfg.skills["designer"] is None
     assert cfg.skills_dir == config.REPOSITORY / "skills"
     assert set(cfg.roles) == set(config.ROLES) and set(cfg.skills) == set(config.NODES)
@@ -90,7 +95,7 @@ def test_the_command_line_choice_reaches_the_node(tmp_path, script, monkeypatch,
     cli.main(["bootstrap", "idea", "--run", str(tmp_path / "b"), "--role", "all=fake",
               "--skills", "discussor=statistical-power"])
     first, second = script.prompts("DiscussorOutput")
-    assert first.startswith("SKILLS YOU CAN USE"), "the default: auto"
+    assert first.startswith("=== THE USER SAYS"), "the default: no skills"
     assert second.startswith("SKILLS FOR THIS TASK") and "statistical-power" in second
     out = capsys.readouterr().out
     assert "Skills (" in out and "discussor=statistical-power" in out

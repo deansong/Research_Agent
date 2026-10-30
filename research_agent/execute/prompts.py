@@ -21,7 +21,7 @@ FILES = {"discussor": "discussor", "orchestrator": "orchestrator", "worker": "ow
 
 def instructions(run_dir=None) -> dict[str, str]:
     """Each role's instructions, as a run (its folder) has them."""
-    return {role: prompt_files.text(f"roles/execute/{name}", run_dir)
+    return {role: prompt_files.instructions(f"roles/execute/{name}", run_dir)
             for role, name in FILES.items()}
 
 
