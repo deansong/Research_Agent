@@ -283,3 +283,25 @@ def test_an_earlier_execution_s_jobs_and_outputs_are_set_aside(tmp_path):
     assert [j["id"] for j in jobs.records(tmp_path, "1")] == ["s1-004"], "this execution's only"
     assert (folder / "_earlier" / "s1-001.json").exists() and (folder / "_earlier" / "s1-001.log").exists()
     assert kept.stat().st_mode & 0o777 == 0o700, "only the run's owner reads what is kept"
+
+
+def test_the_discussor_sees_how_far_a_running_job_has_got(tmp_path):
+    # Run 1119: asked when step 2's job would finish, the discussor had only
+    # "Working now: step 2", and asked the team to report its progress.
+    out = tmp_path / "artifacts" / "step_02"
+    out.mkdir(parents=True)
+    (out / "prompts.jsonl").write_text("{}\n" * 2000)
+    (out / "responses.jsonl").write_text("{}\n" * 920)
+    job = jobs.launch(tmp_path, "2", "sleep 30", name="teacher_generation")
+    try:
+        seen = views.running_jobs(tmp_path)
+        assert f"{job['id']} (teacher_generation), step 2: running" in seen
+        assert "prompts.jsonl: 2000 lines" in seen and "responses.jsonl: 920 lines" in seen
+        assert "being written" not in seen.split("prompts.jsonl")[1].split("\n")[0], \
+            "files written before the job started are not its output"
+        brief = views.aside({"execution": {"steps": []}}, user="when will it finish?",
+                            activity="Working now: step 2", run_dir=str(tmp_path))
+        assert "RUNNING JOBS -- measured by code just now" in brief
+        assert "estimate it yourself" in brief
+    finally:
+        jobs.kill(tmp_path, job["id"])

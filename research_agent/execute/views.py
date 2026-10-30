@@ -85,10 +85,12 @@ def discussor_turn(st: dict, seen: dict, *, user: str = "", note: str = "",
 def aside(st: dict, *, user: str, activity: str, run_dir: str,
           budget: int | None = None) -> str:
     """The user writes while the team works: what is happening now, from code."""
+    running = running_jobs(Path(run_dir))
     parts = [_block("AN ASIDE -- the team is working; nothing waits for your answer",
                     prompt_files.text("notes/execute_aside", run_dir)),
              _block("THE USER SAYS", user),
              _block("WHAT IS HAPPENING NOW", activity),
+             *([_block("RUNNING JOBS -- measured by code just now", running)] if running else []),
              _block("THE STEP TABLE", S.render_within(st, ["execution"],
                                                      state_room(budget, [user, activity])))]
     status = st.get("status") or {}
@@ -97,6 +99,55 @@ def aside(st: dict, *, user: str, activity: str, run_dir: str,
     parts.append(_block("FILES", f"Everything is in {run_dir}: artifacts/step_NN/ (outputs), "
                                  f"work/ (code), jobs/ (logs), state/research.md"))
     return "\n\n".join(parts)
+
+
+def running_jobs(run_dir: Path, now: float | None = None) -> str:
+    """What the running jobs have done so far, measured: how long each has
+    run, its last log line, and its step's files -- lines, size, and how
+    recently each changed -- so how far along it is, and how long it has
+    left, can be worked out. Measured (run 1119): asked when a job would
+    finish, the discussor had only "Working now: step 2", said it could not
+    tell, and asked the team to report its progress."""
+    import time
+
+    now = now or time.time()
+    out = []
+    for job in J.records(run_dir):
+        state = J.status(job)
+        if state["state"] != "running":
+            continue
+        out.append(f"{job['id']} ({job.get('name') or job['step']}), step {job['step']}: "
+                   f"running {(now - job['started']) / 60:.1f} min since {job.get('started_at', '')}"
+                   + (f" on GPUs {', '.join(map(str, job['gpus']))}" if job.get("gpus") else "")
+                   + (f"\n  last log line: {tail[-300:]}" if (tail := _last_line(J.tail(job, 5)))
+                      else ""))
+        folder = Path(run_dir) / "artifacts" / folder_name(job["step"])
+        files = sorted((p for p in folder.rglob("*") if p.is_file()),
+                       key=lambda p: -p.stat().st_mtime)    # what is being written first
+        for p in files[:FILES]:
+            age = now - p.stat().st_mtime
+            out.append(f"  {p.relative_to(run_dir).as_posix()}: {_lines(p)}{_size(p)}, "
+                       f"changed {_ago(age)}"
+                       + (" -- being written" if age < 120 and p.stat().st_mtime > job["started"]
+                          else ""))
+    return "\n".join(out)
+
+
+def _last_line(text: str) -> str:
+    lines = [ln.strip() for ln in (text or "").replace("\r", "\n").splitlines() if ln.strip()]
+    return lines[-1] if lines else ""
+
+
+def _lines(p: Path) -> str:
+    """Its line count, for a text file small enough to count."""
+    if p.suffix not in (".jsonl", ".txt", ".csv", ".tsv", ".log") or p.stat().st_size > 200e6:
+        return ""
+    with open(p, "rb") as handle:
+        return f"{sum(1 for _ in handle)} lines, "
+
+
+def _ago(seconds: float) -> str:
+    return f"{seconds:.0f} s ago" if seconds < 120 else f"{seconds / 60:.0f} min ago"
 
 
 # ---- reviewer -----------------------------------------------------------------------------
