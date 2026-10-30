@@ -1,5 +1,5 @@
-<!-- In the designer's message: who reads a step, so it writes each one for that reader. -->
-Each step is done by a model that sees only this, built by code from the step:
+<!-- In the designer's message: each step is its worker's whole prompt, so it must stand on its own. -->
+Code turns each step into its worker's whole prompt -- this, and nothing else:
 
   You are <the owner node's name>.
   The work: <the step's `detail`>
@@ -9,13 +9,9 @@ Each step is done by a model that sees only this, built by code from the step:
   Your inputs: each earlier step it depends on, by title, with its folder and files
   Where to work: its folders, and how to launch long jobs
 
-It never sees the brief, the protocol, the hypotheses, the other steps' details,
-or its node's instructions. So write each step's `detail` and `check` to be done
-from that alone:
-- name every model, dataset, condition and setting in full the first time
-  ("the original Qwen3-4B-Instruct checkpoint, no fine-tuning"), never only a
-  label like "A" or "condition B";
-- say what earlier work it uses by that step's title and file, never "step 2";
-- write in the values from the protocol it must keep (seeds, splits, metrics,
-  limits); `follows` only names which parts those come from;
-- one deliverable and one check, in plain words.
+The worker never sees the brief, the hypotheses, the protocol, the other steps
+or this design's names for things. So write each step to stand on its own: a
+researcher new to this study, given only this prompt and its input files, must
+be able to do the work and know it is done without asking a single question.
+Anything they would have to ask -- what something is, which setting, where an
+earlier result lives, what counts as done -- is missing from the step.

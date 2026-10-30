@@ -249,7 +249,7 @@ def test_a_step_is_written_for_an_owner_that_sees_only_it(run, script, evidence,
     script.add("DesignOutput", bad, DESIGN)
     nodes.design(run, evidence, task="design it")
     first, retry = script.prompts("DesignOutput")
-    assert "WHAT EACH STEP'S OWNER WILL SEE" in first and "never only a" in first
+    assert "EVERY STEP IS A SELF-CONTAINED WORKER PROMPT" in first and "stand on its own" in first
     assert "step 2: its detail refers to 'step-1'" in retry
     assert "step 2: its detail names things by letter (A, B-D)" in retry
 
