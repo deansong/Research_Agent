@@ -244,9 +244,15 @@ def test_a_step_is_written_for_an_owner_that_sees_only_it(run, script, evidence,
     # never see step numbers or the other steps.
     monkeypatch.setattr(nodes.Run, "catalogue", lambda self: [("peft", "LoRA")])
     bad = {**DESIGN, "steps": [DESIGN["steps"][0],
-                               {**DESIGN["steps"][1], "detail": "train with the step-1 config"}]}
+                               {**DESIGN["steps"][1],
+                                "detail": "train B-D from A with the step-1 config"}]}
     script.add("DesignOutput", bad, DESIGN)
     nodes.design(run, evidence, task="design it")
     first, retry = script.prompts("DesignOutput")
     assert "WHAT EACH STEP'S OWNER WILL SEE" in first and "never only a" in first
     assert "step 2: its detail refers to 'step-1'" in retry
+    assert "step 2: its detail names things by letter (A, B-D)" in retry
+
+    script.add("DesignOutput", bad, bad)
+    nodes.design(run, evidence, task="again")
+    assert len(script.prompts("DesignOutput")) == 4, "sent back once: then it goes through"

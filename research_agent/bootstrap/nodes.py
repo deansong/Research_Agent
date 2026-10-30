@@ -280,14 +280,42 @@ def design_problems(design: dict, *, steps: list[str], rubric: set[str],
     return problems
 
 
+#: Things named by a bare letter: "A–E", "B-D", "condition C", "from A", "A's".
+LETTER_LABEL = re.compile(
+    r"\b[A-Z]\s*[–—-]\s*[A-Z]\b"                       # a range: A–E
+    r"|(?<![\w/])(?!I\b)[B-Z](?![\w/(])"                # a lone capital: C, D (not I)
+    r"|\bA(?=[’']s\b|\s*[,;:.)]|\s*$)"                 # A's, "from A,", "A."
+    # after a word like these, an article would be "a": a capital A is a name
+    r"|\b(?:from|than|of|to|and|with|on|over|versus|against|after|before|by|for|the)\s+A\b")
 #: "step 2", "steps 1-7", "step-2 config", "Steps 3–5": a step named by number.
 STEP_NUMBER = re.compile(r"\bsteps?[\s-]*\d+(?:\s*(?:[-–—,]|and|to)\s*\d+)*", re.I)
+
+
+def standalone_problems(steps) -> list[str]:
+    """Where a step's detail or check names what its owner cannot see: another
+    step by number, or a thing by a bare letter."""
+    problems = []
+    for s in steps:
+        for field, text in (("detail", s.detail), ("check", s.check)):
+            number = STEP_NUMBER.search(text or "")
+            if number:
+                problems.append(f"step {s.id}: its {field} refers to {number.group(0)!r}, but "
+                                f"its owner never sees step numbers: name that work by what "
+                                f"it produced")
+            letters = sorted({m.group(0).split()[-1] for m in LETTER_LABEL.finditer(text or "")})
+            if letters:
+                problems.append(f"step {s.id}: its {field} names things by letter "
+                                f"({', '.join(letters[:6])}); its owner never sees what they "
+                                f"stand for: name each in full (the model, the training, the "
+                                f"data), as in \"the supervised LoRA model\", not \"B\"")
+    return problems
 
 
 def design_check(st: dict, known_skills: set[str]):
     """What code requires of a design, given the state it was made from --
     a small function so it can be tested and reused."""
     evidence = _ids(st, "evidence")
+    standalone_once: list[bool] = []
 
     def check(out: schemas.DesignOutput) -> list[str]:
         problems = _unique("hypothesis", [h.id for h in out.hypotheses], "H")
@@ -305,12 +333,13 @@ def design_check(st: dict, known_skills: set[str]):
             r.assessed_at = re.sub(r"(?i)^\s*step\s*", "", r.assessed_at).strip()
         problems += [f"{r.id}: `assessed_at` is {r.assessed_at!r}, not a step id: give the one "
                      f"step that completes it" for r in out.rubric if r.assessed_at not in ids]
-        # Its owner sees earlier work by title and files, never by number.
-        problems += [f"step {s.id}: its {field} refers to {m.group(0)!r}, but its owner never "
-                     f"sees step numbers: name that work by what it produced"
-                     for s in out.steps for field, text in (("detail", s.detail),
-                                                             ("check", s.check))
-                     for m in [STEP_NUMBER.search(text or "")] if m]
+        # A step's owner sees only that step: what it names must make sense
+        # there. Sent back once, so a design that keeps them still goes on.
+        if not standalone_once:
+            alone = standalone_problems(out.steps)
+            if alone:
+                standalone_once.append(True)
+                problems += alone
         problems += design_problems({"nodes": [n.model_dump() for n in out.nodes]}, steps=ids,
                                     rubric=rubric, skills=known_skills)
         # New designs only: execution still accepts earlier ones.
