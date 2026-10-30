@@ -760,6 +760,9 @@ class RunHost:
             raise Busy("The run is already working.")
         self._pause.clear()
         self.error = ""
+        # Working now: not waiting for the user, whatever it was before.
+        self._status = {**self._status, "waiting": False, "outcome": "",
+                        "stopped_midway": False}
 
         def work():
             try:
