@@ -237,3 +237,16 @@ def test_the_researcher_is_never_sent_back_for_a_wrong_reference(run, script):
     assert st["evidence"][1]["claim"] == "Novelty: dual encoders now win"
     assert st["evidence"][1]["verified"] is None
     assert out.summary.endswith("(Kept, though filed under unknown ids: H1, Q5.)")
+
+
+def test_a_step_is_written_for_an_owner_that_sees_only_it(run, script, evidence, monkeypatch):
+    # Run 1119: steps said "using the step-2 config" and "B-D" to owners that
+    # never see step numbers or the other steps.
+    monkeypatch.setattr(nodes.Run, "catalogue", lambda self: [("peft", "LoRA")])
+    bad = {**DESIGN, "steps": [DESIGN["steps"][0],
+                               {**DESIGN["steps"][1], "detail": "train with the step-1 config"}]}
+    script.add("DesignOutput", bad, DESIGN)
+    nodes.design(run, evidence, task="design it")
+    first, retry = script.prompts("DesignOutput")
+    assert "WHAT EACH STEP'S OWNER WILL SEE" in first and "never only a" in first
+    assert "step 2: its detail refers to 'step-1'" in retry

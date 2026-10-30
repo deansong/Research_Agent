@@ -170,7 +170,7 @@ def brief_request(st: dict, *, task: str = "", budget: int | None = None,
     return "\n\n".join(parts)
 
 
-def designer(st: dict, *, task: str, skills: list[tuple[str, str]]) -> str:
+def designer(st: dict, *, task: str, skills: list[tuple[str, str]], run_dir=None) -> str:
     catalogue = "\n".join(f"- {name}: {description}" for name, description in skills)
     return "\n\n".join([
         f"Today is {_today()}.",
@@ -184,6 +184,8 @@ def designer(st: dict, *, task: str, skills: list[tuple[str, str]]) -> str:
              "protocol", "plan", "design", "risks", "reviews"])),
         _block("EVIDENCE (cite by id)", S.render(st, ["evidence"], brief=True)),
         _block("SKILLS YOU CAN GIVE A NODE", catalogue),
+        _block("WHAT EACH STEP'S OWNER WILL SEE -- write every step for this reader",
+               prompt_files.text("notes/step_reader", run_dir)),
         *([_block("THE LAST RUN", f"{previous}: its paper is {previous}/paper/main.pdf, its "
                                   f"files are there; the review above is of it.")]
           if (previous := (st.get("status") or {}).get("previous")) else []),

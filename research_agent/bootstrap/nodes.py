@@ -280,6 +280,10 @@ def design_problems(design: dict, *, steps: list[str], rubric: set[str],
     return problems
 
 
+#: "step 2", "steps 1-7", "step-2 config", "Steps 3–5": a step named by number.
+STEP_NUMBER = re.compile(r"\bsteps?[\s-]*\d+(?:\s*(?:[-–—,]|and|to)\s*\d+)*", re.I)
+
+
 def design_check(st: dict, known_skills: set[str]):
     """What code requires of a design, given the state it was made from --
     a small function so it can be tested and reused."""
@@ -301,6 +305,12 @@ def design_check(st: dict, known_skills: set[str]):
             r.assessed_at = re.sub(r"(?i)^\s*step\s*", "", r.assessed_at).strip()
         problems += [f"{r.id}: `assessed_at` is {r.assessed_at!r}, not a step id: give the one "
                      f"step that completes it" for r in out.rubric if r.assessed_at not in ids]
+        # Its owner sees earlier work by title and files, never by number.
+        problems += [f"step {s.id}: its {field} refers to {m.group(0)!r}, but its owner never "
+                     f"sees step numbers: name that work by what it produced"
+                     for s in out.steps for field, text in (("detail", s.detail),
+                                                             ("check", s.check))
+                     for m in [STEP_NUMBER.search(text or "")] if m]
         problems += design_problems({"nodes": [n.model_dump() for n in out.nodes]}, steps=ids,
                                     rubric=rubric, skills=known_skills)
         # New designs only: execution still accepts earlier ones.
@@ -318,7 +328,8 @@ def design(run: Run, st: dict, *, task: str) -> Outcome:
     together. It replaces the last one: what it leaves out goes."""
     catalogue = run.catalogue()
     check = design_check(st, {name for name, _ in catalogue})
-    out, session = run.call("designer", brief=views.designer(st, task=task, skills=catalogue),
+    out, session = run.call("designer", brief=views.designer(st, task=task, skills=catalogue,
+                                                            run_dir=run.folder),
                             schema=schemas.DesignOutput, check=check)
     ops = _replace(st, "hypotheses", [h.model_dump() for h in out.hypotheses])
     ops += _replace(st, "rubric", [r.model_dump() for r in out.rubric])

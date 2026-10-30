@@ -62,7 +62,7 @@ def preview(folder: Path, stage: str, node: str, step: str = "") -> dict:
         task = _later("the orchestrator's task for it")
         prompt = {"orchestrator": lambda: boot_views.orchestrator(st, requests=[]),
                   "researcher": lambda: boot_views.researcher(st, task=task),
-                  "designer": lambda: boot_views.designer(st, task=task,
+                  "designer": lambda: boot_views.designer(st, task=task, run_dir=folder,
                                                           skills=run.catalogue())}[node]()
         schema = {"orchestrator": boot_schemas.OrchestratorOutput,
                   "researcher": boot_schemas.ResearcherOutput,
