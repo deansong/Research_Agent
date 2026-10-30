@@ -22,7 +22,7 @@ from research_agent import state as S
 from research_agent.bootstrap.config import RoleConfig
 from research_agent.execute import config, jobs, nodes
 from research_agent.execute.session import Execution
-from tests.scripted import script  # noqa: F401 -- fixture
+from tests.scripted import READY, script  # noqa: F401 -- fixture
 
 PLAN = {"summary": "two steps", "steps": [
     {"id": "1", "title": "Data", "detail": "count rows", "check": "rows.json exists",
@@ -896,19 +896,28 @@ def test_the_paper_writer_gets_the_literature_and_its_references_are_checked(
     assert "noid is a paper with no eprint, doi or pmid" in problems[1]
 
 
-def test_a_step_whose_inputs_are_missing_does_not_start(run, script):
-    missing = {"ready": False, "missing": ["the dev split: the data step wrote only train"]}
-    script.add("ExecDecision", decide("run", "1"), decide("run", "1"))
-    script.add("DispatchOutput", missing, missing)
-    script.add("ExecDiscussorOutput", say("Step 1 cannot start: the dev split is missing."))
+def test_a_step_whose_earlier_work_is_missing_does_not_start(tmp_path, script):
+    plan = {"steps": [PLAN["steps"][0], {**PLAN["steps"][1], "gate": False}]}
+    folder = tmp_path / "run"
+    S.Store(folder).write(approved_state(plan=plan))
+    run = nodes.ExecRun(folder, {r: RoleConfig("fake") for r in (*config.ROLES, "discussor")},
+                        skills={}, limits=replace(config.defaults(), poll_seconds=0.05),
+                        quiet=True)
+    missing = {"ready": False, "missing": [{"what": "the dev split", "from_step": "1"}]}
+    script.add("ExecDecision", decide("run", "1"), decide("run", "2"), decide("run", "2"))
+    script.add("StepReport", done_writing(run, "1", "rows.json", "[1000]"))
+    script.add("Verdict", verdict())
+    script.add("DispatchOutput", READY, missing, missing)
+    script.add("ExecDiscussorOutput", say("Step 2 cannot start: the dev split is missing."))
     seen = []
     turn = Execution(run).start(on_step=lambda node, update: seen.append(node))
-    assert seen == ["orchestrator", "dispatch", "orchestrator", "dispatch", "discussor"]
-    assert not script.prompts("StepReport"), "its owner never ran"
-    again = script.prompts("ExecDecision")[1]
-    assert "step 1 was not started: its dispatch found missing:\n- the dev split" in again
+    assert seen[-5:] == ["orchestrator", "dispatch", "orchestrator", "dispatch", "discussor"]
+    assert len(script.prompts("StepReport")) == 1, "step 2's owner never ran"
+    again = script.prompts("ExecDecision")[2]
+    assert ("step 2 was not started: its dispatch found missing:\n- the dev split "
+            "(step 1's work)") in again
     told = script.prompts("ExecDiscussorOutput")[0]
-    assert "Step 1 cannot start" in told and "ask how to go on" in told
-    rec = nodes.records(Execution(run).research)["1"]
+    assert "Step 2 cannot start" in told and "redo that earlier step" in told
+    rec = nodes.records(Execution(run).research)["2"]
     assert rec["attempts"] == 0 and rec["status"] == "pending", "no attempt spent"
-    assert turn.reply.startswith("Step 1 cannot start")
+    assert turn.reply.startswith("Step 2 cannot start")

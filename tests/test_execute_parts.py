@@ -198,9 +198,11 @@ def test_a_step_starts_only_with_its_inputs_checked_and_its_context_written(tmp_
     (tmp_path / "artifacts" / "step_01").mkdir(parents=True)
     (tmp_path / "artifacts" / "step_01" / "train.jsonl").write_text("{}\n")
     bad = {"ready": True, "inputs": [{"path": "artifacts/03_data/train.jsonl", "holds": "x"}],
-           "context": "go", "missing": ["dev split"]}
+           "context": "go", "missing": [{"what": "dev split", "from_step": "1"},
+                                        {"what": "the Qwen tokenizer", "from_step": ""}]}
     good = {"ready": True, "context": "Train with seeds 17, 29 and 43, as the protocol fixes.",
-            "inputs": [{"path": "artifacts/step_01/train.jsonl", "holds": "the training split"}]}
+            "inputs": [{"path": "artifacts/step_01/train.jsonl", "holds": "the training split"}],
+            "obtain": ["Qwen/Qwen3-4B-Instruct-2507's tokenizer, from Hugging Face"]}
     script.add("DispatchOutput", bad, good)
     node = {"name": "trainer", "role": "worker"}
     out = nodes.dispatch(run, st, node=node, step=nodes.plan_step(st, "2"), note="first run")
@@ -208,13 +210,17 @@ def test_a_step_starts_only_with_its_inputs_checked_and_its_context_written(tmp_
     assert "artifacts/step_01/train.jsonl" in first, "the files there now, listed by code"
     assert "Seeds: 17, 29, 43" in first and "THE ORCHESTRATOR'S NOTE ===\nfirst run" in first
     for expected in ("input artifacts/03_data/train.jsonl does not exist",
-                     "ready, but `missing` lists", "the step follows seeds"):
+                     "ready, but `missing` lists", "the step follows seeds",
+                     "missing 'the Qwen tokenizer': (no step) is not an earlier step",
+                     "put it in `obtain`"):
         assert expected in retry
     assert out.data.ready and out.data.inputs[0].path == "artifacts/step_01/train.jsonl"
 
     brief = views.owner(st, node=node, step=nodes.plan_step(st, "2"), task="use bf16",
                         paths=run.paths("2"), jobs_command="jobs",
-                        dispatch={"inputs": good["inputs"], "context": good["context"]})
+                        dispatch={"inputs": good["inputs"], "context": good["context"],
+                                  "obtain": good["obtain"]})
+    assert "TO OBTAIN" in brief and "- Qwen/Qwen3-4B-Instruct-2507's tokenizer" in brief
     assert "checked to exist before you started ===\n- artifacts/step_01/train.jsonl: the " \
            "training split" in brief
     assert "seeds 17, 29 and 43" in brief and "From the orchestrator: use bf16" in brief
@@ -247,6 +253,7 @@ def test_code_keeps_the_execution_start_and_tells_the_dispatch_the_owner_can_wri
                    step=nodes.plan_step(st, "1"))
     brief = script.prompts("DispatchOutput")[0]
     assert "Its owner runs with full access" in brief and "execution_start.json" in brief
+    assert "downloads datasets, models and packages itself" in brief
     owner = views.owner(st, node={"name": "prep", "role": "worker"},
                         step=nodes.plan_step(st, "1"), task="", paths=run.paths("1"),
                         jobs_command="jobs")

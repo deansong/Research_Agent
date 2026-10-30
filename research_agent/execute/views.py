@@ -303,6 +303,11 @@ def owner(st: dict, *, node: dict, step: dict, task: str, paths: dict, jobs_comm
         parts.append(_block("THE LAST ATTEMPT FAILED -- do it differently", "\n".join(
             [previous.get("verdict", "")] + [f"- {p}" for p in previous.get("problems") or []])))
     earlier = upstream(st, step, paths, every=node["role"] == "writer")
+    obtain = (dispatch or {}).get("obtain") or []
+    if obtain:
+        parts.append(_block("TO OBTAIN -- not on this machine yet: get each from its official "
+                            "source, and say in your report where it came from",
+                            "\n".join(f"- {o}" for o in obtain)))
     exact = dispatched({"dispatch": dispatch or {}})
     if exact:
         parts.append(_block("YOUR INPUTS -- the files you read, checked to exist before you "
@@ -407,7 +412,8 @@ def dispatch(st: dict, *, node: dict, step: dict, note: str, paths: dict,
         parts.append(_block("THE ORCHESTRATOR'S NOTE", note.strip()))
     parts.append(_block("WHERE IT WILL WORK -- its owner, not you", "\n".join([
         f"Its owner runs with full access: it writes files, runs commands, uses the "
-        f"GPUs and the network. You are read-only; that is only you.",
+        f"GPUs and the network -- it downloads datasets, models and packages itself. "
+        f"You are read-only, with no network; that is only you.",
         f"The run folder: {paths['run']} (paths may be relative to it)",
         f"Its outputs folder: {paths['artifacts']}",
         f"The code folder: {paths['work']}",

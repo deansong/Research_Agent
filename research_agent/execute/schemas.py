@@ -45,6 +45,12 @@ class InputIn(BaseModel):
     """What it holds, and what the step takes from it."""
 
 
+class MissingIn(BaseModel):
+    what: str
+    from_step: str
+    """The id of the earlier step that should have produced it."""
+
+
 class DispatchOutput(BaseModel):
     ready: bool
     """True: everything the step needs is there, and named below. False: it
@@ -55,9 +61,13 @@ class DispatchOutput(BaseModel):
     """What its owner needs that its step does not say: the names the step
     uses, the values and protocol details it must keep, the user's decisions
     that bear on it, for a retry what to do differently. "" if nothing."""
-    missing: list[str] = Field(default_factory=list, max_length=12)
-    """What the step needs that is not there (not ready), each with where it
-    should have come from."""
+    obtain: list[str] = Field(default_factory=list, max_length=12)
+    """Outside resources it needs that are not here yet -- a dataset, model
+    weights, a tokenizer, a package: what, from which official source, and
+    where to put it. Its owner gets them (it has the network): not missing."""
+    missing: list[MissingIn] = Field(default_factory=list, max_length=12)
+    """What an earlier step of this plan should have produced and did not
+    (not ready)."""
 
 
 # ---- a step's owner (worker, writer) ----------------------------------------------

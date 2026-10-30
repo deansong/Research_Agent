@@ -366,13 +366,13 @@ def build(run: nodes.ExecRun, design: nodes.Design, checkpointer=None):
         blocked = dict(state.get("blocked") or {})
         if not got.ready:
             blocked[sid] = blocked.get(sid, 0) + 1
-            missing = "".join(f"\n- {m}" for m in got.missing)
+            missing = "".join(f"\n- {m.what} (step {m.from_step}'s work)" for m in got.missing)
             last = f"step {sid} was not started: its dispatch found missing:{missing}"
             if blocked[sid] >= 2:
                 # Twice in a row: what to do about it is the user's.
-                note = (f"Step {sid} cannot start: what it needs is not there.{missing}\n"
-                        f"Tell the user, and ask how to go on (redo the earlier work, change "
-                        f"the step, or provide it).")
+                note = (f"Step {sid} cannot start: earlier work it needs is not there."
+                        f"{missing}\nTell the user, and ask how to go on (redo that earlier "
+                        f"step, change the step, or provide it).")
                 return {"research": st, "last": last, "blocked": blocked, "note": note,
                         "_to": "discussor",
                         "decision": {"action": "ask_user", "step": sid, "reason": last}}
@@ -385,7 +385,7 @@ def build(run: nodes.ExecRun, design: nodes.Design, checkpointer=None):
             problems=rec.get("problems", []) if d.get("action") == "retry" else [],
             sessions=rec.get("sessions", []) + [nodes._session(sid, attempt)],
             dispatch={"inputs": [i.model_dump() for i in got.inputs],
-                      "context": got.context})], "execution")
+                      "context": got.context, "obtain": list(got.obtain)})], "execution")
         return {"research": st, "blocked": blocked, "wake": [], "report": {},
                 "_to": design.owner_of[sid]}
 

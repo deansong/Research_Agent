@@ -662,10 +662,20 @@ def dispatch(run: ExecRun, st: dict, *, node: dict, step: dict, note: str = "") 
     """The check before `step` runs: Outcome.data is a DispatchOutput."""
     rec = records(st)[step["id"]]
     follows = step.get("follows") or []
+    earlier = views._ancestors(st, step["id"])
 
     def check(out: schemas.DispatchOutput) -> list[str]:
         problems = [f"input {i.path} does not exist (paths are absolute, or relative to "
-                    f"{run.folder})" for i in out.inputs if not _exists(run, i.path)]
+                    f"{run.folder}): if it is an outside resource its owner gets, put it "
+                    f"in `obtain`" for i in out.inputs if not _exists(run, i.path)]
+        # Only an earlier step's work can be missing: measured (run 1119), a
+        # dispatch with no network held step 1 for GoEmotions' official
+        # splits and a Qwen tokenizer -- downloads that are the step's own
+        # work -- and handed them to an "execution setup" that does not exist.
+        problems += [f"missing {m.what!r}: {m.from_step or '(no step)'} is not an earlier step "
+                     f"it depends on ({', '.join(earlier) or 'it depends on none'}). An outside "
+                     f"resource -- data, weights, a tokenizer, a package -- is its owner's to "
+                     f"get: put it in `obtain`" for m in out.missing if m.from_step not in earlier]
         if out.ready and out.missing:
             problems.append("ready, but `missing` lists what is not there: either it is not "
                             "ready, or nothing is missing")
@@ -688,8 +698,9 @@ def dispatch(run: ExecRun, st: dict, *, node: dict, step: dict, note: str = "") 
                             access="read_only", workdir=run.folder,
                             session=run.next_name("dispatch"),
                             label=f"orchestrator (dispatch, step {step['id']})", check=check)
-    summary = (f"step {step['id']} dispatched: {len(out.inputs)} inputs" if out.ready else
-               f"step {step['id']} not dispatched -- missing: " + "; ".join(out.missing))
+    summary = (f"step {step['id']} dispatched: {len(out.inputs)} inputs, {len(out.obtain)} to "
+               f"obtain" if out.ready else f"step {step['id']} not dispatched -- missing: "
+               + "; ".join(f"{m.what} (step {m.from_step})" for m in out.missing))
     ops = [{"op": "add", "section": "results", "value": {
         "node": "orchestrator", "job": f"dispatch step {step['id']}",
         "asked": step["title"][:500], "summary": summary[:1500], "session": session}}]
