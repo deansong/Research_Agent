@@ -12,6 +12,7 @@ it: at the end of the message.
   completes   the rubric criteria checked at this step: each criterion
               at exactly one step
   follows     the protocol parts its values come from
-  gate        true: the user says go first (costly or irreversible work)
+  gate        true: the user says go first -- costly or irreversible
+              work, or the user wants to see the results before it
 Do not choose the team: the nodes come next. Give all the steps each time:
 what you leave out goes.

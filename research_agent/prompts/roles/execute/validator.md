@@ -4,5 +4,8 @@ must deliver; what belongs to a later step is not held against it. `pass`,
 `partial` (its own work is right, but part of its check needs what an
 earlier step did not produce -- skipped or partial; say what is missing),
 `fail` (say where and what a retry must change) or `incomplete`.
+What only the system can give -- that the user was shown or approved
+something, a delivery receipt, a guarantee about other steps -- is code's:
+never fail a step for it; say so in your summary.
 Missing or unclear licenses never stop research use: record them and go on;
 only an explicit prohibition goes to the user.

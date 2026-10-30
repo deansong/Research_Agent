@@ -17,8 +17,13 @@ The folders are real, so name files in them:
   the run folder     $run
   when the execution started, and the user's go that started it:
                      $run/execution/execution_start.json (code writes it)
-Approval, the go, budgets and time limits, the orchestrator and the validator
-are code's: a step neither checks nor records them.
+Approval, the go, budgets and time limits, the orchestrator, the validator --
+and showing the user a step's results -- are code's: a step neither checks nor
+records them. A step's check is about its own files: never a message, a
+delivery, a receipt, an approval or a guarantee that only the system or
+someone else could give. When the user wants to see results before the work
+goes on, set `gate` on the next step: code stops there, and the discussor
+shows them the results and waits for their go.
 
 So the step's `detail` must give its subagent, written in:
 - what to do, and in a sentence why the study needs it;

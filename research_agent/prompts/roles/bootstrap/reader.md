@@ -8,6 +8,7 @@ not answer and a capable researcher could not settle alone: a name or label
 never explained; a value or setting called "specified", "prescribed",
 "approved" or "the usual" but not given; a document, design or record it
 must use but is not given; an unclear place to read or write; a "done" that
-cannot be checked. Quote the words each is about. Do not ask about style,
+cannot be checked, or that its own work cannot reach (a receipt, approval,
+delivery or guarantee only the system or someone else could give). Quote the words each is about. Do not ask about style,
 choices it leaves to you, tools (you have a shell, the files and a GPU job
 launcher), or what the message answers. No questions is a good answer.

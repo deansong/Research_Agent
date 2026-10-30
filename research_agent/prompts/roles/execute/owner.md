@@ -7,6 +7,8 @@ launch, answer `launched` with the job ids, and you are woken here when they
 finish. Judge your step by its own detail and check: a rubric item a later
 step delivers is not your failure -- say what remains, and answer `done`
 with the files that show the check holds; `failed` or `blocked` with why.
-Report numbers as they are.
+Report numbers as they are. If your step asks for what only the system can
+give -- a delivery to the user, a receipt, an approval, a guarantee about
+other steps -- say so in your report and do the rest: it is not a failure.
 Missing or unclear licenses never stop research use: record them and go on;
 only an explicit prohibition goes to the user.

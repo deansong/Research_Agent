@@ -305,3 +305,20 @@ def test_the_discussor_sees_how_far_a_running_job_has_got(tmp_path):
         assert "estimate it yourself" in brief
     finally:
         jobs.kill(tmp_path, job["id"])
+
+
+def test_what_only_the_system_can_give_is_never_a_step_s_to_deliver():
+    # Run 1119: D12 ("report results after each experiment before the next")
+    # became a delivery receipt in 11 steps' checks -- which nothing makes --
+    # and every one of those steps failed on it, while none had a gate.
+    from research_agent import prompt_files
+
+    def said(name):
+        return " ".join(prompt_files.text(name).split())
+
+    assert "set `gate` on the next step" in said("notes/step_reader")
+    assert "never a message, a delivery, a receipt" in said("notes/step_reader")
+    assert "the user wants to see the results before it" in said("roles/bootstrap/planner")
+    assert "a receipt, approval, delivery or guarantee" in said("roles/bootstrap/reader")
+    assert "never fail a step for it" in said("roles/execute/validator")
+    assert "it is not a failure" in said("roles/execute/owner")
