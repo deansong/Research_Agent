@@ -704,9 +704,13 @@ def _graph(st: dict, stage: str) -> dict:
     edges = [("human", "discussor", ""), ("discussor", "human", ""),
              ("discussor", "orchestrator", "request / go"), ("orchestrator", "discussor", "ask")]
     if stage == "bootstrap":
-        for name, label in (("researcher", "research"), ("designer", "design")):
-            nodes.append({"id": name, "label": name, "kind": "worker"})
-            edges += [("orchestrator", name, label), (name, "orchestrator", "")]
+        for name, detail in (("researcher", "the literature"),
+                             ("planner", "the study, then the steps"),
+                             ("designer", "the team")):
+            nodes.append({"id": name, "label": name, "kind": "worker", "detail": detail})
+        edges += [("orchestrator", "researcher", "research"), ("researcher", "orchestrator", ""),
+                  ("orchestrator", "planner", "design"), ("planner", "designer", "steps"),
+                  ("orchestrator", "designer", "team only"), ("designer", "orchestrator", "")]
         return {"stage": stage, "nodes": nodes,
                 "edges": [{"source": a, "target": b, "label": c} for a, b, c in edges]}
     records = {r["id"]: r for r in (st.get("execution") or {}).get("steps") or []}

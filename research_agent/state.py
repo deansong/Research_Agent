@@ -123,6 +123,9 @@ class Step(BaseModel):
     follows: list[str] = Field(default_factory=list)
     """The parts of the protocol and constraints this step's work must
     follow (RULES): its owner is given those, not the rest."""
+    kind: str = ""
+    """Who does it: a worker, researcher or writer ("" in plans made before
+    the planner said)."""
 
 
 #: What a step can follow: the protocol's parts, then the constraints'.

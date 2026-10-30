@@ -25,6 +25,8 @@ def test_the_defaults_come_from_config_toml_and_the_field():
     assert (cfg.roles["discussor"].model, cfg.roles["orchestrator"].model) == (
         "gpt-6.1-sol", "gpt-6.1-sol")
     assert (cfg.roles["designer"].model, cfg.roles["designer"].effort) == ("gpt-6.1-terra", "high")
+    assert (cfg.roles["planner"].model, cfg.roles["planner"].effort) == ("gpt-6.1-terra", "high")
+    assert cfg.reader == config.RoleConfig("codex", "gpt-6.1-terra", "low")
     # Assigned skills or none: no role discovers skills by default.
     assert cfg.skills["discussor"] is None
     assert cfg.skills["orchestrator"] == ["research-orchestration"]
@@ -51,12 +53,13 @@ def test_a_run_s_file_then_the_command_line_win(tmp_path):
     assert {str(c) for c in every.roles.values()} == {"claude_code:opus"}
 
 
-def test_an_older_run_s_planner_settings_are_left_out(tmp_path):
+def test_an_older_run_s_planner_jobs_are_left_out_and_its_planner_kept(tmp_path):
     (tmp_path / "config.json").write_text(json.dumps({
-        "roles": {"planner": {"provider": "codex", "effort": "high"}},
+        "roles": {"planner": {"provider": "claude_code", "effort": "high"}},
         "skills": {"planner_plan": ["experiment-design"], "planner_hypothesize": "none"}}))
     cfg = config.load(tmp_path)
-    assert "planner" not in cfg.roles and "planner_plan" not in cfg.skills
+    assert cfg.roles["planner"].provider == "claude_code", "the planner is a role again"
+    assert "planner_plan" not in cfg.skills and "planner_hypothesize" not in cfg.skills
 
 
 def test_what_a_run_saves_is_what_it_reads_back(tmp_path):
@@ -76,7 +79,7 @@ def test_what_a_run_saves_is_what_it_reads_back(tmp_path):
 
 def test_mistakes_are_named(tmp_path):
     for kwargs, message in (
-            ({"skills": ["planner=auto"]}, "No node 'planner'"),
+            ({"skills": ["chef=auto"]}, "No node 'chef'"),
             ({"skills": ["designer=nope"]}, "designer: no skill called 'nope'"),
             ({"skills": ["designer"]}, "--skills takes node="),
             ({"roles": ["chef=codex"]}, "No role 'chef'"),

@@ -17,20 +17,28 @@ python -m research_agent bootstrap --from ~/research_runs/20261024-0930-does-lor
 | **discussor** | yes, the only one | yes: the whole chat, for the whole run | your words, and what changed in the research state since it last spoke |
 | **orchestrator** | no | no: a new conversation each call | the research state, the requests the discussor passed on, the last result |
 | **researcher** | no | no | the goal, constraints, its questions, the hypotheses and the evidence already found |
-| **designer** | no | no | **the brief you approved**, goal, constraints, assumptions, decisions, evidence (one line each), the current design (hypotheses, rubric, protocol, steps, nodes), reviews, the skills catalogue (to choose for nodes; no skills of its own) |
+| **planner**, the study | no | no | **the brief you approved**, goal, constraints, assumptions, decisions, the current hypotheses, rubric and protocol, reviews, evidence (one line each) |
+| **planner**, the steps | no | no | the brief, **the study it just wrote** (hypotheses, rubric, protocol), goal, constraints, assumptions, decisions, reviews, the current steps, and what each step's subagent will be told |
+| **designer**, the team | no | no | **the steps** (title, kind, order, criteria, detail), the rubric, the constraints, the current team, the skills catalogue (to choose for nodes) |
 
 Before anything is designed, you and the discussor agree a **brief**. Once the
 research is in, the orchestrator hands the discussor everything the team
 found -- the researcher's reports, its answers, the evidence. The discussor
 explains it in general terms and drafts the brief: what to build or test, the
 scope, the main choices. You revise it in conversation and approve it, and
-only then does the designer design, from that brief. The researcher's full
-report goes to the discussor, not the designer.
+only then is the design made, from that brief. The researcher's full report
+goes to the discussor, not the planner.
 
-The designer writes the whole design in one call -- hypotheses (none for a
-pure build), rubric, protocol, the steps, and the nodes that carry them out --
-so the study and the agent are thought out together. Each revision gives the
-whole design again; what it leaves out goes.
+The design is three calls, run back to back, each with one job and its own
+prompt: the **planner** writes the study -- hypotheses (none for a pure build),
+rubric and protocol -- then, from it, the steps; the **designer** chooses the
+team of nodes that carries the steps out. Each step is written as a subagent's
+whole context, and a fast **reader** model, given only that context, lists
+what it would have to ask; its questions send the steps back
+(`[design] reader` in `bootstrap/config.toml`). You approve the whole design
+once. A change starts at the part it touches and redoes the parts after it:
+a change to the team alone goes straight to the designer. Each part, revised,
+is given whole; what it leaves out goes.
 
 Every role's standing instructions are short (under 1,200 characters): who it
 is, what it owns, and the few facts code relies on. The models are trusted to
@@ -148,7 +156,7 @@ A new field is a new folder: its skill list, its roles' skills, its voice.
 
 | role (NLP) | skills by default |
 | --- | --- |
-| discussor, designer | none |
+| discussor, planner, designer | none |
 | orchestrator | research-orchestration |
 | researcher | research |
 | reviewers | scientific-critical-thinking |
@@ -163,7 +171,8 @@ hold the defaults, with comments:
 | --- | --- |
 | discussor, orchestrators (both stages) | codex, gpt-6.1-sol |
 | researcher (both stages) | antigravity, gemini-3.8-flash-high |
-| designer, reviewer | codex, gpt-6.1-terra, high effort |
+| planner, designer, reviewer | codex, gpt-6.1-terra, high effort |
+| reader (the design's) | codex, gpt-6.1-terra, low effort |
 | worker, writer, validator, paper | codex, gpt-6.1-terra |
 
 A run copies what it starts with into `<run>/config.json`. Edit that file to

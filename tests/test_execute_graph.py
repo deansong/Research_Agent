@@ -507,7 +507,8 @@ def test_the_rules_for_research_use_and_the_user_s_decisions():
 
     for text in (exe.OWNER, exe.VALIDATOR, exe.ORCHESTRATOR):
         assert "never stop research use" in " ".join(text.split())
-    assert set(boot.INSTRUCTIONS) == {"discussor", "orchestrator", "researcher", "designer"}
+    assert set(boot.INSTRUCTIONS) == {"discussor", "orchestrator", "researcher", "planner",
+                                      "designer"}
 
 
 def test_autopilot_answers_a_stop_the_orchestrator_chose_but_not_the_users(run, script):

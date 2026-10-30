@@ -278,7 +278,7 @@ async function drawPreview(step) {
   head.append(pill("next call · not sent yet", "warn"), el("b", { text: ` ${p.label}` }),
     el("span", { class: "dim small", text: ` · ${p.runs_on}` }),
     (p.steps || []).length > 1 ? el("select", { class: "paper-pick", onchange: (e) => drawPreview(e.target.value) },
-      p.steps.map((s) => el("option", { value: s, text: `step ${s}`, selected: s === p.step }))) : null,
+      p.steps.map((s) => el("option", { value: s, text: /^\d+$/.test(s) ? `step ${s}` : s, selected: s === p.step }))) : null,
     el("button", { class: "btn tiny", text: "refresh", onclick: () => drawPreview(view.previewStep) }));
   const turn = { turn: 1, prompt: p.prompt, sent: p.sent };
   clear(stream).append(...(p.notes || []).map((n) => el("div", { class: "dim small wire-note", text: n })),

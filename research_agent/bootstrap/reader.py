@@ -8,7 +8,7 @@ WHY:   A step is its subagent's whole context. Code can catch a letter or a
        prescribed evaluations", or a step asked to copy a design its subagent
        never sees (run 1119, designer-006).
 CONCEPT: The context is built by the execution's own builder (execute/views.
-       owner) from the design as it would be approved, without what the
+       owner) from the planned steps as they would be approved, without what the
        orchestrator adds at run time: a step must stand without it. Its inputs
        are the earlier steps' folders, each with what that step is to
        deliver. One call per step, in parallel, with no tools (it must not go
@@ -35,16 +35,15 @@ AT_ONCE = 6
 KEEP = 5
 
 
-def contexts(run, st: dict, out: schemas.DesignOutput) -> dict[str, str]:
-    """Each step's subagent context, as code would build it from this design."""
+def contexts(run, st: dict, *, steps: list[dict], rubric: list[dict],
+             owners: dict[str, dict]) -> dict[str, str]:
+    """Each step's subagent context, as code would build it from these steps
+    (the state's form: `rubric` the criteria each completes), the rubric and
+    the owners ({step: node}); a step with no owner yet is its `kind`."""
     from research_agent.execute import config as exec_config
     from research_agent.execute import jobs, views as exec_views
 
-    steps = [{**s.model_dump(), "rubric": [r.id for r in out.rubric if r.assessed_at == s.id]}
-             for s in out.steps]
-    seen = {**st, "rubric": [r.model_dump() for r in out.rubric],
-            "hypotheses": [{"status": "proposed", **h.model_dump()} for h in out.hypotheses],
-            "plan": {"summary": out.summary, "steps": steps},
+    seen = {**st, "rubric": rubric, "plan": {"steps": steps},
             # Not run yet: each earlier step shows what it is to deliver, where
             # its report and files will be.
             "execution": {"steps": [{"id": s["id"], "status": "pass",
@@ -54,10 +53,10 @@ def contexts(run, st: dict, out: schemas.DesignOutput) -> dict[str, str]:
         python = exec_config.load(run.folder).python
     except Exception:  # noqa: BLE001 -- a context without it still reads
         python = None
-    owners = {sid: n.model_dump() for n in out.nodes for sid in n.steps}
     found = {}
     for step in steps:
-        node = owners.get(step["id"]) or {"name": "the worker", "role": "worker"}
+        kind = step.get("kind") or "worker"
+        node = owners.get(step["id"]) or {"name": f"the {kind} for this step", "role": kind}
         paths = {"run": str(run.folder), "work": str(run.folder / "work"),
                  "artifacts": str(run.folder / "artifacts" / exec_views.folder_name(step["id"])),
                  "python": python}
@@ -67,11 +66,12 @@ def contexts(run, st: dict, out: schemas.DesignOutput) -> dict[str, str]:
     return found
 
 
-def read(run, st: dict, out: schemas.DesignOutput) -> dict[str, list[str]]:
+def read(run, st: dict, *, steps: list[dict], rubric: list[dict],
+         owners: dict[str, dict]) -> dict[str, list[str]]:
     """{step id: the questions its subagent would have to ask}."""
     from research_agent.bootstrap import config
 
-    found = contexts(run, st, out)
+    found = contexts(run, st, steps=steps, rubric=rubric, owners=owners)
     if ROLE not in run.roles:
         spec = config.load(run.folder).reader or run.roles["designer"]
         run.roles = {**run.roles, ROLE: spec}
@@ -83,7 +83,7 @@ def read(run, st: dict, out: schemas.DesignOutput) -> dict[str, list[str]]:
             data, _ = run.call(ROLE, brief=found[sid], schema=schemas.ReaderOutput, skills=None,
                                instructions=instructions, access="none",
                                session=f"reader-{first + n:03d}",
-                               label=f"designer (reader, step {sid})")
+                               label=f"planner (reader, step {sid})")
         except RB.BackendCancelled:
             raise
         except RB.BackendError as exc:

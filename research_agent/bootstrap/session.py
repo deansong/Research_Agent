@@ -23,7 +23,7 @@ from research_agent.bootstrap import graph, nodes
 
 THREAD = {"configurable": {"thread_id": "bootstrap"}, "recursion_limit": 200}
 #: The nodes a rewind can go back to just before.
-POINTS = {"designer", "researcher", "human"}
+POINTS = {"planner", "designer", "researcher", "human"}
 
 
 @dataclass

@@ -37,7 +37,8 @@ def test_the_discussor_keeps_one_conversation_and_records_what_the_user_settled(
     st = S.new()
     turn = nodes.discussor(run, st, seen={}, user="I want to study LoRA rank")
     assert turn.reply == "What GPU budget do you have?"
-    assert turn.requests == [{"kind": "research", "detail": "Find LoRA baselines on SST-2"}]
+    assert turn.requests == [{"kind": "research", "detail": "Find LoRA baselines on SST-2",
+                              "redo": ""}]
     st = _apply(st, turn, "discussor")
     assert st["goal"]["question"] == "Does LoRA rank matter?"
     assert st["constraints"]["compute"] == "1 A100"
@@ -97,17 +98,19 @@ NODES = [{"name": "orchestrator", "role": "orchestrator", "instructions": "run i
          {"name": "trainer", "role": "worker", "steps": ["1", "2"], "access": "write",
           "skills": ["peft"], "instructions": "train"},
          {"name": "validator", "role": "validator", "instructions": "check"}]
-DESIGN = {"summary": "two steps, three nodes", "hypotheses": [
+STUDY = {"summary": "one hypothesis", "hypotheses": [
     {"id": "H1", "plain": "Higher LoRA rank helps on small data.", "statement": "Rank matters",
      "prediction": "r=64 beats r=4 by >=1 F1", "evidence": ["E1"]}],
     "rubric": [{"id": "R1", "criterion": "Effect size", "measure": "F1 difference",
-                "threshold": ">=1", "assessed_at": "2"}],
+                "threshold": ">=1"}],
     "protocol": {"baselines": ["full fine-tuning"], "metrics": ["F1"],
-                 "statistics": "paired t-test", "seeds": "5 seeds"},
-    "steps": [{"id": "1", "title": "Data", "detail": "load SST-2", "check": "rows counted"},
-              {"id": "2", "title": "Train", "detail": "ranks 4..64", "check": "F1 logged",
-               "depends_on": ["1"], "gate": True}],
-    "nodes": NODES}
+                 "statistics": "paired t-test", "seeds": "5 seeds"}}
+PLAN = {"summary": "two steps", "steps": [
+    {"id": "1", "title": "Data", "detail": "load SST-2", "check": "rows counted",
+     "kind": "worker"},
+    {"id": "2", "title": "Train", "detail": "ranks 4..64", "check": "F1 logged",
+     "depends_on": ["1"], "gate": True, "kind": "worker", "completes": ["R1"]}]}
+TEAM = {"summary": "three nodes", "nodes": NODES}
 
 
 @pytest.fixture
@@ -116,86 +119,130 @@ def evidence():
         "claim": "c", "source": "s"}}]), "x")
 
 
-def test_the_designer_writes_the_whole_design_in_one_call(run, script, evidence, monkeypatch):
+@pytest.fixture
+def catalogue(monkeypatch):
     monkeypatch.setattr(nodes.Run, "catalogue", lambda self: [("peft", "LoRA")])
-    script.add("DesignOutput", {**DESIGN, "rubric": [{**DESIGN["rubric"][0],
-                                                     "assessed_at": "Step 2"}]})
-    out = nodes.design(run, evidence, task="design it")
-    assert len(script.prompts("DesignOutput")) == 1, '"Step 2" is taken as "2"'
-    st = _apply(evidence, out, "designer")
-    assert st["hypotheses"][0]["id"] == "H1" and st["rubric"][0]["id"] == "R1"
-    assert st["protocol"]["statistics"] == "paired t-test"
+
+
+def designed(run, st, task="design it", start="study"):
+    """The design's parts from `start`, each applied before the next reads it."""
+    return nodes.redesign(run, st, task=task, start=start,
+                          commit=lambda st, out, part: _apply(st, out, part))
+
+
+def test_the_planner_writes_the_study_then_the_steps_and_the_designer_the_team(
+        run, script, evidence, catalogue):
+    script.add("StudyOutput", STUDY).add("PlanOutput", PLAN).add("TeamOutput", TEAM)
+    st, outs = designed(run, evidence)
+    assert [c["schema"] for c in script.calls if c["schema"] != "ReaderOutput"] == [
+        "StudyOutput", "PlanOutput", "TeamOutput"], "three calls, one job each"
+    assert st["hypotheses"][0]["id"] == "H1" and st["protocol"]["statistics"] == "paired t-test"
     assert [s["id"] for s in st["plan"]["steps"]] == ["1", "2"] and st["plan"]["steps"][1]["gate"]
     assert [s["rubric"] for s in st["plan"]["steps"]] == [[], ["R1"]], \
         "a criterion is checked at the one step that completes it"
+    assert st["rubric"][0]["assessed_at"] == "2"
     assert [n["name"] for n in st["design"]["nodes"]] == ["orchestrator", "trainer", "validator"]
-    assert out.summary.startswith("a design of 2 steps and 3 nodes, 1 hypotheses, 1 criteria")
-    brief = script.calls[0]["prompt"]
-    assert "=== EVIDENCE (cite by id) ===" in brief and "- peft: LoRA" in brief
+    assert [o.summary.split(":")[0] for o in outs] == ["the study", "the plan", "the team"]
+
+    study, plan, team = (script.prompts(k)[0] for k in ("StudyOutput", "PlanOutput", "TeamOutput"))
+    assert "=== EVIDENCE (cite by id) ===" in study and "SKILLS" not in study
+    assert "Rank matters" in plan and "EACH STEP IS A SUBAGENT WITH ITS OWN CONTEXT" in plan
+    assert f"{run.folder}/artifacts/step_NN/" in plan, "the real folders, to name files in"
+    assert "SKILLS" not in plan and "EVIDENCE" not in plan
+    assert "- peft: LoRA" in team and "1. Data [worker]" in team
+    assert "Rank matters" not in team, "the team is chosen from the steps"
+    instructions = [c["instructions"] for c in script.calls if c["schema"] != "ReaderOutput"]
+    assert "first job: the STUDY" in instructions[0] and "second job: the STEPS" in instructions[1]
+    assert "DESIGNER" in instructions[2]
 
 
-def test_a_bad_design_goes_back_with_what_is_wrong(run, script, evidence, monkeypatch):
-    monkeypatch.setattr(nodes.Run, "catalogue", lambda self: [("peft", "LoRA")])
-    bad = {**DESIGN,
-           "hypotheses": [{**DESIGN["hypotheses"][0], "evidence": ["E9"]}],
-           "steps": [DESIGN["steps"][0],
-                     {"id": "3", "title": "Train", "detail": "d", "check": "c",
-                      "depends_on": ["2"]}],
-           "rubric": [{**DESIGN["rubric"][0], "assessed_at": "7"}],
-           "nodes": [NODES[0], {"name": "Worker", "role": "worker", "steps": ["1"],
-                                "skills": ["nope"], "instructions": "i"}]}
-    script.add("DesignOutput", bad, DESIGN)
-    nodes.design(run, evidence, task="design it")
-    retry = script.calls[1]
-    assert retry["thread"] == "thread-1", "the retry continues the same call"
-    for expected in ("cites E9, which is not an evidence id", 'step ids must be "1", "2"',
-                     "R1: `assessed_at` is '7', not a step id", "depends on 2",
-                     "Worker is not lower_snake_case", "exactly one validator",
-                     "no skill called nope"):
-        assert expected in retry["prompt"]
+def test_each_part_s_mistakes_go_back_to_it(run, script, evidence, catalogue):
+    script.add("StudyOutput", {**STUDY, "hypotheses": [{**STUDY["hypotheses"][0],
+                                                        "evidence": ["E9"]}]}, STUDY)
+    script.add("PlanOutput", {"summary": "s", "steps": [
+        PLAN["steps"][0], {**PLAN["steps"][1], "id": "3", "depends_on": ["2"],
+                           "completes": ["R7"]}]}, PLAN)
+    script.add("TeamOutput", {"summary": "t", "nodes": [
+        NODES[0], {"name": "Worker", "role": "researcher", "steps": ["1"], "skills": ["nope"],
+                   "instructions": "i"}]}, TEAM)
+    designed(run, evidence)
+    study, plan, team = (script.prompts(k)[1] for k in ("StudyOutput", "PlanOutput", "TeamOutput"))
+    assert "cites E9, which is not an evidence id" in study
+    for expected in ('step ids must be "1", "2"', "depends on 2", "R7, which is not a rubric",
+                     "R1 is completed by no step"):
+        assert expected in plan
+    for expected in ("Worker is not lower_snake_case", "exactly one validator",
+                     "no skill called nope", "planned for a worker, but Worker is a researcher",
+                     "plan step 2 has no node"):
+        assert expected in team
 
-    script.add("DesignOutput", bad, bad, bad)
+    script.add("StudyOutput", STUDY).add("PlanOutput", PLAN)
+    script.add("TeamOutput", *[{"summary": "t", "nodes": NODES[:2]}] * 3)
     with pytest.raises(nodes.NodeFailed, match="no usable answer in 3 attempts"):
-        nodes.design(run, evidence, task="again")
+        designed(run, evidence, task="again")
 
 
-def test_the_orchestrator_owns_no_steps(run, script, evidence, monkeypatch):
-    monkeypatch.setattr(nodes.Run, "catalogue", lambda self: [("peft", "LoRA")])
-    bad = {**DESIGN, "nodes": [{**NODES[0], "steps": ["1"]}, {**NODES[1], "steps": ["2"]},
-                               NODES[2]]}
-    script.add("DesignOutput", bad, DESIGN)
-    nodes.design(run, evidence, task="design it")
-    assert "the orchestrator orchestrator owns steps 1" in script.calls[1]["prompt"]
+def test_a_criterion_is_checked_at_one_step(run, script, evidence, catalogue):
+    twice = {"summary": "s", "steps": [{**PLAN["steps"][0], "completes": ["R1"]}, PLAN["steps"][1]]}
+    script.add("StudyOutput", STUDY).add("PlanOutput", twice, PLAN).add("TeamOutput", TEAM)
+    designed(run, evidence)
+    assert "R1 is completed by steps 1, 2: give it the ONE step" in script.prompts("PlanOutput")[1]
 
 
-def test_a_revision_replaces_the_design_and_what_it_leaves_out_goes(run, script, evidence,
-                                                                    monkeypatch):
-    monkeypatch.setattr(nodes.Run, "catalogue", lambda self: [("peft", "LoRA")])
-    two = {**DESIGN, "hypotheses": [*DESIGN["hypotheses"],
-                                    {**DESIGN["hypotheses"][0], "id": "H2", "statement": "Data"}],
-           "rubric": [*DESIGN["rubric"], {**DESIGN["rubric"][0], "id": "R2", "criterion": "Old"}]}
-    script.add("DesignOutput", two)
-    st = _apply(evidence, nodes.design(run, evidence, task="first"), "designer")
-    revised = {**DESIGN, "hypotheses": [{**DESIGN["hypotheses"][0], "statement": "Sharper"}],
-               "rubric": [DESIGN["rubric"][0],
-                          {**DESIGN["rubric"][0], "id": "R5", "criterion": "Cost"}]}
-    script.add("DesignOutput", revised)
-    st = _apply(st, nodes.design(run, st, task="revise"), "designer")
+def test_the_orchestrator_owns_no_steps(run, script, evidence, catalogue):
+    bad = {"summary": "t", "nodes": [{**NODES[0], "steps": ["1"]}, {**NODES[1], "steps": ["2"]},
+                                     NODES[2]]}
+    script.add("StudyOutput", STUDY).add("PlanOutput", PLAN).add("TeamOutput", bad, TEAM)
+    designed(run, evidence)
+    assert "the orchestrator orchestrator owns steps 1" in script.prompts("TeamOutput")[1]
+
+
+def test_a_change_to_the_team_redoes_only_the_team(run, script, evidence, catalogue):
+    script.add("StudyOutput", STUDY).add("PlanOutput", PLAN).add("TeamOutput", TEAM)
+    st, _ = designed(run, evidence)
+    renamed = {"summary": "t", "nodes": [NODES[0], {**NODES[1], "name": "lora_trainer"}, NODES[2]]}
+    script.add("TeamOutput", renamed)
+    st, outs = designed(run, st, task="rename the trainer", start="team")
+    assert len(outs) == 1 and len(script.prompts("StudyOutput")) == 1
+    assert [n["name"] for n in st["design"]["nodes"]][1] == "lora_trainer"
+    assert [s["id"] for s in st["plan"]["steps"]] == ["1", "2"], "the steps stay"
+    script.add("PlanOutput", PLAN).add("TeamOutput", TEAM)
+    st, outs = designed(run, st, task="split a step", start="steps")
+    assert [o.summary.split(":")[0] for o in outs] == ["the plan", "the team"]
+
+
+def test_a_revision_replaces_the_study_and_what_it_leaves_out_goes(run, script, evidence,
+                                                                    catalogue):
+    two = {**STUDY, "hypotheses": [*STUDY["hypotheses"],
+                                   {**STUDY["hypotheses"][0], "id": "H2", "statement": "Data"}],
+           "rubric": [*STUDY["rubric"], {**STUDY["rubric"][0], "id": "R2", "criterion": "Old"}]}
+    plan_two = {"summary": "s", "steps": [{**PLAN["steps"][0], "completes": ["R2"]},
+                                          PLAN["steps"][1]]}
+    script.add("StudyOutput", two).add("PlanOutput", plan_two).add("TeamOutput", TEAM)
+    st, _ = designed(run, evidence, task="first")
+    revised = {**STUDY, "hypotheses": [{**STUDY["hypotheses"][0], "statement": "Sharper"}],
+               "rubric": [STUDY["rubric"][0],
+                          {**STUDY["rubric"][0], "id": "R5", "criterion": "Cost"}]}
+    plan_five = {"summary": "s", "steps": [{**PLAN["steps"][0], "completes": ["R5"]},
+                                           PLAN["steps"][1]]}
+    script.add("StudyOutput", revised).add("PlanOutput", plan_five).add("TeamOutput", TEAM)
+    st, _ = designed(run, st, task="revise")
     assert [(h["id"], h["statement"], h["status"]) for h in st["hypotheses"]] == [
         ("H1", "Sharper", "proposed"), ("H2", "Data", "dropped")]
-    assert [(r["id"], r["criterion"]) for r in st["rubric"]] == [("R1", "Effect size"),
-                                                                 ("R5", "Cost")]
-    script.add("DesignOutput", {**revised, "risks": [{"text": "slow"}]},
+    assert [(r["id"], r["criterion"], r["assessed_at"]) for r in st["rubric"]] == [
+        ("R1", "Effect size", "2"), ("R5", "Cost", "1")]
+    script.add("StudyOutput", {**revised, "risks": [{"text": "slow"}]},
                {**revised, "risks": [{"text": "too slow"}]})
-    st = _apply(st, nodes.design(run, st, task="again"), "designer")
-    st = _apply(st, nodes.design(run, st, task="and again"), "designer")
+    script.add("PlanOutput", plan_five, plan_five).add("TeamOutput", TEAM, TEAM)
+    st, _ = designed(run, st, task="again")
+    st, _ = designed(run, st, task="and again")
     assert [r["text"] for r in st["risks"]] == ["too slow"], "a revision's risks replace the last"
 
 
-def test_a_build_needs_no_hypotheses(run, script, evidence, monkeypatch):
-    monkeypatch.setattr(nodes.Run, "catalogue", lambda self: [("peft", "LoRA")])
-    script.add("DesignOutput", {**DESIGN, "hypotheses": []})
-    st = _apply(evidence, nodes.design(run, evidence, task="build a dataset"), "designer")
+def test_a_build_needs_no_hypotheses(run, script, evidence, catalogue):
+    script.add("StudyOutput", {**STUDY, "hypotheses": []}).add("PlanOutput", PLAN)
+    script.add("TeamOutput", TEAM)
+    st, _ = designed(run, evidence, task="build a dataset")
     assert st["hypotheses"] == [] and st["plan"]["steps"]
     st, _ = S.apply(st, [{"op": "approve", "section": "design"}], by="user")
     assert S.approved(st, "design")
@@ -209,10 +256,11 @@ def test_no_brief_but_the_discussor_s_carries_the_users_words(run, script):
     user = "my secret aside about the budget"
     briefs = [views.orchestrator(st, requests=[]),
               views.researcher(st, task="t"),
-              views.designer(st, task="t", skills=[("peft", "LoRA")])]
+              views.study(st, task="t"), views.planner(st, task="t")]
     assert all(user not in b and "Question: Q?" in b for b in briefs)
     assert user in views.discussor_turn(st, {}, user=user)
-    assert "- peft: LoRA" in briefs[-1]
+    team = views.designer(st, task="t", skills=[("peft", "LoRA")])
+    assert user not in team and "- peft: LoRA" in team
 
 
 def test_the_researcher_is_never_sent_back_for_a_wrong_reference(run, script):
@@ -239,26 +287,23 @@ def test_the_researcher_is_never_sent_back_for_a_wrong_reference(run, script):
     assert out.summary.endswith("(Kept, though filed under unknown ids: H1, Q5.)")
 
 
-def test_a_step_is_written_for_an_owner_that_sees_only_it(run, script, evidence, monkeypatch):
+def test_a_step_is_written_for_an_owner_that_sees_only_it(run, script, evidence, catalogue):
     # Run 1119: steps said "using the step-2 config" and "B-D" to owners that
     # never see step numbers or the other steps.
-    monkeypatch.setattr(nodes.Run, "catalogue", lambda self: [("peft", "LoRA")])
-    bad = {**DESIGN, "steps": [DESIGN["steps"][0],
-                               {**DESIGN["steps"][1],
-                                "detail": "train B-D from A with the step-1 config"}]}
-    script.add("DesignOutput", bad, DESIGN)
-    nodes.design(run, evidence, task="design it")
-    first, retry = script.prompts("DesignOutput")
-    assert "EACH STEP IS A SUBAGENT WITH ITS OWN CONTEXT" in first
-    assert f"{run.folder}/artifacts/step_NN/" in first, "the real folders, to name files in"
+    bad = {"summary": "s", "steps": [PLAN["steps"][0], {
+        **PLAN["steps"][1], "detail": "train B-D from A with the step-1 config"}]}
+    script.add("StudyOutput", STUDY).add("PlanOutput", bad, PLAN).add("TeamOutput", TEAM)
+    designed(run, evidence)
+    retry = script.prompts("PlanOutput")[1]
     assert "step 2: its detail refers to 'step-1'" in retry
     assert "step 2: its detail names things by letter (A, B-D)" in retry
 
-    script.add("DesignOutput", bad, bad, bad)
-    out = nodes.design(run, evidence, task="again")
-    assert len(script.prompts("DesignOutput")) == 5, \
+    script.add("StudyOutput", STUDY).add("PlanOutput", bad, bad, bad).add("TeamOutput", TEAM)
+    _, outs = designed(run, evidence, task="again")
+    assert len(script.prompts("PlanOutput")) == 5, \
         "sent back on every attempt but the last: then it goes through"
-    assert "NOT SELF-CONTAINED after every attempt" in out.summary and "(A, B-D)" in out.summary
+    assert "NOT SELF-CONTAINED after every attempt" in outs[1].summary
+    assert "(A, B-D)" in outs[1].summary
 
 
 def test_a_letter_the_step_defines_or_a_formula_uses_is_not_a_label():
@@ -271,23 +316,22 @@ def test_a_letter_the_step_defines_or_a_formula_uses_is_not_a_label():
 
 
 def test_each_step_is_read_alone_as_its_subagent_and_its_questions_go_back(
-        run, script, evidence, monkeypatch):
+        run, script, evidence, catalogue):
     # Run 1119, designer-006: every name spelled out, and still step 1 asked
     # its subagent to copy "the approved complete design" it never sees.
-    monkeypatch.setattr(nodes.Run, "catalogue", lambda self: [("peft", "LoRA")])
-    script.add("DesignOutput", DESIGN, DESIGN, DESIGN)
+    script.add("StudyOutput", STUDY).add("PlanOutput", PLAN, PLAN, PLAN).add("TeamOutput", TEAM)
     asks = {"questions": ['"the specification": which one? I am given none']}
     script.add("ReaderOutput", *[asks, {"questions": []}] * 3)    # two steps, three attempts
-    out = nodes.design(run, evidence, task="design it")
+    _, outs = designed(run, evidence)
     readers = [c for c in script.calls if c["schema"] == "ReaderOutput"]
     assert len(readers) == 6, "each step read, on each attempt"
     one = readers[0]["prompt"]
-    assert "You are" in one and "Done when:" in one and "WHERE TO WORK" in one, \
-        "what its subagent will be told, built by the execution's own code"
+    assert "You are the worker for this step." in one and "Done when:" in one \
+        and "WHERE TO WORK" in one, "what its subagent will be told, by the execution's code"
     assert "THE APPROVED BRIEF" not in one and "HYPOTHESES" not in one, "and nothing else"
     assert "a READER" in readers[0]["instructions"]
-    retries = script.prompts("DesignOutput")[1:]
+    retries = script.prompts("PlanOutput")[1:]
     assert 'a reader given only its subagent\'s context would ask: "the specification"' \
         in retries[0]
-    assert len(retries) == 2 and "NOT SELF-CONTAINED after every attempt" in out.summary, \
+    assert len(retries) == 2 and "NOT SELF-CONTAINED after every attempt" in outs[1].summary, \
         "sent back on every attempt but the last; what is left goes to the user"

@@ -17,7 +17,7 @@ from research_agent import state as S
 from research_agent.bootstrap import carry, views
 from tests.scripted import script  # noqa: F401 -- fixture
 from tests.test_execute_graph import REVIEW, approved_state
-from tests.test_graph import DESIGN, decide, say
+from tests.test_graph import add_design, decide, say
 
 
 @pytest.fixture
@@ -82,10 +82,11 @@ def test_bootstrap_from_a_reviewed_run(reviewed, tmp_path, script, monkeypatch, 
     st = S.Store(new).read()
     assert st["brief"]["text"].startswith("As before") and not S.approved(st, "brief")
     from research_agent.bootstrap import views
-    assert "rating 5/10" in views.designer(st, task="t", skills=[]), "the designer sees the review"
+    assert "rating 5/10" in views.study(st, task="t"), "the planner's study sees the review"
+    assert "rating 5/10" in views.planner(st, task="t"), "and so do its steps"
 
 
-def test_the_last_run_s_paper_and_review_reach_the_discussor_and_the_designer(reviewed):
+def test_the_last_run_s_paper_and_review_reach_the_discussor_and_the_planner(reviewed):
     (reviewed / "paper").mkdir()
     (reviewed / "paper" / "paper.md").write_text("# Rank matters\n\nRank sixty-four wins by 1.2 F1.")
     (reviewed / "paper" / "main.pdf").write_bytes(b"%PDF-1.4")
@@ -97,6 +98,6 @@ def test_the_last_run_s_paper_and_review_reach_the_discussor_and_the_designer(re
     assert "weak reject" in first and "[must] Run five seeds" in first
     brief = views.brief_request(st)
     assert "Rank sixty-four wins" in brief and "what it keeps" in brief
-    designed = views.designer(st, task="t", skills=[])
-    assert f"{reviewed.resolve()}/paper/main.pdf" in designed and "sixty-four" not in designed
+    for planned in (views.study(st, task="t"), views.planner(st, task="t")):
+        assert f"{reviewed.resolve()}/paper/main.pdf" in planned and "sixty-four" not in planned
     assert carry.last_run({"status": {}}) == ""

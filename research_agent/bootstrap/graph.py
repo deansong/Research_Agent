@@ -13,8 +13,10 @@ CONCEPT: LangGraph. The graph state carries the research state (also mirrored
     START -> discussor --(it hands the user's request or approval on)--> orchestrator
                        --(it answered, or asked)------------------------> human
     orchestrator --research--> researcher --> orchestrator
-                 --design--> designer (hypotheses, rubric, protocol, steps,
-                             nodes: the whole design) --> orchestrator
+                 --design--> planner (the study: hypotheses, rubric, protocol;
+                                      then the steps) --> designer (the team:
+                                      the nodes) --> orchestrator
+                 (a change to the team alone goes straight to the designer)
                  --ask_user / ready / limit--> discussor (tells the user) -> human
     human --> discussor, or END on /exit
 """
@@ -39,7 +41,21 @@ MAX_STEPS = 6
 #: What each action needs approved first.
 GATES = {"design": ("brief",), "ready": ("design",)}
 
-WORKERS = {"research": "researcher", "design": "designer"}
+WORKERS = {"research": "researcher", "design": "planner"}
+
+
+def worker_for(decision: dict) -> str:
+    """The node an orchestrator decision goes to: a design starts at the
+    planner, unless only the team is redone."""
+    if decision.get("action") == "design" and decision.get("redo") == "team":
+        return "designer"
+    return WORKERS.get(decision.get("action", ""), "discussor")
+
+
+def first_redo(requests: list[dict]) -> str:
+    """Where the user's design changes start: the earliest part any touches."""
+    asked = [r.get("redo") or "study" for r in requests]
+    return min(asked, key=nodes.REDO.index) if asked else "study"
 
 
 class BootstrapState(TypedDict, total=False):
@@ -63,6 +79,8 @@ class BootstrapState(TypedDict, total=False):
     designed: bool
     """The designer just delivered a design that passed the code checks: it
     goes to the user, not back to a model to judge."""
+    planned: bool
+    """The planner just planned the steps: the designer does only the team."""
     approved: bool
     """The user approved something with this message (e.g. /approve)."""
     outcome: str
@@ -125,7 +143,7 @@ def build(run: nodes.Run, checkpointer=None):
         for item in inbox.take(run.folder, kinds=("request", "decision")):
             if item["kind"] == "request":
                 requests.append({"kind": item.get("request_kind") or "other",
-                                 "detail": item["text"]})
+                                 "detail": item["text"], "redo": item.get("redo") or ""})
             else:
                 st = commit(st, [{"op": "add", "section": "decisions", "value": {
                     "what": item["what"], "why": item.get("why", ""), "by": "user"}}], "user")
@@ -164,8 +182,8 @@ def build(run: nodes.Run, checkpointer=None):
             return {"research": st, "note": note, "designed": False, "pending": [],
                     "decision": {"action": "ask_user", "task": note, "questions": [],
                                  "reason": "a new design goes to the user"}}
-        redesign = [r["detail"] for r in state.get("pending") or []
-                    if r.get("kind") == "revise_design"]
+        asks = [r for r in state.get("pending") or [] if r.get("kind") == "revise_design"]
+        redesign = [r["detail"] for r in asks]
         if redesign and S.approved(st, "brief"):
             # The user asked for a new design: code sends it to the designer.
             # Measured (run 1119): asked to rebuild an approved design, the
@@ -174,6 +192,7 @@ def build(run: nodes.Run, checkpointer=None):
             others = [r for r in state.get("pending") or [] if r.get("kind") != "revise_design"]
             return {"research": st, "pending": others,
                     "decision": {"action": "design", "task": "\n".join(redesign), "questions": [],
+                                 "redo": first_redo(asks) if S.version(st, "plan") else "study",
                                  "reason": "the user asked for a new design"},
                     "note": "", "steps": state.get("steps", 0) + 1, "outcome": ""}
         if state.get("steps", 0) >= MAX_STEPS:
@@ -185,7 +204,9 @@ def build(run: nodes.Run, checkpointer=None):
         st = commit(st, out.ops, "orchestrator", out.session)
         d = out.data
         decision = {"action": d.action, "task": d.task, "questions": list(d.questions),
-                    "reason": d.reason}
+                    "reason": d.reason,
+                    # Nothing planned yet: a design starts at the study.
+                    "redo": d.redo if S.version(st, "plan") else "study"}
         note = d.note_for_discussor or (d.task if d.action == "ask_user" else "")
         waiting = blocked(st, d.action)
         if d.action == "brief" or (d.action == "design" and waiting == ["brief"]):
@@ -212,26 +233,54 @@ def build(run: nodes.Run, checkpointer=None):
                 "steps": state.get("steps", 0) + 1,
                 "outcome": "ready" if decision["action"] == "ready" else ""}
 
-    def worker(name: str):
-        def run_it(state: BootstrapState) -> dict:
-            st, d = state["research"], state["decision"]
+    def failed(st: dict, name: str, d: dict, exc: Exception) -> dict:
+        summary = f"{name} failed: {str(exc)[:600]}"
+        st = commit(st, [{"op": "add", "section": "results", "value": {
+            "node": name, "job": d["action"], "asked": d["task"][:500],
+            "summary": summary}}], name)
+        return {"research": st, "last": summary, "planned": False, "_to": "orchestrator"}
+
+    def researcher(state: BootstrapState) -> dict:
+        st, d = state["research"], state["decision"]
+        try:
+            out = nodes.researcher(run, st, task=d["task"], questions=d.get("questions", []))
+        except RB.BackendCancelled:
+            raise
+        except RB.BackendError as exc:
+            return failed(st, "researcher", d, exc)
+        st = commit(st, out.ops, "researcher", out.session)
+        return {"research": st, "last": f"researcher ({d['action']}): {out.summary}"}
+
+    def design_parts(state: BootstrapState, name: str, start: str, stop: str) -> dict:
+        """The design's parts from `start` through `stop`, each committed
+        before the next reads it; a failure ends them and tells the
+        orchestrator."""
+        st, d = state["research"], state["decision"]
+        said = []
+        for part in nodes.REDO[nodes.REDO.index(start):nodes.REDO.index(stop) + 1]:
             try:
-                if name == "researcher":
-                    out = nodes.researcher(run, st, task=d["task"], questions=d.get("questions", []))
-                else:
-                    out = nodes.design(run, st, task=d["task"])
+                out = nodes.PART_CALLS[part](run, st, task=d["task"])
             except RB.BackendCancelled:
                 raise
             except RB.BackendError as exc:
-                summary = f"{name} failed: {str(exc)[:600]}"
-                st = commit(st, [{"op": "add", "section": "results", "value": {
-                    "node": name, "job": d["action"], "asked": d["task"][:500],
-                    "summary": summary}}], name)
-                return {"research": st, "last": summary}
+                return failed(st, name, d, exc)
             st = commit(st, out.ops, name, out.session)
-            return {"research": st, "last": f"{name} ({d['action']}): {out.summary}",
-                    "designed": name == "designer"}
-        return run_it
+            said.append(out.summary)
+        return {"research": st, "last": f"{name}: " + " | ".join(said)}
+
+    def planner(state: BootstrapState) -> dict:
+        start = state["decision"].get("redo") or "study"
+        out = design_parts(state, "planner", "steps" if start == "steps" else "study", "steps")
+        return {**out, "planned": out.get("_to") != "orchestrator",
+                "_to": out.get("_to") or "designer"}
+
+    def designer(state: BootstrapState) -> dict:
+        # From the planner, or a change to the team alone: the team. A run
+        # that stopped before the planner existed (its checkpoint was about
+        # to run the designer for the whole design): all of it.
+        whole = not state.get("planned") and state["decision"].get("redo") is None
+        out = design_parts(state, "designer", "study" if whole else "team", "team")
+        return {**out, "planned": False, "designed": out.get("_to") != "orchestrator"}
 
     def human(state: BootstrapState) -> dict:
         # The state on disk, when it moved on while the graph waited here:
@@ -279,17 +328,18 @@ def build(run: nodes.Run, checkpointer=None):
     graph = StateGraph(_Routed)
     graph.add_node("discussor", discussor)
     graph.add_node("orchestrator", orchestrator)
-    for name in ("researcher", "designer"):
-        graph.add_node(name, worker(name))
+    graph.add_node("researcher", researcher)
+    graph.add_node("planner", planner)
+    graph.add_node("designer", designer)
     graph.add_node("human", human)
 
     graph.add_edge(START, "discussor")
     graph.add_conditional_edges("discussor", lambda s: s["_to"], ["orchestrator", "human"])
-    graph.add_conditional_edges(
-        "orchestrator", lambda s: WORKERS.get(s["decision"]["action"], "discussor"),
-        ["researcher", "designer", "discussor"])
-    for name in ("researcher", "designer"):
-        graph.add_edge(name, "orchestrator")
+    graph.add_conditional_edges("orchestrator", lambda s: worker_for(s["decision"]),
+                                ["researcher", "planner", "designer", "discussor"])
+    graph.add_edge("researcher", "orchestrator")
+    graph.add_conditional_edges("planner", lambda s: s["_to"], ["designer", "orchestrator"])
+    graph.add_edge("designer", "orchestrator")
     graph.add_conditional_edges("human", lambda s: s["_to"], ["discussor", END])
     return graph.compile(checkpointer=checkpointer)
 

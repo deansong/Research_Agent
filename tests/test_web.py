@@ -352,7 +352,7 @@ def test_the_models_each_role_runs_on_can_be_changed(web, script, monkeypatch):
                                                "backup": ["strata"]}).status_code == 400
     assert web.put("/api/runs/m/models", json={"group": "execution", "role": "chef",
                                                "provider": "codex"}).status_code == 400
-    assert web.put("/api/runs/m/models", json={"group": "bootstrap", "role": "planner",
+    assert web.put("/api/runs/m/models", json={"group": "bootstrap", "role": "chef",
                                                "provider": "codex"}).status_code == 400
     monkeypatch.setattr(server, "_providers", lambda refresh=False: [{"provider": "codex", "models": ["m1"],
                                                         "efforts": ["high"], "error": ""}])
@@ -439,7 +439,9 @@ def test_a_node_s_settings_and_what_a_running_call_is_sent(web, script):
     info = web.get("/api/runs/ni/nodes/designer").json()
     assert info["role"] == "designer" and info["runs_on"]["provider"] == "fake"
     assert "You are the DESIGNER" in info["instructions"]
-    assert web.get("/api/runs/ni/nodes/planner").status_code == 400
+    assert web.get("/api/runs/ni/nodes/chef").status_code == 400
+    planner = web.get("/api/runs/ni/nodes/planner").json()
+    assert planner["role"] == "planner" and "You are the PLANNER" in planner["instructions"]
     trainer = web.get("/api/runs/ni/nodes/trainer").json()   # from the design's preview
     assert trainer["role"] == "worker" and trainer["steps"] == ["2"] and trainer["access"] == "full"
     assert "Train with seeds 17 and 29." in trainer["design"]

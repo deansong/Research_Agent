@@ -41,20 +41,27 @@ def decide(action, task="", **fields):
 
 FINDINGS = {"summary": "found baselines", "findings": [
     {"claim": "LoRA rank 8 is common", "source": "https://example.org/lora"}]}
-DESIGN = {"summary": "two steps, three nodes", "hypotheses": [
+STUDY = {"summary": "one hypothesis, one criterion", "hypotheses": [
     {"id": "H1", "plain": "Higher LoRA rank helps on small data.", "statement": "Rank matters",
      "prediction": "r=64 beats r=4 by >=1 F1", "evidence": ["E1"]}],
-    "rubric": [{"id": "R1", "criterion": "Effect", "measure": "F1 gap", "threshold": ">=1", "assessed_at": "2"}],
-    "protocol": {"metrics": ["F1"], "statistics": "paired t-test", "seeds": "5"},
-    "steps": [
-        {"id": "1", "title": "Data", "detail": "load SST-2", "check": "rows counted"},
-        {"id": "2", "title": "Train", "detail": "ranks 4..64", "check": "F1 logged",
-         "depends_on": ["1"]}],
-    "nodes": [
-        {"name": "orchestrator", "role": "orchestrator", "instructions": "run it"},
-        {"name": "trainer", "role": "worker", "steps": ["1", "2"], "access": "write",
-         "instructions": "train"},
-        {"name": "validator", "role": "validator", "instructions": "check"}]}
+    "rubric": [{"id": "R1", "criterion": "Effect", "measure": "F1 gap", "threshold": ">=1"}],
+    "protocol": {"metrics": ["F1"], "statistics": "paired t-test", "seeds": "5"}}
+PLAN = {"summary": "two steps", "steps": [
+    {"id": "1", "title": "Data", "detail": "load SST-2", "check": "rows counted", "kind": "worker"},
+    {"id": "2", "title": "Train", "detail": "ranks 4..64", "check": "F1 logged",
+     "depends_on": ["1"], "kind": "worker", "completes": ["R1"]}]}
+TEAM = {"summary": "three nodes", "nodes": [
+    {"name": "orchestrator", "role": "orchestrator", "instructions": "run it"},
+    {"name": "trainer", "role": "worker", "steps": ["1", "2"], "access": "write",
+     "instructions": "train"},
+    {"name": "validator", "role": "validator", "instructions": "check"}]}
+
+
+def add_design(script, times: int = 1) -> None:
+    """The planner's study and steps and the designer's team, `times` over."""
+    script.add("StudyOutput", *[STUDY] * times)
+    script.add("PlanOutput", *[PLAN] * times)
+    script.add("TeamOutput", *[TEAM] * times)
 
 
 def test_a_whole_bootstrap_from_idea_to_an_approved_design(run, script):
@@ -68,7 +75,7 @@ def test_a_whole_bootstrap_from_idea_to_an_approved_design(run, script):
                say("All done.", approve=["design"]),
                say("Bootstrap complete."))
     script.add("ResearcherOutput", FINDINGS)
-    script.add("DesignOutput", DESIGN)
+    add_design(script)
     script.add("OrchestratorOutput",
                decide("research", questions=["LoRA rank results?"]),
                decide("brief", "Cover the rank baselines"),
@@ -88,10 +95,18 @@ def test_a_whole_bootstrap_from_idea_to_an_approved_design(run, script):
     steps.clear()
     turn = boot.answer("Yes, that's the brief.", on_step=lambda node, update: steps.append(node))
     assert turn.reply.startswith("Design ready") and turn.waiting
-    assert steps == ["human", "discussor", "orchestrator", "designer", "orchestrator", "discussor"]
-    designed = script.prompts("DesignOutput")[0]
-    assert "=== THE APPROVED BRIEF -- design from this ===\nCompare LoRA ranks" in designed
-    assert "found baselines" not in designed, "the researcher's report is not the designer's"
+    assert steps == ["human", "discussor", "orchestrator", "planner", "designer", "orchestrator",
+                     "discussor"]
+    studied = script.prompts("StudyOutput")[0]
+    assert "=== THE APPROVED BRIEF -- design the study from this ===\nCompare LoRA ranks" \
+        in studied
+    assert "found baselines" not in studied, "the researcher's report is not the planner's"
+    planned = script.prompts("PlanOutput")[0]
+    assert "THE STUDY -- plan the steps" in planned and "Rank matters" in planned, \
+        "the steps are planned from the study just written"
+    teamed = script.prompts("TeamOutput")[0]
+    assert "1. Data [worker]" in teamed and "Rank matters" not in teamed, \
+        "the team is chosen from the steps, not the hypotheses"
     st = boot.research
     assert S.approved(st, "brief")
     assert st["goal"]["question"] == "Does LoRA rank matter?"
@@ -109,7 +124,8 @@ def test_a_whole_bootstrap_from_idea_to_an_approved_design(run, script):
     st = boot.research
     assert S.approved(st, "design")
     assert all(S.approved(st, s) for s in S.PARTS), "one approval covers every part"
-    assert [r["node"] for r in st["results"]] == ["researcher", "designer"]
+    assert [(r["node"], r["job"]) for r in st["results"]] == [
+        ("researcher", ""), ("planner", "study"), ("planner", "steps"), ("designer", "team")]
 
     # Context: one long discussor conversation; every other call fresh.
     disc = [c for c in script.calls if c["schema"] == "DiscussorOutput"]
@@ -220,18 +236,18 @@ def test_no_design_before_the_user_approves_the_brief(run, script):
                say("Here is the brief. Approve it?", brief="Build a small benchmark."),
                say("Thanks."), say("Design ready. Approve?"))
     script.add("ResearcherOutput", FINDINGS)
-    script.add("DesignOutput", DESIGN)
+    add_design(script)
     script.add("OrchestratorOutput", decide("research", questions=["q"]), decide("design"),
                decide("design"))
     boot = Bootstrap(run)
     boot.start("idea")
-    assert not script.prompts("DesignOutput"), "the orchestrator's design waits for a brief"
+    assert not script.prompts("StudyOutput"), "the orchestrator's design waits for a brief"
     assert "=== WHAT THE RESEARCHER REPORTED ===" in script.prompts("DiscussorOutput")[1]
     turn = boot.answer("", approve=["brief"])
     assert turn.reply == "Design ready. Approve?"
     told = script.prompts("DiscussorOutput")[2]
     assert "(I approved: brief.)" in told
-    assert "Build a small benchmark." in script.prompts("DesignOutput")[0]
+    assert "Build a small benchmark." in script.prompts("StudyOutput")[0]
 
 
 def test_asking_for_a_change_after_ready_reopens_the_work(run, script):
@@ -294,7 +310,8 @@ def test_the_instructions_are_minimal_and_keep_what_code_needs():
     from research_agent.bootstrap import prompts, views
     from research_agent.execute import prompts as exec_prompts
 
-    assert set(prompts.INSTRUCTIONS) == {"discussor", "orchestrator", "researcher", "designer"}
+    assert set(prompts.INSTRUCTIONS) == {"discussor", "orchestrator", "researcher", "planner",
+                                         "designer"}
     from research_agent import prompt_files
 
     for name in prompt_files.names():
@@ -302,7 +319,8 @@ def test_the_instructions_are_minimal_and_keep_what_code_needs():
             assert len(prompt_files.text(name)) < 1200, f"{name}: a role's instructions stay short"
     voice = prompt_files.text(prompt_files.VOICE)
     assert len(voice) < 800 and "NLP researcher" in voice, "the NLP field's voice"
-    for text in (*prompts.INSTRUCTIONS.values(), *exec_prompts.INSTRUCTIONS.values()):
+    for text in (*prompts.INSTRUCTIONS.values(), prompts.STUDY,
+                 *exec_prompts.INSTRUCTIONS.values()):
         assert text.endswith(voice), "every role speaks the field's language"
     def said(text):
         return " ".join(text.split())
@@ -310,10 +328,14 @@ def test_the_instructions_are_minimal_and_keep_what_code_needs():
     assert "never invent a title" in said(prompts.DISCUSSOR)
     assert '`approve` "brief" or "design"' in said(prompts.DISCUSSOR)
     assert "names its source" in said(prompts.RESEARCHER)
-    assert "what you leave out goes" in said(prompts.DESIGNER)
+    for text in (prompts.STUDY, prompts.PLANNER, prompts.DESIGNER):
+        assert "what you leave out goes" in said(text)
+    assert "SUBAGENT with its own dedicated context" in said(prompts.PLANNER)
     today = f"Today is {date.today().isoformat()}."
     assert views.researcher(S.new(), task="t").startswith(today)
     assert views.orchestrator(S.new(), requests=[]).startswith(today)
+    for view in (views.study, views.planner):
+        assert view(S.new(), task="t").startswith(today)
     assert views.designer(S.new(), task="t", skills=[]).startswith(today)
 
 
@@ -406,7 +428,7 @@ def test_autopilot_takes_a_bootstrap_to_an_approved_design_alone(run, script):
                say("All approved."),
                say("Bootstrap complete."))
     script.add("ResearcherOutput", FINDINGS)
-    script.add("DesignOutput", DESIGN, DESIGN)
+    add_design(script, 2)
     script.add("OrchestratorOutput",
                decide("research", questions=["LoRA rank results?"]), decide("brief"),
                decide("design"))
@@ -429,7 +451,7 @@ def test_autopilot_takes_a_bootstrap_to_an_approved_design_alone(run, script):
     assert auto[0]["thread"] is None and auto[1]["thread"], \
         "the autopilot keeps one conversation of its own"
     assert autopilot.load(run.folder).streak == 3
-    assert len(script.prompts("DesignOutput")) == 2 and S.version(st, "design") == 2
+    assert len(script.prompts("TeamOutput")) == 2 and S.version(st, "design") == 2
     assert len(script.prompts("OrchestratorOutput")) == 3, \
         "no model judges a new design, nor whether to make the one asked for"
     boot.close()
@@ -470,11 +492,11 @@ def test_a_requested_redesign_goes_to_the_designer_not_to_the_orchestrator(run, 
     script.add("DiscussorOutput",
                say("I'll have the designer rebuild it.", ("revise_design", "Rebuild the design")),
                say("Design v2 is ready for you."))
-    script.add("DesignOutput", DESIGN)
+    add_design(script)
     turn = Bootstrap(run).start("Redesign from the approved brief")
     assert not script.prompts("OrchestratorOutput"), "no model decides whether to do it"
-    designer = script.prompts("DesignOutput")[0]
-    assert "Rebuild the design" in designer
+    assert "Rebuild the design" in script.prompts("StudyOutput")[0]
+    assert "Rebuild the design" in script.prompts("TeamOutput")[0]
     assert turn.reply == "Design v2 is ready for you."
     assert not S.approved(Bootstrap(run).research, "design"), "the new design waits for the user"
 
@@ -492,24 +514,75 @@ def test_rewinding_goes_back_exactly_and_on_from_there(run, script, monkeypatch)
                say("Designing.", ("revise_design", "Design it")), say("Design v2 is ready."),
                say("Approved."), say("Ready: start the execution."),
                say("The new design is ready."))
-    script.add("DesignOutput", DESIGN, DESIGN)
+    add_design(script, 2)
     boot = Bootstrap(run)
     boot.start("Design it")
     boot.answer(approve=["design"])
     assert S.approved(boot.research, "design")
-    before = next(p for p in boot.points() if p["next"] == ["designer"])
-    assert before["versions"]["design"] == 1, "the point just before the designer ran"
+    before = next(p for p in boot.points() if p["next"] == ["planner"])
+    assert before["versions"]["design"] == 1, "the point just before the planner ran"
 
     turn = boot.rewind(before["id"])
-    assert turn.reply == "The new design is ready." and len(script.prompts("DesignOutput")) == 2
+    assert turn.reply == "The new design is ready." and len(script.prompts("TeamOutput")) == 2
     now = boot.research
     assert S.version(now, "design") == 2 and not S.approved(now, "design"), \
-        "the designer ran again from that point; its design waits for the user"
+        "the planner and designer ran again from that point; the design waits for the user"
     assert S.Store(run.folder).read()["versions"] == now["versions"]
     history = sorted((run.folder / "state" / "history").glob("*.json"))
     assert any(json.loads(p.read_text())["ops"][0].get("op") == "rewind" for p in history)
-    again = [p for p in boot.points() if p["next"] == ["designer"]
+    again = [p for p in boot.points() if p["next"] == ["planner"]
              and p["versions"].get("design") == 1]
     assert [p["id"] for p in again] == [before["id"]], \
         "the point keeps its first time after the rewind reaches the same state again"
+    boot.close()
+
+
+def _brief_approved(run):
+    from tests.test_execute_graph import approved_state
+
+    st, _ = S.apply(approved_state(), [
+        {"op": "set", "section": "brief", "value": {"text": "Rank matters."}},
+        {"op": "add", "section": "evidence", "value": {"claim": "c", "source": "s"}}], by="user")
+    st, _ = S.apply(st, [{"op": "approve", "section": "brief"}], by="user")
+    S.Store(run.folder).write(st)
+    return st
+
+
+def test_a_change_to_the_team_alone_goes_straight_to_the_designer(run, script, monkeypatch):
+    monkeypatch.setattr(nodes.Run, "catalogue", lambda self: [("peft", "LoRA")])
+    _brief_approved(run)
+    script.add("DiscussorOutput",
+               {"reply": "I'll have the designer rename it.", "hand_to": "orchestrator",
+                "requests": [{"kind": "revise_design", "detail": "Rename the trainer",
+                              "redo": "team"}]},
+               say("The new team is ready."))
+    script.add("TeamOutput", TEAM)
+    steps = []
+    Bootstrap(run).start("Call the trainer lora_trainer",
+                         on_step=lambda node, update: steps.append(node))
+    assert steps[:3] == ["discussor", "orchestrator", "designer"], "no planner"
+    assert not script.prompts("StudyOutput") and not script.prompts("PlanOutput")
+    assert "Rename the trainer" in script.prompts("TeamOutput")[0]
+
+
+def test_a_run_stopped_before_the_old_designer_still_gets_a_whole_design(run, script,
+                                                                         monkeypatch):
+    # Run 1119's checkpoints were taken when one designer made the whole
+    # design: rewound to "the designer was about to design", the designer
+    # node must not make a team for steps that were never planned.
+    from research_agent.bootstrap.session import THREAD
+
+    monkeypatch.setattr(nodes.Run, "catalogue", lambda self: [("peft", "LoRA")])
+    st = _brief_approved(run)
+    add_design(script)
+    script.add("DiscussorOutput", say("The design is ready."))
+    boot = Bootstrap(run)
+    boot.graph.update_state(THREAD, {"research": st, "_to": "designer",
+                                     "decision": {"action": "design", "task": "Design it"}},
+                            as_node="planner")
+    assert boot.graph.get_state(THREAD).next == ("designer",)
+    turn = boot._drive(None, None)
+    assert [len(script.prompts(k)) for k in ("StudyOutput", "PlanOutput", "TeamOutput")] == \
+        [1, 1, 1]
+    assert turn.reply == "The design is ready."
     boot.close()

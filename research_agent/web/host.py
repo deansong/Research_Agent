@@ -923,7 +923,8 @@ class RunHost:
 # ---- reading a run from its folder ------------------------------------------------------
 
 
-NEXT_WORDS = {"designer": "the designer was about to design",
+NEXT_WORDS = {"planner": "the planner was about to plan the study and steps",
+              "designer": "the designer was about to design",
               "researcher": "the researcher was about to search",
               "orchestrator": "the orchestrator was about to decide",
               "discussor": "the discussor was about to answer", "human": "it waited for you"}

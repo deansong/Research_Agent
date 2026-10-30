@@ -22,12 +22,13 @@ import tomllib
 from dataclasses import dataclass, field, replace
 from pathlib import Path
 
-ROLES = ("discussor", "orchestrator", "researcher", "designer")
+ROLES = ("discussor", "orchestrator", "researcher", "planner", "designer")
 #: What a skills choice is keyed by: each role.
 NODES = ROLES
 #: Roles and skills keys of earlier versions, left out when an old run's
-#: config.json is read: the designer now does the planner's work.
-RETIRED = ("planner", "planner_hypothesize", "planner_plan", "refiner")
+#: config.json is read. (The planner is a role again: the study and the
+#: steps; the designer, the team.)
+RETIRED = ("planner_hypothesize", "planner_plan", "refiner")
 
 DEFAULT_FILE = Path(__file__).with_name("config.toml")
 #: Where a relative skills folder is taken from: the repository root.

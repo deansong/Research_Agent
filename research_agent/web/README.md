@@ -203,15 +203,16 @@ was sent and the whole answer). The live feed comes from research_backend's
 once a second.
 
 Nodes and their calls: the bootstrap's discussor (asides too), orchestrator,
-researcher and designer; in the execution, each step
+researcher, planner (the study and the steps, with the reader's calls) and
+designer (the team); in the execution, each step
 owner (all its steps and attempts), the validator and the reviewer. **wait**
 opens the Jobs tab, and **you** goes back to the chat.
 
 ### Which model each role runs on
 
 The **Run** tab lists every role with a provider, model and effort picker.
-The **Bootstrap** group holds the discussor, orchestrator, researcher and
-designer. The **Execution** group holds the orchestrator, worker,
+The **Bootstrap** group holds the discussor, orchestrator, researcher,
+planner and designer. The **Execution** group holds the orchestrator, worker,
 writer, validator and reviewer. Every node of the design runs on its
 role's model.
 

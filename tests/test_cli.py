@@ -11,7 +11,7 @@ import pytest
 
 from research_agent import cli
 from tests.scripted import script  # noqa: F401 -- fixture
-from tests.test_graph import DESIGN, FINDINGS, decide, say
+from tests.test_graph import FINDINGS, add_design, decide, say
 
 
 def _typing(monkeypatch, *lines):
@@ -34,7 +34,7 @@ def test_a_conversation_with_commands(tmp_path, script, monkeypatch, capsys):
                say("Thanks, designing."), say("The design is ready. Approve?"),
                say("Thanks."), say("The bootstrap is done."))
     script.add("ResearcherOutput", FINDINGS)
-    script.add("DesignOutput", DESIGN)
+    add_design(script)
     script.add("OrchestratorOutput", decide("research", questions=["q"]), decide("brief"),
                decide("design"))
     _typing(monkeypatch, "/show brief", "/show nonsense", "/approve plan", "/approve",

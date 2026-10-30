@@ -170,24 +170,72 @@ def brief_request(st: dict, *, task: str = "", budget: int | None = None,
     return "\n\n".join(parts)
 
 
-def designer(st: dict, *, task: str, skills: list[tuple[str, str]], run_dir=None) -> str:
-    catalogue = "\n".join(f"- {name}: {description}" for name, description in skills)
+# ---- planner (the study, then the steps) and designer (the team) ---------------------------
+# Each sees what its one job needs: the study is designed from the brief and
+# the evidence; the steps from the study; the team from the steps.
+
+
+def _live_hypotheses(st: dict) -> dict:
+    return {**st, "hypotheses": [h for h in st.get("hypotheses") or []
+                                 if h.get("status") != "dropped"]}
+
+
+def _last_run(st: dict) -> list[str]:
+    previous = (st.get("status") or {}).get("previous")
+    return [_block("THE LAST RUN", f"{previous}: its paper is {previous}/paper/main.pdf, its "
+                                   f"files are there; the review above is of it.")] if previous else []
+
+
+def study(st: dict, *, task: str, run_dir=None) -> str:
+    """The planner's first job: hypotheses, rubric, protocol."""
     return "\n\n".join([
         f"Today is {_today()}.",
-        _block("THE APPROVED BRIEF -- design from this",
+        _block("THE APPROVED BRIEF -- design the study from this",
                (st.get("brief") or {}).get("text") or "(none)"),
         _block("YOUR TASK", task),
         _block("THE RESEARCH STATE", S.render(
-            {**st, "hypotheses": [h for h in st.get("hypotheses") or []
-                                  if h.get("status") != "dropped"]},
-            ["goal", "constraints", "assumptions", "decisions", "hypotheses", "rubric",
-             "protocol", "plan", "design", "risks", "reviews"])),
+            _live_hypotheses(st), ["goal", "constraints", "assumptions", "decisions",
+                                   "hypotheses", "rubric", "protocol", "reviews"])),
         _block("EVIDENCE (cite by id)", S.render(st, ["evidence"], brief=True)),
-        _block("SKILLS YOU CAN GIVE A NODE", catalogue),
+        *_last_run(st),
+    ])
+
+
+def planner(st: dict, *, task: str, run_dir=None) -> str:
+    """The planner's second job: the steps, each a subagent's whole context."""
+    return "\n\n".join([
+        f"Today is {_today()}.",
+        _block("THE APPROVED BRIEF", (st.get("brief") or {}).get("text") or "(none)"),
+        _block("YOUR TASK", task),
+        _block("THE STUDY -- plan the steps that carry it out", S.render(
+            _live_hypotheses(st), ["hypotheses", "rubric", "protocol"])),
+        _block("WHAT THE STUDY WORKS WITHIN", S.render(
+            st, ["goal", "constraints", "assumptions", "decisions", "reviews"])),
+        *([_block("THE LAST PLAN -- yours to revise; what you leave out goes",
+                  S.render(st, ["plan"]))] if (st.get("plan") or {}).get("steps") else []),
         _block("EACH STEP IS A SUBAGENT WITH ITS OWN CONTEXT",
                prompt_files.text("notes/step_reader", run_dir,
                                  run=str(run_dir) if run_dir else "<run folder>")),
-        *([_block("THE LAST RUN", f"{previous}: its paper is {previous}/paper/main.pdf, its "
-                                  f"files are there; the review above is of it.")]
-          if (previous := (st.get("status") or {}).get("previous")) else []),
+        *_last_run(st),
+    ])
+
+
+def designer(st: dict, *, task: str, skills: list[tuple[str, str]], run_dir=None) -> str:
+    """The designer's job: the team of nodes that carries the steps out."""
+    catalogue = "\n".join(f"- {name}: {description}" for name, description in skills)
+    steps = []
+    for s in (st.get("plan") or {}).get("steps") or []:
+        after = f"; after {', '.join(s['depends_on'])}" if s.get("depends_on") else ""
+        checks = f"; completes {', '.join(s['rubric'])}" if s.get("rubric") else ""
+        steps.append(f"{s['id']}. {s['title']} [{s.get('kind') or 'worker'}{after}{checks}]\n"
+                     f"   {clip(s.get('detail') or '', 400)}")
+    return "\n\n".join([
+        f"Today is {_today()}.",
+        _block("YOUR TASK", task),
+        _block("THE STEPS -- each needs one owner", "\n".join(steps) or "(none)"),
+        _block("THE RUBRIC -- what the validator checks", S.render(st, ["rubric"])),
+        _block("WHAT THE TEAM WORKS WITHIN", S.render(st, ["constraints"])),
+        *([_block("THE LAST TEAM -- yours to revise; what you leave out goes",
+                  S.render(st, ["design"]))] if (st.get("design") or {}).get("nodes") else []),
+        _block("SKILLS YOU CAN GIVE A NODE", catalogue or "(none)"),
     ])

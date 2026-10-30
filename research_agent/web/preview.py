@@ -60,15 +60,30 @@ def preview(folder: Path, stage: str, node: str, step: str = "") -> dict:
     if stage == "bootstrap" and node in boot_config.ROLES:
         run = Run(folder=folder, roles=boot.roles, skills_dir=boot.skills_dir, quiet=True)
         task = _later("the orchestrator's task for it")
+        instructions = boot_prompts.instructions(folder)[node]
+        label = node
+        if node == "planner":
+            # Two calls: the study, then the steps.
+            job = step if step in ("study", "steps") else "study"
+            out.update(steps=["study", "steps"], step=job)
+            label = f"planner ({job})"
+            if job == "study":
+                instructions = boot_prompts.study(folder)
+            else:
+                notes.append("Shown with the study as it is now: the call is made right after "
+                             "the planner's study, with that study.")
         prompt = {"orchestrator": lambda: boot_views.orchestrator(st, requests=[]),
                   "researcher": lambda: boot_views.researcher(st, task=task),
+                  "planner": lambda: (boot_views.study if out["step"] == "study"
+                                      else boot_views.planner)(st, task=task, run_dir=folder),
                   "designer": lambda: boot_views.designer(st, task=task, run_dir=folder,
                                                           skills=run.catalogue())}[node]()
         schema = {"orchestrator": boot_schemas.OrchestratorOutput,
                   "researcher": boot_schemas.ResearcherOutput,
-                  "designer": boot_schemas.DesignOutput}[node]
-        return _shape(out, label=node, prompt=prompt,
-                      instructions=boot_prompts.instructions(folder)[node],
+                  "planner": boot_schemas.StudyOutput if out["step"] == "study"
+                  else boot_schemas.PlanOutput,
+                  "designer": boot_schemas.TeamOutput}[node]
+        return _shape(out, label=label, prompt=prompt, instructions=instructions,
                       role=boot.roles[node], schema=schema, skills=boot.skills.get(node),
                       skills_dir=boot.skills_dir,
                       workspace=folder / "research" if node == "researcher" else folder,

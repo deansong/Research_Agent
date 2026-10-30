@@ -145,7 +145,7 @@ def aside(run: Run, st: dict, *, user: str, activity: str = "") -> schemas.Boots
                           schema=schemas.BootstrapAside, session=DISCUSSOR_SESSION,
                           label="discussor (aside)", takeover=takeover)
     for r in out.requests:
-        inbox.post(run.folder, "request", text=r.detail, request_kind=r.kind)
+        inbox.post(run.folder, "request", text=r.detail, request_kind=r.kind, redo=r.redo)
     for d in out.decisions:
         inbox.post(run.folder, "decision", what=d.what, why=d.why)
     return out
@@ -316,50 +316,84 @@ def standalone_problems(steps) -> list[str]:
     return problems
 
 
-def design_check(st: dict, known_skills: set[str], reader=None):
-    """What code requires of a design, given the state it was made from --
-    a small function so it can be tested and reused. `reader(out)`: each
-    step's subagent context read alone ({step: questions}, bootstrap/reader).
-    `check.unresolved`: what the last design checked still leaves its
-    subagents to guess."""
-    evidence = _ids(st, "evidence")
-    sent_back: list[bool] = []
-    unresolved: list[str] = []
+# ---- planner (the study, then the steps) and designer (the team) ---------------------------
+#
+# Three calls, each with one job and its own prompt, run back to back; the
+# user approves the whole design once. A revision starts at the part it
+# changes, and the parts after it are redone: the study -> the steps -> the
+# team (REDO).
 
-    def check(out: schemas.DesignOutput) -> list[str]:
+#: Where a design is redone from, and what that redoes.
+REDO = ("study", "steps", "team")
+
+
+def study_check(st: dict):
+    """What code requires of a study: ids, and evidence that exists."""
+    evidence = _ids(st, "evidence")
+
+    def check(out: schemas.StudyOutput) -> list[str]:
         problems = _unique("hypothesis", [h.id for h in out.hypotheses], "H")
         problems += _unique("rubric", [r.id for r in out.rubric], "R")
         problems += [f"{h.id} cites {e}, which is not an evidence id"
                      for h in out.hypotheses for e in h.evidence if e not in evidence]
+        return problems
+    return check
+
+
+def study(run: Run, st: dict, *, task: str) -> Outcome:
+    """The planner's first job: hypotheses, rubric and protocol -- what the
+    study tests and how it is judged, before any step is planned."""
+    out, session = run.call("planner", brief=views.study(st, task=task, run_dir=run.folder),
+                            schema=schemas.StudyOutput, check=study_check(st),
+                            instructions=prompts.study(run.folder), label="planner (study)")
+    ops = _replace(st, "hypotheses", [h.model_dump() for h in out.hypotheses])
+    # Where each criterion is checked is the steps' to say: until then, nowhere.
+    ops += _replace(st, "rubric", [{**r.model_dump(), "assessed_at": ""} for r in out.rubric])
+    ops.append({"op": "set", "section": "protocol", "value": out.protocol.model_dump()})
+    # Its risks replace the last study's, or every revision piles its list on
+    # (measured: 141 risks after 23).
+    ops += [{"op": "drop", "section": "risks", "id": r["id"]} for r in st.get("risks") or []]
+    ops += [{"op": "add", "section": "risks", "value": r.model_dump()} for r in out.risks]
+    summary = (f"the study: {len(out.hypotheses)} hypotheses, {len(out.rubric)} criteria. "
+               f"{out.summary}")
+    ops.append(_result_op("planner", "study", task, summary, session))
+    return Outcome(ops=ops, summary=summary, session=session, data=out)
+
+
+def plan_check(st: dict, reader=None):
+    """What code requires of the steps, given the study they carry out.
+    `reader(steps)`: each step's subagent context read alone ({step:
+    questions}, bootstrap/reader). `check.unresolved`: what the last answer
+    checked still leaves its subagents to guess."""
+    rubric = [r["id"] for r in st.get("rubric") or []]
+    sent_back: list[bool] = []
+    unresolved: list[str] = []
+
+    def check(out: schemas.PlanOutput) -> list[str]:
         ids = [s.id for s in out.steps]
+        problems = []
         if ids != [str(n) for n in range(1, len(ids) + 1)]:
             problems.append(f'step ids must be "1", "2", ... in order, not {ids}')
-        rubric = {r.id for r in out.rubric}
         for s in out.steps:
             problems += [f"step {s.id} depends on {d}, which is not an earlier step"
                          for d in s.depends_on if d not in ids[:ids.index(s.id)]]
-        for r in out.rubric:            # "Step 6" means "6": no retry for that
-            r.assessed_at = re.sub(r"(?i)^\s*step\s*", "", r.assessed_at).strip()
-        problems += [f"{r.id}: `assessed_at` is {r.assessed_at!r}, not a step id: give the one "
-                     f"step that completes it" for r in out.rubric if r.assessed_at not in ids]
-        problems += design_problems({"nodes": [n.model_dump() for n in out.nodes]}, steps=ids,
-                                    rubric=rubric, skills=known_skills)
-        # New designs only: execution still accepts earlier ones.
-        problems += [f"the orchestrator {n.name} owns steps {', '.join(n.steps)}, but it only "
-                     f"decides what runs next: give those steps to a worker or writer and "
-                     f"leave the orchestrator's `steps` empty"
-                     for n in out.nodes if n.role == "orchestrator" and n.steps]
+            problems += [f"step {s.id} completes {r}, which is not a rubric criterion"
+                         for r in s.completes if r not in rubric]
+        done_at = {r: [s.id for s in out.steps if r in s.completes] for r in rubric}
+        problems += [f"{r} is completed by no step: give it the one step where it is checked"
+                     for r, at in done_at.items() if not at]
+        problems += [f"{r} is completed by steps {', '.join(at)}: give it the ONE step where "
+                     f"it is checked" for r, at in done_at.items() if len(at) > 1]
         # A step is its subagent's whole context: what it names must make
-        # sense there. Code catches letters and step numbers; a design that
-        # passes everything else is then read, step by step, as its subagents
-        # would (one call a step). Sent back on every attempt but the last,
-        # so a design that keeps them still reaches the user -- told which
-        # steps (`design`).
+        # sense there. Code catches letters and step numbers; steps that pass
+        # everything else are then read, one by one, as their subagents would
+        # (one call a step). Sent back on every attempt but the last, so a
+        # plan that keeps them still reaches the user -- told which steps.
         alone = standalone_problems(out.steps)
         if not alone and not problems and reader is not None:
             from research_agent.bootstrap import reader as R
 
-            alone = R.problems(reader(out))
+            alone = R.problems(reader(out.steps))
         unresolved[:] = alone
         if alone and len(sent_back) < run_base.ATTEMPTS - 1:
             sent_back.append(True)
@@ -369,40 +403,102 @@ def design_check(st: dict, known_skills: set[str], reader=None):
     return check
 
 
-def design(run: Run, st: dict, *, task: str) -> Outcome:
-    """The whole design in one call -- hypotheses, rubric, protocol, steps and
-    the nodes that do them -- so the study and the agent are thought out
-    together. It replaces the last one: what it leaves out goes."""
+def plan(run: Run, st: dict, *, task: str) -> Outcome:
+    """The planner's second job: the steps that carry the study out, each
+    written as its subagent's whole context, and the criterion each step
+    completes."""
     from research_agent.bootstrap import reader
 
-    catalogue = run.catalogue()
-    check = design_check(st, {name for name, _ in catalogue},
-                         reader=lambda out: reader.read(run, st, out))
-    out, session = run.call("designer", brief=views.designer(st, task=task, skills=catalogue,
-                                                            run_dir=run.folder),
-                            schema=schemas.DesignOutput, check=check)
-    ops = _replace(st, "hypotheses", [h.model_dump() for h in out.hypotheses])
-    ops += _replace(st, "rubric", [r.model_dump() for r in out.rubric])
-    ops += [{"op": "set", "section": "protocol", "value": out.protocol.model_dump()},
-            {"op": "set", "section": "plan", "value": {
-                "summary": out.summary, "steps": [
-                    {**s.model_dump(), "rubric": [r.id for r in out.rubric
-                                                  if r.assessed_at == s.id]}
-                    for s in out.steps]}},
-            {"op": "set", "section": "design", "value": {
-                "summary": out.summary, "nodes": [n.model_dump() for n in out.nodes],
-                "notes": out.notes}}]
-    # Its risks are part of the design: they replace the last design's, or
-    # every revision piles its list on (measured: 141 risks after 23).
-    ops += [{"op": "drop", "section": "risks", "id": r["id"]} for r in st.get("risks") or []]
-    ops += [{"op": "add", "section": "risks", "value": r.model_dump()} for r in out.risks]
-    summary = (f"a design of {len(out.steps)} steps and {len(out.nodes)} nodes, "
-               f"{len(out.hypotheses)} hypotheses, {len(out.rubric)} criteria. {out.summary}")
+    def read(steps):
+        return reader.read(run, st, steps=[_plan_step(s) for s in steps],
+                           rubric=_rubric_at(st, steps), owners={})
+
+    check = plan_check(st, reader=read)
+    out, session = run.call("planner", brief=views.planner(st, task=task, run_dir=run.folder),
+                            schema=schemas.PlanOutput, check=check, label="planner (steps)")
+    ops = [{"op": "set", "section": "plan", "value": {
+        "summary": out.summary, "steps": [_plan_step(s) for s in out.steps]}}]
+    ops += [{"op": "update", "section": "rubric", "id": r["id"],
+             "value": {"assessed_at": r["assessed_at"]}} for r in _rubric_at(st, out.steps)]
+    summary = f"the plan: {len(out.steps)} steps. {out.summary}"
     if check.unresolved:
         summary += ("\nNOT SELF-CONTAINED after every attempt -- tell the user, and fix "
                     "before approving: " + "; ".join(check.unresolved[:8]))
-    ops.append(_result_op("designer", "", task, summary, session))
+    ops.append(_result_op("planner", "steps", task, summary, session))
     return Outcome(ops=ops, summary=summary, session=session, data=out)
+
+
+def _plan_step(s) -> dict:
+    """A planned step as the state keeps it: the criteria it completes as `rubric`."""
+    step = s.model_dump()
+    step["rubric"] = step.pop("completes")
+    return step
+
+
+def _rubric_at(st: dict, steps) -> list[dict]:
+    """The rubric with each criterion's `assessed_at`: the step completing it."""
+    at = {r: s.id for s in steps for r in s.completes}
+    return [{**r, "assessed_at": at.get(r["id"], "")} for r in st.get("rubric") or []]
+
+
+def team_check(st: dict, known_skills: set[str]):
+    """What code requires of the team, given the steps it carries out."""
+    steps = {s["id"]: s for s in (st.get("plan") or {}).get("steps") or []}
+    rubric = _ids(st, "rubric")
+
+    def check(out: schemas.TeamOutput) -> list[str]:
+        nodes = [n.model_dump() for n in out.nodes]
+        problems = design_problems({"nodes": nodes}, steps=list(steps), rubric=rubric,
+                                   skills=known_skills)
+        # New designs only: execution still accepts earlier ones.
+        problems += [f"the orchestrator {n.name} owns steps {', '.join(n.steps)}, but it only "
+                     f"decides what runs next: give those steps to a worker or writer and "
+                     f"leave the orchestrator's `steps` empty"
+                     for n in out.nodes if n.role == "orchestrator" and n.steps]
+        problems += [f"step {sid} is planned for a {steps[sid]['kind']}, but {n.name} is a "
+                     f"{n.role}: give it to a {steps[sid]['kind']} node"
+                     for n in out.nodes if n.role in ("worker", "researcher", "writer")
+                     for sid in n.steps if steps.get(sid, {}).get("kind") not in (None, "", n.role)]
+        return problems
+    return check
+
+
+def team(run: Run, st: dict, *, task: str) -> Outcome:
+    """The designer's job: the team of nodes that carries the planned steps
+    out -- who owns each step, its role, access and skills."""
+    catalogue = run.catalogue()
+    out, session = run.call("designer", brief=views.designer(st, task=task, skills=catalogue,
+                                                            run_dir=run.folder),
+                            schema=schemas.TeamOutput,
+                            check=team_check(st, {name for name, _ in catalogue}),
+                            label="designer (team)")
+    ops = [{"op": "set", "section": "design", "value": {
+        "summary": out.summary, "nodes": [n.model_dump() for n in out.nodes],
+        "notes": out.notes}}]
+    summary = f"the team: {len(out.nodes)} nodes. {out.summary}"
+    ops.append(_result_op("designer", "team", task, summary, session))
+    return Outcome(ops=ops, summary=summary, session=session, data=out)
+
+
+#: Each part's call.
+PART_CALLS = {"study": study, "steps": plan, "team": team}
+
+
+def redesign(run: Run, st: dict, *, task: str, start: str = "study",
+             commit=None) -> tuple[dict, list[Outcome]]:
+    """The design redone from `start` on, each part committed (`commit(st,
+    outcome, part)` -> st) before the next reads it. Returns the state and
+    the outcomes."""
+    done = []
+    for part in REDO[REDO.index(start):]:
+        out = PART_CALLS[part](run, st, task=task)
+        st = commit(st, out, part) if commit else _apply_ops(st, out)
+        done.append(out)
+    return st, done
+
+
+def _apply_ops(st: dict, out: Outcome) -> dict:
+    return S.apply(st, out.ops, by="designer")[0]
 
 
 def _unique(what: str, ids: list[str], prefix: str) -> list[str]:

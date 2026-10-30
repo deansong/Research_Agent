@@ -74,6 +74,10 @@ class Request(BaseModel):
     kind: Literal["research", "revise_brief", "revise_design", "proceed", "other"]
     detail: str
     """What the user wants, in your own clean words -- never the chat itself."""
+    redo: Literal["", "study", "steps", "team"] = Field("", description=(
+        "For revise_design: the first part the change touches -- study (hypotheses, rubric, "
+        "protocol), steps, or team (the nodes, their skills); the parts after it are redone "
+        "too. \"\" for the whole design."))
 
 
 class DiscussorOutput(BaseModel):
@@ -118,6 +122,9 @@ class OrchestratorOutput(BaseModel):
     task: str
     """For research/design: what that node must do now, with any feedback it
     must take into account. For ask_user: what to ask."""
+    redo: Literal["study", "steps", "team"] = Field("study", description=(
+        "For design: where it starts -- study (hypotheses, rubric, protocol), steps, or team "
+        "(the nodes); the parts after it are redone too. A first design starts at study."))
     questions: list[str] = Field(default_factory=list, max_length=8)
     """For research: the questions to answer."""
     summary: str
@@ -161,7 +168,7 @@ class ReaderOutput(BaseModel):
     """Each quotes the words it is about; none when the step stands alone."""
 
 
-# ---- designer: the whole design -------------------------------------------------------
+# ---- planner (the study, then the steps) and designer (the team) -------------------------
 
 
 class HypothesisIn(BaseModel):
@@ -221,8 +228,57 @@ class DesignNodeIn(BaseModel):
     instructions: str
 
 
+class StudyCriterionIn(BaseModel):
+    id: str
+    """R1, R2, ..."""
+    criterion: str
+    measure: str
+    threshold: str
+    applies_to: list[str] = Field(default_factory=list)
+
+
+class StudyOutput(BaseModel):
+    """The planner's first job: what the study tests and how it is judged.
+    The whole study each time: what is left out goes."""
+
+    summary: str
+    hypotheses: list[HypothesisIn] = Field(default_factory=list, max_length=8)
+    rubric: list[StudyCriterionIn] = Field(min_length=1, max_length=12)
+    protocol: ProtocolIn
+    risks: list[RiskIn] = Field(default_factory=list, max_length=8)
+    notes: str = ""
+
+
+class PlanStepIn(StepIn):
+    kind: Literal["worker", "researcher", "writer"]
+    """Who its subagent is: a worker (code, data, experiments), a researcher
+    (the literature) or a writer (a report or paper)."""
+    completes: list[str] = Field(default_factory=list)
+    """The rubric criteria this step completes, where each is checked: every
+    criterion is completed by exactly one step."""
+
+
+class PlanOutput(BaseModel):
+    """The planner's second job: the steps, each a subagent's whole context.
+    All the steps each time: what is left out goes."""
+
+    summary: str
+    steps: list[PlanStepIn] = Field(min_length=1, max_length=12)
+    notes: str = ""
+
+
+class TeamOutput(BaseModel):
+    """The designer's job: the team of nodes that carries the steps out. The
+    whole team each time: what is left out goes."""
+
+    summary: str
+    nodes: list[DesignNodeIn] = Field(min_length=2, max_length=16)
+    notes: str = ""
+
+
 class DesignOutput(BaseModel):
-    """The whole design, every time: what is left out goes."""
+    """The whole design in one answer, as the designer gave it before the
+    planner and designer were split (old runs' sessions)."""
 
     summary: str
     hypotheses: list[HypothesisIn] = Field(default_factory=list, max_length=8)

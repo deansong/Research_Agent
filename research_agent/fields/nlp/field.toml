@@ -23,6 +23,7 @@ skills = [
 discussor = []
 orchestrator = ["research-orchestration"]
 researcher = ["research"]
+planner = []
 designer = []
 # the execution stage's built-in nodes (the designed ones get the design's)
 reviewer = ["scientific-critical-thinking"]

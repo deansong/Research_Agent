@@ -258,7 +258,7 @@ def _show_step(node: str, update: dict) -> None:
         d = update.get("decision") or {}
         if d.get("action") not in (None, "ask_user", "ready"):
             print(f"  . orchestrator -> {d['action']}: {_short(d.get('reason', ''))}", flush=True)
-    elif node in ("researcher", "designer"):
+    elif node in ("researcher", "planner", "designer"):
         print(f"  . {_short(update.get('last', node), 160)}", flush=True)
 
 

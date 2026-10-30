@@ -66,7 +66,14 @@ model = "gpt-6.1-sol"
 provider = "antigravity"
 model = "gemini-3.8-flash-high"
 
+[roles.planner]
+# The study (hypotheses, rubric, protocol), then the steps.
+provider = "codex"
+model = "gpt-6.1-terra"
+effort = "high"
+
 [roles.designer]
+# The team: the nodes that carry the steps out.
 provider = "codex"
 model = "gpt-6.1-terra"
 effort = "high"
