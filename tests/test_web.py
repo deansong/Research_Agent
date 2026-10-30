@@ -801,3 +801,28 @@ def test_a_node_s_next_input_can_be_read_before_it_runs(web):
     trainer = web.get("/api/runs/pre/nodes/validator/preview", params={"step": "2"}).json()
     assert trainer["step"] == "2" and trainer["steps"] == ["1", "2"]
     assert web.get("/api/runs/pre/nodes/nobody/preview").status_code == 400
+
+
+def test_a_job_can_be_watched_as_it_runs(web):
+    from research_agent.execute import jobs
+
+    folder = web.root / "jobs"
+    S.Store(folder).write(approved_state())
+    (folder / "work").mkdir()
+    (folder / "work" / "train.py").write_text("import time\\nprint('epoch 1', flush=True)\\n")
+    job = jobs.launch(folder, "1", "python3 train.py && printf 'step 5\\\\rstep 9\\\\n'",
+                      cwd=folder / "work")
+    for _ in range(100):
+        if jobs.status(job)["state"] == "finished":
+            break
+        time.sleep(0.05)
+    d = web.get(f"/api/runs/jobs/jobs/{job['id']}").json()
+    assert d["state"] == "finished" and d["step_title"] == "Data"
+    assert d["script"] == "work/train.py" and d["script_in_run"]
+    s = web.get(f"/api/runs/jobs/jobs/{job['id']}/stream", params={"offset": 0}).json()
+    assert "epoch 1" in s["text"] and s["offset"] == len(s["text"].encode())
+    again = web.get(f"/api/runs/jobs/jobs/{job['id']}/stream", params={"offset": s["offset"]}).json()
+    assert again["text"] == "" and not again["restart"]
+    assert web.get(f"/api/runs/jobs/jobs/{job['id']}/stream", params={"offset": 10**9}).json()["restart"]
+    assert web.get(f"/job/jobs/{job['id']}").status_code == 200
+    assert web.get("/api/runs/jobs/jobs/s9-999").status_code == 404

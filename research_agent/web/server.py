@@ -562,6 +562,41 @@ def create_app(runs_root: Path = RUNS_ROOT, *, roles=(), watch: bool = True) -> 
             return []
         return [{**j, **J.status(j)} for j in J.records(folder)]
 
+    def job_of(run_id: str, job_id: str) -> dict:
+        job = J.get(folder_of(run_id), job_id) if re.fullmatch(r"[\w\-]+", job_id) else None
+        if job is None:
+            raise _bad(404, "no_job", f"No job {job_id!r}.")
+        return job
+
+    @app.get("/api/runs/{run_id}/jobs/{job_id}")
+    def job_detail(run_id: str, job_id: str):
+        """A job, now: its record and state, its GPUs' use, its script, and
+        what its step's owner said it is for."""
+        folder, job = folder_of(run_id), job_of(run_id, job_id)
+        st = S.Store(folder).read()
+        plan = next((s for s in (st.get("plan") or {}).get("steps") or []
+                     if s["id"] == job["step"]), {})
+        rec = next((r for r in (st.get("execution") or {}).get("steps") or []
+                    if r["id"] == job["step"]), {})
+        script = J.script_of(job)
+        inside = script and Path(script).is_relative_to(folder)
+        state = J.status(job)
+        return {**job, **state, "step_title": plan.get("title", ""),
+                "step_summary": rec.get("summary", ""), "owner": rec.get("owner", ""),
+                "script": str(Path(script).relative_to(folder)) if inside else script,
+                "script_in_run": bool(inside),
+                "gpus_now": J.gpu_usage(job["gpus"]) if state["state"] == "running" else []}
+
+    @app.get("/api/runs/{run_id}/jobs/{job_id}/stream")
+    def job_stream(run_id: str, job_id: str, offset: int = 0):
+        """The log from `offset` on, to follow it as it is written."""
+        job = job_of(run_id, job_id)
+        text, end = J.read_from(job, max(0, offset))
+        # restart: the text replaces what the page has (the log was replaced,
+        # or more was written than one read returns -- its newest part).
+        return {"text": text, "offset": end, "restart": offset > end or end - offset > 200_000,
+                **J.status(job)}
+
     @app.get("/api/runs/{run_id}/jobs/{job_id}/log")
     def job_log(run_id: str, job_id: str, lines: int = 80):
         job = J.get(folder_of(run_id), job_id) if re.fullmatch(r"[\w\-]+", job_id) else None
@@ -607,6 +642,11 @@ def create_app(runs_root: Path = RUNS_ROOT, *, roles=(), watch: bool = True) -> 
     def node_window(run_id: str, node: str):
         folder_of(run_id)
         return FileResponse(STATIC / "node.html", headers={"Cache-Control": "no-store"})
+
+    @app.get("/job/{run_id}/{job_id}")
+    def job_window(run_id: str, job_id: str):
+        job_of(run_id, job_id)
+        return FileResponse(STATIC / "job.html", headers={"Cache-Control": "no-store"})
 
     @app.get("/review/{run_id}")
     def review_window(run_id: str):

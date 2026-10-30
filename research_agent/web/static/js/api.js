@@ -58,6 +58,8 @@ export const api = {
   review: (id) => request("POST", `${run(id)}/review`),
   papers: (id) => request("GET", `${run(id)}/papers`),
   raw: (id, path) => `${run(id)}/raw?path=${encodeURIComponent(path)}`,
+  job: (id, job) => request("GET", `${run(id)}/jobs/${encodeURIComponent(job)}`),
+  jobStream: (id, job, offset) => request("GET", `${run(id)}/jobs/${encodeURIComponent(job)}/stream?offset=${offset}`),
   jobs: (id) => request("GET", `${run(id)}/jobs`),
   fields: () => request("GET", "/api/fields"),
   providers: (refresh) => request("GET", `/api/providers${refresh ? "?refresh=true" : ""}`),

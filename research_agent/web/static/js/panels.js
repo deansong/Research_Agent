@@ -263,7 +263,9 @@ export class Inspector {
           el("td", { class: "mono", text: j.id }), el("td", { text: j.step }),
           el("td", {}, pill(j.state + (j.exit != null ? ` ${j.exit}` : ""), j.state === "running" ? "live" : j.exit === 0 ? "ok" : "bad")),
           el("td", { text: (j.gpus || []).join(",") || "-" }), el("td", { text: j.hours.toFixed(2) }),
-          el("td", {}, el("button", { class: "btn tiny", text: "log", onclick: () => this.showLog(j.id) })))))));
+          el("td", {}, el("button", { class: "btn tiny", text: "log", onclick: () => this.showLog(j.id) }),
+            el("button", { class: "btn tiny", text: "watch ↗", title: "Follow its log live, with its GPUs and script, in its own window",
+              onclick: () => window.open(`/job/${encodeURIComponent(this.runId)}/${encodeURIComponent(j.id)}`, `job-${j.id}`, "width=1100,height=900") })))))));
     } catch (err) { this.onError(err); }
   }
 

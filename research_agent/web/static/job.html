@@ -1,0 +1,34 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Job</title>
+  <link rel="stylesheet" href="/css/app.css">
+</head>
+<body class="state-window">
+  <header class="topbar">
+    <div class="brand"><span class="dot"></span>job</div>
+    <div class="run-bar">
+      <span id="job-name" class="mono">-</span>
+      <span id="job-state" class="pill">-</span>
+      <span id="job-info" class="dim small"></span>
+    </div>
+    <div class="topbar-actions">
+      <label class="follow" title="Keep the newest lines in view"><input id="follow" type="checkbox" checked> follow</label>
+      <span id="live-dot" class="live-dot" title="live"></span>
+    </div>
+  </header>
+  <main class="state-page job-page">
+    <section class="job-facts">
+      <div id="job-for" class="small"></div>
+      <pre id="job-command" class="pre small"></pre>
+      <div id="job-gpus" class="small"></div>
+      <details id="job-script-box" class="fold" hidden><summary id="job-script-title">The script</summary>
+        <pre id="job-script" class="pre small"></pre></details>
+    </section>
+    <pre id="job-log" class="job-log"></pre>
+  </main>
+  <script type="module" src="/js/job.js"></script>
+</body>
+</html>

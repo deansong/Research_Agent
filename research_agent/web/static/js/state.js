@@ -276,6 +276,9 @@ const DRAW = {
                 el("input", { type: "checkbox", checked: !!r[`pause_${w}`], disabled: !live,
                   onchange: (ev) => this.toggleBreak(r.id, w, ev.target.checked) }), w))),
               el("td", {}, waits ? el("button", { class: "btn tiny primary", text: "Go", onclick: () => this.go() }) : null,
+                ["running", "waiting"].includes(r.status) ? (r.jobs || []).map((j) => el("button", { class: "btn tiny",
+                  text: `watch ${j} ↗`, title: "Follow this job's log live, with its GPUs and script",
+                  onclick: () => window.open(`/job/${encodeURIComponent(this.runId)}/${encodeURIComponent(j)}`, `job-${j}`, "width=1100,height=900") })) : null,
                 live && ["fail", "stopped", "skipped"].includes(r.status) ? [
                   el("button", { class: "btn tiny", text: r.status === "skipped" ? "Reopen" : "Another attempt",
                     title: r.status === "skipped" ? `Run step ${r.id} after all (the steps skipped after it wait for it again)`

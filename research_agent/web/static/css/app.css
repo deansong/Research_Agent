@@ -433,3 +433,11 @@ ul.plain { margin: 0; padding-left: 18px; }
 .call-section.wire { border-left: 3px solid var(--accent-dim); }
 .wire-head { margin: 10px 0 4px; }
 .wire-note { margin: 10px 0; }
+
+/* ---- a job's own window --------------------------------------------------------------- */
+
+.job-page { display: flex; flex-direction: column; gap: 8px; padding: 10px 14px; }
+.job-facts { flex: 0 0 auto; display: flex; flex-direction: column; gap: 6px; }
+.job-log { flex: 1 1 auto; min-height: 0; overflow: auto; margin: 0; padding: 10px; background: var(--bg-input);
+  border-radius: 6px; font: 12px/1.45 var(--mono); white-space: pre-wrap; word-break: break-all; }
+.gpu-chip { display: inline-block; margin-right: 10px; padding: 2px 8px; border-radius: 10px; background: var(--bg-raised); }

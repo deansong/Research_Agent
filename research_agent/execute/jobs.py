@@ -62,6 +62,8 @@ def launch(run, step: str, command: str | list[str], *, gpus: int = 0, name: str
     log, exit_file = jobs / f"{job_id}.log", jobs / f"{job_id}.exit"
     env = dict(os.environ)
     env["CUDA_VISIBLE_DEVICES"] = ",".join(str(g) for g in chosen) if gpus else ""
+    # Python's prints reach the log as they happen, so the run can be watched.
+    env.setdefault("PYTHONUNBUFFERED", "1")
     with open(log, "ab") as out:
         # The exit code goes to a file, so it is known after this process
         # (and the agent that launched it) is gone.
@@ -139,6 +141,57 @@ def tail(job: dict, lines: int = 30) -> str:
         handle.seek(max(0, handle.tell() - 64_000))
         text = handle.read().decode("utf-8", "replace")
     return "\n".join(text.splitlines()[-lines:])
+
+
+def read_from(job: dict, offset: int, limit: int = 200_000) -> tuple[str, int]:
+    """The log from byte `offset` on (at most `limit` bytes, the newest when
+    there is more): (text, the offset to read from next)."""
+    path = Path(job["log"])
+    if not path.exists():
+        return "", 0
+    size = path.stat().st_size
+    if offset > size:                   # the log was replaced: start again
+        offset = 0
+    start = max(offset, size - limit)
+    with open(path, "rb") as handle:
+        handle.seek(start)
+        data = handle.read(size - start)
+    return data.decode("utf-8", "replace"), size
+
+
+def gpu_usage(gpus: list[int]) -> list[dict]:
+    """Each of these GPUs now: utilization %, memory used and total (MiB).
+    [] when nvidia-smi cannot be asked."""
+    if not gpus:
+        return []
+    try:
+        out = subprocess.run(["nvidia-smi", "--query-gpu=index,utilization.gpu,memory.used,"
+                              "memory.total", "--format=csv,noheader,nounits"],
+                             capture_output=True, text=True, timeout=10, check=True).stdout
+    except (OSError, subprocess.SubprocessError):
+        return []
+    rows = []
+    for line in out.strip().splitlines():
+        index, util, used, total = (x.strip() for x in line.split(","))
+        if int(index) in gpus:
+            rows.append({"index": int(index), "util": int(util), "used": int(used),
+                         "total": int(total)})
+    return rows
+
+
+def script_of(job: dict) -> str:
+    """The script the job runs (a .py or .sh in its command), as a path; ""
+    when its command names none that exists."""
+    try:
+        words = shlex.split(job.get("command") or "")
+    except ValueError:
+        words = (job.get("command") or "").split()
+    for word in reversed(words):
+        if word.endswith((".py", ".sh")):
+            path = Path(word) if Path(word).is_absolute() else Path(job["cwd"]) / word
+            if path.is_file():
+                return str(path.resolve())
+    return ""
 
 
 def describe(job: dict) -> str:
