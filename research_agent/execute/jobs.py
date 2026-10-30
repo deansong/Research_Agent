@@ -105,6 +105,24 @@ def records(run, step: str | None = None) -> list[dict]:
     return [j for j in found if step is None or j["step"] == str(step)]
 
 
+def set_aside(run, into: str | os.PathLike, *, step: str | None = None,
+              before: str = "") -> list[str]:
+    """Move job records -- of `step`, or all; with `before`, only those started
+    earlier (ISO time) -- with their logs into `into`, where `records` no
+    longer sees them: an execution set aside or rewound must not leave its
+    jobs counted as the new attempt's. Running jobs stay. Returns the ids."""
+    moved = []
+    for job in records(run, step):
+        if (before and (job.get("started_at") or "") >= before) or status(job)["state"] == "running":
+            continue
+        target = Path(into)
+        target.mkdir(parents=True, exist_ok=True)
+        for path in folder(run).glob(f"{job['id']}.*"):
+            path.rename(target / path.name)
+        moved.append(job["id"])
+    return moved
+
+
 def get(run, job_id: str) -> dict | None:
     path = folder(run) / f"{job_id}.json"
     return json.loads(path.read_text()) if path.exists() else None

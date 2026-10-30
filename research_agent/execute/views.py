@@ -498,6 +498,11 @@ def validator(st: dict, *, design_part: str, node: dict, step: dict, report: dic
         _block("RUBRIC ITEMS TO CHECK", rubric_text(
             st, list(step.get("rubric") or []))),
         _block("THE PROTOCOL", S.render(st, ["protocol"])),
+        _block("NOT THIS EXECUTION'S WORK", (
+            "artifacts/_before_redesign-*/, artifacts/_rewound/ and jobs/_earlier/ hold what "
+            "an earlier execution or a rewound attempt left, set aside by code and readable "
+            "only by the run's owner. They are not this step's outputs or jobs: do not judge "
+            "the step by them, nor its report against them.")),
         *([_block("THE USER'S DECISIONS -- they stand over the plan where they conflict: "
                   "work that follows one is not a failure", decided)]
           if (decided := user_decisions(st, since_execution=True)) else []),

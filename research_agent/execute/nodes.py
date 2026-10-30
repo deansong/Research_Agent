@@ -352,6 +352,9 @@ def rewind(folder: Path, st: dict, step_id: str, *, by: str = "user") -> list[di
         if out.exists() and any(out.iterdir()):
             keep.mkdir(parents=True, exist_ok=True)
             shutil.move(str(out), str(keep / out.name))
+        jobs.set_aside(folder, keep / "jobs", step=s)
+    if keep.exists():
+        close(keep.parent)
     ops = []
     for s in redo:
         ops.append(record_op(st, s, status="pending", attempts=0, extra_attempts=0, go=False,
@@ -632,6 +635,29 @@ def orchestrator(run: ExecRun, st: dict, design: Design, *, budget: str, request
 # looks at what the step depends on as it is on disk, names the exact files
 # its owner reads (code checks they exist) and what else it must be told --
 # or says what is missing, and the step does not start.
+
+
+def close(folder: Path) -> None:
+    """Outputs kept aside -- an earlier execution's, a rewound step's -- are
+    for looking back, not for the work: only the run's owner may read them.
+    Measured (run 1119): the validator failed a step because an archived copy
+    of the test labels was readable by the selection workers' group."""
+    try:
+        folder.chmod(0o700)
+    except OSError:
+        pass
+
+
+def set_aside_earlier(run: ExecRun, st: dict) -> None:
+    """What an execution set aside before this one left behind, for a run set
+    back before code did it: job records started before this execution, and
+    archived outputs open to others. Measured (run 1119): a step's validator
+    counted the earlier execution's jobs as the step's own."""
+    started = (st.get("execution") or {}).get("started")
+    if started:
+        jobs.set_aside(run.folder, run.folder / "jobs" / "_earlier", before=started)
+    for kept in (run.folder / "artifacts").glob("_*"):
+        close(kept)
 
 
 #: The execution's start, kept by code: <run>/<START_RECORD>.

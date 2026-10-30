@@ -440,6 +440,13 @@ class RunHost:
             for folder in sorted(artifacts.glob("step_*")):
                 kept.mkdir(parents=True, exist_ok=True)
                 shutil.move(str(folder), str(kept / folder.name))
+            # Its jobs too, or the next execution's steps count them as theirs;
+            # and only the run's owner reads what is kept (nodes.close).
+            jobs.set_aside(self.folder, kept / "jobs")
+            if kept.exists():
+                from research_agent.execute import nodes as exec_nodes
+
+                exec_nodes.close(kept)
             ops = [{"op": "set", "section": "execution", "value": {}},
                    {"op": "merge", "section": "status", "value": {
                        "phase": "discussing", "next": "design again",

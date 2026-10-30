@@ -258,3 +258,28 @@ def test_code_keeps_the_execution_start_and_tells_the_dispatch_the_owner_can_wri
                         step=nodes.plan_step(st, "1"), task="", paths=run.paths("1"),
                         jobs_command="jobs")
     assert "The execution started at 2999-01-01T00:00:00+00:00" in owner
+
+
+def test_an_earlier_execution_s_jobs_and_outputs_are_set_aside(tmp_path):
+    # Run 1119: after Back to design, step 1's validator counted the earlier
+    # execution's jobs s1-001..003 as the step's own, and failed it for an
+    # archived copy of the test labels readable by others.
+    run = nodes.ExecRun(tmp_path, {r: RoleConfig("fake") for r in (*config.ROLES, "discussor")},
+                        skills={}, limits=config.defaults(), quiet=True)
+    folder = jobs.folder(tmp_path)
+    for job_id, at in (("s1-001", "2026-10-30T13:24:39+00:00"),
+                       ("s1-004", "2026-10-30T17:54:44+00:00")):
+        log = folder / f"{job_id}.log"
+        log.write_text("done\n")
+        (folder / f"{job_id}.exit").write_text("0")
+        (folder / f"{job_id}.json").write_text(json.dumps({
+            "id": job_id, "step": "1", "pid": 0, "gpus": [0], "log": str(log),
+            "started": 0, "started_at": at}))
+    kept = tmp_path / "artifacts" / "_before_redesign-20261030-135107"
+    kept.mkdir(parents=True)
+    kept.chmod(0o775)
+    st = {"execution": {"started": "2026-10-30T17:11:03+00:00", "steps": []}}
+    nodes.set_aside_earlier(run, st)
+    assert [j["id"] for j in jobs.records(tmp_path, "1")] == ["s1-004"], "this execution's only"
+    assert (folder / "_earlier" / "s1-001.json").exists() and (folder / "_earlier" / "s1-001.log").exists()
+    assert kept.stat().st_mode & 0o777 == 0o700, "only the run's owner reads what is kept"
