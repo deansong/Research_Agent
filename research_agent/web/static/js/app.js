@@ -146,6 +146,7 @@ function renderDetail(d) {
   $("btn-review").hidden = !finished;
   $("btn-write-paper").hidden = !finished;
   $("btn-redesign").hidden = !(d.stage === "execution" && !d.busy && (d.waiting || d.outcome));
+  $("btn-back-design").hidden = !(d.stage === "execution" && !d.busy);
   $("btn-stop").hidden = !(d.stage === "execution" && (d.busy || d.waiting) && d.outcome !== "done");
   chat.setMode(d);
   stateView.setControls({ stage: d.stage, canApprove: !!(d.waiting && !d.busy), awaiting: d.awaiting || "",
@@ -333,6 +334,10 @@ function wireDialogs() {
   $("btn-review-open").addEventListener("click", openReview);
   $("btn-review").addEventListener("click", () => act(() => api.review(app.runId)));
   $("btn-write-paper").addEventListener("click", () => act(() => api.writePaper(app.runId)));
+  $("btn-back-design").addEventListener("click", async () => {
+    if (!confirm("Go back to the design stage in this run? Running jobs are stopped, the steps' outputs are moved aside (kept), and the designer designs again from the approved brief.")) return;
+    try { await api.backToDesign(app.runId); await openRun(app.runId); } catch (err) { problem(err); }
+  });
   $("btn-redesign").addEventListener("click", async () => {
     if (!confirm("Start a follow-up run from this run's paper and review? This run stays as it is; the new one starts at the design stage.")) return;
     try { const d = await api.redesign(app.runId); await openRun(d.id); } catch (err) { problem(err); }

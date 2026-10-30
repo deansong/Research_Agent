@@ -244,6 +244,10 @@ def create_app(runs_root: Path = RUNS_ROOT, *, roles=(), watch: bool = True) -> 
             host.hold(idea)
         return host.detail()
 
+    @app.post("/api/runs/{run_id}/back_to_design")
+    def back_to_design(run_id: str):
+        return {"ok": True, "said": act(host_of(run_id).back_to_design)}
+
     @app.post("/api/runs/{run_id}/redesign")
     def redesign(run_id: str):
         """Back to the bootstrap: the next run, from this one's paper and

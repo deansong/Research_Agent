@@ -200,7 +200,7 @@ def test_approve_then_execute_from_the_page(web, script):
     r = web.post("/api/runs/ready/redesign")
     assert r.status_code == 200 and r.json()["id"] == "ready-next"
     d = settle(web, "ready-next")
-    assert d["stage"] == "bootstrap" and d["waiting"]
+    assert d["stage"] == "bootstrap" and d["waiting"], (d["error"], d["outcome"], d["stopped_midway"], d["transcript"][-3:])
     assert "Go through its paper and the review" in d["transcript"][0]["text"]
     assert d["transcript"][-1]["text"] == "The review asks for five seeds. Shall we?"
     new = web.get("/api/runs/ready-next/state").json()["state"]
@@ -717,3 +717,67 @@ def test_the_paper_window_shows_the_writer_s_pdf_first(web):
     assert web.get("/api/runs/paper/raw", params={"path": "../../etc/passwd"}).status_code == 404
     assert web.get("/paper/paper").status_code == 200
     assert web.get("/review/paper").status_code == 200
+
+
+def test_back_to_design_sets_the_execution_aside_in_the_same_run(web, script):
+    import sqlite3
+
+    folder = web.root / "back"
+    st = approved_state()
+    st["approvals"] = {k: v for k, v in st["approvals"].items() if k != "design"}
+    S.Store(folder).write(st)
+    script.add("DiscussorOutput", say("The design is ready. Approve?"), say("Approved."),
+               say("Ready: start the execution."))
+    script.add("OrchestratorOutput", decide("ask_user", "Approve the design?"))
+    web.post("/api/runs/back/message", json={"text": "hello"})
+    settle(web, "back")
+    web.post("/api/runs/back/approve", json={"sections": ["design"]})
+    settle(web, "back")
+    script.add("ExecDecision", move("run", "1"), move("run", "2"))
+    script.add("StepReport", done_writing(_Folder(folder), "1"))
+    script.add("Verdict", verdict())
+    script.add("ExecDiscussorOutput", tell("Step 2 waits for your go."))
+    web.post("/api/runs/back/execute", json={"gpu_hours": 10})
+    d = settle(web, "back")
+    assert d["stage"] == "execution" and d["awaiting"] == "2"
+
+    script.add("DiscussorOutput", say("Asking the designer for the design again."))
+    r = web.post("/api/runs/back/back_to_design")
+    assert r.status_code == 200 and "design again" in r.json()["said"]
+    d = settle(web, "back")
+    assert d["stage"] == "bootstrap" and d["waiting"], (d["error"], d["outcome"], d["stopped_midway"], d["transcript"][-3:])
+    assert d["transcript"][-1]["text"] == "Asking the designer for the design again."
+    st = S.Store(folder).read()
+    assert not (st.get("execution") or {}).get("steps"), "the step table is cleared"
+    assert st["decisions"][-1]["what"].startswith("Back to the design stage")
+    assert "step 1 pass" in st["decisions"][-1]["why"]
+    kept = list((folder / "artifacts").glob("_before_redesign-*/step_01"))
+    assert kept and not (folder / "artifacts" / "step_01").exists(), "outputs kept, set aside"
+    with sqlite3.connect(folder / "checkpoint.sqlite") as db:
+        assert not db.execute("SELECT 1 FROM checkpoints WHERE thread_id='execute'").fetchall()
+    assert web.post("/api/runs/back/back_to_design").status_code == 400, "already there"
+
+
+def test_back_to_design_carries_on_a_design_stage_that_stopped_partway(web, script):
+    folder = web.root / "half"
+    st = approved_state()
+    st["approvals"] = {k: v for k, v in st["approvals"].items() if k != "design"}
+    S.Store(folder).write(st)
+    # Two answers where three are asked for: the design stage stops partway.
+    script.add("DiscussorOutput", say("The design is ready. Approve?"), say("Approved."))
+    script.add("OrchestratorOutput", decide("ask_user", "Approve the design?"))
+    web.post("/api/runs/half/message", json={"text": "hello"})
+    settle(web, "half")
+    web.post("/api/runs/half/approve", json={"sections": ["design"]})
+    settle(web, "half")
+    script.add("ExecDecision", move("run", "1"))
+    script.add("StepReport", done_writing(_Folder(folder), "1"))
+    script.add("Verdict", verdict())
+    script.add("ExecDiscussorOutput", tell("Step 1 passed."))
+    web.post("/api/runs/half/execute", json={"gpu_hours": 10})
+    settle(web, "half")
+    script.add("DiscussorOutput", say("Back in the design stage."))
+    assert web.post("/api/runs/half/back_to_design").status_code == 200
+    d = settle(web, "half")
+    assert d["stage"] == "bootstrap" and not d["error"]
+    assert d["transcript"][-1]["text"] == "Back in the design stage."

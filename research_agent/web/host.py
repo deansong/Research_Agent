@@ -386,6 +386,74 @@ class RunHost:
                 self.bus.emit("note", text="The reviewer reviews the study again.")
                 self._run(lambda on: self.session.review(on_step=on))
 
+    def back_to_design(self) -> str:
+        """The execution set aside and the run back in the design stage, in
+        the same folder: the jobs stopped, the steps' outputs moved to
+        artifacts/_before_redesign-<time>, the step table cleared (the
+        history keeps it), the execution's checkpoint dropped, the autopilot
+        off -- then the discussor is asked for the design again, from the
+        brief already approved. Returns what was said for the user."""
+        import shutil
+        import sqlite3
+        from datetime import datetime
+
+        from research_agent.execute import jobs
+
+        with self._lock:
+            if self.stage != "execution":
+                raise ValueError("The run is in the design stage already.")
+            if self.busy:
+                raise Busy("The team is working: pause or stop it first.")
+            for job in jobs.records(self.folder):
+                if jobs.status(job)["state"] == "running":
+                    jobs.kill(self.folder, job["id"])
+            st = S.Store(self.folder).read()
+            steps = (st.get("execution") or {}).get("steps") or []
+            done = ", ".join(f"step {r['id']} {r['status']}" for r in steps
+                             if r.get("status") != "pending") or "no step had run"
+            artifacts = self.folder / "artifacts"
+            kept = artifacts / f"_before_redesign-{datetime.now():%Y%m%d-%H%M%S}"
+            for folder in sorted(artifacts.glob("step_*")):
+                kept.mkdir(parents=True, exist_ok=True)
+                shutil.move(str(folder), str(kept / folder.name))
+            ops = [{"op": "set", "section": "execution", "value": {}},
+                   {"op": "merge", "section": "status", "value": {
+                       "phase": "discussing", "next": "design again",
+                       "summary": f"Back to the design stage from the execution ({done}); "
+                                  f"its outputs are kept in {kept}."}},
+                   {"op": "add", "section": "decisions", "value": {
+                       "what": "Back to the design stage, to see the design made again",
+                       "why": f"the execution so far: {done}", "by": "user"}}]
+            new, changed = S.apply(st, ops, by="user")
+            S.Store(self.folder).write(new, by="user", ops=ops, changed=changed)
+            self.session.close()
+            with sqlite3.connect(self.folder / "checkpoint.sqlite") as db:
+                for table in ("checkpoints", "writes"):
+                    db.execute(f"DELETE FROM {table} WHERE thread_id = 'execute'")
+            inbox.take(self.folder)
+            ap = autopilot.load(self.folder)
+            if ap.on:       # the point is for the user to see the design
+                autopilot.save(self.folder, replace(ap, on=False))
+            self.session, self.stage = self._open_bootstrap(), "bootstrap"
+            self._refresh_status()
+            text = ("I went back to the design stage. Have the designer make the design again "
+                    "from the approved brief, and show it to me before anything runs.")
+            self.bus.emit("note", text=f"Back to the design stage: {done}. The steps' outputs "
+                                       f"are kept in {kept.relative_to(self.folder)}"
+                                       + ("; the autopilot is off." if ap.on else "."))
+            self.bus.emit("chat", role="user", text=text, kind="answer")
+            if self._status.get("waiting"):
+                self._run(lambda on: self.session.answer(text, on_step=on))
+            elif self._status.get("stopped_midway"):
+                # The design stage stopped partway: the request waits in the
+                # inbox for its orchestrator, and it carries on.
+                inbox.post(self.folder, "request", text=text)
+                self.resume()
+            else:
+                inbox.post(self.folder, "request", text=text)
+                self.status_event()
+            return text
+
     def execute(self, *, limits: dict | None = None, roles=()) -> None:
         """Start the execution stage of an approved run."""
         with self._lock:
