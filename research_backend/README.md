@@ -291,6 +291,22 @@ else a per-model table in `catalog.py`.
 | strata | the server's `GET /models`, with `strata` first | none | the conversation is resent each turn, from `~/.research_backend/responses_threads/<thread>.json` |
 | fake | one placeholder | made up | an echo that counts its turns |
 
+### Codex's sandbox
+
+Codex runs a read-only or write turn's commands inside its own sandbox,
+built with bubblewrap (`bwrap`). Where bubblewrap may not create the
+namespaces it needs -- a container, or a host with unprivileged user
+namespaces turned off -- every command fails with an error like
+`bwrap: loopback: Failed RTM_NEWADDR: Operation not permitted`. On such a
+machine, start the process with
+
+    export RESEARCH_BACKEND_CODEX_SANDBOX=off
+
+and every Codex turn runs without the sandbox (Codex's full access).
+Read-only roles then stay read-only only by their instructions, as on
+antigravity. Turns that run commands on the GPUs already skip the sandbox,
+whose /dev has no GPUs.
+
 ### The Strata providers
 
 All three run the Strata model, a Qwen model served at

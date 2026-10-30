@@ -763,3 +763,32 @@ def test_each_turn_keeps_everything_it_sent_besides_the_message(spy):
     assert t3["instructions"] == "Be thorough." and t3["earlier_turns"] == 2
     assert t1["route"] and t1["provider_adds"]
     assert sessions.sent_as_of(reader.session.turns[:2], "instructions") == "Be brief."
+
+
+def test_codex_runs_without_its_sandbox_where_the_machine_cannot_start_it(monkeypatch):
+    # Measured on another machine: "bwrap: loopback: Failed RTM_NEWADDR:
+    # Operation not permitted" -- bubblewrap could not make its namespaces,
+    # and every command failed.
+    pytest.importorskip("openai_codex")
+    from openai_codex import Sandbox
+
+    from research_backend.backends import codex
+    from research_backend.base import Access
+
+    started = []
+    backend = codex.CodexBackend.__new__(codex.CodexBackend)
+    backend.gpu, backend.model = False, None
+    backend.client = type("C", (), {"thread_start": lambda self, **kw: started.append(kw)})()
+    backend._bounded = lambda call, what: call()
+
+    def sandbox_for(access):
+        started.clear()
+        backend._get_thread(thread_id=None, repo_path="/tmp", access=access,
+                            developer_instructions="")
+        return started[0]["sandbox"]
+
+    monkeypatch.delenv(codex.SANDBOX_ENV, raising=False)
+    assert sandbox_for(Access.READ_ONLY) == Sandbox.read_only
+    monkeypatch.setenv(codex.SANDBOX_ENV, "off")
+    assert sandbox_for(Access.READ_ONLY) == Sandbox.full_access
+    assert sandbox_for(Access.WRITE) == Sandbox.full_access

@@ -8,6 +8,7 @@ CONCEPT: An adapter.  Read this one first if you want to add a provider; then
 from __future__ import annotations
 
 import contextlib
+import os
 import threading
 import time
 
@@ -112,6 +113,19 @@ _SANDBOX: dict[Access, Sandbox] = {
     Access.WRITE: Sandbox.workspace_write,
     Access.FULL: Sandbox.full_access,
 }
+
+
+#: Set to "off" on a machine where Codex's sandbox cannot start: every turn
+#: then runs without it, read-only ones included (their staying read-only
+#: rests on their instructions, as on antigravity). Measured on another
+#: machine: "bwrap: loopback: Failed RTM_NEWADDR: Operation not permitted" --
+#: bubblewrap may not make the namespaces it needs there (a container, or
+#: unprivileged user namespaces turned off), so every command failed.
+SANDBOX_ENV = "RESEARCH_BACKEND_CODEX_SANDBOX"
+
+
+def sandbox_off() -> bool:
+    return os.environ.get(SANDBOX_ENV, "").strip().lower() in ("off", "0", "false", "no")
 
 
 class CodexBackend:
@@ -656,6 +670,8 @@ class CodexBackend:
         sandbox = _SANDBOX[access]
         if self.gpu and access is Access.WRITE:
             sandbox = Sandbox.full_access          # see `gpu` in __init__
+        if sandbox_off():
+            sandbox = Sandbox.full_access          # see SANDBOX_ENV
         common: dict[str, object] = {
             "cwd": repo_path,
             "sandbox": sandbox,
