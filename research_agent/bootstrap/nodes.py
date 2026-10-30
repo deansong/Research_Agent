@@ -283,7 +283,8 @@ def design_problems(design: dict, *, steps: list[str], rubric: set[str],
 #: Things named by a bare letter: "A–E", "B-D", "condition C", "from A", "A's".
 LETTER_LABEL = re.compile(
     r"\b[A-Z]\s*[–—-]\s*[A-Z]\b"                       # a range: A–E
-    r"|(?<![\w/])(?!I\b)[B-Z](?![\w/(])"                # a lone capital: C, D (not I)
+    r"|(?<![\w/*+^=<>])(?!I\b)[B-Z](?![\w/(*+^=<>])"    # a lone capital: C, D (not I, nor
+                                                       # a formula's: 2*S*U/(S+U))
     r"|\bA(?=[’']s\b|\s*[,;:.)]|\s*$)"                 # A's, "from A,", "A."
     # after a word like these, an article would be "a": a capital A is a name
     r"|\b(?:from|than|of|to|and|with|on|over|versus|against|after|before|by|for|the)\s+A\b")
@@ -296,13 +297,17 @@ def standalone_problems(steps) -> list[str]:
     step by number, or a thing by a bare letter."""
     problems = []
     for s in steps:
+        # A letter the step itself defines ("H = 2SU/(S+U)", "A: the original
+        # checkpoint") is its own name, and fine.
+        defined = set(re.findall(r"(?<![\w/])([A-Z])\s*[=:]", f"{s.detail}\n{s.check}"))
         for field, text in (("detail", s.detail), ("check", s.check)):
             number = STEP_NUMBER.search(text or "")
             if number:
                 problems.append(f"step {s.id}: its {field} refers to {number.group(0)!r}, but "
                                 f"its owner never sees step numbers: name that work by what "
                                 f"it produced")
-            letters = sorted({m.group(0).split()[-1] for m in LETTER_LABEL.finditer(text or "")})
+            letters = sorted({m.group(0).split()[-1] for m in LETTER_LABEL.finditer(text or "")}
+                             - defined)
             if letters:
                 problems.append(f"step {s.id}: its {field} names things by letter "
                                 f"({', '.join(letters[:6])}); its owner never sees what they "

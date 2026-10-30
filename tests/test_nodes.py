@@ -258,3 +258,12 @@ def test_a_step_is_written_for_an_owner_that_sees_only_it(run, script, evidence,
     assert len(script.prompts("DesignOutput")) == 5, \
         "sent back on every attempt but the last: then it goes through"
     assert "NOT SELF-CONTAINED after every attempt" in out.summary and "(A, B-D)" in out.summary
+
+
+def test_a_letter_the_step_defines_or_a_formula_uses_is_not_a_label():
+    # Run 1119, designer-006: "H=2*S*U/(S+U)" defined in the step was flagged.
+    from types import SimpleNamespace as N
+    defines = N(id="6", detail="Select by development H, where H=2*S*U/(S+U).", check="H is reported")
+    assert nodes.standalone_problems([defines]) == []
+    uses = N(id="7", detail="Maximize development H; compare C with B.", check="done")
+    assert "(B, C, H)" in nodes.standalone_problems([uses])[0]
