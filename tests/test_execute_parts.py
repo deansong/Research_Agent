@@ -117,7 +117,7 @@ def test_an_owner_s_brief_has_its_step_its_rubric_and_where_to_work(tmp_path):
                         jobs_command="python jobs.py --run R")
     # A work order: what to deliver and how it is checked, in plain words --
     # no step numbers, rubric ids, cost, goal or hypotheses.
-    assert "You are trainer. Train it.\nThe work: two seeds" in brief
+    assert "You are trainer.\nThe work: two seeds" in brief and "Train it." not in brief
     assert "- Seeds fixed" in brief and "Unrelated" not in brief and "R1" not in brief
     assert "Data: " in brief and "rows.json" in brief and "step_01" in brief
     for gone in ("Step 2:", "After steps", "Rubric:", "Cost:", "THE STUDY", "HYPOTHESES"):
@@ -164,12 +164,11 @@ def test_an_owner_gets_only_the_rules_its_step_follows_and_decisions_since_the_s
     paths = {"run": str(tmp_path), "work": str(tmp_path / "w"), "artifacts": str(tmp_path / "a")}
     brief = views.owner(st, node=node, step=st["plan"]["steps"][0], task="", paths=paths,
                         jobs_command="jobs")
-    assert "follows these parts of the approved protocol: Data, Metrics" in brief
+    assert "research.md" not in brief, "no protocol, not even pointed to"
     for gone in ("GoEmotions at /data", "macro-F1", "paired bootstrap", "42, 43, 44", "Qwen3-4B",
                  "Use GoEmotions"):
         assert gone not in brief
     assert "Drop the neutral label" in brief, "a decision since the execution started"
-    assert str(tmp_path / "state" / "research.md") in brief, "the rest, where to find it"
 
 
 def test_before_the_execution_starts_no_decision_is_repeated_to_an_owner():
@@ -178,3 +177,21 @@ def test_before_the_execution_starts_no_decision_is_repeated_to_an_owner():
         "what": "Approve design v3", "by": "user", "at": "2026-10-30T14:12:04+00:00"}}], by="x")
     assert views.user_decisions(st, since_execution=True) == ""
     assert "Approve design v3" in views.user_decisions(st)
+
+
+def test_running_a_step_that_follows_the_protocol_needs_a_task_that_says_it():
+    # Run 1119: an owner told to "execute B-E" was never told what B-E are.
+    from research_agent.execute import schemas
+
+    st, _ = S.apply(S.new(), [
+        {"op": "set", "section": "plan", "value": {"steps": [
+            {"id": "1", "title": "Train B", "detail": "train B", "check": "c",
+             "follows": ["baselines", "seeds"]}]}},
+        {"op": "set", "section": "execution", "value": {"steps": [
+            {"id": "1", "title": "Train B", "status": "pending"}]}}], by="x")
+    check = nodes.decision_check(st, 3)
+    short = schemas.ExecDecision(action="run", step="1", reason="r", task="go", summary="s")
+    assert "Define the names the step uses" in check(short)[0] and "baselines, seeds" in check(short)[0]
+    full = short.model_copy(update={"task": "B is a LoRA on Qwen3-4B trained with the "
+                                            "supervised loss only; use seed 42."})
+    assert check(full) == []

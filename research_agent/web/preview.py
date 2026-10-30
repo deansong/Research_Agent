@@ -153,7 +153,10 @@ def preview(folder: Path, stage: str, node: str, step: str = "") -> dict:
     role = owner["role"]
     prompt = exec_views.owner(
         st, node=owner, step=plan_step,
-        task=_later("the orchestrator's task for this step"), paths=run.paths(sid),
+        task=_later("the orchestrator's task for this step: the names it uses, and the "
+                    "protocol details it follows"
+                    + (f" ({', '.join(plan_step.get('follows'))})" if plan_step.get("follows")
+                       else "")), paths=run.paths(sid),
         jobs_command=run.jobs_command,
         previous=rec if rec.get("attempts", 0) >= 1 and rec.get("status") != "pending" else None)
     if rec.get("attempts"):

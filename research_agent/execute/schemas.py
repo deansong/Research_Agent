@@ -24,8 +24,9 @@ class ExecDecision(BaseModel):
     """For run, retry and skip: the plan step id."""
     reason: str
     task: str = ""
-    """run / retry: anything the step's owner needs beyond its brief (for a
-    retry, what to do differently). skip: why -- kept as the step's terminal
+    """run / retry: the rest of the owner's work order -- it sees only its
+    step, its inputs and where to work: the names the step uses, the protocol
+    details it follows (for a retry, also what to do differently). skip: why -- kept as the step's terminal
     record. ask_user: what to ask. stop: why."""
     summary: str
     """Where the execution stands, in a few sentences -- kept as the status."""

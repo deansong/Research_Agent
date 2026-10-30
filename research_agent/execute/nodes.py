@@ -593,6 +593,11 @@ def decision_check(st: dict, limit: int, run_dir=None):
                     + "; ".join(describe_moves(moves, st, limit))]
         if out.action == "done" and not moves["done"]:
             return ["done: not every step has passed or been skipped"]
+        follows = (plan_step(st, out.step) or {}).get("follows") if out.step else None
+        if out.action in ("run", "retry") and follows and len(out.task.strip()) < 40:
+            return [f"{out.action} {out.step}: `task` is the rest of its owner's work order, "
+                    f"which sees only the step and its inputs. Define the names the step uses "
+                    f"and quote what it must follow from the protocol: {', '.join(follows)}"]
         if out.action in ("skip", "ask_user", "stop") and not out.task.strip():
             return [f"{out.action} needs a `task` (" + {
                 "skip": "why -- it is the step's terminal record", "ask_user": "what to ask",

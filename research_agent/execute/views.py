@@ -19,7 +19,7 @@ def step_text(step: dict) -> str:
     """One plan step in full."""
     lines = [f"Step {step['id']}: {step['title']}{' [gate]' if step.get('gate') else ''}"]
     for key, label in (("detail", "What"), ("check", "Check"), ("depends_on", "After steps"),
-                       ("rubric", "Rubric"), ("cost", "Cost")):
+                       ("rubric", "Rubric"), ("follows", "Follows"), ("cost", "Cost")):
         value = step.get(key)
         if value:
             lines.append(f"{label}: {value if isinstance(value, str) else ', '.join(value)}")
@@ -282,7 +282,7 @@ def owner(st: dict, *, node: dict, step: dict, task: str, paths: dict, jobs_comm
     R3 / Cost: ...", and still could not tell what done meant."""
     parts = [f"Today is {_today()}.",
              _block("YOUR JOB", "\n".join(filter(None, [
-                 f"You are {node['name']}. {node.get('instructions', '')}".strip(),
+                 f"You are {node['name']}.",
                  f"The work: {step.get('detail') or step['title']}",
                  f"Done when: {step['check']}" if step.get("check") else ""])))]
     criteria = criteria_text(st, list(step.get("rubric") or []))
@@ -290,21 +290,13 @@ def owner(st: dict, *, node: dict, step: dict, task: str, paths: dict, jobs_comm
                         "A validator reads the files you list and checks \"Done when\""
                         + (" and these criteria:\n" + criteria if criteria else ".")))
     if task:
-        parts.append(_block("FROM THE ORCHESTRATOR", task))
+        parts.append(_block("WHAT THE STUDY NEEDS FROM THIS STEP -- the names it uses and the "
+                            "rules it follows", task))
     if previous and (previous.get("verdict") or previous.get("problems")):
         parts.append(_block("THE LAST ATTEMPT FAILED -- do it differently", "\n".join(
             [previous.get("verdict", "")] + [f"- {p}" for p in previous.get("problems") or []])))
     parts.append(_block("YOUR INPUTS -- files earlier work produced",
                         upstream(st, step, paths, every=node["role"] == "writer")))
-    # Named, not pasted: the work order carries what the step needs. Measured
-    # (run 1119): pasting the parts a step "follows" still gave a training
-    # step 9,000 characters of protocol it could not tell its work from.
-    where = Path(paths["run"]) / "state" / "research.md"
-    follows = rule_names(step)
-    parts.append(_block("RULES", (
-        f"Your work follows these parts of the approved protocol: {', '.join(follows)}. "
-        f"They are in {where}; read them there before you start." if follows else
-        f"The approved protocol is in {where}: read a part only if your work needs it.")))
     decided = user_decisions(st, since_execution=True)
     if decided:
         parts.append(_block("THE USER'S DECISIONS -- they stand over the plan where they "
