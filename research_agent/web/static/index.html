@@ -27,6 +27,7 @@
       <button id="btn-pause" class="btn" hidden title="Stop after the current step">Pause</button>
       <button id="btn-execute" class="btn primary" hidden title="Carry out the approved design">Start execution</button>
       <button id="btn-stop" class="btn danger" hidden title="Stop the running jobs and steps">Stop</button>
+      <button id="btn-rewind" class="btn" hidden title="Go back to an earlier point of the design stage, exactly, and go on from there">Rewind…</button>
       <button id="btn-back-design" class="btn" hidden title="Back to the design stage in this run: the steps' outputs are set aside, and the designer designs again from the approved brief">Back to design</button>
       <button id="btn-redesign" class="btn primary" hidden title="Back to the design stage: a follow-up run where the discussor goes through this run's paper and review with you, then the brief and design are revised">Redesign from review</button>
       <button id="btn-write-paper" class="btn" hidden title="Have the paper written again from the run's files, then reviewed">Write paper</button>
@@ -117,6 +118,14 @@
       </div>
     </section>
   </main>
+
+  <dialog id="dialog-rewind">
+    <h2>Rewind the design stage</h2>
+    <p class="hint">The run goes back to the point you choose, exactly -- the brief, the design and the approvals as they were -- and goes on from there: what was about to run then runs now. Later points stay in the History tab.</p>
+    <div id="rewind-points" class="run-list"></div>
+    <p id="rewind-error" class="form-error"></p>
+    <div class="dialog-actions"><button id="rewind-close" class="btn" type="button">Close</button></div>
+  </dialog>
 
   <dialog id="dialog-new">
     <form id="form-new" method="dialog">

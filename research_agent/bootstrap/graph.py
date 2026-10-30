@@ -234,7 +234,13 @@ def build(run: nodes.Run, checkpointer=None):
         return run_it
 
     def human(state: BootstrapState) -> dict:
+        # The state on disk, when it moved on while the graph waited here:
+        # measured (run 1119), after Back to design the graph resumed from its
+        # own older copy and wrote it over the newer one.
         st = state["research"]
+        disk = S.Store(run.folder).read()
+        if disk.get("versions") != st.get("versions"):
+            st = disk
         answer = autopilot_answer(state, st) if not state.get("outcome") else None
         if answer is None:
             answer = interrupt({"reply": state.get("reply", ""),

@@ -10,6 +10,7 @@ CONCEPT: One LangGraph thread per run, checkpointed in
 
 from __future__ import annotations
 
+import json
 import sqlite3
 from dataclasses import dataclass
 from typing import Callable
@@ -21,6 +22,8 @@ from research_agent import state as S
 from research_agent.bootstrap import graph, nodes
 
 THREAD = {"configurable": {"thread_id": "bootstrap"}, "recursion_limit": 200}
+#: The nodes a rewind can go back to just before.
+POINTS = {"designer", "researcher", "human"}
 
 
 @dataclass
@@ -79,8 +82,48 @@ class Bootstrap:
     def exit(self) -> Turn:
         return self._drive(Command(resume={"exit": True}), None)
 
-    def _drive(self, value, on_step) -> Turn:
-        for chunk in self.graph.stream(value, THREAD, stream_mode="updates"):
+    # ---- going back ----------------------------------------------------------------
+
+    def points(self) -> list[dict]:
+        """Where `rewind` can go, newest first: one point per brief and design
+        version (approved or not) and what was about to run."""
+        found, seen = [], set()
+        for snap in self.graph.get_state_history(THREAD):
+            research = snap.values.get("research")
+            # Points worth going back to: just before the designer or the
+            # researcher ran, or where the run waited for the user.
+            if not research or not set(snap.next or ()) & POINTS:
+                continue
+            versions, approvals = research.get("versions") or {}, research.get("approvals") or {}
+            # One point per brief and design (and whether approved) and what
+            # ran next: the rest of the state changes at every turn.
+            key = json.dumps([[versions.get(p), approvals.get(p) == versions.get(p)]
+                              for p in ("brief", "design")] + [list(snap.next or ())])
+            if key in seen:
+                continue
+            seen.add(key)
+            found.append({"id": snap.config["configurable"]["checkpoint_id"],
+                          "at": snap.created_at, "next": list(snap.next or ()),
+                          "versions": research.get("versions") or {},
+                          "approvals": research.get("approvals") or {},
+                          "summary": (research.get("status") or {}).get("summary", "")})
+        return found
+
+    def rewind(self, point: str, on_step=None) -> Turn:
+        """Back to `point` (a checkpoint of `points`) exactly: the research
+        state as it was then, and on from there -- what was about to run then
+        runs now. The states after it stay in the history."""
+        config = {**THREAD, "configurable": {**THREAD["configurable"], "checkpoint_id": point}}
+        snap = self.graph.get_state(config)
+        research = snap.values.get("research") if snap and snap.values else None
+        if not research:
+            raise ValueError(f"No point {point!r} to go back to.")
+        S.Store(self.run.folder).write(research, by="user", changed=list(research), ops=[
+            {"op": "rewind", "to": point, "as_of": snap.created_at}])
+        return self._drive(None, on_step, config=config)
+
+    def _drive(self, value, on_step, config=None) -> Turn:
+        for chunk in self.graph.stream(value, config or THREAD, stream_mode="updates"):
             for node, update in chunk.items():
                 if on_step and node != "__interrupt__" and isinstance(update, dict):
                     on_step(node, update)

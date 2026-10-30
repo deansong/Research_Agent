@@ -244,6 +244,16 @@ def create_app(runs_root: Path = RUNS_ROOT, *, roles=(), watch: bool = True) -> 
             host.hold(idea)
         return host.detail()
 
+    @app.get("/api/runs/{run_id}/rewind_points")
+    def rewind_points(run_id: str):
+        return {"points": [{**p, "words": H.describe_point(p)}
+                           for p in host_of(run_id).rewind_points()]}
+
+    @app.post("/api/runs/{run_id}/rewind")
+    def rewind(run_id: str, body: dict):
+        act(lambda: host_of(run_id).rewind(str(body.get("point", ""))))
+        return {"ok": True}
+
     @app.post("/api/runs/{run_id}/back_to_design")
     def back_to_design(run_id: str):
         return {"ok": True, "said": act(host_of(run_id).back_to_design)}

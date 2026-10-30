@@ -147,6 +147,7 @@ function renderDetail(d) {
   $("btn-write-paper").hidden = !finished;
   $("btn-redesign").hidden = !(d.stage === "execution" && !d.busy && (d.waiting || d.outcome));
   $("btn-back-design").hidden = !(d.stage === "execution" && !d.busy);
+  $("btn-rewind").hidden = !(d.stage === "bootstrap" && d.started && !d.busy);
   $("btn-stop").hidden = !(d.stage === "execution" && (d.busy || d.waiting) && d.outcome !== "done");
   chat.setMode(d);
   stateView.setControls({ stage: d.stage, canApprove: !!(d.waiting && !d.busy), awaiting: d.awaiting || "",
@@ -334,6 +335,27 @@ function wireDialogs() {
   $("btn-review-open").addEventListener("click", openReview);
   $("btn-review").addEventListener("click", () => act(() => api.review(app.runId)));
   $("btn-write-paper").addEventListener("click", () => act(() => api.writePaper(app.runId)));
+  $("btn-rewind").addEventListener("click", async () => {
+    $("rewind-error").textContent = "";
+    const list = clear($("rewind-points"));
+    try {
+      const { points } = await api.rewindPoints(app.runId);
+      if (!points.length) list.append(el("div", { class: "empty", text: "Nothing to go back to yet." }));
+      for (const p of points) {
+        list.append(el("div", { class: "run-row" },
+          el("div", { class: "run-row-head" }, el("b", { class: "mono", text: p.at.slice(0, 16).replace("T", " ") }),
+            el("span", { text: ` ${p.words}` }),
+            el("button", { class: "btn tiny run-delete", text: "Rewind here", onclick: async () => {
+              if (!confirm(`Go back to ${p.at.slice(0, 16).replace("T", " ")}: ${p.words}?`)) return;
+              try { await api.rewind(app.runId, p.id); $("dialog-rewind").close(); await openRun(app.runId); }
+              catch (err) { $("rewind-error").textContent = err.message; }
+            } })),
+          p.summary ? el("div", { class: "dim small", text: p.summary }) : null));
+      }
+    } catch (err) { $("rewind-error").textContent = err.message; }
+    $("dialog-rewind").showModal();
+  });
+  $("rewind-close").addEventListener("click", () => $("dialog-rewind").close());
   $("btn-back-design").addEventListener("click", async () => {
     if (!confirm("Go back to the design stage in this run? Running jobs are stopped, the steps' outputs are moved aside (kept), and the designer designs again from the approved brief.")) return;
     try { await api.backToDesign(app.runId); await openRun(app.runId); } catch (err) { problem(err); }

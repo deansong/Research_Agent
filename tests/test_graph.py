@@ -477,3 +477,35 @@ def test_a_requested_redesign_goes_to_the_designer_not_to_the_orchestrator(run, 
     assert "Rebuild the design" in designer
     assert turn.reply == "Design v2 is ready for you."
     assert not S.approved(Bootstrap(run).research, "design"), "the new design waits for the user"
+
+
+def test_rewinding_goes_back_exactly_and_on_from_there(run, script, monkeypatch):
+    from tests.test_execute_graph import approved_state
+
+    monkeypatch.setattr(nodes.Run, "catalogue", lambda self: [("peft", "LoRA")])
+    st, _ = S.apply(approved_state(), [
+        {"op": "set", "section": "brief", "value": {"text": "Rank matters."}},
+        {"op": "add", "section": "evidence", "value": {"claim": "c", "source": "s"}}], by="user")
+    st, _ = S.apply(st, [{"op": "approve", "section": "brief"}], by="user")
+    S.Store(run.folder).write(st)
+    script.add("DiscussorOutput",
+               say("Designing.", ("revise_design", "Design it")), say("Design v2 is ready."),
+               say("Approved."), say("Ready: start the execution."),
+               say("The new design is ready."))
+    script.add("DesignOutput", DESIGN, DESIGN)
+    boot = Bootstrap(run)
+    boot.start("Design it")
+    boot.answer(approve=["design"])
+    assert S.approved(boot.research, "design")
+    before = next(p for p in boot.points() if p["next"] == ["designer"])
+    assert before["versions"]["design"] == 1, "the point just before the designer ran"
+
+    turn = boot.rewind(before["id"])
+    assert turn.reply == "The new design is ready." and len(script.prompts("DesignOutput")) == 2
+    now = boot.research
+    assert S.version(now, "design") == 2 and not S.approved(now, "design"), \
+        "the designer ran again from that point; its design waits for the user"
+    assert S.Store(run.folder).read()["versions"] == now["versions"]
+    history = sorted((run.folder / "state" / "history").glob("*.json"))
+    assert any(json.loads(p.read_text())["ops"][0].get("op") == "rewind" for p in history)
+    boot.close()

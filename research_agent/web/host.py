@@ -386,6 +386,30 @@ class RunHost:
                 self.bus.emit("note", text="The reviewer reviews the study again.")
                 self._run(lambda on: self.session.review(on_step=on))
 
+    def rewind_points(self) -> list[dict]:
+        """Where the design stage can go back to, newest first."""
+        if self.stage != "bootstrap":
+            return []
+        return self.session.points()
+
+    def rewind(self, point: str) -> None:
+        """The design stage back to `point`, exactly, and on from there."""
+        with self._lock:
+            if self.stage != "bootstrap":
+                raise ValueError("Rewinding is for the design stage: go Back to design first.")
+            if self.busy:
+                raise Busy("The team is working: pause it first.")
+            found = next((p for p in self.session.points() if p["id"] == point), None)
+            if found is None:
+                raise ValueError(f"No point {point!r} to go back to.")
+            ap = autopilot.load(self.folder)
+            if ap.on:       # going back is to see what happens: the user answers
+                autopilot.save(self.folder, replace(ap, on=False))
+            self.bus.emit("note", text=f"Rewound to {found['at'][:16].replace('T', ' ')} UTC: "
+                                       f"{describe_point(found)}. The run goes on from there"
+                                       + ("; the autopilot is off." if ap.on else "."))
+            self._run(lambda on: self.session.rewind(point, on_step=on))
+
     def back_to_design(self) -> str:
         """The execution set aside and the run back in the design stage, in
         the same folder: the jobs stopped, the steps' outputs moved to
@@ -894,6 +918,24 @@ class RunHost:
 
 
 # ---- reading a run from its folder ------------------------------------------------------
+
+
+NEXT_WORDS = {"designer": "the designer was about to design",
+              "researcher": "the researcher was about to search",
+              "orchestrator": "the orchestrator was about to decide",
+              "discussor": "the discussor was about to answer", "human": "it waited for you"}
+
+
+def describe_point(p: dict) -> str:
+    """A rewind point in words: the brief and design as they were, what came next."""
+    def part(name: str) -> str:
+        v = (p.get("versions") or {}).get(name)
+        if not v:
+            return f"no {name}"
+        approved = (p.get("approvals") or {}).get(name) == v
+        return f"{name} v{v}{' approved' if approved else ''}"
+    nxt = "; ".join(NEXT_WORDS.get(n, n) for n in p.get("next") or [])
+    return f"{part('brief')}, {part('design')}" + (f" -- {nxt}" if nxt else "")
 
 
 def stage_of(st: dict) -> str:
