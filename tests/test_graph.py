@@ -409,7 +409,7 @@ def test_autopilot_takes_a_bootstrap_to_an_approved_design_alone(run, script):
     script.add("DesignOutput", DESIGN, DESIGN)
     script.add("OrchestratorOutput",
                decide("research", questions=["LoRA rank results?"]), decide("brief"),
-               decide("design"), decide("design"))
+               decide("design"))
     script.add("AutopilotOutput",
                AUTO("That brief is right.", ["brief"]),
                AUTO("Use five seeds."),
@@ -430,7 +430,8 @@ def test_autopilot_takes_a_bootstrap_to_an_approved_design_alone(run, script):
         "the autopilot keeps one conversation of its own"
     assert autopilot.load(run.folder).streak == 3
     assert len(script.prompts("DesignOutput")) == 2 and S.version(st, "design") == 2
-    assert len(script.prompts("OrchestratorOutput")) == 4, "no model judges a new design"
+    assert len(script.prompts("OrchestratorOutput")) == 3, \
+        "no model judges a new design, nor whether to make the one asked for"
     boot.close()
 
 
@@ -452,3 +453,27 @@ def test_autopilot_hands_back_after_its_limit(run, script):
     assert len([c for c in script.calls if c["schema"] == "AutopilotOutput"]) == 2
     assert autopilot.load(run.folder).streak == 1 and autopilot.load(run.folder).handed_back
     boot.close()
+
+
+def test_a_requested_redesign_goes_to_the_designer_not_to_the_orchestrator(run, script,
+                                                                            monkeypatch):
+    # Run 1119: asked to rebuild an approved design, the orchestrator answered
+    # "ready", claiming a replacement had been produced.
+    from tests.test_execute_graph import approved_state
+
+    monkeypatch.setattr(nodes.Run, "catalogue", lambda self: [("peft", "LoRA")])
+    st, _ = S.apply(approved_state(), [
+        {"op": "set", "section": "brief", "value": {"text": "Rank matters."}},
+        {"op": "add", "section": "evidence", "value": {"claim": "c", "source": "s"}}], by="user")
+    st, _ = S.apply(st, [{"op": "approve", "section": "brief"}], by="user")
+    S.Store(run.folder).write(st)
+    script.add("DiscussorOutput",
+               say("I'll have the designer rebuild it.", ("revise_design", "Rebuild the design")),
+               say("Design v2 is ready for you."))
+    script.add("DesignOutput", DESIGN)
+    turn = Bootstrap(run).start("Redesign from the approved brief")
+    assert not script.prompts("OrchestratorOutput"), "no model decides whether to do it"
+    designer = script.prompts("DesignOutput")[0]
+    assert "Rebuild the design" in designer
+    assert turn.reply == "Design v2 is ready for you."
+    assert not S.approved(Bootstrap(run).research, "design"), "the new design waits for the user"

@@ -164,6 +164,18 @@ def build(run: nodes.Run, checkpointer=None):
             return {"research": st, "note": note, "designed": False, "pending": [],
                     "decision": {"action": "ask_user", "task": note, "questions": [],
                                  "reason": "a new design goes to the user"}}
+        redesign = [r["detail"] for r in state.get("pending") or []
+                    if r.get("kind") == "revise_design"]
+        if redesign and S.approved(st, "brief"):
+            # The user asked for a new design: code sends it to the designer.
+            # Measured (run 1119): asked to rebuild an approved design, the
+            # orchestrator answered "ready", saying a replacement had been
+            # produced when none had.
+            others = [r for r in state.get("pending") or [] if r.get("kind") != "revise_design"]
+            return {"research": st, "pending": others,
+                    "decision": {"action": "design", "task": "\n".join(redesign), "questions": [],
+                                 "reason": "the user asked for a new design"},
+                    "note": "", "steps": state.get("steps", 0) + 1, "outcome": ""}
         if state.get("steps", 0) >= MAX_STEPS:
             note = prompt_files.text("notes/step_limit", run.folder, steps=MAX_STEPS)
             return {"decision": {"action": "ask_user", "task": note}, "note": note,
