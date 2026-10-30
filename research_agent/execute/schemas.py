@@ -224,6 +224,26 @@ class BreakpointIn(BaseModel):
     """False removes the breakpoint."""
 
 
+class AmendIn(BaseModel):
+    """A change to the approved design during the execution."""
+
+    target: Literal["step", "rubric", "protocol"]
+    id: str
+    """A step id ("4"), a rubric id ("R3"), or a protocol part (metrics,
+    baselines, statistics, seeds, stop_criteria)."""
+    field: Literal["detail", "check", "title", "criterion", "measure", "threshold", "value"]
+    """step: detail, check or title; rubric: criterion, measure or threshold;
+    protocol: value."""
+    value: str
+    """The new text, whole (for a list part of the protocol: one item a line)."""
+    kind: Literal["workflow", "research"]
+    """workflow: the step asks for something wrong or impossible that is not
+    the research -- a check no step can meet, a record only the system keeps,
+    a wrong path or name. research: anything that changes what is tested or
+    how it is judged (always so for the rubric and the protocol)."""
+    why: str
+
+
 class WaiveIn(BaseModel):
     step: str
     why: str
@@ -249,6 +269,10 @@ class AsideOutput(BaseModel):
     rewind: str = ""
     """A step id when the user asks to go back to it: that step and every
     step after it that needs it start over (outputs kept). "" otherwise."""
+    amend: list[AmendIn] = Field(default_factory=list, max_length=8)
+    """Changes to the approved design: a workflow fix on your own (with
+    `retry` for a failed step it unblocks), a research change only when the
+    user (or the autopilot) asks for it."""
     requests: list[str] = Field(default_factory=list, max_length=6)
     """Work for the orchestrator at its next decision, in clean words."""
     decisions: list[DecisionIn] = Field(default_factory=list, max_length=6)
@@ -277,5 +301,9 @@ class ExecDiscussorOutput(BaseModel):
     rewind: str = ""
     """A step id when the user asks to go back to it: that step and every
     step after it that needs it start over (outputs kept). "" otherwise."""
+    amend: list[AmendIn] = Field(default_factory=list, max_length=8)
+    """Changes to the approved design: a workflow fix on your own (with
+    `retry` for a failed step it unblocks), a research change only when the
+    user (or the autopilot) asks for it."""
     decisions: list[DecisionIn] = Field(default_factory=list, max_length=6)
     answers: list[AnswerIn] = Field(default_factory=list, max_length=6)

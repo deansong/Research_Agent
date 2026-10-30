@@ -315,6 +315,8 @@ class DiscussorTurn(Outcome):
     waive: list[dict] = field(default_factory=list)
     skip: list[dict] = field(default_factory=list)
     rewind: str = ""
+    amend: list = field(default_factory=list)
+    """Its amendments (AmendIn), checked; applied by the graph."""
 
 
 # ---- rewinding -------------------------------------------------------------------------
@@ -405,6 +407,106 @@ def out_of_attempts(st: dict, max_attempts: int, run_dir=None) -> str:
     return prompt_files.text("notes/out_of_attempts", run_dir) + "\n" + "\n".join(lines)
 
 
+# ---- amendments: the approved design changed during the execution --------------------------
+#
+# Measured (run 1119): an approved plan asked its steps for a start record,
+# proof that later workers could not read the test files, and delivery
+# receipts -- things no step can produce -- and with the design frozen, each
+# such step failed every attempt until the user passed it by hand. Now the
+# discussor amends: a workflow fix on its own, a research change only on the
+# user's (or the autopilot's) word -- and never once what it changes has
+# been judged.
+
+STEP_FIELDS = ("detail", "check", "title")
+#: The design approved again as amended (after amend_ops, in its own commit).
+REAPPROVE = [{"op": "approve", "section": "design"}]
+RUBRIC_FIELDS = ("criterion", "measure", "threshold")
+PROTOCOL_PARTS = ("baselines", "metrics", "statistics", "seeds", "stop_criteria")
+#: Where a step may be amended: not yet judged, or failed or stopped.
+AMENDABLE = ("pending", "fail", "stopped")
+
+
+def _unjudged(st: dict, step_id: str) -> bool:
+    """No verdict on this step yet: what judges it may still change."""
+    rec = records(st).get(step_id) or {}
+    return rec.get("status") in AMENDABLE and not rec.get("verdict")
+
+
+def amend_problems(st: dict, amends, *, user: bool) -> list[str]:
+    """What is wrong with these amendments, in words. `user`: the user (or the
+    autopilot) asked for them in this turn."""
+    rec = records(st)
+    rubric = {r["id"]: r for r in st.get("rubric") or []}
+    problems = []
+    for a in amends:
+        if a.target == "step":
+            if a.field not in STEP_FIELDS:
+                problems.append(f"amend step {a.id}: a step's field is {', '.join(STEP_FIELDS)}")
+            elif a.id not in rec:
+                problems.append(f"amend: there is no step {a.id}")
+            elif rec[a.id].get("status") not in AMENDABLE:
+                problems.append(f"amend step {a.id}: it is {rec[a.id]['status']}; only a pending, "
+                                f"failed or stopped step is amended")
+        elif a.target == "rubric":
+            if a.field not in RUBRIC_FIELDS:
+                problems.append(f"amend {a.id}: a criterion's field is {', '.join(RUBRIC_FIELDS)}")
+            elif a.id not in rubric:
+                problems.append(f"amend: there is no criterion {a.id}")
+            elif rubric[a.id].get("assessed_at") and not _unjudged(st, rubric[a.id]["assessed_at"]):
+                problems.append(f"amend {a.id}: step {rubric[a.id]['assessed_at']}, which judges "
+                                f"it, has a verdict already -- changing the bar after the result "
+                                f"would fit it to the result")
+        else:
+            if a.field != "value" or a.id not in PROTOCOL_PARTS:
+                problems.append(f"amend protocol: the part is one of {', '.join(PROTOCOL_PARTS)}, "
+                                f"its field `value`")
+            else:
+                judged = [s["id"] for s in (st.get("plan") or {}).get("steps") or []
+                          if a.id in (s.get("follows") or []) and not _unjudged(st, s["id"])]
+                if judged:
+                    problems.append(f"amend protocol {a.id}: steps {', '.join(judged)} follow it "
+                                    f"and have verdicts already")
+        if (a.kind == "research" or a.target != "step") and not user:
+            problems.append(f"amend {a.target} {a.id}: a research change (the rubric, the "
+                            f"protocol, or what a step tests) is the user's -- propose it to them, "
+                            f"or make it when they (or the autopilot) say so")
+    return problems
+
+
+def amend_ops(st: dict, amends, *, by: str) -> list[dict]:
+    """The amendments as changes: the plan, rubric or protocol changed, each
+    logged in execution.amendments (from what, to what, why, by whom). Commit
+    REAPPROVE after them, on its own: the execution runs on an approved design,
+    and an approval stamps the versions as they are when it is applied."""
+    plan = json.loads(json.dumps(st.get("plan") or {}))
+    log = list((st.get("execution") or {}).get("amendments") or [])
+    ops = []
+    for a in amends:
+        if a.target == "step":
+            step = next(s for s in plan.get("steps") or [] if s["id"] == a.id)
+            before, step[a.field] = step.get(a.field, ""), a.value
+        elif a.target == "rubric":
+            before = next(r for r in st.get("rubric") or [] if r["id"] == a.id).get(a.field, "")
+            ops.append({"op": "update", "section": "rubric", "id": a.id,
+                        "value": {a.field: a.value}})
+        else:
+            before = (st.get("protocol") or {}).get(a.id, "")
+            value = ([x.strip() for x in a.value.splitlines() if x.strip()]
+                     if a.id in ("baselines", "metrics") else a.value)
+            ops.append({"op": "merge", "section": "protocol", "value": {a.id: value}})
+        log.append({"id": f"A{len(log) + 1}", "target": a.target, "of": a.id, "field": a.field,
+                    "from": before, "to": a.value, "kind": "research" if a.target != "step"
+                    else a.kind, "why": a.why, "by": by, "at": _now()})
+    if any(a.target == "step" for a in amends):
+        ops.insert(0, {"op": "set", "section": "plan", "value": plan})
+    ops += [{"op": "merge", "section": "execution", "value": {"amendments": log}},
+            {"op": "add", "section": "decisions", "value": {
+                "what": "Amend the approved design: " + "; ".join(
+                    f"{x['id']} {x['target']} {x['of']} {x['field']}" for x in log[-len(amends):]),
+                "why": "; ".join(a.why for a in amends)[:600], "by": by}}]
+    return ops
+
+
 def user_step_ops(st: dict, retry, waive, by: str = "user") -> list[dict]:
     """The user's call on failed steps, as changes: another attempt beyond
     the limit, or a pass -- kept as the verdict, with their reason."""
@@ -473,9 +575,16 @@ def discussor(run: ExecRun, st: dict, *, seen: dict, user: str = "", note: str =
                                                                           "stopped")]
         if out.skip and user.startswith(autopilot.MARK):
             problems.append("skip: only the user skips a step; the autopilot cannot")
+        problems += amend_problems(st, out.amend, user=bool(user))
+        # Its own workflow fix may give the failed step it fixes another
+        # attempt, with no word from the user; any other retry is theirs.
+        fixed = {a.id for a in out.amend if a.target == "step" and a.kind == "workflow"}
+        if not user:
+            problems += [f"retry {s}: without the user, only a step you amend (a workflow fix) "
+                         f"gets another attempt" for s in out.retry if s not in fixed]
         if out.hand_to == "orchestrator" and not (out.requests or out.go or out.stop
                                                   or out.retry or out.waive or out.rewind
-                                                  or out.skip):
+                                                  or out.skip or out.amend):
             problems.append('hand_to is "orchestrator" but there is no request or go for the '
                             'team to act on: add the request, or hand to "user"')
         if out.rewind:
@@ -514,7 +623,8 @@ def discussor(run: ExecRun, st: dict, *, seen: dict, user: str = "", note: str =
                          reply=out.reply, requests=list(out.requests), hand_to=out.hand_to,
                          go=out.go and bool(awaiting), stop=out.stop, retry=list(out.retry),
                          waive=[w.model_dump() for w in out.waive],
-                         skip=[w.model_dump() for w in out.skip], rewind=out.rewind)
+                         skip=[w.model_dump() for w in out.skip], rewind=out.rewind,
+                         amend=list(out.amend))
 
 
 def aside(run: ExecRun, st: dict, *, user: str, activity: str) -> schemas.AsideOutput:
@@ -527,7 +637,8 @@ def aside(run: ExecRun, st: dict, *, user: str, activity: str) -> schemas.AsideO
                 + [f"go: {s} is not a pending step" for s in out.go
                    if records(st).get(s, {}).get("status") != "pending"]
                 + step_problems(st, out.retry, out.waive, run.limits.max_attempts)
-                + (rewind_problems(run.folder, st, out.rewind) if out.rewind else []))
+                + (rewind_problems(run.folder, st, out.rewind) if out.rewind else [])
+                + amend_problems(st, out.amend, user=True))
 
     budget = run.brief_budget("discussor")
     plain = views.aside(st, user=user, activity=activity, run_dir=str(run.folder),
@@ -544,6 +655,8 @@ def aside(run: ExecRun, st: dict, *, user: str, activity: str) -> schemas.AsideO
         inbox.post(run.folder, "breakpoint", step=b.step, when=b.when, on=b.on)
     for r in out.requests:
         inbox.post(run.folder, "request", text=r)
+    for a in out.amend:
+        inbox.post(run.folder, "amend", amendment=a.model_dump())
     for d in out.decisions:
         inbox.post(run.folder, "decision", what=d.what, why=d.why)
     for sid in out.retry:

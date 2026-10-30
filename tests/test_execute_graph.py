@@ -921,3 +921,86 @@ def test_a_step_whose_earlier_work_is_missing_does_not_start(tmp_path, script):
     rec = nodes.records(Execution(run).research)["2"]
     assert rec["attempts"] == 0 and rec["status"] == "pending", "no attempt spent"
     assert turn.reply.startswith("Step 2 cannot start")
+
+
+def _amend(target, id_, field, value, kind="workflow", why="it cannot be met"):
+    from research_agent.execute.schemas import AmendIn
+
+    return AmendIn(target=target, id=id_, field=field, value=value, kind=kind, why=why)
+
+
+def test_what_may_be_amended_and_by_whom():
+    # Run 1119: steps asked for a start record, an isolation proof and delivery
+    # receipts no step can produce, and with the design frozen each failed
+    # every attempt. The discussor now amends -- within what code allows.
+    st = approved_state()
+    st, _ = S.apply(st, [{"op": "set", "section": "execution", "value": {"steps": [
+        {"id": "1", "title": "Data", "status": "pass", "verdict": "pass: ok"},
+        {"id": "2", "title": "Train", "status": "fail", "verdict": "fail: no receipt"}]}}], by="x")
+    r1 = st["rubric"][0]["id"]
+    st, _ = S.apply(st, [{"op": "update", "section": "rubric", "id": r1,
+                          "value": {"assessed_at": "1"}}], by="x")
+    workflow = _amend("step", "2", "check", "scores for both seeds")
+    assert nodes.amend_problems(st, [workflow], user=False) == [], "a workflow fix, on its own"
+    said = " | ".join(nodes.amend_problems(st, [
+        _amend("step", "1", "check", "x"),
+        _amend("step", "2", "detail", "three seeds", kind="research"),
+        _amend("rubric", r1, "threshold", ">= 0.05", kind="research"),
+        _amend("protocol", "seeds", "value", "17", kind="research")], user=False))
+    assert "step 1: it is pass; only a pending, failed or stopped step" in said
+    assert "a research change (the rubric, the protocol, or what a step tests) is the user's" in said
+    assert f"{r1}: step 1, which judges it, has a verdict already" in said, "no bar moved after"
+    assert nodes.amend_problems(st, [_amend("step", "2", "detail", "three seeds",
+                                            kind="research")], user=True) == []
+
+    st, _ = S.apply(st, nodes.amend_ops(st, [workflow], by="discussor"), by="discussor")
+    st, _ = S.apply(st, nodes.REAPPROVE, by="discussor")
+    assert nodes.plan_step(st, "2")["check"] == "scores for both seeds"
+    log = st["execution"]["amendments"]
+    assert log[0]["id"] == "A1" and log[0]["to"] == "scores for both seeds"
+    assert log[0]["by"] == "discussor" and log[0]["kind"] == "workflow"
+    assert S.approved(st, "design"), "the execution runs on the design as amended"
+    from research_agent.execute import views
+
+    assert "A1 (workflow, by discussor): step 2 check changed" in views.amendments_text(st)
+    assert "DEVIATIONS FROM THE APPROVED DESIGN" in views.paper(st, run_dir="/tmp", latex="")
+
+
+def test_the_discussor_fixes_a_step_stuck_on_workflow_and_the_run_goes_on(run, script):
+    run.limits = replace(run.limits, max_attempts=1)
+    script.add("ExecDecision", decide("run", "1"), decide("ask_user", "1", "Step 1 failed: "
+                                                          "no delivery receipt."),
+               decide("retry", "1"), decide("run", "2"))
+    script.add("StepReport", done_writing(run, "1"), done_writing(run, "1"))
+    script.add("Verdict", verdict("fail", problems=["no delivery receipt"]), verdict())
+    fix = {"target": "step", "id": "1", "field": "check", "value": "rows.json exists",
+           "kind": "workflow", "why": "a delivery receipt is the system's, not the step's"}
+    script.add("ExecDiscussorOutput",
+               say("Step 1 failed on a receipt no step can make: I amended its check (A1) "
+                   "and gave it another attempt.", amend=[fix], retry=["1"]),
+               say("Step 1 passed. Step 2 waits for your go."))
+    seen = []
+    Execution(run).start(on_step=lambda node, update: seen.append(node))
+    assert seen[:9] == ["orchestrator", "dispatch", "builder", "validator", "orchestrator",
+                        "discussor", "orchestrator", "dispatch", "builder"], \
+        "no word from the user: the fix moves the work on"
+    st = Execution(run).research
+    assert st["execution"]["amendments"][0]["by"] == "discussor"
+    rec = nodes.records(st)["1"]
+    assert rec["status"] == "pass" and rec["attempts"] == 2
+
+
+def test_an_amendment_said_while_the_team_works_applies_at_its_next_decision(run, script):
+    from research_agent import inbox
+
+    inbox.post(run.folder, "amend", amendment=_amend(
+        "step", "2", "detail", "three seeds: 17, 29, 43", kind="research",
+        why="the user wants a third seed").model_dump())
+    script.add("ExecDecision", decide("stop", task="enough"), decide("stop", task="enough"))
+    script.add("ExecDiscussorOutput", say("Stopped."))
+    Execution(run).start()
+    st = Execution(run).research
+    assert nodes.plan_step(st, "2")["detail"] == "three seeds: 17, 29, 43"
+    assert st["execution"]["amendments"][0]["by"] == "user" and S.approved(st, "design")
+    assert "three seeds: 17, 29, 43" in script.prompts("ExecDecision")[0], \
+        "the orchestrator decides on the amended step"

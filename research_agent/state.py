@@ -200,6 +200,9 @@ class Execution(BaseModel):
     gpu_hours: float = 0.0
     """The limit on GPU-hours used by jobs; 0 = none."""
     steps: list[StepRecord] = Field(default_factory=list)
+    amendments: list[dict] = Field(default_factory=list)
+    """Changes to the approved design made during the execution
+    (execute/nodes.amend_ops): id, target, field, from, to, kind, why, by, at."""
 
 
 class ReviewRequest(BaseModel):

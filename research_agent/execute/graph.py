@@ -146,6 +146,14 @@ def build(run: nodes.ExecRun, design: nodes.Design, checkpointer=None):
                 # A go given before the step waits for it (measured: run 1134's
                 # "go" was an aside, and step 1 then waited for another).
                 st = commit(st, [nodes.record_op(st, item["step"], go=True)], "user")
+            elif item["kind"] == "amend":
+                # Checked again here: the state may have moved since the aside.
+                from research_agent.execute.schemas import AmendIn
+
+                amend = [AmendIn(**item["amendment"])]
+                if not nodes.amend_problems(st, amend, user=True):
+                    st = commit(st, nodes.amend_ops(st, amend, by="user"), "user")
+                    st = commit(st, nodes.REAPPROVE, "user")
             elif item["kind"] == "skip" and item.get("step") in steps:
                 st = commit(st, nodes.user_skip_ops(run.folder, st, [item]), "user")
             elif item["kind"] in ("retry", "waive") and item.get("step") in steps:
@@ -184,6 +192,18 @@ def build(run: nodes.ExecRun, design: nodes.Design, checkpointer=None):
         if spoke and turn.rewind:
             st = commit(st, nodes.rewind(run.folder, st, turn.rewind), "user")
             outcome = ""
+        # Amendments: on the user's word, or the discussor's own workflow fix
+        # (nodes.discussor checked which), with another attempt for the
+        # failed step it fixes -- the run goes on without the user.
+        fixed = []
+        if turn.amend:
+            by = who if spoke else "discussor"
+            st = commit(st, nodes.amend_ops(st, turn.amend, by=by), by)
+            st = commit(st, nodes.REAPPROVE, by)
+            fixed = [s for s in turn.retry if not spoke]
+            if fixed:
+                st = commit(st, nodes.user_step_ops(st, fixed, [], by="discussor"), "discussor")
+                outcome = ""
         if spoke and (turn.retry or turn.waive):
             st = commit(st, nodes.user_step_ops(st, turn.retry, turn.waive, by=who), who)
         if spoke and turn.skip and who == "user":
@@ -193,10 +213,12 @@ def build(run: nodes.ExecRun, design: nodes.Design, checkpointer=None):
             outcome = "stopped"
         # As in the bootstrap: passing on the orchestrator's message, it
         # answers the user; a go or a request moves the work on.
-        go = spoke and not turn.stop and (turn.hand_to == "orchestrator" or turn.go
-                                          or bool(turn.retry or turn.waive or turn.rewind
-                                                   or turn.skip)
-                                          or bool(state.get("nudged")))
+        go = (spoke and not turn.stop and (turn.hand_to == "orchestrator" or turn.go
+                                           or bool(turn.retry or turn.waive or turn.rewind
+                                                    or turn.skip or turn.amend)
+                                           or bool(state.get("nudged"))))
+        # Its own workflow fix moves the work on, as a go would.
+        go = go or (bool(turn.amend) and not spoke and not turn.stop)
         return {"research": st, "seen": dict(st.get("versions") or {}), "reply": turn.reply,
                 "pending": list(state.get("pending") or []) + turn.requests, "user": "",
                 "note": "", "nudged": False, "awaiting": awaiting, "outcome": outcome,
@@ -372,8 +394,11 @@ def build(run: nodes.ExecRun, design: nodes.Design, checkpointer=None):
             if blocked[sid] >= 2:
                 # Twice in a row: what to do about it is the user's.
                 note = (f"Step {sid} cannot start: earlier work it needs is not there."
-                        f"{missing}\nTell the user, and ask how to go on (redo that earlier "
-                        f"step, change the step, or provide it).")
+                        f"{missing}\nIf what it is held on is not its research -- a record "
+                        f"only the system keeps, a wrong path or name in the step -- amend the "
+                        f"step (kind workflow) and the work goes on; tell the user what you "
+                        f"changed. Otherwise tell the user, and ask how to go on (redo that "
+                        f"earlier step, change the step, or provide it).")
                 return {"research": st, "last": last, "blocked": blocked, "note": note,
                         "_to": "discussor",
                         "decision": {"action": "ask_user", "step": sid, "reason": last}}

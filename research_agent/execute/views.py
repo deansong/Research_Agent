@@ -188,6 +188,10 @@ def paper(st: dict, *, run_dir: str, latex: str, python: str = "") -> str:
     decided = user_decisions(st)
     if decided:
         parts.append(_block("THE USER'S DECISIONS", decided))
+    changed = amendments_text(st)
+    if changed:
+        parts.append(_block("DEVIATIONS FROM THE APPROVED DESIGN -- report every one, with why; "
+                            "research changes in the method section", changed))
     previous = (st.get("status") or {}).get("previous")
     if previous and (Path(previous) / "paper" / "main.tex").is_file():
         parts.append(_block("THE LAST RUN'S PAPER -- revise it, do not start over",
@@ -206,6 +210,14 @@ def paper(st: dict, *, run_dir: str, latex: str, python: str = "") -> str:
         "No LaTeX compiler is installed: leave the folder ready to compile and say so.",
         f"Python for the figure and table scripts: {python}" if python else ""]))))
     return "\n\n".join(parts)
+
+
+def amendments_text(st: dict) -> str:
+    """The design's amendments during the execution, in words."""
+    return "\n".join(
+        f"- {a['id']} ({a['kind']}, by {a['by']}): {a['target']} {a['of']} {a['field']} "
+        f"changed from {str(a['from'])[:300]!r} to {str(a['to'])[:300]!r} -- {a['why']}"
+        for a in (st.get("execution") or {}).get("amendments") or [])
 
 
 def literature(st: dict) -> str:
