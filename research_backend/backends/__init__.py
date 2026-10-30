@@ -9,6 +9,7 @@ WHY:   Everything above this folder talks to a provider through the same
     codex_strata  the same, with Codex's `strata` profile: the Strata model
     strata        the Strata server's Responses API directly: text only
     claude_code   the `claude` CLI, one subprocess per turn
+    claude_strata the same, pointed at the Strata server: the Strata model
     antigravity   the `agy` CLI, one subprocess per turn
     api           a plain chat API -- registered, not written yet
     fake          canned answers, no model, no network: for tests
@@ -28,6 +29,7 @@ PROVIDERS: dict[str, str] = {
     "codex_strata": "research_backend.backends.codex:CodexStrataBackend",
     "strata": "research_backend.backends.responses:StrataBackend",
     "claude_code": "research_backend.backends.claude_code:ClaudeCodeBackend",
+    "claude_strata": "research_backend.backends.claude_code:ClaudeStrataBackend",
     "antigravity": "research_backend.backends.antigravity:AntigravityBackend",
     "api": "research_backend.backends.api:ApiBackend",
     "fake": "research_backend.backends.fake:FakeBackend",

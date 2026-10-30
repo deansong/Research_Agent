@@ -17,6 +17,7 @@ How each one answers, measured:
     codex_strata  the `strata` profile   the model the profile names
     strata        GET <base_url>/models  the Strata server's models, with
                                          "strata" (its alias) first
+    claude_strata the same               (Claude Code on the Strata server)
     fake          (nothing)              one placeholder
 
 Never raises. A provider that cannot answer comes back with an empty list and
@@ -196,6 +197,14 @@ def _strata() -> ModelList:
     return ModelList("strata", models, source="the Strata server (GET /models)")
 
 
+def _claude_strata() -> ModelList:
+    from research_backend.backends.responses import list_models as served
+
+    models = tuple(ModelInfo(id=i, label=label, default=n == 0)
+                   for n, (i, label) in enumerate(served()))
+    return ModelList("claude_strata", models, source="the Strata server (GET /models)")
+
+
 def _fake() -> ModelList:
     return ModelList("fake", (ModelInfo("fake", "canned answers, no model"),),
                      source="built in")
@@ -207,6 +216,7 @@ _LISTERS = {
     "claude_code": _claude_code,
     "codex_strata": _codex_strata,
     "strata": _strata,
+    "claude_strata": _claude_strata,
     "fake": _fake,
 }
 
@@ -282,6 +292,7 @@ CONTEXT_WINDOWS: dict[str, tuple[tuple[str, int], ...]] = {
     "codex": (("", 272_000),),
     "codex_strata": (("", 131_072),),
     "strata": (("", 131_072),),
+    "claude_strata": (("", 131_072),),
     "fake": (("", 200_000),),
 }
 

@@ -172,3 +172,46 @@ def test_the_ui_keeps_file_roles_off_text_only_providers():
     assert not _reaches_files("strata")
     assert _reaches_files("codex_strata") and _reaches_files("codex")
     assert "validator" in FILE_ROLES["execution"] and "researcher" in FILE_ROLES["bootstrap"]
+
+
+def test_claude_code_is_pointed_at_the_strata_server(monkeypatch):
+    # Measured: the Strata server answers Anthropic's /v1/messages, and the
+    # claude CLI runs on it with these variables -- set after the scrub, so a
+    # parent Claude session's ANTHROPIC_* cannot leak in.
+    from research_backend.backends import _cli, load
+    from research_backend.base import BackendUnavailable
+
+    cls = load("claude_strata")
+    backend = cls()
+    assert backend.model == "strata", "always named: the CLI would ask for a Claude model"
+    monkeypatch.setenv("STRATA_API_KEY", "k-test")
+    monkeypatch.setenv("STRATA_BASE_URL", "http://strata.example:21435/v1/")
+    monkeypatch.setenv("ANTHROPIC_API_KEY", "the-parent-session-s")
+    env = backend.child_env()
+    assert env["ANTHROPIC_BASE_URL"] == "http://strata.example:21435", "the CLI adds /v1/messages"
+    assert env["ANTHROPIC_AUTH_TOKEN"] == "k-test"
+    assert {env[k] for k in env if k.endswith("_MODEL")} == {"strata"}
+
+    seen = {}
+
+    def popen(argv, env=None, **kwargs):
+        seen.update(argv=argv, env=env)
+        raise OSError("stop here")
+
+    monkeypatch.setattr(_cli.subprocess, "Popen", popen)
+    try:
+        backend._run(["claude", "-p"], "/tmp", stdin_text="hi")
+    except Exception:  # noqa: BLE001 -- only the environment it was given matters
+        pass
+    assert seen["env"]["ANTHROPIC_AUTH_TOKEN"] == "k-test"
+    assert "ANTHROPIC_API_KEY" not in seen["env"], "the parent's key is scrubbed"
+    assert "--model" in backend.argv(prompt="", instructions="", access=__import__(
+        "research_backend.base", fromlist=["Access"]).Access.READ_ONLY,
+        schema_path=__file__, session=[])
+    usage = backend.usage_from({"usage": {"input_tokens": 3, "output_tokens": 2},
+                                "total_cost_usd": 0.08})
+    assert usage.cost_usd is None, "the CLI prices Strata's tokens as Anthropic's"
+
+    monkeypatch.delenv("STRATA_API_KEY")
+    with pytest.raises(BackendUnavailable, match="STRATA_API_KEY"):
+        backend.child_env()

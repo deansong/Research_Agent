@@ -315,3 +315,58 @@ class ClaudeCodeBackend(CliBackend):
 
     def session_id_from(self, envelope):
         return envelope.get("session_id")
+
+
+class ClaudeStrataBackend(ClaudeCodeBackend):
+    """Claude Code -- its tools, permissions and sessions -- on the Strata
+    model.
+
+    MEASURED 2026-10-30, claude 2.1.302: the Strata server answers Anthropic's
+    POST /v1/messages as well as the Responses API, so the CLI is pointed at it
+    directly -- no proxy: ANTHROPIC_BASE_URL (the server, without /v1: the CLI
+    adds /v1/messages), ANTHROPIC_AUTH_TOKEN (the Strata key), and the model
+    for every slot the CLI fills on its own (its "haiku" background calls
+    included). A plain answer and a tool call (Read a file) both came back.
+
+    Set after the scrub of CLAUDE_*/ANTHROPIC_* (_cli.py), so a parent Claude
+    session cannot leak in and nothing in the user's shell is needed but
+    STRATA_API_KEY (STRATA_BASE_URL moves the server, as for `strata`). Cost
+    is not reported: the CLI prices these tokens as Anthropic's.
+    """
+
+    name = "claude_strata"
+    label = "Claude Code on Strata"
+    default_model = "strata"
+
+    def __init__(self, **options):
+        super().__init__(**options)
+        # Always named: without --model the CLI would ask for a Claude model.
+        self.model = self.model or self.default_model
+
+    def child_env(self) -> dict[str, str]:
+        import os
+
+        from research_backend.backends.responses import StrataBackend
+        from research_backend.base import BackendUnavailable
+
+        key = os.environ.get(StrataBackend.key_env, "")
+        if not key:
+            raise BackendUnavailable(f"claude_strata needs {StrataBackend.key_env} in the "
+                                     f"environment (the Strata server's key).")
+        base = (os.environ.get(StrataBackend.base_url_env) or StrataBackend.default_base_url)
+        base = base.rstrip("/").removesuffix("/v1")
+        return {"ANTHROPIC_BASE_URL": base, "ANTHROPIC_AUTH_TOKEN": key,
+                "ANTHROPIC_MODEL": self.model, "ANTHROPIC_SMALL_FAST_MODEL": self.model,
+                **{f"ANTHROPIC_DEFAULT_{tier}_MODEL": self.model
+                   for tier in ("HAIKU", "SONNET", "OPUS")},
+                "CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC": "1"}
+
+    def run_structured(self, **kwargs):
+        # Not ClaudeCodeBackend's: there are no Claude limits to remember.
+        return CliBackend.run_structured(self, **kwargs)
+
+    def usage_from(self, envelope) -> Usage | None:
+        import dataclasses
+
+        usage = super().usage_from(envelope)
+        return dataclasses.replace(usage, cost_usd=None) if usage is not None else None

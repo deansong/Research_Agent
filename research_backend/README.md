@@ -7,7 +7,7 @@ continue by id, from any script, at any time.
 ```python
 import research_backend as RB
 
-RB.list_providers()          # ['antigravity', 'claude_code', 'codex', 'codex_strata', 'fake', 'strata']
+RB.list_providers()          # ['antigravity', 'claude_code', 'claude_strata', 'codex', 'codex_strata', 'fake', 'strata']
 RB.list_models("codex")      # the models codex accepts, and each one's effort levels
 RB.list_efforts("codex")     # ['low', 'medium', 'high', 'xhigh', 'max', 'ultra']
 RB.list_skills("skills")     # the skills in a folder of <name>/SKILL.md
@@ -60,7 +60,7 @@ want open at once.
 
 | argument | meaning | default |
 | --- | --- | --- |
-| `provider` | `"codex"`, `"codex_strata"`, `"strata"`, `"claude_code"`, `"antigravity"` or `"fake"` | none yet: `set_provider()` later |
+| `provider` | `"codex"`, `"codex_strata"`, `"strata"`, `"claude_code"`, `"claude_strata"`, `"antigravity"` or `"fake"` | none yet: `set_provider()` later |
 | `model` | an id from `list_models()` | the provider's default |
 | `effort` | how hard the model thinks: a level from `list_efforts()` | the model's default |
 | `skills` | which skills the model gets: `None`, `"auto"`, or a list of names (see Skills) | `None` |
@@ -291,9 +291,9 @@ else a per-model table in `catalog.py`.
 | strata | the server's `GET /models`, with `strata` first | none | the conversation is resent each turn, from `~/.research_backend/responses_threads/<thread>.json` |
 | fake | one placeholder | made up | an echo that counts its turns |
 
-### The two Strata providers
+### The Strata providers
 
-Both run the Strata model, a Qwen model served at
+All three run the Strata model, a Qwen model served at
 `http://143.167.8.120:21435/v1` with the Responses API. Its key is read from
 `STRATA_API_KEY` in the environment, and is never stored by research_backend.
 
@@ -304,6 +304,14 @@ Both run the Strata model, a Qwen model served at
   `[model_providers.*]` tables): `codex --profile` exists only in newer Codex
   binaries, and the app-server the SDK starts takes no profile. It gets a
   Codex client of its own.
+- **`claude_strata`** is Claude Code pointed at the same server, which also
+  answers Anthropic's `/v1/messages`: Claude Code's tools, permissions and
+  sessions on the Strata model. The backend sets `ANTHROPIC_BASE_URL` (the
+  server without `/v1`), `ANTHROPIC_AUTH_TOKEN` (from `STRATA_API_KEY`) and
+  the model for every slot the CLI fills, after it scrubs the parent's
+  `ANTHROPIC_*` -- nothing to set but `STRATA_API_KEY`. No cost is reported
+  (the CLI prices the tokens as Anthropic's), and `claude` prints
+  `unrecognized_model`, which is harmless.
 - **`strata`** talks to the server directly: no agent, no files, no tools
   (`max_access` is `none`), so a call that asks for `read_only` or more is
   refused. It suits the roles that only think about text. A schema is sent as

@@ -267,9 +267,23 @@ def _no_login(provider: str, why: str) -> AuthStatus:
 #: provider name -> how to ask. Keyed by the names in backends.PROVIDERS, so a
 #: provider added there without a probe here is caught by a test rather than by
 #: silently never being checked.
+def _claude_strata(executable: str = "claude") -> AuthStatus:
+    """Claude Code on the Strata server: the CLI, and the Strata key -- no login."""
+    common = dict(provider="claude_strata", login_command="", browser_login=False)
+    if not shutil.which(executable):
+        return AuthStatus(installed=False, logged_in=None,
+                          detail=f"`{executable}` is not on PATH.", **common)
+    if not os.environ.get("STRATA_API_KEY"):
+        return AuthStatus(installed=True, logged_in=False,
+                          detail="Set STRATA_API_KEY (the Strata server's key).", **common)
+    return AuthStatus(installed=True, logged_in=True,
+                      detail="The Strata key is set; no Claude login is used.", **common)
+
+
 PROBES = {
     "codex": _codex,
     "claude_code": _claude_code,
+    "claude_strata": _claude_strata,
     "antigravity": _antigravity,
     "api": lambda: _no_login("api", "Uses an API key from the environment, not a login."),
     "fake": lambda: _no_login("fake", "Offline test double. No login needed."),

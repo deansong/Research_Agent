@@ -361,10 +361,17 @@ class CliBackend:
                 f"each one with its size -- or point the role at a provider "
                 f"that takes its prompt another way (codex, claude_code).")
 
+    def child_env(self) -> dict[str, str]:
+        """Variables the child gets on top of the scrubbed environment."""
+        return {}
+
     def _run(self, argv: list[str], repo_path: str, stdin_text: str | None = None):
         """Spawn, stream, supervise. The port of codex.py::_run_turn."""
         env = {k: v for k, v in os.environ.items()
                if not k.startswith(SCRUBBED_PREFIXES)}
+        # What this backend sets for its child, after the scrub: a provider
+        # that points the CLI elsewhere (claude_strata) says where here.
+        env.update(self.child_env())
         self._check_argv(argv)
 
         try:
