@@ -61,6 +61,7 @@ export const api = {
   jobs: (id) => request("GET", `${run(id)}/jobs`),
   fields: () => request("GET", "/api/fields"),
   providers: (refresh) => request("GET", `/api/providers${refresh ? "?refresh=true" : ""}`),
+  preview: (id, node, step) => request("GET", `${run(id)}/nodes/${encodeURIComponent(node)}/preview${step ? `?step=${encodeURIComponent(step)}` : ""}`),
   nodeInfo: (id, node) => request("GET", `${run(id)}/nodes/${encodeURIComponent(node)}`),
   skills: (id) => request("GET", `${run(id)}/skills`),
   setSkills: (id, node, body) => request("PUT", `${run(id)}/nodes/${encodeURIComponent(node)}/skills`, body),

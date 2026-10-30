@@ -260,7 +260,33 @@ const HEADLINE = [["reply", "Reply"], ["hand_to", "Hands to"], ["action", "Actio
   ["next", "Next"], ["note_for_discussor", "For the discussor"], ["questions_for_user", "For the user"],
   ["problems", "Problems"]];
 
+// What the node would be sent on its next call, built now (the server's
+// research_agent/web/preview.py), shown as a recorded call's input is.
+async function drawPreview(step) {
+  view.selected = "preview";
+  view.previewStep = step || "";
+  drawList();
+  const stream = $("stream");
+  const head = clear($("call-head"));
+  clear($("call-tabs"));
+  clear($("tails"));
+  let p;
+  try { p = await api.preview(runId, node, step || ""); } catch (err) {
+    clear(stream).append(el("div", { class: "empty", text: `No preview: ${err.message}` }));
+    return;
+  }
+  head.append(pill("next call · not sent yet", "warn"), el("b", { text: ` ${p.label}` }),
+    el("span", { class: "dim small", text: ` · ${p.runs_on}` }),
+    (p.steps || []).length > 1 ? el("select", { class: "paper-pick", onchange: (e) => drawPreview(e.target.value) },
+      p.steps.map((s) => el("option", { value: s, text: `step ${s}`, selected: s === p.step }))) : null,
+    el("button", { class: "btn tiny", text: "refresh", onclick: () => drawPreview(view.previewStep) }));
+  const turn = { turn: 1, prompt: p.prompt, sent: p.sent };
+  clear(stream).append(...(p.notes || []).map((n) => el("div", { class: "dim small wire-note", text: n })),
+    input(p.prompt, { turns: [turn] }, turn));
+}
+
 async function drawSelected() {
+  if (view.selected === "preview") return drawPreview(view.previewStep);
   const c = current();
   const stream = $("stream");
   const head = clear($("call-head"));
@@ -399,7 +425,9 @@ function input(prompt, s, turn) {
     schema ? part(`${before ? 4 : 3} · Answer format`, "the JSON schema the reply must fill",
       JSON.stringify(schema, null, 2), false) : null,
     earlier.length ? part("Earlier turns the model also sees", `${earlier.length} turn(s) of this conversation`,
-      el("ol", { class: "small" }, earlier.map((t) => el("li", { text: oneLine(t.prompt || "", 160) }))), false) : null,
+      el("ol", { class: "small" }, earlier.map((t) => el("li", { text: oneLine(t.prompt || "", 160) }))), false)
+      : sent && sent.earlier_turns ? el("div", { class: "dim small wire-note",
+        text: `The model also sees the ${sent.earlier_turns} earlier turn(s) of this conversation.` }) : null,
     sent ? el("div", { class: "dim small wire-note", text: `Not recorded, added by the provider: ${sent.provider_adds}.` }) : null);
 }
 
@@ -635,6 +663,7 @@ document.addEventListener("keydown", (e) => {
 });
 
 $("node-settings").addEventListener("click", () => drawer($("node-drawer").hidden));
+$("node-preview").addEventListener("click", () => drawPreview(""));
 $("node-sources").addEventListener("click", (e) => { e.preventDefault(); drawer(true); });
 $("drawer-close").addEventListener("click", () => drawer(false));
 $("node-name").textContent = node;

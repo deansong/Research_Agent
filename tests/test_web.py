@@ -781,3 +781,23 @@ def test_back_to_design_carries_on_a_design_stage_that_stopped_partway(web, scri
     d = settle(web, "half")
     assert d["stage"] == "bootstrap" and not d["error"]
     assert d["transcript"][-1]["text"] == "Back in the design stage."
+
+
+def test_a_node_s_next_input_can_be_read_before_it_runs(web):
+    folder = web.root / "pre"
+    S.Store(folder).write(approved_state())
+    for node, label in (("designer", "designer"), ("discussor", "discussor"),
+                        ("builder", "step 1 (builder)"), ("validator", "validate step 1"),
+                        ("orchestrator", "orchestrator")):
+        r = web.get(f"/api/runs/pre/nodes/{node}/preview")
+        assert r.status_code == 200, (node, r.text)
+        p = r.json()
+        assert p["label"] == label and p["prompt"] and p["sent"]["instructions"], node
+        assert p["sent"]["schema"]["type"] == "object" and "route" in p["sent"]
+    p = web.get("/api/runs/pre/nodes/builder/preview").json()
+    assert "[decided when the call is made: the orchestrator's task" in p["prompt"]
+    assert "The work: count rows" in p["prompt"]
+    assert any("has not started" in n for n in p["notes"])
+    trainer = web.get("/api/runs/pre/nodes/validator/preview", params={"step": "2"}).json()
+    assert trainer["step"] == "2" and trainer["steps"] == ["1", "2"]
+    assert web.get("/api/runs/pre/nodes/nobody/preview").status_code == 400

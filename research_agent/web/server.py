@@ -379,6 +379,14 @@ def create_app(runs_root: Path = RUNS_ROOT, *, roles=(), watch: bool = True) -> 
     def node_info(run_id: str, node: str):
         return act(lambda: host_of(run_id).node_info(node))
 
+    @app.get("/api/runs/{run_id}/nodes/{node}/preview")
+    def node_preview(run_id: str, node: str, step: str = ""):
+        """What the node would be sent on its next call, built now."""
+        from research_agent.web import preview
+
+        host = host_of(run_id)
+        return act(lambda: preview.preview(host.folder, host.stage, node, step))
+
     @app.get("/api/runs/{run_id}/skills")
     def skills_catalogue(run_id: str):
         """The skills in the run's skills folder: name and description."""
