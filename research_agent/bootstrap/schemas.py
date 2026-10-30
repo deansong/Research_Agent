@@ -196,6 +196,11 @@ class StepIn(BaseModel):
     depends_on: list[str] = Field(default_factory=list)
     gate: bool = False
     cost: str = ""
+    follows: list[Literal["baselines", "metrics", "statistics", "seeds", "stop_criteria",
+                          "compute", "budget", "deadline", "data", "models", "other"]] = \
+        Field(default_factory=list)
+    """The parts of the protocol and constraints the step's work must follow:
+    its owner is given only those."""
 
 
 class DesignNodeIn(BaseModel):

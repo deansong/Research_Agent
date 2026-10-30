@@ -26,9 +26,13 @@ def step_text(step: dict) -> str:
     return "\n".join(lines)
 
 
-def user_decisions(st: dict) -> str:
-    """What the user decided -- standing over the plan where they conflict."""
-    mine = [d for d in st.get("decisions") or [] if d.get("by") == "user"]
+def user_decisions(st: dict, *, since_execution: bool = False) -> str:
+    """What the user decided -- standing over the plan where they conflict.
+    `since_execution`: only what they decided once the execution started; the
+    earlier decisions are in the approved design already."""
+    started = (st.get("execution") or {}).get("started", "") if since_execution else ""
+    mine = [d for d in st.get("decisions") or [] if d.get("by") == "user"
+            and (not started or (d.get("at") or "") >= started)]
     return "\n".join(f"- {d['id']} {d['what']}" + (f" -- {d['why']}" if d.get("why") else "")
                      for d in mine)
 
@@ -290,12 +294,13 @@ def owner(st: dict, *, node: dict, step: dict, task: str, paths: dict, jobs_comm
             [previous.get("verdict", "")] + [f"- {p}" for p in previous.get("problems") or []])))
     parts.append(_block("YOUR INPUTS -- files earlier work produced",
                         upstream(st, step, paths, every=node["role"] == "writer")))
-    rules = "\n\n".join(filter(None, [
-        S.render(st, ["protocol"]).split("\n", 1)[-1].strip() if st.get("protocol") else "",
-        S.render(st, ["constraints"]).split("\n", 1)[-1].strip() if st.get("constraints") else ""]))
-    if rules.strip():
-        parts.append(_block("RULES YOU WORK WITHIN -- fixed before results", rules))
-    decided = user_decisions(st)
+    rules = step_rules(st, step)
+    where = Path(paths["run"]) / "state" / "research.md"
+    parts.append(_block("RULES YOU WORK WITHIN -- fixed before results",
+                        (rules + "\n\n" if rules else "")
+                        + f"The study's whole protocol and constraints are in {where}: read "
+                          f"another part only if your work needs it."))
+    decided = user_decisions(st, since_execution=True)
     if decided:
         parts.append(_block("THE USER'S DECISIONS -- they stand over the plan where they "
                             "conflict; apply them and say so in your report", decided))
@@ -316,6 +321,22 @@ def owner(st: dict, *, node: dict, step: dict, task: str, paths: dict, jobs_comm
         f"  (prints the job id; --gpus N picks N free GPUs; `{jobs_command} status "
         f"--step {step['id']}` lists them)"])))
     return "\n\n".join(parts)
+
+
+def step_rules(st: dict, step: dict) -> str:
+    """The parts of the protocol and constraints the step follows, in full.
+    Measured (run 1119): a data-preparation step was given the whole
+    protocol -- statistics, seeds, stop criteria -- and the models and budget."""
+    labels = {"stop_criteria": "Stop criteria", "other": "Other constraints"}
+    out = []
+    for key in step.get("follows") or []:
+        section = "protocol" if key in ("baselines", "metrics", "statistics", "seeds",
+                                        "stop_criteria") else "constraints"
+        value = (st.get(section) or {}).get(key)
+        if value:
+            text = "; ".join(value) if isinstance(value, list) else str(value)
+            out.append(f"{labels.get(key, key.capitalize())}: {text}")
+    return "\n".join(out)
 
 
 def criteria_text(st: dict, ids) -> str:
@@ -383,7 +404,8 @@ def validator(st: dict, *, design_part: str, node: dict, step: dict, report: dic
             st, list(step.get("rubric") or []))),
         _block("THE PROTOCOL", S.render(st, ["protocol"])),
         _block("THE USER'S DECISIONS -- they stand over the plan where they conflict: "
-               "work that follows one is not a failure", user_decisions(st) or "(none)"),
+               "work that follows one is not a failure",
+               user_decisions(st, since_execution=True) or "(none)"),
         _block("THE OWNER'S REPORT -- check it against the files", "\n".join([
             f"Summary: {report.get('summary', '')}",
             "Artifacts:\n" + "\n".join(f"- {a}" for a in report.get("artifacts") or []),

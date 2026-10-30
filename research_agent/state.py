@@ -120,6 +120,14 @@ class Step(BaseModel):
     """Stop for the user's approval before this step runs."""
     rubric: list[str] = Field(default_factory=list)
     cost: str = ""
+    follows: list[str] = Field(default_factory=list)
+    """The parts of the protocol and constraints this step's work must
+    follow (RULES): its owner is given those, not the rest."""
+
+
+#: What a step can follow: the protocol's parts, then the constraints'.
+RULES = ("baselines", "metrics", "statistics", "seeds", "stop_criteria",
+         "compute", "budget", "deadline", "data", "models", "other")
 
 
 class Plan(BaseModel):

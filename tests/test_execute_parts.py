@@ -138,3 +138,34 @@ def test_an_older_run_s_runner_is_a_worker(tmp_path):
     cfg = config.load(tmp_path)
     assert "runner" not in cfg.roles and "worker" in cfg.roles
     assert nodes.role_of({"role": "runner"}) == "worker"
+
+
+def test_an_owner_gets_only_the_rules_its_step_follows_and_decisions_since_the_start(tmp_path):
+    # Run 1119: a data-preparation step got the whole protocol (statistics,
+    # seeds, stop criteria), the models and budget, and the user's twelve
+    # decisions from before the design was approved.
+    st, _ = S.apply(S.new(), [
+        {"op": "set", "section": "protocol", "value": {
+            "metrics": ["macro-F1 over held-out labels"], "seeds": "42, 43, 44",
+            "statistics": "paired bootstrap"}},
+        {"op": "merge", "section": "constraints", "value": {
+            "data": "GoEmotions at /data/emotions", "models": "Qwen3-4B"}},
+        {"op": "add", "section": "decisions", "value": {
+            "what": "Use GoEmotions", "by": "user", "at": "2026-10-30T10:00:00+00:00"}},
+        {"op": "set", "section": "plan", "value": {"steps": [
+            {"id": "1", "title": "Prepare the data", "detail": "splits", "check": "files",
+             "follows": ["data", "metrics"]}]}},
+        {"op": "set", "section": "execution", "value": {
+            "started": "2026-10-30T12:00:00+00:00", "steps": [{"id": "1", "title": "Prepare"}]}},
+        {"op": "add", "section": "decisions", "value": {
+            "what": "Drop the neutral label", "by": "user", "at": "2026-10-30T13:00:00+00:00"}}],
+        by="x")
+    node = {"name": "data_preparer", "role": "worker", "instructions": "Prepare."}
+    paths = {"run": str(tmp_path), "work": str(tmp_path / "w"), "artifacts": str(tmp_path / "a")}
+    brief = views.owner(st, node=node, step=st["plan"]["steps"][0], task="", paths=paths,
+                        jobs_command="jobs")
+    assert "Data: GoEmotions at /data/emotions" in brief and "Metrics: macro-F1" in brief
+    for gone in ("paired bootstrap", "42, 43, 44", "Qwen3-4B", "Use GoEmotions"):
+        assert gone not in brief
+    assert "Drop the neutral label" in brief, "a decision since the execution started"
+    assert str(tmp_path / "state" / "research.md") in brief, "the rest, where to find it"
