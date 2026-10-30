@@ -169,3 +169,11 @@ def test_an_owner_gets_only_the_rules_its_step_follows_and_decisions_since_the_s
         assert gone not in brief
     assert "Drop the neutral label" in brief, "a decision since the execution started"
     assert str(tmp_path / "state" / "research.md") in brief, "the rest, where to find it"
+
+
+def test_before_the_execution_starts_no_decision_is_repeated_to_an_owner():
+    # Run 1119, back in the design stage: the preview showed every decision.
+    st, _ = S.apply(S.new(), [{"op": "add", "section": "decisions", "value": {
+        "what": "Approve design v3", "by": "user", "at": "2026-10-30T14:12:04+00:00"}}], by="x")
+    assert views.user_decisions(st, since_execution=True) == ""
+    assert "Approve design v3" in views.user_decisions(st)

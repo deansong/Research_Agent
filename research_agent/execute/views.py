@@ -30,9 +30,11 @@ def user_decisions(st: dict, *, since_execution: bool = False) -> str:
     """What the user decided -- standing over the plan where they conflict.
     `since_execution`: only what they decided once the execution started; the
     earlier decisions are in the approved design already."""
-    started = (st.get("execution") or {}).get("started", "") if since_execution else ""
+    started = (st.get("execution") or {}).get("started", "")
+    if since_execution and not started:
+        return ""                       # not started: every decision is in the design
     mine = [d for d in st.get("decisions") or [] if d.get("by") == "user"
-            and (not started or (d.get("at") or "") >= started)]
+            and (not since_execution or (d.get("at") or "") >= started)]
     return "\n".join(f"- {d['id']} {d['what']}" + (f" -- {d['why']}" if d.get("why") else "")
                      for d in mine)
 
@@ -403,9 +405,9 @@ def validator(st: dict, *, design_part: str, node: dict, step: dict, report: dic
         _block("RUBRIC ITEMS TO CHECK", rubric_text(
             st, list(step.get("rubric") or []))),
         _block("THE PROTOCOL", S.render(st, ["protocol"])),
-        _block("THE USER'S DECISIONS -- they stand over the plan where they conflict: "
-               "work that follows one is not a failure",
-               user_decisions(st, since_execution=True) or "(none)"),
+        *([_block("THE USER'S DECISIONS -- they stand over the plan where they conflict: "
+                  "work that follows one is not a failure", decided)]
+          if (decided := user_decisions(st, since_execution=True)) else []),
         _block("THE OWNER'S REPORT -- check it against the files", "\n".join([
             f"Summary: {report.get('summary', '')}",
             "Artifacts:\n" + "\n".join(f"- {a}" for a in report.get("artifacts") or []),
