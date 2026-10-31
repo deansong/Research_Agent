@@ -269,7 +269,7 @@ class AsideOutput(BaseModel):
     rewind: str = ""
     """A step id when the user asks to go back to it: that step and every
     step after it that needs it start over (outputs kept). "" otherwise."""
-    amend: list[AmendIn] = Field(default_factory=list, max_length=8)
+    amend: list[AmendIn] = Field(default_factory=list, max_length=30)
     """Changes to the approved design: a workflow fix on your own (with
     `retry` for a failed step it unblocks), a research change only when the
     user (or the autopilot) asks for it."""
@@ -301,7 +301,7 @@ class ExecDiscussorOutput(BaseModel):
     rewind: str = ""
     """A step id when the user asks to go back to it: that step and every
     step after it that needs it start over (outputs kept). "" otherwise."""
-    amend: list[AmendIn] = Field(default_factory=list, max_length=8)
+    amend: list[AmendIn] = Field(default_factory=list, max_length=30)
     """Changes to the approved design: a workflow fix on your own (with
     `retry` for a failed step it unblocks), a research change only when the
     user (or the autopilot) asks for it."""

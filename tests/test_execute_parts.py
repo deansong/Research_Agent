@@ -323,5 +323,7 @@ def test_what_only_the_system_can_give_is_never_a_step_s_to_deliver():
     assert "the user wants to see the results before it" in said("roles/bootstrap/planner")
     assert "a receipt, approval, delivery or guarantee" in said("roles/bootstrap/reader")
     assert "never fail a step for it" in said("roles/execute/validator")
-    assert "it is not a failure" in said("roles/execute/owner")
+    assert "never stop or wait for it" in said("roles/execute/owner")
+    assert "no delivery or receipt mechanism exists" in said("roles/execute/discussor")
+    assert "Nothing will ever write those records" in said("notes/out_of_attempts")
     assert "Never missing, either: what only the system gives" in said("roles/execute/dispatch")
