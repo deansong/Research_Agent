@@ -160,7 +160,7 @@ def test_execute_runs_the_approved_design_with_commands(tmp_path, script, monkey
     out = capsys.readouterr().out
     assert "Nodes: builder (steps 1; full access), trainer (steps 2; full access)" in out
     assert "  . orchestrator -> run 1: because run 1" in out
-    assert "  . step 1 verdict -- pass: pass it is" in out
+    assert "  . step 1 verdict -- done: done it is" in out
     assert "step 2 waits for your go (/go)" in out
     assert "1. [pass] Data (builder, 1 attempts" in out, "/steps"
     assert "Step 2 passed: all done." in out and "Done: every step passed" in out

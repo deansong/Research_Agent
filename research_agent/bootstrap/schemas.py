@@ -229,11 +229,17 @@ class DesignNodeIn(BaseModel):
 
 
 class StudyCriterionIn(BaseModel):
+    """One item of the measurement plan (the rubric)."""
+
     id: str
     """R1, R2, ..."""
     criterion: str
+    """What is measured."""
     measure: str
+    """How."""
     threshold: str
+    """The expectation: a prediction the finding is reported against --
+    never a bar a step must pass."""
     applies_to: list[str] = Field(default_factory=list)
 
 

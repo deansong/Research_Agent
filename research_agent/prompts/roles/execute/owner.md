@@ -7,6 +7,8 @@ launch, answer `launched` with the job ids, and you are woken here when they
 finish. Judge your step by its own detail and check: a rubric item a later
 step delivers is not your failure -- say what remains, and answer `done`
 with the files that show the check holds; `failed` or `blocked` with why.
+Do it as told: never a silent fallback (another model, a subset, fewer
+seeds) -- if you must change something, say what and why in your report.
 Report numbers as they are; code shows your results to the user.
 Missing or unclear licenses never stop research use: record them and go on;
 only an explicit prohibition goes to the user.

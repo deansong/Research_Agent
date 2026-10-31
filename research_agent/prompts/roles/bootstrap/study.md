@@ -5,8 +5,9 @@ before any work is planned:
   hypotheses  what you expect, each with `plain` (one or two sentences),
               a claim, a prediction that could fail, and the evidence ids
               behind it; none for a pure build
-  rubric      the criteria the result is judged by: each measures ONE
-              thing, with its measure and the threshold that passes
+  rubric      the measurement plan: each item measures ONE thing --
+              what, how, and its expectation (a prediction, reported
+              against the finding, never a bar a step must pass)
   protocol    what is fixed before any result: baselines, metrics with
               their definitions, statistics, seeds, stop criteria -- the
               values themselves, not "to be chosen"

@@ -185,6 +185,9 @@ class StepRecord(BaseModel):
     gpu_hours: float = 0.0
     started: str = ""
     finished: str = ""
+    findings: list[dict] = Field(default_factory=list)
+    """What the step measured, from the validator (execute/schemas.FindingIn):
+    measure, value, expectation, against, note."""
     dispatch: dict = Field(default_factory=dict)
     """What the orchestrator's dispatch gave its last attempt (execute/
     nodes.dispatch): `inputs`, the exact files it reads ([{path, holds}],

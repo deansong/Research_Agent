@@ -9,8 +9,8 @@ it: at the end of the message.
   kind        worker (code, data, experiments), researcher (literature)
               or writer (a report or paper)
   depends_on  the earlier steps whose files it reads
-  completes   the rubric criteria checked at this step: each criterion
-              at exactly one step
+  completes   the measurement-plan items taken at this step: each at
+              exactly one step
   follows     the protocol parts its values come from
   gate        true: the user says go first -- costly or irreversible
               work, or work they asked to approve first (results are

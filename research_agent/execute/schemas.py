@@ -113,22 +113,34 @@ class StepReport(BaseModel):
 # ---- validator ------------------------------------------------------------------------------
 
 
-class RubricCheck(BaseModel):
-    id: str
-    """A rubric id, e.g. R3."""
-    met: Literal["yes", "no", "not_applicable"]
-    note: str
+class FindingIn(BaseModel):
+    """One measurement the step made, as its files have it."""
+
+    measure: str
+    """The measurement plan's id when it is one (R3), else a short name."""
+    value: str
+    """The value as the files have it, with the file it is in."""
+    expectation: str = ""
+    """What the measurement plan expected, if anything."""
+    against: Literal["as expected", "not as expected", "no expectation", "unclear"]
+    note: str = ""
 
 
 class Verdict(BaseModel):
-    verdict: Literal["pass", "partial", "fail", "incomplete"]
-    """pass: the step's check holds and its rubric items are met.
-    partial: the step's own work is right, but part of its check needs
-    outputs an earlier step did not produce (it was skipped, or itself
-    partial) -- `problems` says what is missing and why. fail: something is
-    wrong. incomplete: outputs are missing."""
+    """Whether the owner did the work as it was told, and its results are
+    real -- not whether they came out as hoped: that is a finding."""
+
+    verdict: Literal["done", "deviated", "broken"]
+    """done: the work was done as told -- the models, data, settings and
+    procedure its step and context name, as the code, configs and logs that
+    ran show -- and its outputs are complete, with numbers that can be
+    recomputed from the saved files. deviated: it ran, but not as told
+    (another model, a subset, a skipped seed, a changed setting, a silent
+    fallback): `problems` says where. broken: outputs are missing or
+    incomplete, a run crashed, or the numbers do not follow from the files."""
     summary: str
-    rubric: list[RubricCheck] = Field(default_factory=list, max_length=20)
+    findings: list[FindingIn] = Field(default_factory=list, max_length=30)
+    """Every measurement the step made, each against its expectation."""
     problems: list[str] = Field(default_factory=list, max_length=20)
     advice: str = ""
     """For a retry: what the owner must do differently."""

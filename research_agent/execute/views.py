@@ -150,6 +150,15 @@ def _ago(seconds: float) -> str:
     return f"{seconds:.0f} s ago" if seconds < 120 else f"{seconds / 60:.0f} min ago"
 
 
+def findings_text(record: dict) -> str:
+    """A step's findings, one a line: what, the value, against its expectation."""
+    return "\n".join(
+        f"- {f['measure']}: {f['value']}"
+        + (f" (expected {f['expectation']}: {f['against']})" if f.get("expectation") else "")
+        + (f" -- {f['note']}" if f.get("note") else "")
+        for f in record.get("findings") or [])
+
+
 def step_results(st: dict, *, step: dict, record: dict, report: dict, run_dir: str) -> str:
     """For the discussor, once a step is checked: its results, to tell the
     user in the chat while the work goes on."""
@@ -164,6 +173,8 @@ def step_results(st: dict, *, step: dict, record: dict, report: dict, run_dir: s
             f"Metrics:\n{metrics}" if metrics else "",
             f"Files: {folder}"]))),
         _block("THE VALIDATOR'S VERDICT", record.get("verdict") or "-"),
+        _block("ITS FINDINGS -- as the files have them, against what was expected",
+               findings_text(record) or "(none recorded)"),
         _block("THE STEP TABLE", S.render(st, ["execution"], brief=True)),
     ])
 
@@ -206,6 +217,12 @@ def paper(st: dict, *, run_dir: str, latex: str, python: str = "") -> str:
     decided = user_decisions(st)
     if decided:
         parts.append(_block("THE USER'S DECISIONS", decided))
+    found = "\n".join(f"{r['id']}. {r.get('title', '')}:\n{findings_text(r)}"
+                      for r in (st.get("execution") or {}).get("steps") or []
+                      if r.get("findings"))
+    if found:
+        parts.append(_block("THE FINDINGS -- what each step measured, as checked, against its "
+                            "expectation; report them as they are, the unexpected ones too", found))
     changed = amendments_text(st)
     if changed:
         parts.append(_block("DEVIATIONS FROM THE APPROVED DESIGN -- report every one, with why; "
@@ -368,8 +385,12 @@ def owner(st: dict, *, node: dict, step: dict, task: str, paths: dict, jobs_comm
                  f"Done when: {step['check']}" if step.get("check") else ""])))]
     criteria = criteria_text(st, list(step.get("rubric") or []))
     parts.append(_block("HOW YOUR WORK IS CHECKED",
-                        "A validator reads the files you list and checks \"Done when\""
-                        + (" and these criteria:\n" + criteria if criteria else ".")))
+                        "A validator reads your code, logs and files -- not your report -- and "
+                        "checks that you did the work as told and that your numbers follow from "
+                        "your files. A result that is not what anyone expected is a finding, "
+                        "not a failure."
+                        + ("\nMeasure and report these (the expectations are predictions):\n"
+                           + criteria if criteria else "")))
     # What the dispatch found it needs (execute/nodes.dispatch), and the
     # orchestrator's own note (a retry's "what to do differently") as it
     # wrote it, whatever the dispatch made of it.
@@ -426,18 +447,19 @@ def rule_names(step: dict) -> list[str]:
     return [RULE_LABELS.get(k, k.capitalize()) for k in step.get("follows") or []]
 
 
-def criteria_text(st: dict, ids) -> str:
-    """Rubric items as plain criteria: what, measured how, passing when --
-    no ids, weights or step numbers, which mean nothing to an owner."""
+def criteria_text(st: dict, ids, *, with_ids: bool = False) -> str:
+    """The measurement plan's items in plain words: what, measured how, what
+    is expected -- a prediction to report against, never a bar to pass (V3).
+    No ids or weights for an owner, to whom they mean nothing."""
     wanted = list(dict.fromkeys(ids))
     lines = []
     for r in st.get("rubric") or []:
         if r.get("id") in wanted:
-            line = f"- {r['criterion']}"
+            line = f"- {r['id'] + ': ' if with_ids else ''}{r['criterion']}"
             if r.get("measure"):
                 line += f", measured by {r['measure']}"
             if r.get("threshold"):
-                line += f"; passes at {r['threshold']}"
+                line += f"; expected: {r['threshold']}"
             lines.append(line)
     return "\n".join(lines)
 
@@ -564,8 +586,10 @@ def validator(st: dict, *, design_part: str, node: dict, step: dict, report: dic
     return "\n\n".join([
         _block("YOUR PART OF THE APPROVED DESIGN", design_part),
         _block("THE STEP TO CHECK", step_text(step) + f"\nDone by: {node['name']} ({node['role']})"),
-        _block("RUBRIC ITEMS TO CHECK", rubric_text(
-            st, list(step.get("rubric") or []))),
+        *_told(st, step),
+        _block("MEASUREMENTS DUE AT THIS STEP -- record each as a finding, against its "
+               "expectation", criteria_text(st, list(step.get("rubric") or []), with_ids=True)
+               or "(none: record what the step measured)"),
         _block("THE PROTOCOL", S.render(st, ["protocol"])),
         _block("NOT THIS EXECUTION'S WORK", (
             "artifacts/_before_redesign-*/, artifacts/_rewound/ and jobs/_earlier/ hold what "
@@ -596,6 +620,20 @@ def validator(st: dict, *, design_part: str, node: dict, step: dict, report: dic
             f"The code (git repository): {paths['work']}",
             f"Earlier steps' outputs: {Path(paths['run']) / 'artifacts'}"])),
     ])
+
+
+def _told(st: dict, step: dict) -> list[str]:
+    """What the owner was told besides its step: the dispatch's context and
+    the files it was given -- what "as told" is checked against."""
+    rec = next((r for r in (st.get("execution") or {}).get("steps") or []
+                if r["id"] == step["id"]), {})
+    d = rec.get("dispatch") or {}
+    if not d:
+        return []
+    files = "\n".join(f"- {i['path']}: {i['holds']}" for i in d.get("inputs") or [])
+    return [_block("WHAT ITS OWNER WAS ALSO TOLD -- by the dispatch", "\n\n".join(filter(None, [
+        d.get("context", ""), f"Its input files:\n{files}" if files else "",
+        "To obtain:\n" + "\n".join(f"- {o}" for o in d["obtain"]) if d.get("obtain") else ""])))]
 
 
 # ---- helpers ----------------------------------------------------------------------------------

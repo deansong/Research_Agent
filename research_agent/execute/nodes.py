@@ -948,21 +948,18 @@ def validator(run: ExecRun, st: dict, design: Design, *, node: dict, step: dict,
               report: dict) -> Outcome:
     rec = records(st)[step["id"]]
     rubric = {r["id"] for r in st.get("rubric") or []}
-
-    upstream = [d for d in ancestors(st, step["id"]) if short(records(st).get(d, {}))]
+    measured_here = [r for r in step.get("rubric") or [] if r in rubric]
 
     def check(out: schemas.Verdict) -> list[str]:
-        problems = [f"{c.id} is not a rubric id" for c in out.rubric if c.id not in rubric]
-        if out.verdict == "partial" and not upstream:
-            problems.append("partial is for a step whose missing part an earlier step did not "
-                            "produce (skipped or partial); none of the steps it needs is: give "
-                            "pass, fail or incomplete")
-        elif out.verdict == "partial" and not out.problems:
-            problems.append("partial: say in `problems` what is missing and which earlier step "
-                            "left it out")
-        elif out.verdict not in ("pass", "partial") and not (out.problems or out.advice.strip()):
-            problems.append(f"{out.verdict}: say what is wrong (`problems`) and what a retry "
-                            f"must do (`advice`)")
+        named = {f.measure for f in out.findings}
+        problems = [f"finding {f.measure}: not a measurement-plan id" for f in out.findings
+                    if re.fullmatch(r"R\d+", f.measure) and f.measure not in rubric]
+        if out.verdict == "done":
+            problems += [f"{r} is measured at this step: record it as a finding, with the "
+                         f"value from the files" for r in measured_here if r not in named]
+        elif not (out.problems or out.advice.strip()):
+            problems.append(f"{out.verdict}: say what differs or is wrong (`problems`) and what "
+                            f"a retry must do (`advice`)")
         return problems
 
     brief = views.validator(st, design_part=design.validator.get("instructions", ""), node=node,
@@ -974,20 +971,16 @@ def validator(run: ExecRun, st: dict, design: Design, *, node: dict, step: dict,
                             workdir=run.folder, label=f"validate step {step['id']}",
                             session=run.next_name(f"validate{_session(step['id'], attempt)[4:]}"),
                             check=check)
-    # Partial: the step did what it could; the gap is an earlier step's, and
-    # the run goes on with it recorded (measured: run 1455-next stopped when
-    # its analysis "failed" for want of fits a runtime gate had cancelled).
-    passed = out.verdict in ("pass", "partial")
-    unmet = [f"{c.id}: {c.note}" for c in out.rubric if c.met == "no"]
+    # Done means done as told, whatever the numbers say: a result against
+    # its expectation is a finding, not a failure (V3).
+    done = out.verdict == "done"
     verdict = f"{out.verdict}: {out.summary}"
-    if out.verdict == "partial":
-        verdict = (f"partial (what steps {', '.join(upstream)} did not produce is missing): "
-                   f"{out.summary}")
-    ops = [record_op(st, step["id"], status="pass" if passed else "fail", verdict=verdict[:1500],
-                     problems=(list(out.problems) + unmet)[:20]
-                     + ([f"advice: {out.advice}"] if out.advice and not passed else []),
-                     finished=_now() if passed else "")]
-    if passed:
+    ops = [record_op(st, step["id"], status="pass" if done else "fail", verdict=verdict[:1500],
+                     findings=[f.model_dump() for f in out.findings],
+                     problems=list(out.problems)[:20]
+                     + ([f"advice: {out.advice}"] if out.advice and not done else []),
+                     finished=_now() if done else "")]
+    if done:
         # What the final analysis concluded stands once it is checked.
         ops += [{"op": "update", "section": "hypotheses", "id": h["id"],
                  "value": {"status": h["status"]}} for h in report.get("hypotheses") or []]

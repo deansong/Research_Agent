@@ -100,7 +100,16 @@ def reviewed(script, meta=REVIEW):
     script.add("MetaReviewOutput", meta)
 
 
-def verdict(v="pass", **fields):
+#: The V2 verdict words tests still say, as V3's: done as told, or broken.
+_V3 = {"pass": "done", "fail": "broken", "incomplete": "broken"}
+
+
+def verdict(v="done", **fields):
+    """A validator's answer; a "done" records the plan's one measurement, R1."""
+    v = _V3.get(v, v)
+    if v == "done":
+        fields.setdefault("findings", [{"measure": "R1", "value": "as the files have it",
+                                        "against": "no expectation"}])
     return {"verdict": v, "summary": f"{v} it is", **fields}
 
 
@@ -133,7 +142,8 @@ def test_a_whole_execution_from_the_approved_design_to_done(run, script):
         "every step is dispatched before it runs, and its results told when it passes"
     told = script.prompts("StepResults")[0]
     assert "A STEP IS DONE -- tell the user its results; the work goes on" in told
-    assert "Step 1: Data" in told and "THE VALIDATOR'S VERDICT ===\npass" in told
+    assert "Step 1: Data" in told and "THE VALIDATOR'S VERDICT ===\ndone" in told
+    assert "ITS FINDINGS" in told and "- R1: as the files have it" in told
     assert ex.awaiting == "2", "step 2 is gated: the user says go first"
     st = ex.research
     assert nodes.records(st)["1"]["status"] == "pass" and st["status"]["phase"] == "executing"
@@ -500,7 +510,7 @@ def test_the_user_can_give_a_failed_step_another_attempt_or_pass_it(run, script)
     st = ex.research
     rec = nodes.records(st)["1"]
     assert rec["status"] == "pass" and rec["verdict"].startswith("passed by the user: official scorer")
-    assert "the validator's verdict was: fail" in rec["verdict"] and \
+    assert "the validator's verdict was: broken" in rec["verdict"] and \
         "still unlicensed" in rec["problems"], "what the validator said is kept beside it"
     assert ex.awaiting == "2", "the next step is open again (it is gated)"
     assert any(d["what"] == "Step 1 passes on the user's decision" for d in st["decisions"])
@@ -732,26 +742,35 @@ def test_the_design_stage_s_requests_do_not_stop_the_execution(run, script):
     assert "`stop` ends the execution, and step 1 is open to run and untried" in retry
 
 
-def test_a_step_short_of_what_a_skipped_step_left_out_passes_as_partial(run, script):
-    # Run 1455-next: a runtime gate cancelled the expanded fits (step 4 was
-    # skipped), and the analysis failed for want of them, stopping the run.
+def test_a_step_is_done_when_done_as_told_and_its_results_are_findings(run, script):
+    # V3: the validator checks the work was done as told and is real; what it
+    # measured is a finding, against its expectation -- never a failure.
     st, _ = S.apply(approved_state(), [{"op": "set", "section": "execution", "value": {
-        "steps": [{"id": "1", "title": "Data", "status": "skipped"},
+        "steps": [{"id": "1", "title": "Data", "status": "pass"},
                   {"id": "2", "title": "Train", "status": "validating", "attempts": 1}]}}],
         by="execution")
+    r1 = st["rubric"][0]["id"]
+    st, _ = S.apply(st, [{"op": "update", "section": "rubric", "id": r1,
+                          "value": {"measure": "F1 gap", "threshold": ">= 1 F1"}}], by="x")
     design = nodes.Design.read(st)
     node, step = design.owners[design.owner_of["2"]], nodes.plan_step(st, "2")
-    script.add("Verdict", verdict("partial"), verdict("partial", problems=["no expanded fits"]))
+    worse = {"measure": r1, "value": "-3.2 F1 (artifacts/step_02/metrics.json)",
+             "expectation": ">= 1 F1", "against": "not as expected"}
+    script.add("Verdict", verdict("done", findings=[]), verdict("done", findings=[worse]))
     out = nodes.validator(run, st, design, node=node, step=step, report={})
-    assert "say in `problems` what is missing" in script.prompts("Verdict")[1]
+    asked = script.prompts("Verdict")
+    assert f"{r1} is measured at this step: record it as a finding" in asked[1]
+    assert f"MEASUREMENTS DUE AT THIS STEP" in asked[0] and "expected: >= 1 F1" in asked[0]
     rec = nodes.records(S.apply(st, out.ops, by="v")[0])["2"]
-    assert rec["status"] == "pass" and rec["verdict"].startswith("partial (what steps 1 did not")
-    assert nodes.short(rec) and "no expanded fits" in rec["problems"]
+    assert rec["status"] == "pass" and rec["verdict"].startswith("done")
+    assert rec["findings"][0]["against"] == "not as expected", "a finding, not a failure"
 
-    st, _ = S.apply(st, [nodes.record_op(st, "1", status="pass", verdict="pass: ok")], by="x")
-    script.add("Verdict", verdict("partial", problems=["x"]), verdict())
-    nodes.validator(run, st, design, node=node, step=step, report={})
-    assert "none of the steps it needs is" in script.prompts("Verdict")[-1]
+    script.add("Verdict", verdict("deviated"), verdict("deviated", problems=["seed 29 skipped"],
+                                                      advice="run seed 29"))
+    out = nodes.validator(run, st, design, node=node, step=step, report={})
+    assert "deviated: say what differs" in script.prompts("Verdict")[-1]
+    rec = nodes.records(S.apply(st, out.ops, by="v")[0])["2"]
+    assert rec["status"] == "fail" and "seed 29 skipped" in rec["problems"]
 
 
 def test_the_autopilot_does_not_stop_over_a_step_it_could_still_pass(run, script):
