@@ -78,9 +78,9 @@ same, readable.
 | assumptions | A1… | marked unverified, checked or false |
 | evidence | E1… | claim, source, and `verified`: arXiv ids are checked with the research skill's tool |
 | hypotheses | H1… | statement, falsifiable prediction, rationale, evidence ids, novelty, status |
-| rubric | R1… | criterion, measure, pass threshold, weight, and the one step that completes it (`assessed_at`), where it is checked |
+| rubric | R1… | the measurement plan: criterion, measure, expectation (`threshold`: a prediction, never a bar), weight, and the one step that measures it (`assessed_at`) |
 | protocol | | baselines, metrics, statistical test, seeds, stop criteria |
-| plan | steps 1… | what, check, depends on, rubric ids, cost, gate |
+| plan | steps 1… | what, check, depends on, rubric ids, cost, gate, alternatives (other routes, taken in order at a dead end) |
 | design | | the execution agent's nodes: role, steps, skills, access, instructions |
 | decisions | D1… | what, why, by whom |
 | open questions | Q1… | for the user or for research |
@@ -257,13 +257,18 @@ builds the graph from it: one graph node per step owner, plus fixed nodes.
 | **dispatch** | -- (the orchestrator's model) | new for each run or retry, read-only | before a step starts: looks at what the work it depends on left on disk, names the exact files its owner reads (code checks they exist) and what else it must be told -- or what is missing, and the step does not start |
 | **step owners** | each `worker` or `writer` node (an older design's `runner` runs as a worker): its instructions, skills, steps | one per attempt (`step05-a1`), continued when its jobs finish | writes the code in `work/`, launches jobs, writes `artifacts/step_05/` |
 | **wait** | -- (code only) | none | polls the step's jobs and counts their GPU-hours |
-| **validator** | its `validator` node | new for each verdict, read-only | checks the step's files against its check and rubric items |
+| **validator** | its `validator` node | new for each verdict, read-only | checks, from the code, configs, logs and files, that the step was done **as told** and its results are **real**: `done`, `deviated`, `broken` or `dead_end`; records every measurement as a finding, against its expectation |
+| **reroute** | -- (code only) | none | a confirmed dead end: takes the step's next planned alternative and tells you; with none left, the discussor proposes a new route |
+| **replan** | -- (the orchestrator's model) | new, read-only | once you agree a new route: replaces every step not yet done (`orchestrator (replan)`) |
 | **results** | -- (the discussor) | the discussor's conversation | once a step passes: tells you its results in the chat, by default, and the work goes on -- no gate, nothing waits |
 | **reviewer** | -- (always there) | new, read-only | once every step is settled: reviews the study as a NeurIPS/ICML/ICLR reviewer |
 
 ```
-orchestrator --run/retry 5--> dispatch --ready--> owner of 5 --done--> validator --pass--> results --> orchestrator
-                                                                                    --fail--> orchestrator
+orchestrator --run/retry 5--> dispatch --ready--> owner of 5 --done/dead end--> validator --done--> results --> orchestrator
+                                                                                    --deviated/broken--> orchestrator
+                                                                                    --dead_end--> reroute --alternative--> orchestrator
+                                                                                                          --none left--> discussor --> you
+discussor --replan (you agreed)--> replan --> orchestrator
                                                          --launched--> wait --jobs finished--> owner of 5 (same session)
                                       --missing--> orchestrator (missing again: discussor --> you)
              --skip 5--> orchestrator (artifacts/step_05/SKIPPED.md says why)
@@ -311,14 +316,16 @@ earlier run's files.
 
 Code holds what a model cannot change:
 - **Order.** A step runs only once the steps it depends on have passed or been skipped. A step waiting on a failed one is not skipped around it.
-- **What a step is judged on.** Its own check, plus the rubric criteria assessed at that step: each criterion is checked at the one step that completes it, never at the steps that only lead up to it.
+- **What a step is judged on.** Fidelity, not numbers: was it done as its step and its dispatch told (the models, data, splits, settings and procedure -- a silent fallback, a subset or a skipped seed is a deviation), are its outputs complete and its numbers recomputable from the saved files, and is it clean (no final-test data early, nothing made up). The measurement-plan items taken at that step are recorded as findings, each against its expectation: "as expected", "not as expected", "no expectation" or "unclear". A result against expectation is a finding, never a failure.
 - **Attempts.** A failed step is retried at most `max_attempts` times in all (default 3). Each retry starts a new owner session and passes it the validator's verdict.
 - **Inputs.** A step starts only once its dispatch is ready: every file it names exists, and a step that depends on earlier work names the files it reads from it. A step that could not start uses no attempt; the second time in a row, you are asked.
 - **Your go.** A step the plan gates waits for you (`/go`, or tell the discussor). `--confirm all` makes every step wait; `--confirm none` makes none wait.
-- **Passing.** Only the validator's verdict passes a step. Before the validator looks, code checks that every file the owner lists exists, and that every job it names was launched for that step.
+- **Passing.** Only the validator's `done` passes a step. Before the validator looks, code checks that every file the owner lists exists, and that every job it names was launched for that step.
 - **Budget.** The `--wall-hours` and `--gpu-hours` limits are measured from the job records. Going over stops the jobs and the step, and asks you what to do. Raise the limit in `execute.json` and resume to go on.
 - **Rewind.** You can start over from any step that has run (the step table, or tell the discussor): it and every step that needs it go back to pending with fresh attempts; their outputs are kept in `artifacts/_rewound/`.
 - **Amendments.** The goal, hypotheses and brief do not change here. A pending or failed step's detail, check or title, a rubric criterion, or a protocol part can be amended: by the discussor on its own when a step fails or is held on something that is not its research (a check no step can meet, a record only the system keeps, a wrong path or name), with another attempt for the failed step it fixes; anything else -- what a step tests, the rubric, the protocol -- only on your word (or the autopilot's). Nothing is amended once a verdict has judged it: a criterion after its step is checked, a protocol part after a step that follows it. Each amendment is logged in `execution.amendments` (from, to, why, by whom), the design is approved again as amended, and the paper's writer reports every one as a deviation. A larger change goes back through the bootstrap.
+
+- **Routes.** An owner that finds its route cannot work however it is retried (access refused, divergence at every setting, it cannot fit the machine) reports `dead_end`; the validator confirms it from the files. The step then takes its next planned alternative at once -- its detail and check replaced, fresh attempts -- and you are told in the chat. With none left, the discussor proposes a new route for the rest of the study and asks you; on your yes (never the autopilot's) the replanner replaces every step not yet done with new steps, numbered on, owned by the team's nodes, each measurement still due taken at exactly one of them. A replan waits until no step is at work. Every change of route is kept in `execution.routes`, the design is approved again as changed, and the paper reports each dead end as a result.
 
 Long jobs. An owner launches anything long through the jobs helper, which picks free GPUs and runs the command detached:
 
@@ -361,7 +368,7 @@ The run folder gains:
     inbox.json           what you said while the team worked, until the graph takes it
 ```
 
-`state/research.json` gains an `execution` section: one record per step, holding its owner, status, attempts, sessions, artifacts, jobs, GPU-hours and verdict.
+`state/research.json` gains an `execution` section: one record per step, holding its owner, status (`replaced` once a new route took its place), route, attempts, sessions, artifacts, jobs, GPU-hours, verdict and findings; and `routes`, every change of route.
 
 ## The web UI
 
