@@ -817,7 +817,7 @@ class RunHost:
             return
         if node == "discussor" and update.get("reply"):
             self.bus.emit("chat", role="discussor", text=update["reply"], kind="answer")
-        elif node == "results" and update.get("reply"):
+        elif node in ("results", "reroute", "replan") and update.get("reply"):
             self.bus.emit("chat", role="discussor", text=update["reply"], kind="results")
         else:
             self.bus.emit("step", node=node, text=_summary(node, update))
@@ -962,6 +962,8 @@ def node_of(label: str) -> str:
     "discussor (aside)", "reviewer"."""
     if (label or "").startswith("orchestrator (dispatch"):
         return "dispatch"
+    if (label or "").startswith("orchestrator (replan"):
+        return "replan"
     owner = re.fullmatch(r"step \S+ \((.+)\)", label or "")
     if owner:
         return owner.group(1)

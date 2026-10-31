@@ -1027,3 +1027,92 @@ def test_an_amendment_said_while_the_team_works_applies_at_its_next_decision(run
     assert st["execution"]["amendments"][0]["by"] == "user" and S.approved(st, "design")
     assert "three seeds: 17, 29, 43" in script.prompts("ExecDecision")[0], \
         "the orchestrator decides on the amended step"
+
+
+DEAD_END = {"state": "dead_end", "summary": "the hub refuses the download",
+            "problems": ["HTTP 403 on every mirror, logged in artifacts/step_01/fetch.log"]}
+ALT_PLAN = {"summary": "two steps", "steps": [
+    {**PLAN["steps"][0], "alternatives": [{"when": "the hub refuses the download",
+                                           "detail": "count rows of the local copy at /data/x",
+                                           "check": "rows.json exists"}]},
+    PLAN["steps"][1]]}
+
+
+def test_a_dead_end_takes_the_steps_planned_alternative_and_the_user_is_told(run, script):
+    # V3: a dead end the validator confirms is not another attempt at the
+    # same route: the step's next planned route is taken at once.
+    S.Store(run.folder).write(approved_state(plan=ALT_PLAN))
+    script.add("ExecDecision", decide("run", "1"), decide("run", "1"),
+               decide("run", "2"))
+    script.add("StepReport", DEAD_END, done_writing(run, "1", "rows.json", "[1000]"))
+    script.add("Verdict", verdict("dead_end", problems=["403 in fetch.log on all 3 mirrors"]),
+               verdict())
+    script.add("StepResults", {"reply": "Step 1 could not download; it uses the local copy."},
+               {"reply": "Step 1 is done."})
+    script.add("ExecDiscussorOutput", say("Step 2 trains; go?"))
+    seen = []
+    Execution(run).start(on_step=lambda node, update: seen.append(node))
+    assert seen[:6] == ["orchestrator", "dispatch", "builder", "validator", "reroute",
+                        "orchestrator"]
+    assert "It reports a DEAD END" in script.prompts("Verdict")[0]
+    assert "count rows of the local copy" in script.prompts("StepReport")[1]
+    assert "THE ROUTE CHANGED" in script.prompts("StepResults")[0]
+    st = S.Store(run.folder).read()
+    rec = nodes.records(st)["1"]
+    assert rec["status"] == "pass" and rec["route"] == 1 and not rec["dead_end"]
+    assert nodes.plan_step(st, "1")["detail"] == "count rows of the local copy at /data/x"
+    route, = st["execution"]["routes"]
+    assert route["kind"] == "planned alternative" and route["step"] == "1"
+    assert "403" in route["why"] and S.approved(st, "design")
+
+
+def test_with_no_route_left_the_user_agrees_a_new_route_and_the_rest_is_replanned(run, script):
+    # V3: with no planned route left, the discussor proposes one; on the
+    # user's yes the replanner replaces every step not yet done.
+    script.add("ExecDecision", decide("run", "1"), decide("run", "3"))
+    script.add("StepReport", DEAD_END)
+    script.add("Verdict", verdict("dead_end", problems=["403 in fetch.log"]))
+    script.add("ExecDiscussorOutput",
+               say("Step 1 is a dead end: the hub refuses. Use the local copy instead?"),
+               say("Replanning on the local copy.", replan="use the local copy at /data/x",
+                   hand_to="orchestrator"),
+               say("Step 3 next?"))
+    new = [{"id": "3", "title": "Local data", "detail": "count rows of /data/x",
+            "check": "rows.json exists", "kind": "worker", "owner": "builder", "gate": True},
+           {"id": "4", "title": "Train", "detail": "two seeds on step 3's rows", "check": "scores",
+            "kind": "worker", "owner": "trainer", "depends_on": ["3"], "completes": ["R1"]}]
+    script.add("ReplanOutput", {"summary": "the local copy", "steps": [
+        {**s, "id": str(int(s["id"]) + 2), "depends_on": []} for s in new]},
+        {"summary": "the local copy instead of the hub", "steps": new})
+    ex = Execution(run)
+    turn = ex.start()
+    assert "Use the local copy" in turn.reply
+    assert "no planned route left" in script.prompts("ExecDiscussorOutput")[0]
+    turn = ex.answer("Yes, use the local copy at /data/x.")
+    first, retried = script.prompts("ReplanOutput")
+    assert "use the local copy at /data/x" in first and "THE NEW ROUTE" in first
+    assert "the new steps are 3, 4" in retried
+    st = S.Store(run.folder).read()
+    rec = nodes.records(st)
+    assert rec["1"]["status"] == rec["2"]["status"] == "replaced"
+    assert rec["3"]["status"] == rec["4"]["status"] == "pending"
+    assert [s["id"] for s in st["plan"]["steps"]] == ["1", "2", "3", "4"]
+    owned = {n["name"]: n.get("steps") for n in st["design"]["nodes"]}
+    assert owned["builder"] == ["1", "3"] and owned["trainer"] == ["2", "4"]
+    assert st["rubric"][0]["assessed_at"] == "4" and S.approved(st, "design")
+    assert st["execution"]["routes"][-1]["kind"] == "replan"
+    assert "THE ROUTE CHANGED" in script.prompts("StepResults")[-1]
+    moves = nodes.open_moves(st, run.limits.max_attempts)
+    assert moves["run"] == ["3"] and not moves["done"]
+
+
+def test_only_the_users_word_replans_and_never_while_a_step_is_at_work(run, script):
+    from research_agent import autopilot
+    st, _ = S.apply(approved_state(), [{"op": "set", "section": "execution", "value": {
+        "steps": [{"id": "1", "title": "Data", "status": "fail"},
+                  {"id": "2", "title": "Train", "status": "pending"}]}}], by="execution")
+    assert nodes.replan_problems(st, user="")
+    assert nodes.replan_problems(st, user=f"{autopilot.MARK} yes")
+    assert not nodes.replan_problems(st, user="yes, replan")
+    busy = S.apply(st, [nodes.record_op(st, "2", status="running")], by="x")[0]
+    assert "at work" in nodes.replan_problems(busy, user="yes")[0]

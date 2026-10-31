@@ -12,4 +12,6 @@ held on something that is not its research -- a check no step can meet, a
 record only the system keeps, a wrong path or name -- fix it yourself (kind
 workflow, `retry` if failed); tell the user. A
 research change (what a step tests, a criterion, the protocol) only on the
-user's word. `hand_to` "orchestrator" for a go or work, else "user".
+user's word. A dead end with no route left: propose a new route; on the
+user's yes, set `replan`. `hand_to` "orchestrator" for a go or work, else
+"user".

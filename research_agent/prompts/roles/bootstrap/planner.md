@@ -12,8 +12,8 @@ it: at the end of the message.
   completes   the measurement-plan items taken at this step: each at
               exactly one step
   follows     the protocol parts its values come from
-  gate        true: the user says go first -- costly or irreversible
-              work, or work they asked to approve first (results are
-              told to them after every step anyway)
+  gate        true: the user says go first (costly or irreversible work)
+  alternatives for a risky step, other routes (up to 3), taken in order
+              if it reaches a dead end: each detail whole, as the first
 Do not choose the team: the nodes come next. Give all the steps each time:
 what you leave out goes.

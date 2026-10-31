@@ -7,8 +7,9 @@ and files, not its report:
 - real: its jobs ran to the end, its outputs are complete, its numbers
   follow from the saved files;
 - clean: no final-test data used before the final evaluation, nothing made up.
-`done`, `deviated` (where it differs) or `broken` (what is missing or
-wrong), with `advice` for a retry. Record every measurement as a finding:
+`done`, `deviated` (where it differs), `broken` (what is missing or
+wrong), with `advice` for a retry, or `dead_end`: done as told, and the
+files show the route itself cannot work. Record every measurement as a finding:
 the value from the files, against its expectation. A result against
 expectation is a finding, never a failure; what a later step delivers is
 not this step's.

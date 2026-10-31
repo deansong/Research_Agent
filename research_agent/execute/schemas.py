@@ -12,6 +12,8 @@ from typing import Literal
 
 from pydantic import BaseModel, Field
 
+from research_agent.bootstrap.schemas import PlanStepIn
+
 from research_agent.bootstrap.schemas import AnswerIn, DecisionIn, FindingIn, QuestionIn, RiskIn
 
 
@@ -87,11 +89,15 @@ class HypothesisResultIn(BaseModel):
 
 
 class StepReport(BaseModel):
-    state: Literal["done", "launched", "failed", "blocked"]
+    state: Literal["done", "launched", "failed", "dead_end", "blocked"]
     """done: the step's outputs are written, ready to be checked.
     launched: jobs are running (their ids in `jobs`); you will be woken when
-    they finish. failed: it cannot be done as specified (say why).
-    blocked: it needs a decision from the user (in `questions_for_user`)."""
+    they finish. failed: something went wrong that another attempt could
+    fix -- a bug, a crash, the environment (say what). dead_end: the work
+    cannot go on as specified however it is retried -- access refused, the
+    method diverges at every setting, it cannot fit the machine or the
+    budget (say why, in `problems`): another route is taken. blocked: it
+    needs a decision from the user (in `questions_for_user`)."""
     summary: str
     artifacts: list[str] = Field(default_factory=list, max_length=60)
     """Files the validator should check: paths in your artifacts folder
@@ -130,14 +136,17 @@ class Verdict(BaseModel):
     """Whether the owner did the work as it was told, and its results are
     real -- not whether they came out as hoped: that is a finding."""
 
-    verdict: Literal["done", "deviated", "broken"]
+    verdict: Literal["done", "deviated", "broken", "dead_end"]
     """done: the work was done as told -- the models, data, settings and
     procedure its step and context name, as the code, configs and logs that
     ran show -- and its outputs are complete, with numbers that can be
     recomputed from the saved files. deviated: it ran, but not as told
     (another model, a subset, a skipped seed, a changed setting, a silent
     fallback): `problems` says where. broken: outputs are missing or
-    incomplete, a run crashed, or the numbers do not follow from the files."""
+    incomplete, a run crashed, or the numbers do not follow from the files.
+    dead_end: the work was done as told and the files show the route itself
+    cannot work -- not a bug another attempt could fix: `problems` gives the
+    evidence. Another route is then taken."""
     summary: str
     findings: list[FindingIn] = Field(default_factory=list, max_length=30)
     """Every measurement the step made, each against its expectation."""
@@ -262,6 +271,19 @@ class WaiveIn(BaseModel):
     """The user's reason, in their words -- kept as the step's verdict."""
 
 
+class ReplanStepIn(PlanStepIn):
+    owner: str
+    """The existing team node that does it: one of the kind the step is."""
+
+
+class ReplanOutput(BaseModel):
+    """The rest of the study on a new route: the steps that replace every
+    step not yet done."""
+
+    summary: str
+    steps: list[ReplanStepIn] = Field(min_length=1, max_length=12)
+
+
 class StepResults(BaseModel):
     """The discussor's message to the user once a step is checked."""
 
@@ -324,5 +346,8 @@ class ExecDiscussorOutput(BaseModel):
     """Changes to the approved design: a workflow fix on your own (with
     `retry` for a failed step it unblocks), a research change only when the
     user (or the autopilot) asks for it."""
+    replan: str = ""
+    """A new route for the rest of the study, when the user agreed to it:
+    what it must do instead, and why. Every step not yet done is replaced."""
     decisions: list[DecisionIn] = Field(default_factory=list, max_length=6)
     answers: list[AnswerIn] = Field(default_factory=list, max_length=6)

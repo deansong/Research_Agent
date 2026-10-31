@@ -126,6 +126,8 @@ class Step(BaseModel):
     kind: str = ""
     """Who does it: a worker, researcher or writer ("" in plans made before
     the planner said)."""
+    alternatives: list[dict] = Field(default_factory=list)
+    """Routes to take, in order, if it reaches a dead end: when, detail, check."""
 
 
 #: What a step can follow: the protocol's parts, then the constraints'.
@@ -164,7 +166,13 @@ class StepRecord(BaseModel):
     owner: str = ""
     """The design node that carries it out."""
     status: Literal["pending", "running", "waiting", "validating", "pass", "fail", "skipped",
-                    "stopped"] = "pending"
+                    "stopped", "replaced"] = "pending"
+    """replaced: a new route took its place (Execution.routes)."""
+    route: int = 0
+    """Which of the step's routes it is on: 0 the planned one, n its nth
+    alternative."""
+    dead_end: str = ""
+    """The validator confirmed its route cannot work: why, from the files."""
     go: bool = False
     """The user let this gated step start."""
     pause_before: bool = False
@@ -203,6 +211,10 @@ class Execution(BaseModel):
     gpu_hours: float = 0.0
     """The limit on GPU-hours used by jobs; 0 = none."""
     steps: list[StepRecord] = Field(default_factory=list)
+    routes: list[dict] = Field(default_factory=list)
+    """Every change of route (execute/nodes): a step's planned alternative
+    taken at a dead end, or the rest of the plan replanned -- id, kind, step,
+    why, what replaced what, when."""
     amendments: list[dict] = Field(default_factory=list)
     """Changes to the approved design made during the execution
     (execute/nodes.amend_ops): id, target, field, from, to, kind, why, by, at."""
@@ -558,7 +570,9 @@ def _render(state: dict, section: str, brief: bool) -> str:
                 f"\n   {label}: {s[key] if isinstance(s[key], str) else ', '.join(s[key])}"
                 for key, label in (("detail", "detail"), ("check", "check"),
                                    ("depends_on", "after"), ("rubric", "rubric"),
-                                   ("cost", "cost")) if s.get(key))
+                                   ("cost", "cost")) if s.get(key)) + "".join(
+                f"\n   alternative {i} (if {a.get('when', '')}): {a.get('detail', '')}"
+                for i, a in enumerate(s.get("alternatives") or [], 1))
             lines.append(f"{s['id']}. {s['title']}{' [gate]' if s.get('gate') else ''}{extra}")
         return "\n".join(lines)
     if section == "design":
@@ -585,6 +599,7 @@ def _render(state: dict, section: str, brief: bool) -> str:
                 tail = tail[:157] + "..."
             go = ", go given" if r.get("go") else ""
             go += "".join(f", pause {w}" for w in ("before", "after") if r.get(f"pause_{w}"))
+            go += f", on alternative {r['route']}" if r.get("route") else ""
             lines.append(f"{r['id']}. [{r['status']}] {r.get('title', '')} ({r.get('owner', '')}{go}, "
                          f"{r.get('attempts', 0)} attempts, {r.get('gpu_hours', 0):.1f} GPU-h){tail}")
         return "\n".join(lines)

@@ -150,6 +150,57 @@ def _ago(seconds: float) -> str:
     return f"{seconds:.0f} s ago" if seconds < 120 else f"{seconds / 60:.0f} min ago"
 
 
+def replan(st: dict, *, ask: str, team: dict[str, str], replaced: list[str], run_dir) -> str:
+    """For the replanner: the study, what is done and found, the dead end, the
+    steps it replaces, the team."""
+    records = {r["id"]: r for r in (st.get("execution") or {}).get("steps") or []}
+    done = []
+    for s in _steps(st):
+        r = records.get(s["id"]) or {}
+        if r.get("status") in ("pass", "skipped"):
+            done.append(f"{s['id']}. {s['title']} [{r['status']}] -- files in "
+                        f"{Path(run_dir) / 'artifacts' / folder_name(s['id'])}\n"
+                        f"  what it did: {r.get('summary') or '-'}"
+                        + (f"\n  found:\n{findings_text(r)}" if r.get("findings") else ""))
+    left = [s for s in _steps(st) if s["id"] in replaced]
+    last = max((int(i) for i in records if i.isdigit()), default=0)
+    return "\n\n".join([
+        f"Today is {_today()}.",
+        _block("THE NEW ROUTE -- what the user agreed it must do", ask),
+        _block("THE STUDY", S.render({**st, "hypotheses": _live(st)},
+                                     ["goal", "hypotheses", "rubric", "protocol", "constraints"])),
+        _block("DONE -- these steps and their findings stand", "\n\n".join(done) or "(none)"),
+        _block("THE ROUTES SO FAR", routes_text(st) or "(none)"),
+        _block(f"REPLACED -- steps {', '.join(replaced)}, as they were",
+               "\n\n".join(step_text(s) for s in left) or "(none)"),
+        _block("THE TEAM -- each new step's owner is one of these, of its kind",
+               "\n".join(f"- {n} ({k})" for n, k in team.items())),
+        _block(f"NUMBERING -- the new steps are {last + 1}, {last + 2}, ...", ""),
+        _block("EACH STEP IS A SUBAGENT WITH ITS OWN CONTEXT",
+               prompt_files.text("notes/step_reader", run_dir, run=str(run_dir))),
+    ])
+
+
+def routes_text(st: dict) -> str:
+    """Every change of route, in words."""
+    return "\n".join(
+        f"- {r['id']} ({r['kind']}), step {r['step']}: {r['why'][:400]} -- "
+        + (f"took the alternative for \"{r['when'][:200]}\"" if r["kind"] != "replan"
+           else f"replaced by {r['by'][:400]}")
+        for r in (st.get("execution") or {}).get("routes") or [])
+
+
+def route_told(st: dict, entry: dict) -> str:
+    """For the discussor, when the route changed: tell the user."""
+    return "\n\n".join([
+        _block("THE ROUTE CHANGED -- tell the user; the work goes on, nothing waits for your "
+               "answer", "In a few lines: what reached a dead end and why, what the study does "
+               "instead, and what runs next. Ask nothing."),
+        _block("WHAT CHANGED", "\n".join(f"{k}: {v}" for k, v in entry.items() if v)),
+        _block("THE STEP TABLE", S.render(st, ["execution"], brief=True)),
+    ])
+
+
 def findings_text(record: dict) -> str:
     """A step's findings, one a line: what, the value, against its expectation."""
     return "\n".join(
@@ -223,6 +274,10 @@ def paper(st: dict, *, run_dir: str, latex: str, python: str = "") -> str:
     if found:
         parts.append(_block("THE FINDINGS -- what each step measured, as checked, against its "
                             "expectation; report them as they are, the unexpected ones too", found))
+    routes = routes_text(st)
+    if routes:
+        parts.append(_block("THE ROUTES TAKEN -- report each: what reached a dead end, why, and "
+                            "what the study did instead; a dead end is a result", routes))
     changed = amendments_text(st)
     if changed:
         parts.append(_block("DEVIATIONS FROM THE APPROVED DESIGN -- report every one, with why; "
@@ -600,6 +655,9 @@ def validator(st: dict, *, design_part: str, node: dict, step: dict, report: dic
                   "work that follows one is not a failure", decided)]
           if (decided := user_decisions(st, since_execution=True)) else []),
         _block("THE OWNER'S REPORT -- check it against the files", "\n".join([
+            *([f"It reports a DEAD END: the route itself cannot work. Confirm it from the "
+               f"files (`dead_end`), or say why it is not (`broken`, `deviated`)."]
+              if report.get("state") == "dead_end" else []),
             f"Summary: {report.get('summary', '')}",
             "Artifacts:\n" + "\n".join(f"- {a}" for a in report.get("artifacts") or []),
             "Commands:\n" + "\n".join(f"- {c}" for c in report.get("commands") or []),

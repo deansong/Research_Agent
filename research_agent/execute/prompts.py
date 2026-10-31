@@ -18,7 +18,9 @@ FILES = {"discussor": "discussor", "orchestrator": "orchestrator", "worker": "ow
          "writer": "owner", "validator": "validator", "reviewer": "reviewer",
          "paper": "paper", "meta_reviewer": "meta_reviewer",
          # The orchestrator's check before a step runs, on its model.
-         "dispatch": "dispatch"}
+         "dispatch": "dispatch",
+         # The rest of the study on a new route, on the orchestrator's model.
+         "replanner": "replanner"}
 
 
 def instructions(run_dir=None) -> dict[str, str]:

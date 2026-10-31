@@ -255,6 +255,16 @@ class StudyOutput(BaseModel):
     notes: str = ""
 
 
+class AlternativeIn(BaseModel):
+    """Another route for a step, taken if it reaches a dead end."""
+
+    when: str
+    """The dead end it answers: what would have to fail."""
+    detail: str
+    """The step's whole detail on this route: self-contained, as the first."""
+    check: str
+
+
 class PlanStepIn(StepIn):
     kind: Literal["worker", "researcher", "writer"]
     """Who its subagent is: a worker (code, data, experiments), a researcher
@@ -262,6 +272,9 @@ class PlanStepIn(StepIn):
     completes: list[str] = Field(default_factory=list)
     """The rubric criteria this step completes, where each is checked: every
     criterion is completed by exactly one step."""
+    alternatives: list[AlternativeIn] = Field(default_factory=list, max_length=3)
+    """For a risky step: the routes to take, in order, if it reaches a dead
+    end -- each a whole replacement of its detail and check."""
 
 
 class PlanOutput(BaseModel):

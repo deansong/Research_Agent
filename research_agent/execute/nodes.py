@@ -38,9 +38,9 @@ NodeFailed = run_base.NodeFailed
 
 #: Graph node names the design's own names must not take.
 RESERVED = {"discussor", "orchestrator", "dispatch", "validator", "wait", "human", "paper",
-            "reviewer"}
+            "reviewer", "results", "reroute", "replan"}
 #: Where a step's status says it is finished, one way or another.
-SETTLED = {"pass", "skipped"}
+SETTLED = {"pass", "skipped", "replaced"}
 #: What the user can give another attempt: a step that failed or was
 #: stopped -- or skipped, which reopens the steps skipped after it.
 REOPENABLE = ("fail", "stopped", "skipped")
@@ -317,6 +317,8 @@ class DiscussorTurn(Outcome):
     rewind: str = ""
     amend: list = field(default_factory=list)
     """Its amendments (AmendIn), checked; applied by the graph."""
+    replan: str = ""
+    """A new route for the rest of the study, on the user's word."""
 
 
 # ---- rewinding -------------------------------------------------------------------------
@@ -507,6 +509,156 @@ def amend_ops(st: dict, amends, *, by: str) -> list[dict]:
     return ops
 
 
+# ---- routes: a dead end, and the way round it -----------------------------------------------
+#
+# V3. A step that cannot go on as specified -- not a bug a retry would fix --
+# is a dead end. Its next planned alternative (in the design the user
+# approved) is taken by code, with fresh attempts, and the user is told; with
+# none left, the discussor proposes a new route for the rest of the study and,
+# once the user agrees, a replanner replaces every step not yet done. Every
+# change of route is kept in execution.routes, for the paper.
+
+#: What a replan may not happen during: a step at work.
+AT_WORK = ("running", "waiting", "validating")
+
+
+def _route_entry(st: dict, **fields) -> dict:
+    routes = (st.get("execution") or {}).get("routes") or []
+    return {"id": f"route{len(routes) + 1}", "at": _now(), **fields}
+
+
+def take_alternative(st: dict, step_id: str, why: str) -> tuple[list[dict], dict] | None:
+    """The step's next planned route, as changes (and its log entry); None
+    when it has none left."""
+    step, rec = plan_step(st, step_id) or {}, records(st)[step_id]
+    alternatives, n = step.get("alternatives") or [], rec.get("route", 0)
+    if n >= len(alternatives):
+        return None
+    alt = alternatives[n]
+    plan = json.loads(json.dumps(st.get("plan") or {}))
+    planned = next(x for x in plan["steps"] if x["id"] == step_id)
+    entry = _route_entry(st, kind="planned alternative", step=step_id, why=why,
+                         when=alt.get("when", ""), replaced=planned.get("detail", "")[:600],
+                         by=alt.get("detail", "")[:600])
+    planned["detail"], planned["check"] = alt["detail"], alt["check"]
+    routes = list((st.get("execution") or {}).get("routes") or []) + [entry]
+    ops = [{"op": "set", "section": "plan", "value": plan},
+           record_op(st, step_id, status="pending", route=n + 1, attempts=0, extra_attempts=0,
+                     verdict="", summary="", findings=[], dispatch={}, jobs=[], sessions=[],
+                     dead_end="",
+                     problems=[f"dead end on its route {n}: {why}"[:1500]]),
+           {"op": "merge", "section": "execution", "value": {"routes": routes}},
+           {"op": "add", "section": "decisions", "value": {
+               "what": f"Step {step_id} takes its planned alternative {n + 1} ({entry['id']})",
+               "why": f"a dead end: {why}"[:600], "by": "orchestrator"}}]
+    return ops, entry
+
+
+def team_of(st: dict) -> dict[str, str]:
+    """The design's step owners: node name -> its kind (worker, researcher, writer)."""
+    return {n["name"]: role_of(n) for n in (st.get("design") or {}).get("nodes") or []
+            if role_of(n) in config.OWNERS}
+
+
+def replan_problems(st: dict, *, user: str) -> list[str]:
+    """Whether a new route may be planned now."""
+    if not user or user.startswith(autopilot.MARK):
+        return ["replan: a new route is the user's to agree: propose it, and set `replan` once "
+                "they say yes"]
+    rec = records(st)
+    busy = [s for s, r in rec.items() if r["status"] in AT_WORK]
+    if busy:
+        return [f"replan: steps {', '.join(busy)} are at work; a new route waits until they "
+                f"finish"]
+    if all(r["status"] in SETTLED for r in rec.values()):
+        return ["replan: every step is settled; nothing is left to replace"]
+    return []
+
+
+def replan_check(st: dict):
+    """What code requires of a new route for the rest of the study."""
+    rec = records(st)
+    settled = [s for s, r in rec.items() if r["status"] in ("pass", "skipped")]
+    replaced = [s for s, r in rec.items() if r["status"] not in SETTLED]
+    first = max((int(s) for s in rec if s.isdigit()), default=0) + 1
+    team = team_of(st)
+    rubric = {r["id"]: r for r in st.get("rubric") or []}
+    due = [r for r, x in rubric.items() if not x.get("assessed_at")
+           or x["assessed_at"] in replaced]
+
+    def check(out: schemas.ReplanOutput) -> list[str]:
+        busy = [s for s, r in rec.items() if r["status"] in AT_WORK]
+        if busy:
+            return [f"steps {', '.join(busy)} are at work: a new route waits until they finish"]
+        ids = [x.id for x in out.steps]
+        want = [str(first + i) for i in range(len(ids))]
+        problems = [] if ids == want else [f"the new steps are {', '.join(want)}, not {ids}"]
+        for i, x in enumerate(out.steps):
+            problems += [f"step {x.id} depends on {d}: only steps done ({', '.join(settled)}) "
+                         f"or new steps before it" for d in x.depends_on
+                         if d not in settled and d not in ids[:i]]
+            if team.get(x.owner) != x.kind:
+                problems.append(f"step {x.id}: its owner is a team node of its kind ({x.kind}): "
+                                + ", ".join(f"{n} ({k})" for n, k in team.items()))
+        done_at = {r: [x.id for x in out.steps if r in x.completes] for r in rubric}
+        problems += [f"{r} is measured by steps already done: not again" for r, at in done_at.items()
+                     if at and r not in due]
+        problems += [f"{r} is measured by no step: give it the one new step that measures it"
+                     for r in due if not done_at[r]]
+        problems += [f"{r} is measured by steps {', '.join(at)}: give it ONE" for r, at in
+                     done_at.items() if len(at) > 1]
+        return problems
+    return check, replaced
+
+
+def replan(run: ExecRun, st: dict, *, ask: str) -> tuple[list[dict], dict, object]:
+    """The rest of the study on a new route: (changes, log entry, answer)."""
+    check, replaced = replan_check(st)
+    out, session = run.call("orchestrator", brief=views.replan(st, ask=ask, team=team_of(st),
+                                                               replaced=replaced,
+                                                               run_dir=run.folder),
+                            schema=schemas.ReplanOutput, instructions=run.instructions["replanner"],
+                            access="read_only", workdir=run.folder, skills=None,
+                            session=run.next_name("replan"), label="orchestrator (replan)",
+                            check=check)
+    plan = json.loads(json.dumps(st.get("plan") or {}))
+    new = []
+    for x in out.steps:
+        step = x.model_dump()
+        step["rubric"] = step.pop("completes")
+        step.pop("owner")
+        new.append(step)
+    plan["steps"] = list(plan.get("steps") or []) + new
+    owners = {x.id: x.owner for x in out.steps}
+    design = json.loads(json.dumps(st.get("design") or {}))
+    for node in design.get("nodes") or []:
+        node["steps"] = list(node.get("steps") or []) + [s for s, o in owners.items()
+                                                          if o == node["name"]]
+    records_ = [({**r, "status": "replaced"} if r["id"] in replaced else r)
+                for r in (st.get("execution") or {}).get("steps") or []]
+    records_ += [{"id": x.id, "title": x.title, "owner": x.owner, "status": "pending"}
+                 for x in out.steps]
+    entry = _route_entry(st, kind="replan", step=", ".join(replaced), why=ask,
+                         replaced=", ".join(replaced),
+                         by=", ".join(f"{x.id} {x.title}" for x in out.steps),
+                         summary=out.summary)
+    measured = {r: x.id for x in out.steps for r in x.completes}
+    ops = [{"op": "set", "section": "plan", "value": plan},
+           {"op": "set", "section": "design", "value": design},
+           *[{"op": "update", "section": "rubric", "id": r, "value": {"assessed_at": sid}}
+             for r, sid in measured.items()],
+           {"op": "merge", "section": "execution", "value": {
+               "steps": records_,
+               "routes": list((st.get("execution") or {}).get("routes") or []) + [entry]}},
+           {"op": "add", "section": "decisions", "value": {
+               "what": f"A new route ({entry['id']}): steps {', '.join(replaced)} replaced by "
+                       f"{', '.join(owners)}", "why": ask[:600], "by": "user"}},
+           {"op": "add", "section": "results", "value": {
+               "node": "orchestrator", "job": "replan", "asked": ask[:500],
+               "summary": out.summary[:1500], "session": session}}]
+    return ops, entry, out
+
+
 def user_step_ops(st: dict, retry, waive, by: str = "user") -> list[dict]:
     """The user's call on failed steps, as changes: another attempt beyond
     the limit, or a pass -- kept as the verdict, with their reason."""
@@ -584,11 +736,14 @@ def discussor(run: ExecRun, st: dict, *, seen: dict, user: str = "", note: str =
                          f"gets another attempt" for s in out.retry if s not in fixed]
         if out.hand_to == "orchestrator" and not (out.requests or out.go or out.stop
                                                   or out.retry or out.waive or out.rewind
-                                                  or out.skip or out.amend):
+                                                  or out.skip or out.amend
+                                                  or out.replan.strip()):
             problems.append('hand_to is "orchestrator" but there is no request or go for the '
                             'team to act on: add the request, or hand to "user"')
         if out.rewind:
             problems += rewind_problems(run.folder, st, out.rewind)
+        if out.replan.strip():
+            problems += replan_problems(st, user=user)
         return (problems + breakpoint_problems(st, out.breakpoints)
                 + step_problems(st, out.retry, out.waive, run.limits.max_attempts))
 
@@ -624,7 +779,7 @@ def discussor(run: ExecRun, st: dict, *, seen: dict, user: str = "", note: str =
                          go=out.go and bool(awaiting), stop=out.stop, retry=list(out.retry),
                          waive=[w.model_dump() for w in out.waive],
                          skip=[w.model_dump() for w in out.skip], rewind=out.rewind,
-                         amend=list(out.amend))
+                         amend=list(out.amend), replan=out.replan.strip())
 
 
 def step_results(run: ExecRun, st: dict, *, step: dict, report: dict) -> str:
@@ -637,6 +792,15 @@ def step_results(run: ExecRun, st: dict, *, step: dict, report: dict) -> str:
     with run.discussor_lock:
         out, _ = run.call("discussor", brief=brief, schema=schemas.StepResults,
                           session=DISCUSSOR_SESSION, label="discussor (results)")
+    return out.reply
+
+
+def route_told(run: ExecRun, st: dict, entry: dict) -> str:
+    """The discussor tells the user the route changed; the work goes on."""
+    with run.discussor_lock:
+        out, _ = run.call("discussor", brief=views.route_told(st, entry),
+                          schema=schemas.StepResults, session=DISCUSSOR_SESSION,
+                          label="discussor (route)")
     return out.reply
 
 
@@ -871,6 +1035,9 @@ def owner(run: ExecRun, st: dict, *, node: dict, step: dict, task: str = "",
                                 "the step's check holds")
             problems += [f"artifact {a} does not exist (looked in {folder} and {run.folder})"
                          for a in out.artifacts if not resolve(run, folder, a)]
+        if out.state == "dead_end" and not out.problems:
+            problems.append("dead_end: say why the route cannot work (`problems`), with what "
+                            "you tried")
         if out.state == "done" and node["role"] == "researcher" and not out.findings:
             problems.append("done, but `findings` is empty: a researcher reports the key papers "
                             "it found, each with its arXiv id, DOI or PMID (they are checked)")
@@ -957,6 +1124,9 @@ def validator(run: ExecRun, st: dict, design: Design, *, node: dict, step: dict,
         if out.verdict == "done":
             problems += [f"{r} is measured at this step: record it as a finding, with the "
                          f"value from the files" for r in measured_here if r not in named]
+        elif out.verdict == "dead_end" and not out.problems:
+            problems.append("dead_end: give the evidence from the files (`problems`) that the "
+                            "route itself cannot work")
         elif not (out.problems or out.advice.strip()):
             problems.append(f"{out.verdict}: say what differs or is wrong (`problems`) and what "
                             f"a retry must do (`advice`)")
@@ -979,7 +1149,9 @@ def validator(run: ExecRun, st: dict, design: Design, *, node: dict, step: dict,
                      findings=[f.model_dump() for f in out.findings],
                      problems=list(out.problems)[:20]
                      + ([f"advice: {out.advice}"] if out.advice and not done else []),
-                     finished=_now() if done else "")]
+                     finished=_now() if done else "",
+                     dead_end="; ".join([out.summary, *out.problems])[:1500]
+                     if out.verdict == "dead_end" else "")]
     if done:
         # What the final analysis concluded stands once it is checked.
         ops += [{"op": "update", "section": "hypotheses", "id": h["id"],

@@ -51,7 +51,7 @@ def transcript(folder: Path) -> list[dict]:
             retried = i + 1 < len(turns) and (turns[i + 1].get("prompt") or "").startswith(
                 "Your answer could not be used")
             aside = "=== AN ASIDE" in prompt
-            results = "=== A STEP IS DONE" in prompt
+            results = "=== A STEP IS DONE" in prompt or "=== THE ROUTE CHANGED" in prompt
             user = _USER.search(prompt)
             if user and not prompt.startswith("Your answer could not be used"):
                 said = user.group(1).strip()

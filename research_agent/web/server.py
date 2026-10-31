@@ -719,7 +719,7 @@ def _graph(st: dict, stage: str) -> dict:
             continue
         name = f"node_{n['name']}" if n["name"] in ("discussor", "orchestrator", "dispatch",
                                                     "validator", "wait", "human", "paper",
-                                                    "reviewer") \
+                                                    "reviewer", "results", "reroute", "replan") \
             else n["name"]
         statuses = [records.get(s, {}).get("status", "pending") for s in n.get("steps") or []]
         nodes.append({"id": name, "label": n["name"],
@@ -732,10 +732,17 @@ def _graph(st: dict, stage: str) -> dict:
                "detail": "checks a step's inputs before it runs"},
               {"id": "wait", "label": "wait (jobs)", "kind": "code"},
               {"id": "validator", "label": "validator", "kind": "validator"},
+              {"id": "reroute", "label": "reroute", "kind": "code",
+               "detail": "a dead end: the step's planned alternative"},
+              {"id": "replan", "label": "replan", "kind": "orchestrator",
+               "detail": "a new route for the steps not done"},
               {"id": "paper", "label": "paper", "kind": "writer"},
               {"id": "reviewer", "label": "reviewer", "kind": "reviewer"}]
     edges += [("orchestrator", "dispatch", "run / retry"), ("dispatch", "orchestrator", "missing"),
-              ("validator", "orchestrator", "verdict"), ("orchestrator", "paper", "done"),
+              ("validator", "orchestrator", "verdict"), ("validator", "reroute", "dead end"),
+              ("reroute", "orchestrator", "an alternative"), ("reroute", "discussor", "none left"),
+              ("discussor", "replan", "the user agreed"), ("replan", "orchestrator", "new steps"),
+              ("orchestrator", "paper", "done"),
               ("paper", "reviewer", "paper.pdf"),
               ("reviewer", "discussor", "review")]
     return {"stage": stage, "nodes": nodes,
@@ -778,7 +785,7 @@ def _overall(statuses: list[str]) -> str:
     for s in ("running", "waiting", "validating", "fail", "stopped"):
         if s in statuses:
             return s
-    if statuses and all(s in ("pass", "skipped") for s in statuses):
+    if statuses and all(s in ("pass", "skipped", "replaced") for s in statuses):
         return "pass"
     return "pending"
 

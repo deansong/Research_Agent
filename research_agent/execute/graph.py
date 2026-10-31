@@ -19,6 +19,9 @@ CONCEPT: LangGraph, as the bootstrap, in the same checkpoint file under its
                           --ask_user / a gated step or breakpoint / stop / limit--> discussor -> human
                           --done--> reviewer --> discussor (the review goes to the next run)
     validator --a breakpoint after the step--> discussor
+              --dead end--> reroute --a planned alternative--> orchestrator (the user is told)
+                                    --none left--> discussor: proposes a new route to the user
+    discussor --replan (the user agreed)--> replan (the steps not done, replaced) --> orchestrator
     human --> discussor --(go, or a request)--> orchestrator, else --> human
           --> orchestrator on /go; END on /exit
 """
@@ -67,6 +70,10 @@ class ExecState(TypedDict, total=False):
     """The user said go or stop with this message."""
     blocked: dict
     """Steps the dispatch would not start, and how many times in a row."""
+    replan: str
+    """The new route the user agreed to, for the replan node."""
+    dead_end: str
+    """A step at a dead end with no planned route left: the user decides."""
     outcome: str
     stopped_by: str
     """"orchestrator" when it chose to stop: a question the autopilot may
@@ -213,6 +220,12 @@ def build(run: nodes.ExecRun, design: nodes.Design, checkpointer=None):
         if spoke and turn.stop:
             st = stop_all(st, "the user stopped the execution")
             outcome = "stopped"
+        if spoke and turn.replan and who == "user" and not turn.stop:
+            # nodes.discussor checked it may: nothing at work.
+            return {"research": st, "seen": dict(st.get("versions") or {}), "reply": turn.reply,
+                    "pending": list(state.get("pending") or []) + turn.requests, "user": "",
+                    "note": "", "nudged": False, "awaiting": awaiting, "outcome": "",
+                    "decisions": 0, "replan": turn.replan, "_to": "replan"}
         # As in the bootstrap: passing on the orchestrator's message, it
         # answers the user; a go or a request moves the work on.
         go = (spoke and not turn.stop and (turn.hand_to == "orchestrator" or turn.go
@@ -285,6 +298,11 @@ def build(run: nodes.ExecRun, design: nodes.Design, checkpointer=None):
         if note:
             run.say(note)
         if not answer:
+            return None
+        if state.get("dead_end"):
+            run.say(autopilot.hand_back(run.folder, (
+                f"step {state['dead_end']} reached a dead end with no planned route left: a new "
+                f"route for the study is yours to agree")))
             return None
         decision = state.get("decision") or {}
         if decision.get("action") == "ask_user" and decision.get("step") \
@@ -444,11 +462,12 @@ def build(run: nodes.ExecRun, design: nodes.Design, checkpointer=None):
             if rep.state == "launched":
                 st = commit(st, [nodes.record_op(st, sid, status="waiting", **fields)], "execution")
                 return {"research": st, "wake": list(rep.jobs), "_to": "wait"}
-            if rep.state == "done" or (rep.state == "failed" and rep.artifacts):
+            if rep.state in ("done", "dead_end") or (rep.state == "failed" and rep.artifacts):
                 # Outputs are the validator's to judge, a failure the owner
                 # reports included: measured, an owner failed its preflight
                 # on a criterion the next two steps deliver, and spent the
-                # step's last attempt.
+                # step's last attempt. A dead end too: the validator
+                # confirms it from the files before another route is taken.
                 st = commit(st, [nodes.record_op(st, sid, status="validating", **fields)],
                             "execution")
                 unverified = [o["value"]["source"] for o in out.ops
@@ -527,8 +546,61 @@ def build(run: nodes.ExecRun, design: nodes.Design, checkpointer=None):
                     "pending": pending,
                     "note": f"Step {sid} passed and the user asked to stop here (a breakpoint). "
                             f"Show them its results and ask whether to go on."}
+        if rec["status"] == "fail" and rec.get("dead_end"):
+            return {"research": st, "last": last, "pending": pending, "_to": "reroute"}
         return {"research": st, "last": last, "pending": pending,
                 "_to": "results" if rec["status"] == "pass" else "orchestrator"}
+
+    def tell(st: dict, entry: dict) -> str:
+        try:
+            return nodes.route_told(run, st, entry)
+        except RB.BackendCancelled:
+            raise
+        except RB.BackendError as exc:
+            run.say(f"  ! the change of route could not be told: {str(exc)[:200]}")
+            return ""
+
+    def reroute(state: ExecState) -> dict:
+        """A confirmed dead end: the step's next planned route, taken at once
+        (the user is told, not asked); with none left, the user decides."""
+        st, sid = state["research"], state["step"]
+        why = nodes.records(st)[sid]["dead_end"]
+        taken = nodes.take_alternative(st, sid, why)
+        if taken is None:
+            return {"research": st, "dead_end": sid, "outcome": "", "_to": "discussor",
+                    "note": f"Step {sid} reached a dead end, confirmed by the validator, and has "
+                            f"no planned route left: {why}\nPropose to the user a new route for "
+                            f"the rest of the study -- what it does instead, and why -- and ask "
+                            f"them. Once they agree, set `replan` to it: every step not yet "
+                            f"done is replaced."}
+        ops, entry = taken
+        st = commit(st, ops, "orchestrator")
+        st = commit(st, nodes.REAPPROVE, "orchestrator")
+        return {"research": st, "reply": tell(st, entry), "_to": "orchestrator",
+                "last": f"step {sid} took its planned alternative ({entry['id']})"}
+
+    def replan(state: ExecState) -> dict:
+        """The rest of the study on the new route the user agreed to."""
+        st, ask = state["research"], state.get("replan", "")
+        try:
+            ops, entry, _ = nodes.replan(run, st, ask=ask)
+        except RB.BackendCancelled:
+            raise
+        except RB.BackendError as exc:
+            return {"replan": "", "_to": "discussor",
+                    "note": f"The new route could not be planned: {str(exc)[:600]}. Tell the "
+                            f"user; they may ask again."}
+        st = commit(st, ops, "user")
+        st = commit(st, nodes.REAPPROVE, "user")
+        # The graph's nodes are the team's; only which steps each owns changed.
+        new = nodes.Design.read(st, skills=run.known_skills())
+        design.owner_of.clear()
+        design.owner_of.update(new.owner_of)
+        for name, node in new.owners.items():
+            design.owners[name]["steps"] = list(node.get("steps") or [])
+        return {"research": st, "replan": "", "dead_end": "", "reply": tell(st, entry),
+                "decisions": 0, "_to": "orchestrator",
+                "last": f"a new route ({entry['id']}): {entry['by']}"}
 
     def results(state: ExecState) -> dict:
         """A checked step's results, told to the user in the chat by the
@@ -589,6 +661,8 @@ def build(run: nodes.ExecRun, design: nodes.Design, checkpointer=None):
     graph.add_node("wait", wait)
     graph.add_node("validator", validator)
     graph.add_node("results", results)
+    graph.add_node("reroute", reroute)
+    graph.add_node("replan", replan)
     graph.add_node("paper", paper)
     graph.add_node("reviewer", reviewer)
 
@@ -597,14 +671,17 @@ def build(run: nodes.ExecRun, design: nodes.Design, checkpointer=None):
     graph.add_conditional_edges("orchestrator", _route,
                                 ["discussor", "orchestrator", "paper", "dispatch", *owners])
     graph.add_conditional_edges("dispatch", _route, ["orchestrator", "discussor", *owners])
-    graph.add_conditional_edges("discussor", _route, ["orchestrator", "human"])
+    graph.add_conditional_edges("discussor", _route, ["orchestrator", "human", "replan"])
     graph.add_conditional_edges("human", _route, ["discussor", "orchestrator", "paper", "reviewer",
                                                   END])
     for name in owners:
         graph.add_conditional_edges(name, _route, ["wait", "validator", "orchestrator"])
     graph.add_conditional_edges("wait", _route, ["discussor", *owners])
-    graph.add_conditional_edges("validator", _route, ["orchestrator", "discussor", "results"])
+    graph.add_conditional_edges("validator", _route, ["orchestrator", "discussor", "results",
+                                                      "reroute"])
     graph.add_conditional_edges("results", _route, ["orchestrator"])
+    graph.add_conditional_edges("reroute", _route, ["orchestrator", "discussor"])
+    graph.add_conditional_edges("replan", _route, ["orchestrator", "discussor"])
     graph.add_conditional_edges("paper", _route, ["reviewer"])
     graph.add_edge("reviewer", "discussor")
     return graph.compile(checkpointer=checkpointer)
