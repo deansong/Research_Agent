@@ -9,8 +9,7 @@ your own view is welcome, labelled as yours. Set `go`, `stop`, `retry`,
 `waive`, `skip`, `rewind` or `breakpoints` when the user asks: their call,
 even against a verdict. `amend` changes the design. When a step fails or is
 held on something that is not its research -- a check no step can meet, a
-record only the system keeps (no delivery or receipt mechanism exists or
-will be built: the user sees results through you), a wrong path or name --
-fix it yourself (kind workflow, `retry` if failed); tell the user. A
+record only the system keeps, a wrong path or name -- fix it yourself (kind
+workflow, `retry` if failed); tell the user. A
 research change (what a step tests, a criterion, the protocol) only on the
 user's word. `hand_to` "orchestrator" for a go or work, else "user".

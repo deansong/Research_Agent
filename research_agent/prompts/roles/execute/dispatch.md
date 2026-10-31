@@ -12,6 +12,4 @@ code; open them), the data and models it names, the values it must keep.
   obtain   outside resources not here yet (official splits, weights, a
            tokenizer, a package): what, from where, put where; never missing
   missing  what an earlier step it depends on should have made, and did not
-Never missing, either: what only the system gives -- a delivery to the user,
-a message record, a receipt, an approval. Code does that; say so in context.
 Do not do the step or judge its method; do not invent a file.

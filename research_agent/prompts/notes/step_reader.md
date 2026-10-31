@@ -15,8 +15,6 @@ The folders are real, so name files in them:
   step N writes to   $run/artifacts/step_NN/   (step 3: step_03, step 12: step_12)
   code goes in       $run/work/
   the run folder     $run
-  when the execution started, and the user's go that started it:
-                     $run/execution/execution_start.json (code writes it)
 Approval, the go, budgets and time limits, the orchestrator, the validator --
 and showing the user a step's results -- are code's: a step neither checks nor
 records them. A step's check is about its own files: never a message, a

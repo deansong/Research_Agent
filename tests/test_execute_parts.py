@@ -199,9 +199,7 @@ def test_a_step_starts_only_with_its_inputs_checked_and_its_context_written(tmp_
     (tmp_path / "artifacts" / "step_01" / "train.jsonl").write_text("{}\n")
     bad = {"ready": True, "inputs": [{"path": "artifacts/03_data/train.jsonl", "holds": "x"}],
            "context": "go", "missing": [{"what": "dev split", "from_step": "1"},
-                                        {"what": "the Qwen tokenizer", "from_step": ""},
-                                        {"what": "execution/delivery_receipts/a.json",
-                                         "from_step": "1"}]}
+                                        {"what": "the Qwen tokenizer", "from_step": ""}]}
     good = {"ready": True, "context": "Train with seeds 17, 29 and 43, as the protocol fixes.",
             "inputs": [{"path": "artifacts/step_01/train.jsonl", "holds": "the training split"}],
             "obtain": ["Qwen/Qwen3-4B-Instruct-2507's tokenizer, from Hugging Face"]}
@@ -214,7 +212,7 @@ def test_a_step_starts_only_with_its_inputs_checked_and_its_context_written(tmp_
     for expected in ("input artifacts/03_data/train.jsonl does not exist",
                      "ready, but `missing` lists", "the step follows seeds",
                      "missing 'the Qwen tokenizer': (no step) is not an earlier step",
-                     "put it in `obtain`", "execution/ is kept by code"):
+                     "put it in `obtain`"):
         assert expected in retry
     assert out.data.ready and out.data.inputs[0].path == "artifacts/step_01/train.jsonl"
 
@@ -228,13 +226,9 @@ def test_a_step_starts_only_with_its_inputs_checked_and_its_context_written(tmp_
     assert "seeds 17, 29 and 43" in brief and "From the orchestrator: use bf16" in brief
 
 
-def test_code_keeps_the_execution_start_and_tells_the_dispatch_the_owner_can_write(tmp_path,
-                                                                                  script):
-    # Run 1119: a planned step required execution/execution_start.json, which
-    # nothing wrote, and the dispatch -- read-only itself -- said the worker
-    # could not write.
+def test_the_dispatch_is_told_its_owner_can_write(tmp_path, script):
+    # Run 1119: the dispatch -- read-only itself -- said the worker could not write.
     st, _ = S.apply(S.new(), [
-        {"op": "add", "section": "decisions", "value": {"what": "Start execution.", "by": "user"}},
         {"op": "set", "section": "plan", "value": {"steps": [
             {"id": "1", "title": "Data", "detail": "split it", "check": "splits written"}]}},
         {"op": "set", "section": "execution", "value": {
@@ -242,24 +236,11 @@ def test_code_keeps_the_execution_start_and_tells_the_dispatch_the_owner_can_wri
             "steps": [{"id": "1", "title": "Data", "status": "pending"}]}}], by="x")
     run = nodes.ExecRun(tmp_path, {r: RoleConfig("fake") for r in (*config.ROLES, "discussor")},
                         skills={}, limits=config.defaults(), quiet=True)
-    path = nodes.start_record(run, st)
-    record = json.loads(path.read_text())
-    assert path == tmp_path / "execution" / "execution_start.json"
-    assert record["started_at_utc"] == "2999-01-01T00:00:00+00:00"
-    assert record["execution_id"] == tmp_path.name
-    assert record["initiated_by"]["what"] == "Start execution."
-    path.write_text("{}")
-    assert nodes.start_record(run, st) == path and path.read_text() == "{}", "written once"
-
     nodes.dispatch(run, st, node={"name": "prep", "role": "worker"},
                    step=nodes.plan_step(st, "1"))
     brief = script.prompts("DispatchOutput")[0]
-    assert "Its owner runs with full access" in brief and "execution_start.json" in brief
+    assert "Its owner runs with full access" in brief
     assert "downloads datasets, models and packages itself" in brief
-    owner = views.owner(st, node={"name": "prep", "role": "worker"},
-                        step=nodes.plan_step(st, "1"), task="", paths=run.paths("1"),
-                        jobs_command="jobs")
-    assert "The execution started at 2999-01-01T00:00:00+00:00" in owner
 
 
 def test_an_earlier_execution_s_jobs_and_outputs_are_set_aside(tmp_path):
@@ -307,24 +288,3 @@ def test_the_discussor_sees_how_far_a_running_job_has_got(tmp_path):
         assert "estimate it yourself" in brief
     finally:
         jobs.kill(tmp_path, job["id"])
-
-
-def test_what_only_the_system_can_give_is_never_a_step_s_to_deliver():
-    # Run 1119: D12 ("report results after each experiment before the next")
-    # became a delivery receipt in 11 steps' checks -- which nothing makes --
-    # and every one of those steps failed on it, while none had a gate.
-    from research_agent import prompt_files
-
-    def said(name):
-        return " ".join(prompt_files.text(name).split())
-
-    assert "the discussor tells the user its results in the chat" in said("notes/step_reader")
-    assert "never write reporting into a step, nor gate for it" in said("notes/step_reader")
-    assert "never a message, a delivery, a receipt" in said("notes/step_reader")
-    assert "results are told to them after every step anyway" in said("roles/bootstrap/planner")
-    assert "a receipt, approval, delivery or guarantee" in said("roles/bootstrap/reader")
-    assert "never fail a step for it" in said("roles/execute/validator")
-    assert "never stop or wait for it" in said("roles/execute/owner")
-    assert "no delivery or receipt mechanism exists" in said("roles/execute/discussor")
-    assert "Nothing will ever write those records" in said("notes/out_of_attempts")
-    assert "Never missing, either: what only the system gives" in said("roles/execute/dispatch")

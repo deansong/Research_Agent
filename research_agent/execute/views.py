@@ -403,7 +403,6 @@ def owner(st: dict, *, node: dict, step: dict, task: str, paths: dict, jobs_comm
         parts.append(_block("HYPOTHESES -- say in your report which the results support or refute",
                             S.render({**st, "hypotheses": _live(st)}, ["hypotheses"])))
     parts.append(_block("WHERE TO WORK", "\n".join([
-        *_execution_lines(st, paths),
         f"Workspace (your current folder; code goes here): {paths['work']}",
         f"Your artifacts folder (outputs go here): {paths['artifacts']}",
         f"The run folder (read anything in it): {paths['run']}",
@@ -497,19 +496,8 @@ def dispatch(st: dict, *, node: dict, step: dict, note: str, paths: dict,
         f"You are read-only, with no network; that is only you.",
         f"The run folder: {paths['run']} (paths may be relative to it)",
         f"Its outputs folder: {paths['artifacts']}",
-        f"The code folder: {paths['work']}",
-        *_execution_lines(st, paths)])))
+        f"The code folder: {paths['work']}"])))
     return "\n\n".join(parts)
-
-
-def _execution_lines(st: dict, paths: dict) -> list[str]:
-    """The execution's start, as code keeps it (execute/nodes.start_record)."""
-    started = (st.get("execution") or {}).get("started")
-    if not started:
-        return []
-    record = Path(paths["run"]) / "execution" / "execution_start.json"
-    return [f"The execution started at {started} (UTC); code keeps that record, with the "
-            f"user's go that started it, in {record}"]
 
 
 #: Files listed per earlier step in the dispatch's brief.

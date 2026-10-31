@@ -786,30 +786,6 @@ def set_aside_earlier(run: ExecRun, st: dict) -> None:
         close(kept)
 
 
-#: The execution's start, kept by code: <run>/<START_RECORD>.
-START_RECORD = "execution/execution_start.json"
-
-
-def start_record(run: ExecRun, st: dict) -> Path | None:
-    """The execution's start as a file a step can read: when it started and
-    the user's go that started it, from the state -- written once, by code.
-    Measured (run 1119): a planned step required such a record, nothing wrote
-    it, and the step could not start."""
-    path = run.folder / START_RECORD
-    started = (st.get("execution") or {}).get("started")
-    if path.exists() or not started:
-        return path if path.exists() else None
-    go = [d for d in st.get("decisions") or []
-          if d.get("by") in ("user", "autopilot") and (d.get("at") or "") <= started]
-    path.parent.mkdir(parents=True, exist_ok=True)
-    path.write_text(json.dumps({
-        "execution_id": run.folder.name, "started_at_utc": started,
-        "initiated_by": ({k: go[-1].get(k) for k in ("id", "what", "by", "at")} if go else None),
-        "note": "Written by code from the run's state when the execution started."},
-        indent=2) + "\n")
-    return path
-
-
 def dispatch(run: ExecRun, st: dict, *, node: dict, step: dict, note: str = "") -> Outcome:
     """The check before `step` runs: Outcome.data is a DispatchOutput."""
     rec = records(st)[step["id"]]
@@ -828,13 +804,6 @@ def dispatch(run: ExecRun, st: dict, *, node: dict, step: dict, note: str = "") 
                      f"it depends on ({', '.join(earlier) or 'it depends on none'}). An outside "
                      f"resource -- data, weights, a tokenizer, a package -- is its owner's to "
                      f"get: put it in `obtain`" for m in out.missing if m.from_step not in earlier]
-        # execution/ is code's: it holds only the start record. Measured (run
-        # 1119): a step's detail asked for delivery receipts there, which
-        # nothing writes, and the dispatch held step 4 for them.
-        problems += [f"missing {m.what[:120]!r}: execution/ is kept by code and holds only "
-                     f"{START_RECORD}; deliveries, messages, receipts and approvals are code's, "
-                     f"never a step's work -- say so in `context` and let the step go ahead"
-                     for m in out.missing if "execution/" in m.what]
         if out.ready and out.missing:
             problems.append("ready, but `missing` lists what is not there: either it is not "
                             "ready, or nothing is missing")

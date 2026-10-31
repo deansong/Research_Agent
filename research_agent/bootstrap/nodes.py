@@ -280,42 +280,6 @@ def design_problems(design: dict, *, steps: list[str], rubric: set[str],
     return problems
 
 
-#: Things named by a bare letter: "A–E", "B-D", "condition C", "from A", "A's".
-LETTER_LABEL = re.compile(
-    r"\b[A-Z]\s*[–—-]\s*[A-Z]\b"                       # a range: A–E
-    r"|(?<![\w/*+^=<>])(?!I\b)[B-Z](?![\w/(*+^=<>])"    # a lone capital: C, D (not I, nor
-                                                       # a formula's: 2*S*U/(S+U))
-    r"|\bA(?=[’']s\b|\s*[,;:.)]|\s*$)"                 # A's, "from A,", "A."
-    # after a word like these, an article would be "a": a capital A is a name
-    r"|\b(?:from|than|of|to|and|with|on|over|versus|against|after|before|by|for|the)\s+A\b")
-#: "step 2", "steps 1-7", "step-2 config", "Steps 3–5": a step named by number.
-STEP_NUMBER = re.compile(r"\bsteps?[\s-]*\d+(?:\s*(?:[-–—,]|and|to)\s*\d+)*", re.I)
-
-
-def standalone_problems(steps) -> list[str]:
-    """Where a step's detail or check names what its owner cannot see: another
-    step by number, or a thing by a bare letter."""
-    problems = []
-    for s in steps:
-        # A letter the step itself defines ("H = 2SU/(S+U)", "A: the original
-        # checkpoint") is its own name, and fine.
-        defined = set(re.findall(r"(?<![\w/])([A-Z])\s*[=:]", f"{s.detail}\n{s.check}"))
-        for field, text in (("detail", s.detail), ("check", s.check)):
-            number = STEP_NUMBER.search(text or "")
-            if number:
-                problems.append(f"step {s.id}: its {field} refers to {number.group(0)!r}, but "
-                                f"its owner never sees step numbers: name that work by what "
-                                f"it produced")
-            letters = sorted({m.group(0).split()[-1] for m in LETTER_LABEL.finditer(text or "")}
-                             - defined)
-            if letters:
-                problems.append(f"step {s.id}: its {field} names things by letter "
-                                f"({', '.join(letters[:6])}); its owner never sees what they "
-                                f"stand for: name each in full (the model, the training, the "
-                                f"data), as in \"the supervised LoRA model\", not \"B\"")
-    return problems
-
-
 # ---- planner (the study, then the steps) and designer (the team) ---------------------------
 #
 # Three calls, each with one job and its own prompt, run back to back; the
@@ -384,13 +348,12 @@ def plan_check(st: dict, reader=None):
                      for r, at in done_at.items() if not at]
         problems += [f"{r} is completed by steps {', '.join(at)}: give it the ONE step where "
                      f"it is checked" for r, at in done_at.items() if len(at) > 1]
-        # A step is its subagent's whole context: what it names must make
-        # sense there. Code catches letters and step numbers; steps that pass
-        # everything else are then read, one by one, as their subagents would
-        # (one call a step). Sent back on every attempt but the last, so a
-        # plan that keeps them still reaches the user -- told which steps.
-        alone = standalone_problems(out.steps)
-        if not alone and not problems and reader is not None:
+        # A step is its subagent's whole context: steps that pass everything
+        # else are read, one by one, as their subagents would (one call a
+        # step). Sent back on every attempt but the last, so a plan that
+        # keeps them still reaches the user -- told which steps.
+        alone = []
+        if not problems and reader is not None:
             from research_agent.bootstrap import reader as R
 
             alone = R.problems(reader(out.steps))

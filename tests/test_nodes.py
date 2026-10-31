@@ -287,34 +287,6 @@ def test_the_researcher_is_never_sent_back_for_a_wrong_reference(run, script):
     assert out.summary.endswith("(Kept, though filed under unknown ids: H1, Q5.)")
 
 
-def test_a_step_is_written_for_an_owner_that_sees_only_it(run, script, evidence, catalogue):
-    # Run 1119: steps said "using the step-2 config" and "B-D" to owners that
-    # never see step numbers or the other steps.
-    bad = {"summary": "s", "steps": [PLAN["steps"][0], {
-        **PLAN["steps"][1], "detail": "train B-D from A with the step-1 config"}]}
-    script.add("StudyOutput", STUDY).add("PlanOutput", bad, PLAN).add("TeamOutput", TEAM)
-    designed(run, evidence)
-    retry = script.prompts("PlanOutput")[1]
-    assert "step 2: its detail refers to 'step-1'" in retry
-    assert "step 2: its detail names things by letter (A, B-D)" in retry
-
-    script.add("StudyOutput", STUDY).add("PlanOutput", bad, bad, bad).add("TeamOutput", TEAM)
-    _, outs = designed(run, evidence, task="again")
-    assert len(script.prompts("PlanOutput")) == 5, \
-        "sent back on every attempt but the last: then it goes through"
-    assert "NOT SELF-CONTAINED after every attempt" in outs[1].summary
-    assert "(A, B-D)" in outs[1].summary
-
-
-def test_a_letter_the_step_defines_or_a_formula_uses_is_not_a_label():
-    # Run 1119, designer-006: "H=2*S*U/(S+U)" defined in the step was flagged.
-    from types import SimpleNamespace as N
-    defines = N(id="6", detail="Select by development H, where H=2*S*U/(S+U).", check="H is reported")
-    assert nodes.standalone_problems([defines]) == []
-    uses = N(id="7", detail="Maximize development H; compare C with B.", check="done")
-    assert "(B, C, H)" in nodes.standalone_problems([uses])[0]
-
-
 def test_each_step_is_read_alone_as_its_subagent_and_its_questions_go_back(
         run, script, evidence, catalogue):
     # Run 1119, designer-006: every name spelled out, and still step 1 asked
