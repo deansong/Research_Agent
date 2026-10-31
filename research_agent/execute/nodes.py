@@ -627,6 +627,19 @@ def discussor(run: ExecRun, st: dict, *, seen: dict, user: str = "", note: str =
                          amend=list(out.amend))
 
 
+def step_results(run: ExecRun, st: dict, *, step: dict, report: dict) -> str:
+    """The discussor tells the user a checked step's results, in its own
+    conversation, while the work goes on: by default, without being asked
+    and without a gate (the user, run 1119: "report results = print the
+    results in the chat via the discussor")."""
+    brief = views.step_results(st, step=step, record=records(st)[step["id"]], report=report,
+                               run_dir=str(run.folder))
+    with run.discussor_lock:
+        out, _ = run.call("discussor", brief=brief, schema=schemas.StepResults,
+                          session=DISCUSSOR_SESSION, label="discussor (results)")
+    return out.reply
+
+
 def aside(run: ExecRun, st: dict, *, user: str, activity: str) -> schemas.AsideOutput:
     """The user writes while the team works. The answer is the discussor's;
     what it records goes to the inbox, for the graph to apply at its next

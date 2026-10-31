@@ -9,7 +9,9 @@ WHY:   The orchestrator LLM chooses what runs next; code holds what it may
 CONCEPT: LangGraph, as the bootstrap, in the same checkpoint file under its
        own thread.
 
-    START -> orchestrator --run/retry S--> dispatch --ready--> <owner of S> --done--> validator -> orchestrator
+    START -> orchestrator --run/retry S--> dispatch --ready--> <owner of S> --done--> validator
+                -- passed --> results (the discussor tells the user, in the chat) -> orchestrator
+                -- failed --> orchestrator
                                                     --missing--> orchestrator (twice: the user)
                                                          --launched--> wait --jobs done--> <owner of S>
                                                          --failed/blocked--> orchestrator
@@ -526,7 +528,22 @@ def build(run: nodes.ExecRun, design: nodes.Design, checkpointer=None):
                     "pending": pending,
                     "note": f"Step {sid} passed and the user asked to stop here (a breakpoint). "
                             f"Show them its results and ask whether to go on."}
-        return {"research": st, "last": last, "pending": pending, "_to": "orchestrator"}
+        return {"research": st, "last": last, "pending": pending,
+                "_to": "results" if rec["status"] == "pass" else "orchestrator"}
+
+    def results(state: ExecState) -> dict:
+        """A checked step's results, told to the user in the chat by the
+        discussor; the work goes on whatever comes of it."""
+        st, sid = state["research"], state["step"]
+        try:
+            said = nodes.step_results(run, st, step=nodes.plan_step(st, sid),
+                                      report=state.get("report") or {})
+        except RB.BackendCancelled:
+            raise
+        except RB.BackendError as exc:
+            run.say(f"  ! step {sid}'s results could not be told: {str(exc)[:200]}")
+            return {"_to": "orchestrator"}
+        return {"reply": said, "_to": "orchestrator"}
 
     def paper(state: ExecState) -> dict:
         st = state["research"]
@@ -572,6 +589,7 @@ def build(run: nodes.ExecRun, design: nodes.Design, checkpointer=None):
         graph.add_node(name, owner(name))
     graph.add_node("wait", wait)
     graph.add_node("validator", validator)
+    graph.add_node("results", results)
     graph.add_node("paper", paper)
     graph.add_node("reviewer", reviewer)
 
@@ -586,7 +604,8 @@ def build(run: nodes.ExecRun, design: nodes.Design, checkpointer=None):
     for name in owners:
         graph.add_conditional_edges(name, _route, ["wait", "validator", "orchestrator"])
     graph.add_conditional_edges("wait", _route, ["discussor", *owners])
-    graph.add_conditional_edges("validator", _route, ["orchestrator", "discussor"])
+    graph.add_conditional_edges("validator", _route, ["orchestrator", "discussor", "results"])
+    graph.add_conditional_edges("results", _route, ["orchestrator"])
     graph.add_conditional_edges("paper", _route, ["reviewer"])
     graph.add_edge("reviewer", "discussor")
     return graph.compile(checkpointer=checkpointer)

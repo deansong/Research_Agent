@@ -318,9 +318,10 @@ def test_what_only_the_system_can_give_is_never_a_step_s_to_deliver():
     def said(name):
         return " ".join(prompt_files.text(name).split())
 
-    assert "set `gate` on the next step" in said("notes/step_reader")
+    assert "the discussor tells the user its results in the chat" in said("notes/step_reader")
+    assert "never write reporting into a step, nor gate for it" in said("notes/step_reader")
     assert "never a message, a delivery, a receipt" in said("notes/step_reader")
-    assert "the user wants to see the results before it" in said("roles/bootstrap/planner")
+    assert "results are told to them after every step anyway" in said("roles/bootstrap/planner")
     assert "a receipt, approval, delivery or guarantee" in said("roles/bootstrap/reader")
     assert "never fail a step for it" in said("roles/execute/validator")
     assert "never stop or wait for it" in said("roles/execute/owner")

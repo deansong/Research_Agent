@@ -13,6 +13,7 @@ it: at the end of the message.
               at exactly one step
   follows     the protocol parts its values come from
   gate        true: the user says go first -- costly or irreversible
-              work, or the user wants to see the results before it
+              work, or work they asked to approve first (results are
+              told to them after every step anyway)
 Do not choose the team: the nodes come next. Give all the steps each time:
 what you leave out goes.

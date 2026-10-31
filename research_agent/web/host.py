@@ -817,6 +817,8 @@ class RunHost:
             return
         if node == "discussor" and update.get("reply"):
             self.bus.emit("chat", role="discussor", text=update["reply"], kind="answer")
+        elif node == "results" and update.get("reply"):
+            self.bus.emit("chat", role="discussor", text=update["reply"], kind="results")
         else:
             self.bus.emit("step", node=node, text=_summary(node, update))
         research = update.get("research")

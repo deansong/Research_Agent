@@ -128,8 +128,12 @@ def test_a_whole_execution_from_the_approved_design_to_done(run, script):
     seen = []
     turn = ex.start(on_step=lambda node, update: seen.append(node))
     assert turn.reply == "Step 1 passed. Step 2 trains 2 seeds; go?" and turn.waiting
-    assert seen == ["orchestrator", "dispatch", "builder", "validator", "orchestrator",
-                    "discussor"], "every step is dispatched before it runs"
+    assert seen == ["orchestrator", "dispatch", "builder", "validator", "results",
+                    "orchestrator", "discussor"], \
+        "every step is dispatched before it runs, and its results told when it passes"
+    told = script.prompts("StepResults")[0]
+    assert "A STEP IS DONE -- tell the user its results; the work goes on" in told
+    assert "Step 1: Data" in told and "THE VALIDATOR'S VERDICT ===\npass" in told
     assert ex.awaiting == "2", "step 2 is gated: the user says go first"
     st = ex.research
     assert nodes.records(st)["1"]["status"] == "pass" and st["status"]["phase"] == "executing"

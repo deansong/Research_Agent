@@ -250,6 +250,13 @@ class WaiveIn(BaseModel):
     """The user's reason, in their words -- kept as the step's verdict."""
 
 
+class StepResults(BaseModel):
+    """The discussor's message to the user once a step is checked."""
+
+    reply: str
+    """The step's results for the user, in the chat: nothing waits for them."""
+
+
 class AsideOutput(BaseModel):
     """An answer while the team works: nothing waits for it."""
 

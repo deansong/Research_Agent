@@ -50,7 +50,8 @@ export class Chat {
     if (auto) text = String(text).replace(/^\[autopilot\]\s*/, "");
     const node = el("div", { class: `msg ${human ? "human" : "agent"} ${kind === "aside" ? "aside" : ""} ${auto ? "autopilot" : ""}` },
       el("div", { class: "msg-role" }, auto ? "autopilot, for you" : human ? "you" : "discussor",
-        kind === "aside" ? el("span", { class: "aside-tag", text: "aside" }) : null),
+        kind === "aside" ? el("span", { class: "aside-tag", text: "aside" })
+          : kind === "results" ? el("span", { class: "aside-tag", text: "results" }) : null),
       el("div", { class: "msg-text", html: human ? markdown(text).replace(/^<p>|<\/p>$/g, "") : markdown(text) }),
       (noted || []).length ? el("div", { class: "noted", text: `for the team's next step: ${noted.join("; ")}` }) : null);
     this.log.append(node);

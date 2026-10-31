@@ -51,6 +51,7 @@ def transcript(folder: Path) -> list[dict]:
             retried = i + 1 < len(turns) and (turns[i + 1].get("prompt") or "").startswith(
                 "Your answer could not be used")
             aside = "=== AN ASIDE" in prompt
+            results = "=== A STEP IS DONE" in prompt
             user = _USER.search(prompt)
             if user and not prompt.startswith("Your answer could not be used"):
                 said = user.group(1).strip()
@@ -65,7 +66,7 @@ def transcript(folder: Path) -> list[dict]:
                 reply = turn.get("reply") or ""
             if reply:
                 out.append({"role": "discussor", "text": reply, "at": turn.get("at"),
-                            "kind": "aside" if aside else "answer"})
+                            "kind": "aside" if aside else "results" if results else "answer"})
     return out
 
 

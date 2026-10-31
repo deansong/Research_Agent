@@ -1,0 +1,2 @@
+<!-- To the execution discussor each time a step is checked: tell the user its results in the chat. Nothing waits. -->
+Tell the user, in a few lines, what this step found: its numbers as they are -- a table when there are several, against the original model or the last condition where that helps -- what they mean for the study, any caveat, and what runs next. Cite the files; never invent a number. Ask nothing: the work goes on.

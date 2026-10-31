@@ -150,6 +150,24 @@ def _ago(seconds: float) -> str:
     return f"{seconds:.0f} s ago" if seconds < 120 else f"{seconds / 60:.0f} min ago"
 
 
+def step_results(st: dict, *, step: dict, record: dict, report: dict, run_dir: str) -> str:
+    """For the discussor, once a step is checked: its results, to tell the
+    user in the chat while the work goes on."""
+    metrics = "\n".join(f"- {m['name']}: {m['value']}" for m in report.get("metrics") or [])
+    folder = Path(run_dir) / "artifacts" / folder_name(step["id"])
+    return "\n\n".join([
+        _block("A STEP IS DONE -- tell the user its results; the work goes on, nothing waits "
+               "for your answer", prompt_files.text("notes/step_results", run_dir)),
+        _block("THE STEP", f"Step {step['id']}: {step['title']}\n{step.get('detail', '')[:1500]}"),
+        _block("WHAT ITS OWNER REPORTED", "\n".join(filter(None, [
+            report.get("summary") or record.get("summary", ""),
+            f"Metrics:\n{metrics}" if metrics else "",
+            f"Files: {folder}"]))),
+        _block("THE VALIDATOR'S VERDICT", record.get("verdict") or "-"),
+        _block("THE STEP TABLE", S.render(st, ["execution"], brief=True)),
+    ])
+
+
 # ---- reviewer -----------------------------------------------------------------------------
 
 

@@ -50,6 +50,8 @@ class Script:
             queue = [{"questions": []}]   # the reader check: no questions unless scripted
         if not queue and name == "DispatchOutput":
             queue = [READY]               # the dispatch: ready unless scripted
+        if not queue and name == "StepResults":
+            queue = [{"reply": "The step is done: its results are in its files."}]
         if not queue:
             raise AssertionError(f"the script has no answer left for {name}")
         answer = queue.pop(0)

@@ -21,9 +21,10 @@ Approval, the go, budgets and time limits, the orchestrator, the validator --
 and showing the user a step's results -- are code's: a step neither checks nor
 records them. A step's check is about its own files: never a message, a
 delivery, a receipt, an approval or a guarantee that only the system or
-someone else could give. When the user wants to see results before the work
-goes on, set `gate` on the next step: code stops there, and the discussor
-shows them the results and waits for their go.
+someone else could give. Reporting results to the user is code's too: as
+soon as a step is checked, the discussor tells the user its results in the
+chat, and the work goes on -- never write reporting into a step, nor gate
+for it. Set `gate` only on work the user must approve before it starts.
 
 So the step's `detail` must give its subagent, written in:
 - what to do, and in a sentence why the study needs it;

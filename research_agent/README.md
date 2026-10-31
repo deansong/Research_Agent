@@ -258,10 +258,12 @@ builds the graph from it: one graph node per step owner, plus fixed nodes.
 | **step owners** | each `worker` or `writer` node (an older design's `runner` runs as a worker): its instructions, skills, steps | one per attempt (`step05-a1`), continued when its jobs finish | writes the code in `work/`, launches jobs, writes `artifacts/step_05/` |
 | **wait** | -- (code only) | none | polls the step's jobs and counts their GPU-hours |
 | **validator** | its `validator` node | new for each verdict, read-only | checks the step's files against its check and rubric items |
+| **results** | -- (the discussor) | the discussor's conversation | once a step passes: tells you its results in the chat, by default, and the work goes on -- no gate, nothing waits |
 | **reviewer** | -- (always there) | new, read-only | once every step is settled: reviews the study as a NeurIPS/ICML/ICLR reviewer |
 
 ```
-orchestrator --run/retry 5--> dispatch --ready--> owner of 5 --done--> validator --> orchestrator
+orchestrator --run/retry 5--> dispatch --ready--> owner of 5 --done--> validator --pass--> results --> orchestrator
+                                                                                    --fail--> orchestrator
                                                          --launched--> wait --jobs finished--> owner of 5 (same session)
                                       --missing--> orchestrator (missing again: discussor --> you)
              --skip 5--> orchestrator (artifacts/step_05/SKIPPED.md says why)
